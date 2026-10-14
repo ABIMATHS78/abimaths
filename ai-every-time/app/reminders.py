@@ -24,6 +24,35 @@ def reminder_hour(user: dict) -> int:
     return settings.reminder_hour if hour is None else hour
 
 
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def _staff_work(user: dict) -> list[dict]:
+    """For staff: decisions waiting in the queues their role can work on."""
+    role, uid, out = auth.role_of(user), user["id"], []
+    with db.connect() as conn:
+        if role in auth.CAN["moderate"]:
+            reported = conn.execute("SELECT COUNT(DISTINCT r.companion_id) FROM reports r "
+                                    "JOIN companions c ON c.id = r.companion_id WHERE c.removed = 0").fetchone()[0]
+            # The moderator who removed a companion can't decide its appeal, so theirs aren't counted.
+            appeals = conn.execute("SELECT COUNT(*) FROM appeals a JOIN moderation_log l ON l.id = a.removal_id "
+                                   "WHERE a.status = 'open' AND l.staff_id IS NOT ?", (uid,)).fetchone()[0]
+            if reported:
+                out.append({"kind": "staff", "priority": 1, "count": reported, "link": "#/staff/reports",
+                            "text": f"{_plural(reported, 'reported companion')} waiting for a moderator."})
+            if appeals:
+                out.append({"kind": "staff", "priority": 1, "count": appeals, "link": "#/staff/appeals",
+                            "text": f"{_plural(appeals, 'appeal')} waiting for a second look."})
+        if role in auth.CAN["review"]:
+            paths = conn.execute("SELECT COUNT(*) FROM custom_paths WHERE status = 'pending' AND user_id != ?",
+                                 (uid,)).fetchone()[0]
+            if paths:
+                out.append({"kind": "staff", "priority": 1, "count": paths, "link": "#/staff/paths",
+                            "text": f"{_plural(paths, 'learner path')} waiting for expert review."})
+    return out
+
+
 def _current_plan_item(user_id: int) -> dict | None:
     """The first unfinished study-plan item up to and including the current plan week."""
     with db.connect() as conn:
@@ -64,6 +93,7 @@ def reminders(user: dict = User):
 
     for n in notices:
         out.append({"kind": "notice", "priority": 0, "id": n["id"], "text": n["text"], "link": n["link"] or "#/feed"})
+    out += _staff_work(user)
     today = learning.local_now(user).date()
     streak = learning._streak(days, today)
     if streak and today.isoformat() not in days:

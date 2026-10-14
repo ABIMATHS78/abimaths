@@ -177,6 +177,20 @@ CREATE TABLE IF NOT EXISTS moderation_log (
     note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
+-- A designer asking for a second look at the removal of their companion: one appeal per removal,
+-- decided by someone other than the moderator who removed it.
+CREATE TABLE IF NOT EXISTS appeals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    removal_id INTEGER NOT NULL UNIQUE REFERENCES moderation_log(id),
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'upheld', 'overturned')),
+    decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decision_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+);
 -- Messages to a learner about decisions on their companions or paths, shown with their reminders.
 CREATE TABLE IF NOT EXISTS notices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

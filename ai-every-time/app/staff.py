@@ -1,6 +1,7 @@
-"""Staff tools: moderating reported community companions, expert-reviewing learner-made
-paths before they're shared, and managing staff roles. Every decision is logged and
-the affected learner gets a notice explaining it."""
+"""Staff tools: moderating reported community companions, second looks at removals the
+designer appealed, expert-reviewing learner-made paths before they're shared, and
+managing staff roles. Every decision is logged and the affected learner gets a notice
+explaining it."""
 
 from __future__ import annotations
 
@@ -77,7 +78,106 @@ def decide_companion(companion_id: int, body: CompanionDecision, user: dict = Mo
         conn.execute("DELETE FROM reports WHERE companion_id = ?", (companion_id,))
         log(conn, user["id"], "companion", companion_id, body.action, body.note.strip())
         if c["owner_id"]:
+            if body.action == "remove":
+                text += " If you think it was a mistake, you can ask for a second look from its page."
             notify(conn, c["owner_id"], text, f"#/c/{companion_id}")
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------- appeals
+
+
+def latest_removal(conn, companion_id: int):
+    return conn.execute("SELECT * FROM moderation_log WHERE target_type = 'companion' AND target_id = ? "
+                        "AND action = 'remove' ORDER BY id DESC LIMIT 1", (companion_id,)).fetchone()
+
+
+def moderation_for_owner(companion: dict) -> dict | None:
+    """What the designer of a removed companion sees: why, and where their appeal stands."""
+    if not companion["removed"]:
+        return None
+    with db.connect() as conn:
+        removal = latest_removal(conn, companion["id"])
+        appeal = conn.execute("SELECT status, message, decision_note, created_at, decided_at FROM appeals "
+                              "WHERE removal_id = ?", (removal["id"],)).fetchone() if removal else None
+    return {"removed_at": removal["created_at"] if removal else None, "note": removal["note"] if removal else "",
+            "appeal": dict(appeal) if appeal else None, "can_appeal": removal is not None and appeal is None}
+
+
+class AppealIn(BaseModel):
+    message: str = Field(min_length=10, max_length=1000)
+
+
+def appeal(user: dict, companion_id: int, body: AppealIn) -> dict:
+    """The designer asks for a second look at a removal. One appeal per removal."""
+    with db.connect() as conn:
+        c = conn.execute("SELECT * FROM companions WHERE id = ?", (companion_id,)).fetchone()
+        if c is None or c["owner_id"] != user["id"]:
+            raise HTTPException(404, "Companion not found")
+        removal = latest_removal(conn, companion_id) if c["removed"] else None
+        if removal is None:
+            raise HTTPException(409, "Only a companion a moderator removed from the community can be appealed")
+        if conn.execute("SELECT 1 FROM appeals WHERE removal_id = ?", (removal["id"],)).fetchone():
+            raise HTTPException(409, "You've already appealed this decision")
+        conn.execute("INSERT INTO appeals (companion_id, user_id, removal_id, message, created_at) VALUES (?, ?, ?, ?, ?)",
+                     (companion_id, user["id"], removal["id"], body.message.strip(), db.now()))
+    return moderation_for_owner(db.row_to_companion(c))
+
+
+@router.get("/appeals")
+def appeals_queue(status: Literal["open", "upheld", "overturned"] = "open", user: dict = Moderator):
+    """Appeals with the removal they're about, oldest first."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT a.*, l.staff_id AS removed_by, l.note AS removal_note, l.created_at AS removed_at, "
+            "d.display_name AS designer, s.display_name AS removed_by_name, x.display_name AS decided_by_name "
+            "FROM appeals a JOIN moderation_log l ON l.id = a.removal_id LEFT JOIN users d ON d.id = a.user_id "
+            "LEFT JOIN users s ON s.id = l.staff_id LEFT JOIN users x ON x.id = a.decided_by "
+            "WHERE a.status = ? ORDER BY a.id", (status,)).fetchall()
+        found = {r["id"]: db.row_to_companion(r) for r in conn.execute(
+            f"SELECT * FROM companions WHERE id IN ({','.join('?' * len(rows))})", [r["companion_id"] for r in rows])} if rows else {}
+    return [{
+        "id": r["id"], "status": r["status"], "message": r["message"], "created_at": r["created_at"],
+        "decision_note": r["decision_note"], "decided_at": r["decided_at"], "decided_by": r["decided_by_name"],
+        "designer": r["designer"], "companion": found[r["companion_id"]],
+        "removal": {"note": r["removal_note"], "at": r["removed_at"], "by": r["removed_by_name"]},
+        # A second look means someone other than the moderator who removed it.
+        "can_decide": r["removed_by"] != user["id"],
+    } for r in rows]
+
+
+class AppealDecision(BaseModel):
+    decision: Literal["overturn", "uphold"]
+    note: str = Field("", max_length=500)
+
+
+@router.post("/appeals/{appeal_id}")
+def decide_appeal(appeal_id: int, body: AppealDecision, user: dict = Moderator):
+    """overturn: put the companion back in the community. uphold: the removal stands, and the appeal is closed."""
+    note = body.note.strip()
+    with db.connect() as conn:
+        a = conn.execute("SELECT a.*, l.staff_id AS removed_by FROM appeals a JOIN moderation_log l ON l.id = a.removal_id "
+                         "WHERE a.id = ?", (appeal_id,)).fetchone()
+        if a is None:
+            raise HTTPException(404, "Appeal not found")
+        if a["status"] != "open":
+            raise HTTPException(409, f"This appeal was already decided ({a['status']})")
+        if a["removed_by"] == user["id"]:
+            raise HTTPException(403, "You removed this companion. Ask another moderator to take the second look.")
+        if body.decision == "uphold" and not note:
+            raise HTTPException(422, "Explain to the designer why the removal stands")
+        c = conn.execute("SELECT * FROM companions WHERE id = ?", (a["companion_id"],)).fetchone()
+        name = json.loads(c["persona"])["name"]
+        if body.decision == "overturn":
+            conn.execute("UPDATE companions SET removed = 0, hidden = 0, is_public = 1, published_at = ? WHERE id = ?",
+                         (db.now(), c["id"]))
+            text = f"Your appeal was accepted: {name} is back in the community." + (f" {note}" if note else "")
+        else:
+            text = f"Your appeal about {name} had a second look, and the removal stands: {note}"
+        conn.execute("UPDATE appeals SET status = ?, decided_by = ?, decision_note = ?, decided_at = ? WHERE id = ?",
+                     ("overturned" if body.decision == "overturn" else "upheld", user["id"], note, db.now(), appeal_id))
+        log(conn, user["id"], "companion", c["id"], f"appeal:{body.decision}", note)
+        notify(conn, a["user_id"], text, f"#/c/{c['id']}")
     return {"ok": True}
 
 

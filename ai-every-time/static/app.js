@@ -230,7 +230,7 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(reports|paths|roles|log))?$/, viewStaff],
+  [/^#\/staff(?:\/(reports|appeals|paths|roles|log))?$/, viewStaff],
 ];
 
 async function router() {
@@ -375,7 +375,9 @@ function companionCard(c, { onboarding = false } = {}) {
           <h3>${esc(p.name)} ${esc(p.flag)} ${mine ? '<span class="mine-badge">Yours</span>' : ""}</h3>
           <div class="muted small">${esc(p.country)}${isPrimary ? " · Your primary companion" : ""}</div>
           ${!c.is_starter && !mine ? `<div class="muted small">Community · designed by ${esc(c.designer || "a learner")}</div>` : ""}
-          ${mine && c.hidden ? `<div class="small error">Hidden after reports from other learners</div>` : mine && c.is_public ? `<div class="small" style="color:var(--accent)">● Published to the community</div>` : ""}
+          ${mine && c.removed ? `<div class="small error">Removed from the community by a moderator</div>`
+            : mine && c.hidden ? `<div class="small error">Hidden after reports from other learners</div>`
+            : mine && c.is_public ? `<div class="small" style="color:var(--accent)">● Published to the community</div>` : ""}
         </div>
       </div>
       <p class="tagline">${esc(p.tagline)}</p>
@@ -584,6 +586,7 @@ async function viewCompanion(m) {
         ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button>` : ""}
       </div>
     </div>
+    ${c.moderation ? removalCard(c) : ""}
     <div class="chat-layout">
       <section class="card chat">
         <div class="log" id="log"></div>
@@ -652,6 +655,7 @@ async function viewCompanion(m) {
   wireMic($("#mic"), $("#input"));
   $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
+  $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
   if (!messages.length) {
     addMsg("assistant", `Hi ${state.me.display_name}! I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}\n\nWhat would you like to learn today?`);
   }
@@ -1239,6 +1243,39 @@ function showReport(c) {
   });
 }
 
+/* For the designer of a removed companion: why, and where their appeal stands. */
+function removalCard(c) {
+  const m = c.moderation, a = m.appeal;
+  const when = m.removed_at ? ` on ${new Date(m.removed_at).toLocaleDateString()}` : "";
+  const status = !a ? (m.can_appeal ? `<div><button class="btn" id="appealBtn">Ask for a second look</button></div>` : "")
+    : a.status === "open" ? `<div class="small"><b>Your appeal is waiting</b> for a moderator who wasn't part of the first decision.</div>`
+    : `<div class="small"><b>Your appeal had a second look, and the removal stands:</b> ${esc(a.decision_note)}</div>`;
+  return `<div class="card removal stack">
+    <div><b>A moderator removed ${esc(c.persona.name)} from the community${esc(when)}.</b> It's still yours to chat with and edit privately.</div>
+    ${m.note ? `<div class="small">Their reason: “${esc(m.note)}”</div>` : ""}
+    ${status}
+  </div>`;
+}
+
+function showAppeal(c, onSent) {
+  showDialog(`<h2>Ask for a second look at ${esc(c.persona.name)}</h2>
+    <p>A different moderator will review the removal. Tell them what you think was missed, such as how the companion is meant to be used or what you've changed since.</p>
+    <form id="appealForm" class="stack">
+      <label>Your appeal <textarea name="message" rows="5" minlength="10" maxlength="1000" required></textarea></label>
+      <div class="error" id="appealErr"></div>
+      <button class="btn primary">Send appeal</button>
+    </form>`);
+  $("#appealForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/companions/${c.id}/appeal`, { method: "POST", body: { message: e.target.message.value.trim() } });
+      $("#dialog").close();
+      toast("Appeal sent. You'll get a notice when it's decided.");
+      onSent();
+    } catch (err) { $("#appealErr").textContent = err.message; }
+  });
+}
+
 function showDialog(html) {
   let d = $("#dialog");
   if (!d) {
@@ -1606,7 +1643,7 @@ function planForm(paths, minutes) {
 
 /* -------------------------------------------------------------------- staff */
 
-const ROLE_CAN = { moderator: ["reports", "log"], reviewer: ["paths", "log"], admin: ["reports", "paths", "roles", "log"] };
+const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["reports", "appeals", "paths", "roles", "log"] };
 const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
 const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -1614,13 +1651,46 @@ async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
-  const names = { reports: "Reported companions", paths: "Path reviews", roles: "Roles", log: "Decision log" };
+  const names = { reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
-  await { reports: staffReports, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+  await { reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+}
+
+async function staffAppeals(body, m) {
+  const list = await api("/api/staff/appeals");
+  if (!list.length) { body.innerHTML = `<div class="card empty">No appeals waiting. 🎉</div>`; return; }
+  body.innerHTML = list.map((a) => {
+    const c = a.companion, p = c.persona;
+    return `
+    <article class="card stack" data-id="${a.id}">
+      <div class="row">
+        <img class="avatar" src="/api/companions/${c.id}/avatar?v=${encodeURIComponent(c.updated_at)}" width="56" height="56" alt="">
+        <div style="flex:1"><h3 style="margin:0">${esc(p.name)} ${esc(p.flag)}</h3>
+          <div class="muted small">Designed by ${esc(a.designer || "?")} · appealed ${timeAgo(a.created_at)}</div></div>
+      </div>
+      <div class="small"><b>Removed</b> ${timeAgo(a.removal.at)} by ${esc(a.removal.by || "a former moderator")}: “${esc(a.removal.note)}”</div>
+      <div class="small"><b>The designer's appeal:</b> “${esc(a.message)}”</div>
+      <div class="small"><b>Tagline:</b> ${esc(p.tagline) || "–"}<br><b>Bio:</b> ${esc(p.bio) || "–"}<br>
+        <b>Sample line:</b> ${esc(p.writing_style.sample_line) || "–"}<br><b>Expertise:</b> ${esc(p.expertise.join(", ")) || "–"}</div>
+      ${a.can_decide ? `
+        <label>Note to the designer <span class="hint">Required when the removal stands</span><textarea name="note" maxlength="500"></textarea></label>
+        <div class="row"><button class="btn" data-act="overturn">Restore to the community</button><button class="btn danger" data-act="uphold">Keep it removed</button></div>`
+        : `<div class="muted small">You removed this companion, so another moderator gives it the second look.</div>`}
+    </article>`;
+  }).join("");
+  $$("[data-id]", body).forEach((el) => el.addEventListener("click", async (e) => {
+    const act = e.target.dataset.act;
+    if (!act) return;
+    try {
+      await api(`/api/staff/appeals/${el.dataset.id}`, { method: "POST", body: { decision: act, note: $("[name=note]", el).value.trim() } });
+      toast(act === "overturn" ? "Restored, and the designer was told" : "The removal stands, and the designer was told why");
+      staffAppeals(body, m);
+    } catch (err) { toast(err.message); }
+  }));
 }
 
 async function staffReports(body, m) {

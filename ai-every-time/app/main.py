@@ -219,14 +219,22 @@ def get_companion(companion_id: int, user: dict = User):
                                  (user["id"], companion_id)).fetchone()
         followers = conn.execute("SELECT COUNT(*) FROM follows WHERE companion_id = ?", (companion_id,)).fetchone()[0]
         designer = conn.execute("SELECT display_name FROM users WHERE id = ?", (c["owner_id"],)).fetchone() if c["owner_id"] else None
+    mine = c["owner_id"] == user["id"]
     return companions.for_viewer(c, user["id"]) | {
-        "following": bool(following), "followers": followers, "is_mine": c["owner_id"] == user["id"],
+        "following": bool(following), "followers": followers, "is_mine": mine,
         "designer": designer["display_name"] if designer else None,
+        # Only the designer sees why a companion was removed and where their appeal stands.
+        "moderation": staff.moderation_for_owner(c) if mine else None,
     }
 
 
 class ReportIn(BaseModel):
     reason: Literal["impersonation", "harmful", "misleading", "spam", "other"]
+
+
+@app.post("/api/companions/{companion_id}/appeal", status_code=201)
+def appeal_removal(companion_id: int, body: staff.AppealIn, user: dict = User):
+    return staff.appeal(user, companion_id, body)
 
 
 @app.post("/api/companions/{companion_id}/publish")
