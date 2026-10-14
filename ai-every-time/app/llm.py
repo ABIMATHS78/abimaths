@@ -76,7 +76,13 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None) -> str
     ]
     if memories:
         parts.append("\n# What you remember about them\n" + "\n".join(f"- {m}" for m in memories))
-    if post:
+    if post and post.get("kind") == "lesson":
+        parts.append(
+            "\n# You are tutoring the learner through this lesson\n"
+            f"{post['body']}\n\n"
+            "Answer their questions about it, check their understanding, and correct misconceptions against the key points."
+        )
+    elif post:
         parts.append(
             "\n# The learner arrived from this piece of your content\n"
             f"Title: {post['title']}\n\n{post['body']}\n\n"

@@ -83,6 +83,73 @@ CREATE TABLE IF NOT EXISTS engagements (
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, post_id, kind)
 );
+
+-- Learning: lessons are taught in each companion's voice and cached per companion.
+CREATE TABLE IF NOT EXISTS lesson_content (
+    companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    lesson_id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (companion_id, lesson_id)
+);
+CREATE TABLE IF NOT EXISTS lesson_progress (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    lesson_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('started', 'completed')),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, lesson_id)
+);
+-- Quizzes and mock exams. Correct answers stay server-side until submission.
+CREATE TABLE IF NOT EXISTS assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    companion_id INTEGER REFERENCES companions(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('quiz', 'exam')),
+    title TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    questions TEXT NOT NULL,
+    time_limit_minutes INTEGER,
+    answers TEXT,
+    score INTEGER,
+    total INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    submitted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_assessments_user ON assessments(user_id, id);
+CREATE TABLE IF NOT EXISTS decks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    companion_id INTEGER REFERENCES companions(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    source_ref TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    front TEXT NOT NULL,
+    back TEXT NOT NULL,
+    box INTEGER NOT NULL DEFAULT 1,
+    due_at TEXT NOT NULL,
+    reviews INTEGER NOT NULL DEFAULT 0,
+    lapses INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_cards_deck ON cards(deck_id);
+CREATE TABLE IF NOT EXISTS study_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    companion_id INTEGER REFERENCES companions(id) ON DELETE SET NULL,
+    weekly_minutes INTEGER NOT NULL,
+    plan TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS activity (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    PRIMARY KEY (user_id, day)
+);
 """
 
 
