@@ -13,8 +13,9 @@ import re
 from typing import AsyncIterator
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from app import usage
 from app.config import settings
 from app.persona import (
     EMOJI_TEXT,
@@ -134,16 +135,20 @@ async def stream_reply(
             async for text in stream.text_stream:
                 yield text
             final = await stream.get_final_message()
+        usage.record_tokens(final)
         if final.stop_reason == "refusal":
             yield "\n\nI can't help with that one, but I'm happy to keep exploring AI with you. What else is on your mind?"
         elif final.stop_reason == "max_tokens":
             yield "\n\n(I'll stop there; ask me to continue if you want more.)"
     except anthropic.RateLimitError:
+        usage.failed()
         yield "I'm getting a lot of questions right now. Give me a moment and try again."
     except anthropic.APIStatusError as e:
+        usage.failed()
         log.error("Claude API error %s: %s", e.status_code, e.message)
         yield "Something went wrong on my side. Please try again."
     except anthropic.APIConnectionError:
+        usage.failed()
         log.exception("Claude connection error")
         yield "I couldn't connect just now. Please try again in a moment."
 
@@ -196,6 +201,10 @@ async def extract_memories(persona: Persona, existing: list[str], user_msg: str,
     except anthropic.APIError:
         log.exception("memory extraction failed")
         return []
+    except ValidationError:  # a reply cut short or refused doesn't fit the schema
+        log.warning("memory extraction reply didn't fit the schema")
+        return []
+    usage.record_tokens(resp)
     if resp.stop_reason == "refusal" or resp.parsed_output is None:
         return []
     return [f.strip()[:200] for f in resp.parsed_output.new_facts if f.strip()][:5]
@@ -253,8 +262,13 @@ async def generate_post(persona: Persona, top_topics: list[str], recent_titles: 
             fallbacks="default",
         )
     except anthropic.APIError:
+        usage.failed()
         log.exception("content generation failed for %s", persona.name)
         return None
+    except ValidationError:  # a reply cut short or refused doesn't fit the schema
+        log.warning("post for %s didn't fit the schema", persona.name)
+        return None
+    usage.record_tokens(resp)
     if resp.stop_reason == "refusal":
         return None
     return resp.parsed_output

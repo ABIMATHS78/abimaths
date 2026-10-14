@@ -12,9 +12,9 @@ import random
 from typing import TypeVar
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from app import llm
+from app import llm, usage
 from app.config import settings
 from app.curriculum import PATHS, LearningPath, Lesson, lesson_brief
 from app.persona import Persona
@@ -81,8 +81,13 @@ async def _parse(persona: Persona, prompt: str, schema: type[T], effort: str, ma
             fallbacks="default",
         )
     except anthropic.APIError:
+        usage.failed()
         log.exception("%s generation failed", schema.__name__)
         return None
+    except ValidationError:  # a reply cut short or refused doesn't fit the schema
+        log.warning("%s reply didn't fit the schema", schema.__name__)
+        return None
+    usage.record_tokens(resp)
     if resp.stop_reason in ("refusal", "max_tokens"):
         log.warning("%s generation stopped: %s", schema.__name__, resp.stop_reason)
         return None

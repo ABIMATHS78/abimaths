@@ -44,7 +44,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), 2400);
+  toast._t = setTimeout(() => t.classList.remove("show"), Math.max(2400, msg.length * 60));  // time to read longer ones
 }
 
 /* Minimal, safe markdown: escape first, then a few inline/block rules. */
@@ -363,6 +363,7 @@ async function viewWelcome() {
     $("#authBtn").disabled = true;
     try {
       state.me = await api(`/api/auth/${tab}`, { method: "POST", body });
+      if (tab === "signup" && state.me.email_available) toast("Welcome! We've emailed you a link to confirm your address.");
       location.hash = state.me.onboarded ? "#/feed" : "#/onboarding";
     } catch (err) {
       $("#authErr").textContent = err.message;
@@ -803,6 +804,7 @@ async function viewCompanion(m) {
       setTimeout(async () => renderMem(await api(`/api/companions/${id}/memories`)), 2500);
     } catch (err) {
       bubble.innerHTML = `<span class="error">${esc(err.message)}</span>`;
+      if (!input.value) input.value = text;  // not sent, so it isn't lost
     } finally {
       $("#send").disabled = false;
       input.focus();
@@ -1153,6 +1155,7 @@ async function viewStudio({ mode, id }) {
 const hourLabel = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 async function viewProfile() {
+  state.me = await api("/api/me");  // fresh: AI requests left, and an address confirmed in another tab
   const me = state.me;
   const main = shell("profile", `
     <h1>Your profile</h1>
@@ -1164,6 +1167,7 @@ async function viewProfile() {
         <div class="error" id="profErr"></div>
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
       </form>
+      <div class="card stack" id="aiCard"></div>
       <form class="card stack" id="remForm">
         <div><h2 style="margin:0">Reminders</h2>
           <div class="muted small">Once a day, when something is waiting: a streak to keep, flashcards due, the next step in your study plan.</div></div>
@@ -1215,6 +1219,25 @@ async function viewProfile() {
     });
   };
   renderZone();
+  // What's left of the daily AI allowance. Confirming the email address can raise it.
+  const renderAllowance = () => {
+    const a = state.me.ai_allowance;
+    $("#aiCard").innerHTML = `<div><h2 style="margin:0">AI requests</h2>
+      <div class="muted small">Every chat reply, quiz, flashcard deck, summary and study plan is written by AI, and so is each lesson the first time it's taught. Each counts as one request for 24 hours; mock exams and new learning paths count as two.</div></div>`
+      + (a.limit === null ? `<div>Your account has no daily limit.</div>`
+        : `${bar(a.remaining, a.limit)}<div style="margin-top:-6px"><b>${a.remaining}</b> of ${a.limit} left</div>`)
+      + (a.confirm_raises_to ? `<div class="muted small">Confirm your email address to raise your limit to ${a.confirm_raises_to}: `
+        + `<button type="button" class="textbtn" data-confirm>send a confirmation link</button>.</div>` : "");
+  };
+  renderAllowance();
+  main.addEventListener("click", async (e) => {  // both "send a confirmation link" buttons
+    const b = e.target.closest("[data-confirm]");
+    if (!b) return;
+    b.disabled = true;
+    try { await api("/api/email/confirmation", { method: "POST" }); toast("Sent. Check your inbox (and spam folder)."); }
+    catch (err) { toast(err.message); }
+    b.disabled = false;
+  });
   // Reminder emails only start once the learner confirms the address is theirs.
   const renderEmail = () => {
     const m = state.me, line = $("#emailLine");
@@ -1222,13 +1245,7 @@ async function viewProfile() {
     line.innerHTML = m.email_confirmed
       ? `Sent to ${esc(m.email)}, which you've confirmed. Every email has a link to stop them.`
       : `Sent to ${esc(m.email)} once you confirm it's yours: ${m.email_reminders ? "look for the link in your inbox, or " : ""}`
-        + `<button type="button" class="textbtn" id="sendConfirm">${m.email_reminders ? "send it again" : "send a confirmation link"}</button>.`;
-    $("#sendConfirm")?.addEventListener("click", async (e) => {
-      e.target.disabled = true;
-      try { await api("/api/email/confirmation", { method: "POST" }); toast("Sent. Check your inbox (and spam folder)."); }
-      catch (err) { toast(err.message); }
-      e.target.disabled = false;
-    });
+        + `<button type="button" class="textbtn" data-confirm>${m.email_reminders ? "send it again" : "send a confirmation link"}</button>.`;
   };
   renderEmail();
   $("#remForm").addEventListener("submit", async (e) => {
@@ -1530,10 +1547,17 @@ async function viewLearn() {
 async function viewLesson(m) {
   const lessonId = m[1], companionId = m[2] ? +m[2] : null;
   const main = shell("learn", `<div class="card empty">Your companion is preparing this lesson…</div>`);
-  const [lesson, list] = await Promise.all([
-    api(`/api/lessons/${lessonId}${companionId ? `?companion_id=${companionId}` : ""}`),
-    api("/api/companions"),
-  ]);
+  let lesson, list;
+  try {
+    [lesson, list] = await Promise.all([
+      api(`/api/lessons/${lessonId}${companionId ? `?companion_id=${companionId}` : ""}`),
+      api("/api/companions"),
+    ]);
+  } catch (err) {  // e.g. the daily AI requests are used up, or the companion couldn't write it
+    if (err instanceof StaleView) throw err;
+    main.innerHTML = `<div class="card empty stack"><div>${esc(err.message)}</div><div><a class="btn" href="#/learn">Back to learning paths</a></div></div>`;
+    return;
+  }
   const t = lesson.teacher;
   const teachers = list.filter((c) => c.following || c.owner_id === state.me.id);
   main.innerHTML = `

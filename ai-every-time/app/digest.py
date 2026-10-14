@@ -88,37 +88,47 @@ def send_quietly(msg: EmailMessage, user_id: int) -> None:
 # ------------------------------------------------------------- confirming addresses
 
 
+def _what_confirming_does() -> str:
+    text = "It lets AI Every Time send the reminder emails you choose to get."
+    full, unconfirmed = settings.ai_allowance, min(settings.ai_allowance_unconfirmed, settings.ai_allowance)
+    if full > 0 and unconfirmed < full:
+        text += f" It also raises your AI requests from {unconfirmed} to {full} a day."
+    return text
+
+
 def confirmation_message(user: dict, token: str) -> EmailMessage:
     link = f"{settings.public_url}/api/email/confirm?token={token}"
+    why = _what_confirming_does()
     msg = EmailMessage()
     msg["Subject"] = "Confirm your email for AI Every Time"
     msg["From"] = settings.mail_from
     msg["To"] = user["email"]
     msg.set_content(
-        f"Hi {user['display_name']},\n\nPlease confirm that this is your email address, so AI Every Time can "
-        f"send you the reminders you asked for:\n\n{link}\n\nThe link works for {CONFIRM_DAYS} days.\n"
-        "If you didn't ask for this, you can ignore this email and nothing more will be sent.\n"
+        f"Hi {user['display_name']},\n\nPlease confirm that this is your email address on AI Every Time:\n\n{link}\n\n"
+        f"{why}\n\nThe link works for {CONFIRM_DAYS} days. "
+        "If you didn't make an account on AI Every Time, you can ignore this email.\n"
     )
     msg.add_alternative(
-        f"<p>Hi {html.escape(user['display_name'])},</p><p>Please confirm that this is your email address, so AI "
-        f'Every Time can send you the reminders you asked for.</p><p><a href="{html.escape(link)}">Confirm my email</a></p>'
-        f"<p>The link works for {CONFIRM_DAYS} days.</p><p style=\"color:#777;font-size:12px\">If you didn't ask for "
-        "this, you can ignore this email and nothing more will be sent.</p>",
+        f"<p>Hi {html.escape(user['display_name'])},</p><p>Please confirm that this is your email address on AI Every "
+        f'Time.</p><p><a href="{html.escape(link)}">Confirm my email</a></p><p>{html.escape(why)}</p>'
+        f"<p>The link works for {CONFIRM_DAYS} days.</p><p style=\"color:#777;font-size:12px\">If you didn't make an "
+        "account on AI Every Time, you can ignore this email.</p>",
         subtype="html",
     )
     return msg
 
 
-def request_confirmation(user: dict, background: BackgroundTasks) -> bool:
-    """Email a link that confirms the address, unless it's confirmed already or a few went out in
-    the last hour. The email is sent after the response. Returns whether one was sent."""
+def request_confirmation(user: dict, background: BackgroundTasks, per_hour: int = CONFIRMATIONS_PER_HOUR) -> bool:
+    """Email a link that confirms the address, unless it's confirmed already or `per_hour` links went
+    out in the last hour (links sent without being asked for use 1, so one goes out at a time). The
+    email is sent after the response. Returns whether one was sent."""
     if user.get("email_confirmed_at") or not email_available():
         return False
     hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
     with db.connect() as conn:
         recent = conn.execute("SELECT COUNT(*) FROM email_confirmations WHERE user_id = ? AND created_at > ?",
                               (user["id"], hour_ago)).fetchone()[0]
-        if recent >= CONFIRMATIONS_PER_HOUR:
+        if recent >= per_hour:
             return False
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(timezone.utc) + timedelta(days=CONFIRM_DAYS)).isoformat(timespec="seconds")
@@ -219,7 +229,7 @@ def _page(body: str, title: str = "Email reminders", status: int = 200) -> HTMLR
 def confirm_page(token: str = ""):
     # A button rather than confirming on GET, so link scanners in mail systems can't confirm for someone.
     return _page(f"""<h1>Confirm your email?</h1>
-<p>This tells AI Every Time the address is yours, so it can send the reminders you asked for.</p>
+<p>This tells AI Every Time the address is yours. {html.escape(_what_confirming_does())}</p>
 <form method="post" action="/api/email/confirm"><input type="hidden" name="token" value="{html.escape(token)}">
 <button style="font:inherit;padding:8px 16px">Confirm my email</button></form>""", "Confirm your email")
 

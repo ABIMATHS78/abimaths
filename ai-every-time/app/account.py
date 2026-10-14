@@ -234,6 +234,9 @@ def export(user: dict = User):
             "notices": rows("SELECT text, created_at, read_at FROM notices WHERE user_id = ? ORDER BY id"),
             "study_days": [r["day"] for r in rows("SELECT day FROM activity WHERE user_id = ? ORDER BY day")],
             "notification_devices": rows("SELECT device, created_at, last_sent_at FROM push_subscriptions WHERE user_id = ?"),
+            "ai_requests": rows("SELECT kind, units, failed, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+                                "model, created_at FROM ai_usage WHERE user_id = ? ORDER BY id"),
+            "ai_requests_turned_away": rows("SELECT hour, reason, count FROM ai_refusals WHERE user_id = ? ORDER BY hour"),
         }
     return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="ai-every-time-data.json"'})
@@ -246,7 +249,8 @@ class DeleteAccount(BaseModel):
 @router.delete("/me", status_code=204)
 def delete_account(body: DeleteAccount, response: Response, user: dict = User):
     """Delete the account and everything in it: the companions they designed and their posts, chats,
-    memories, progress and devices. Staff decisions they made stay in the log without their name."""
+    memories, progress and devices. Staff decisions they made stay in the log, and their AI requests
+    in the usage totals, without their name."""
     _confirm_password(user, body.password)
     with db.connect() as conn:
         # Lessons companions wrote for the learner's own paths aren't covered by the cascade.

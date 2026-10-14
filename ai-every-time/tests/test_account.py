@@ -31,6 +31,7 @@ def test_forgotten_password_reset_by_email(client, mailbox, monkeypatch):
     from app.config import settings
 
     signup(client)
+    mailbox.sent.clear()  # the link that confirms the address
     old_session = other_device(client)
     monkeypatch.setattr(settings, "push_contact", "mailto:team@aieverytime.example")
     subscribe(client, Device())
@@ -64,6 +65,7 @@ def test_reset_links_expire_and_are_limited(client, mailbox):
     from app import account, db
 
     signup(client)
+    mailbox.sent.clear()  # the link that confirms the address
     client.post("/api/auth/logout")
     for _ in range(account.RESETS_PER_HOUR + 2):
         assert client.post("/api/auth/forgot", json={"email": "ada@example.com"}).status_code == 202

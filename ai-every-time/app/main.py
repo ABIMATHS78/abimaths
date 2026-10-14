@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import account, auth, companions, content, db, digest, learning, llm, push, reminders, staff
+from app import account, auth, companions, content, db, digest, learning, llm, push, reminders, staff, usage
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -110,7 +110,7 @@ class ProfileUpdate(BaseModel):
 
 
 @app.post("/api/auth/signup", status_code=201)
-def signup(body: Signup, response: Response):
+def signup(body: Signup, response: Response, background: BackgroundTasks):
     try:
         with db.connect() as conn:
             cur = conn.execute(
@@ -127,7 +127,9 @@ def signup(body: Signup, response: Response):
     except sqlite3.IntegrityError:
         raise HTTPException(409, "An account with that email already exists")
     auth.set_cookie(response, auth.create_session(cur.lastrowid))
-    return me(_load_user(cur.lastrowid))
+    user = _load_user(cur.lastrowid)
+    digest.request_confirmation(user, background, per_hour=1)
+    return me(user)
 
 
 @app.post("/api/auth/login")
@@ -161,7 +163,7 @@ def me(user: dict = User):
     return auth.public_user(user) | {
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
-        "email_confirmed": bool(user.get("email_confirmed_at")),
+        "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
     }
 
 
@@ -175,8 +177,9 @@ def update_me(body: ProfileUpdate, background: BackgroundTasks, user: dict = Use
         with db.connect() as conn:
             digest.ensure_token(conn, user["id"])
         if changes["email_reminders"] and not user["email_reminders"]:
-            # Nothing is emailed until the learner confirms the address is theirs.
-            digest.request_confirmation(user, background)
+            # Nothing is emailed until the learner confirms the address is theirs. One link at a time:
+            # sign-up may have sent one already.
+            digest.request_confirmation(user, background, per_hour=1)
     if changes:
         cols = ", ".join(f"{k} = ?" for k in changes)
         with db.connect() as conn:
@@ -258,12 +261,25 @@ def report_companion(companion_id: int, body: ReportIn, user: dict = User):
     companions.report(user["id"], companion_id, body.reason)
 
 
+async def _first_post(companion: dict, row: int) -> None:
+    with usage.recording(row):
+        await content.generate_for(companion)
+
+
+def _write_first_post(user: dict, companion: dict) -> None:
+    """A new companion writes its first post, which counts as one of the designer's AI requests.
+    With none left it starts without one, and they can ask for it later."""
+    row = usage.try_reserve(user, "post")
+    if row is not None:
+        _spawn(_first_post(companion, row))
+
+
 @app.post("/api/companions", status_code=201)
 async def create_companion(body: CreateCompanion, user: dict = User):
     c = companions.create(user["id"], body.persona)
     if body.make_primary:
         companions.set_primary(user["id"], c["id"])
-    _spawn(content.generate_for(c))
+    _write_first_post(user, c)
     return c
 
 
@@ -275,7 +291,7 @@ async def remix_companion(companion_id: int, body: RemixCompanion, user: dict = 
         raise HTTPException(422, str(e))
     if body.make_primary:
         companions.set_primary(user["id"], c["id"])
-    _spawn(content.generate_for(c))
+    _write_first_post(user, c)
     return c
 
 
@@ -405,7 +421,8 @@ def companion_posts(companion_id: int, user: dict = User):
 @app.post("/api/companions/{companion_id}/posts/generate", status_code=201)
 async def generate_post(companion_id: int, user: dict = User):
     c = companions.get_owned(companion_id, user["id"])
-    post = await content.generate_for(c)
+    with usage.spend(user, "post"):
+        post = await content.generate_for(c)
     if post is None:
         raise HTTPException(502, "Couldn't write a post right now. Try again.")
     return post
@@ -467,10 +484,12 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
     c = companions.get_visible(companion_id, user["id"])
     persona = companions.persona_for(c, user["id"])
     post = _visible_post(body.post_id, user["id"]) if body.post_id else None
+    lesson = learning.lesson_context(user["id"], companion_id, body.lesson_id) if body.lesson_id and not post else None
+    # Before anything is saved, so a message turned away by the allowance leaves no trace.
+    row = usage.reserve(user, "chat")
     if post:
         content.record(user["id"], post["id"], "ask")
-    elif body.lesson_id:
-        post = learning.lesson_context(user["id"], companion_id, body.lesson_id)
+    post = post or lesson
     learning.record_activity(user)
 
     with db.connect() as conn:
@@ -483,15 +502,17 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
     memories = [m["fact"] for m in _memories(user["id"], companion_id)]
 
     async def stream():
-        parts: list[str] = []
-        async for chunk in llm.stream_reply(persona, user, memories, history, post):
-            parts.append(chunk)
-            yield chunk
-        reply = "".join(parts).strip()
-        with db.connect() as conn:
-            conn.execute("INSERT INTO messages (user_id, companion_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)",
-                         (user["id"], companion_id, reply, db.now()))
-        _spawn(_remember(user["id"], companion_id, persona, memories, body.message, reply))
+        # Tokens for the reply, and for the memories taken from it, go on this message's record.
+        with usage.recording(row):
+            parts: list[str] = []
+            async for chunk in llm.stream_reply(persona, user, memories, history, post):
+                parts.append(chunk)
+                yield chunk
+            reply = "".join(parts).strip()
+            with db.connect() as conn:
+                conn.execute("INSERT INTO messages (user_id, companion_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)",
+                             (user["id"], companion_id, reply, db.now()))
+            _spawn(_remember(user["id"], companion_id, persona, memories, body.message, reply))
 
     return StreamingResponse(stream(), media_type="text/plain; charset=utf-8")
 

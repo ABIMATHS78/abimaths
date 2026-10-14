@@ -61,10 +61,12 @@ def test_reminder_emails_wait_for_a_confirmed_address(client, mailbox, monkeypat
 
     monkeypatch.setattr(settings, "reminder_hour", 7)
     assert signup(client)["email_confirmed"] is False
+    [msg] = mailbox.sent  # sign-up sends the link
+    assert msg["To"] == "ada@example.com" and msg["Subject"] == "Confirm your email for AI Every Time"
+    assert "raises your AI requests from 30 to 100 a day" in msg.get_body(("plain",)).get_content()
     client.get("/api/lessons/tokens")  # something to remind about
     assert client.patch("/api/me", json={"email_reminders": True}).json()["email_reminders"]
-    [msg] = mailbox.sent
-    assert msg["To"] == "ada@example.com" and msg["Subject"] == "Confirm your email for AI Every Time"
+    assert len(mailbox.sent) == 1  # one link at a time unless the learner asks for another
     token = mailbox.link_token("confirm")
     with db.connect() as conn:  # only a hash of the token is kept
         assert conn.execute("SELECT COUNT(*) FROM email_confirmations WHERE token_hash = ?", (token,)).fetchone()[0] == 0
@@ -93,8 +95,8 @@ def test_reminder_emails_wait_for_a_confirmed_address(client, mailbox, monkeypat
 def test_confirmation_links_expire_and_are_limited(client, mailbox):
     from app import db, digest
 
-    signup(client)
-    for _ in range(digest.CONFIRMATIONS_PER_HOUR):
+    signup(client)  # sends the first
+    for _ in range(digest.CONFIRMATIONS_PER_HOUR - 1):
         assert client.post("/api/email/confirmation").json() == {"sent": True, "confirmed": False}
     r = client.post("/api/email/confirmation")
     assert r.status_code == 429 and "inbox" in r.json()["detail"]
