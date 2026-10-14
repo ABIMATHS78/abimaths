@@ -1616,7 +1616,10 @@ async function viewLesson(m) {
     const a = document.createElement("div"); a.className = "msg assistant"; a.textContent = "…"; log.appendChild(a);
     try {
       await streamChat(t.id, { message: text, lesson_id: lessonId }, (acc) => { a.innerHTML = `<div class="prose">${md(acc)}</div>`; log.scrollTop = log.scrollHeight; });
-    } catch (err) { a.innerHTML = `<span class="error">${esc(err.message)}</span>`; }
+    } catch (err) {
+      a.innerHTML = `<span class="error">${esc(err.message)}</span>`;
+      if (!input.value) input.value = text;  // not sent, so it isn't lost
+    }
     $("#tsend").disabled = false;
   });
 }
