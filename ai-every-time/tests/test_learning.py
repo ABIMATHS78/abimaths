@@ -143,7 +143,10 @@ def test_lesson_tutoring_chat_uses_lesson_context(client, monkeypatch):
     monkeypatch.setattr(llm, "build_system", spy)
     from app.llm import learner_prompt
 
-    ctx = __import__("app.learning", fromlist=["lesson_context"]).lesson_context(starter["id"], "tool-use")
+    from app.learning import lesson_context
+
+    me = client.get("/api/me").json()
+    ctx = lesson_context(me["id"], starter["id"], "tool-use")
     assert "Tools: letting models take actions" in ctx["title"]
     assert "tool use" in learner_prompt({"display_name": "A", "level": "beginner", "goals": ""}, [], ctx).lower()
     r = client.post(f"/api/companions/{starter['id']}/chat", json={"message": "Why do tool descriptions matter?", "lesson_id": "tool-use"})

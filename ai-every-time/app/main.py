@@ -9,12 +9,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
-from app import auth, companions, content, db, learning, llm
+from app import auth, companions, content, db, learning, llm, reminders
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -46,6 +46,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
 app.include_router(learning.router)
+app.include_router(reminders.router)
 User = Depends(auth.current_user)
 
 
@@ -88,6 +89,8 @@ def signup(body: Signup, response: Response):
             # Start every learner following the starter companions so their feed isn't empty.
             conn.execute("INSERT INTO follows (user_id, companion_id, created_at) "
                          "SELECT ?, id, ? FROM companions WHERE is_starter = 1", (cur.lastrowid, db.now()))
+            # Posts published before sign-up are part of the welcome feed, not "new".
+            reminders.mark_feed_seen(conn, cur.lastrowid)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "An account with that email already exists")
     _set_cookie(response, auth.create_session(cur.lastrowid))
@@ -171,7 +174,30 @@ def get_companion(companion_id: int, user: dict = User):
         following = conn.execute("SELECT 1 FROM follows WHERE user_id = ? AND companion_id = ?",
                                  (user["id"], companion_id)).fetchone()
         followers = conn.execute("SELECT COUNT(*) FROM follows WHERE companion_id = ?", (companion_id,)).fetchone()[0]
-    return c | {"following": bool(following), "followers": followers, "is_mine": c["owner_id"] == user["id"]}
+        designer = conn.execute("SELECT display_name FROM users WHERE id = ?", (c["owner_id"],)).fetchone() if c["owner_id"] else None
+    return companions.for_viewer(c, user["id"]) | {
+        "following": bool(following), "followers": followers, "is_mine": c["owner_id"] == user["id"],
+        "designer": designer["display_name"] if designer else None,
+    }
+
+
+class ReportIn(BaseModel):
+    reason: Literal["impersonation", "harmful", "misleading", "spam", "other"]
+
+
+@app.post("/api/companions/{companion_id}/publish")
+def publish(companion_id: int, user: dict = User):
+    return companions.set_published(user["id"], companion_id, True)
+
+
+@app.delete("/api/companions/{companion_id}/publish")
+def unpublish(companion_id: int, user: dict = User):
+    return companions.set_published(user["id"], companion_id, False)
+
+
+@app.post("/api/companions/{companion_id}/report", status_code=204)
+def report_companion(companion_id: int, body: ReportIn, user: dict = User):
+    companions.report(user["id"], companion_id, body.reason)
 
 
 @app.post("/api/companions", status_code=201)
@@ -233,14 +259,64 @@ def make_primary(companion_id: int, user: dict = User):
 # --------------------------------------------------------------------- avatars
 
 SVG = "image/svg+xml"
+MAX_PHOTO_BYTES = 2 * 1024 * 1024
+# Uploaded photos are served with these headers so a disguised file can't run as a page.
+IMAGE_HEADERS = {"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff",
+                 "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"}
 
 
-@app.get("/api/companions/{companion_id}/avatar.svg")
-def companion_avatar(companion_id: int):
-    # Faces are public so they can appear in shared posts.
+def _image_type(data: bytes) -> str | None:
+    """Identify an upload by its bytes, never by the name or header the client sent."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@app.get("/api/companions/{companion_id}/avatar")
+@app.get("/api/companions/{companion_id}/avatar.svg", include_in_schema=False)
+def companion_avatar(companion_id: int, user: dict | None = Depends(auth.optional_user)):
+    # Starter faces are public (they appear on the welcome page); others follow companion visibility.
     c = companions.get(companion_id)
-    return Response(render_svg(Avatar.model_validate(c["persona"]["avatar"])), media_type=SVG,
-                    headers={"Cache-Control": "no-cache"})
+    if not companions.visible_to(c, user["id"] if user else None):
+        raise HTTPException(404, "Companion not found")
+    with db.connect() as conn:
+        photo = conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?", (companion_id,)).fetchone()
+    if photo:
+        return Response(photo["data"], media_type=photo["mime"], headers=IMAGE_HEADERS)
+    return Response(render_svg(Avatar.model_validate(c["persona"]["avatar"])), media_type=SVG, headers=IMAGE_HEADERS)
+
+
+@app.put("/api/companions/{companion_id}/photo", status_code=204)
+async def upload_photo(companion_id: int, request: Request, user: dict = User):
+    """Raw image bytes in the body (PNG, JPEG or WebP, up to 2 MB)."""
+    companions.get_owned(companion_id, user["id"])
+    if int(request.headers.get("content-length") or 0) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "Photos can be up to 2 MB")
+    data = bytearray()
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > MAX_PHOTO_BYTES:
+            raise HTTPException(413, "Photos can be up to 2 MB")
+    mime = _image_type(bytes(data))
+    if mime is None:
+        raise HTTPException(415, "Upload a PNG, JPEG or WebP image")
+    ts = db.now()
+    with db.connect() as conn:
+        conn.execute("INSERT OR REPLACE INTO companion_photos (companion_id, mime, data, updated_at) VALUES (?, ?, ?, ?)",
+                     (companion_id, mime, bytes(data), ts))
+        conn.execute("UPDATE companions SET updated_at = ? WHERE id = ?", (ts, companion_id))
+
+
+@app.delete("/api/companions/{companion_id}/photo", status_code=204)
+def delete_photo(companion_id: int, user: dict = User):
+    companions.get_owned(companion_id, user["id"])
+    with db.connect() as conn:
+        conn.execute("DELETE FROM companion_photos WHERE companion_id = ?", (companion_id,))
+        conn.execute("UPDATE companions SET updated_at = ? WHERE id = ?", (db.now(), companion_id))
 
 
 @app.post("/api/avatar/preview")
@@ -329,12 +405,12 @@ def get_messages(companion_id: int, user: dict = User):
 @app.post("/api/companions/{companion_id}/chat")
 async def chat(companion_id: int, body: ChatIn, user: dict = User):
     c = companions.get_visible(companion_id, user["id"])
-    persona = Persona.model_validate(c["persona"])
+    persona = companions.persona_for(c, user["id"])
     post = _visible_post(body.post_id, user["id"]) if body.post_id else None
     if post:
         content.record(user["id"], post["id"], "ask")
     elif body.lesson_id:
-        post = learning.lesson_context(companion_id, body.lesson_id)
+        post = learning.lesson_context(user["id"], companion_id, body.lesson_id)
     learning.record_activity(user["id"])
 
     with db.connect() as conn:

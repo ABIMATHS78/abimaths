@@ -5,7 +5,7 @@ expertise area. They publish content automatically (see app.content), and
 learners can follow them, chat with them, or remix them into their own companion.
 """
 
-from app.persona import Avatar, Persona, Personality, WritingStyle
+from app.persona import Avatar, Persona, Personality, Voice, WritingStyle
 
 STARTER_COMPANIONS: dict[str, Persona] = {
     "adaeze-nigeria": Persona(
@@ -30,6 +30,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#7A4B2A", hair_style="braids", hair_color="#1A0F08", background="#00A86B",
                       accessory="earrings", accessory_color="#F5C542", expression="grin", shirt="#F2F2F2"),
+        voice=Voice(lang="en-NG", rate=1.0, pitch=1.05),
         interests=["Afrobeats", "football", "fintech"],
     ),
     "haruto-japan": Persona(
@@ -53,6 +54,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#F1C27D", hair_style="short", hair_color="#111111", background="#BC002D",
                       accessory="glasses", accessory_color="#333333", expression="calm", shirt="#2D3436"),
+        voice=Voice(lang="en-US", rate=0.92, pitch=0.9),
         interests=["kaizen", "trains", "bonsai"],
     ),
     "camila-brazil": Persona(
@@ -76,6 +78,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#C68642", hair_style="curly", hair_color="#3B2219", background="#FFB800",
                       accessory="headphones", accessory_color="#009C3B", expression="grin", shirt="#009C3B"),
+        voice=Voice(lang="en-US", rate=1.1, pitch=1.15),
         interests=["carnival", "music production", "street art"],
     ),
     "arjun-india": Persona(
@@ -99,6 +102,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#A0522D", hair_style="waves", hair_color="#1B1B1B", background="#FF9933",
                       accessory="round_glasses", accessory_color="#5D4037", expression="curious", shirt="#138808"),
+        voice=Voice(lang="en-IN", rate=1.0, pitch=1.0),
         interests=["cricket", "chess", "classical music"],
     ),
     "lena-germany": Persona(
@@ -122,6 +126,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#FFDBAC", hair_style="bun", hair_color="#B8860B", background="#2F3640",
                       accessory="glasses", accessory_color="#1E1E1E", expression="calm", shirt="#DD0000"),
+        voice=Voice(lang="en-GB", rate=0.95, pitch=0.95),
         interests=["cycling", "philosophy", "techno"],
     ),
     "wanjiru-kenya": Persona(
@@ -146,6 +151,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         avatar=Avatar(skin="#5C3A21", hair_style="afro", hair_color="#0D0D0D",
                       background="#BB0000", accessory="headwrap", accessory_color="#006600",
                       expression="smile", shirt="#000000"),
+        voice=Voice(lang="en-KE", rate=1.0, pitch=1.05),
         interests=["athletics", "agritech", "entrepreneurship"],
     ),
     "maya-usa": Persona(
@@ -169,6 +175,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#E0AC69", hair_style="long", hair_color="#4A2C17", background="#3C3B6E",
                       accessory="cap", accessory_color="#B22234", expression="grin", shirt="#5F6A6A"),
+        voice=Voice(lang="en-US", rate=1.1, pitch=1.0),
         interests=["hiking", "coffee", "open source"],
     ),
     "sofia-mexico": Persona(
@@ -192,6 +199,7 @@ STARTER_COMPANIONS: dict[str, Persona] = {
         ),
         avatar=Avatar(skin="#D19A6A", hair_style="long", hair_color="#1C0F0A", background="#006847",
                       accessory="earrings", accessory_color="#CE1126", expression="smile", shirt="#CE1126"),
+        voice=Voice(lang="en-US", rate=1.0, pitch=1.1),
         interests=["muralism", "food", "folk music"],
     ),
 }

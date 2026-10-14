@@ -58,6 +58,14 @@ def current_user(aiet_session: str | None = Cookie(default=None)) -> dict:
     return dict(row)
 
 
+def optional_user(aiet_session: str | None = Cookie(default=None)) -> dict | None:
+    """FastAPI dependency: the signed-in user, or None for anonymous visitors."""
+    try:
+        return current_user(aiet_session)
+    except HTTPException:
+        return None
+
+
 def public_user(u: dict) -> dict:
     return {k: u[k] for k in ("id", "email", "display_name", "level", "goals", "primary_companion_id", "onboarded")} | {
         "onboarded": bool(u["onboarded"])

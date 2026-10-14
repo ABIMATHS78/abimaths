@@ -145,6 +145,28 @@ CREATE TABLE IF NOT EXISTS study_plans (
     plan TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- Community: reports against published companions.
+CREATE TABLE IF NOT EXISTS reports (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    reason TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, companion_id)
+);
+CREATE TABLE IF NOT EXISTS companion_photos (
+    companion_id INTEGER PRIMARY KEY REFERENCES companions(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL,
+    data BLOB NOT NULL,
+    updated_at TEXT NOT NULL
+);
+-- Learning paths a companion designed for one learner on a topic they chose.
+CREATE TABLE IF NOT EXISTS custom_paths (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    companion_id INTEGER REFERENCES companions(id) ON DELETE SET NULL,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS activity (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -172,10 +194,34 @@ def connect() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS won't add them to
+# existing databases, so they are added here when missing.
+MIGRATIONS = [
+    ("companions", "is_public", "INTEGER NOT NULL DEFAULT 0"),
+    ("companions", "hidden", "INTEGER NOT NULL DEFAULT 0"),
+    ("companions", "published_at", "TEXT"),
+    ("users", "feed_seen_post_id", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
 def init_db() -> None:
     with connect() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
+        for table, column, ddl in MIGRATIONS:
+            cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in cols:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def _with_defaults(persona: dict) -> dict:
+    """Fill in fields added after a companion was saved (e.g. voice) so every client sees the full shape."""
+    from app.persona import Persona
+
+    try:
+        return Persona.model_validate(persona).model_dump()
+    except ValueError:
+        return persona
 
 
 def row_to_companion(row: sqlite3.Row) -> dict:
@@ -185,7 +231,10 @@ def row_to_companion(row: sqlite3.Row) -> dict:
         "owner_id": row["owner_id"],
         "is_starter": bool(row["is_starter"]),
         "remixed_from": row["remixed_from"],
-        "persona": json.loads(row["persona"]),
+        "is_public": bool(row["is_public"]),
+        "hidden": bool(row["hidden"]),
+        "published_at": row["published_at"],
+        "persona": _with_defaults(json.loads(row["persona"])),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }

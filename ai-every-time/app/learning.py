@@ -12,8 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app import auth, companions, content, db, tutor
-from app.curriculum import PATHS, PATHS_BY_ID, LearningPath, Lesson, find_lesson, lesson_brief
-from app.persona import Persona
+from app.curriculum import PATHS, PATHS_BY_ID, LearningPath, Lesson, find_lesson, lesson_brief, path_from_dict
 
 router = APIRouter(prefix="/api")
 User = Depends(auth.current_user)
@@ -45,14 +44,46 @@ def teacher_for(user: dict, companion_id: int | None) -> dict:
     if companion_id:
         return companions.get_visible(companion_id, user["id"])
     if user.get("primary_companion_id"):
-        return companions.get_visible(user["primary_companion_id"], user["id"])
+        try:
+            return companions.get_visible(user["primary_companion_id"], user["id"])
+        except HTTPException:
+            pass  # e.g. a community companion its designer has since unpublished
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM companions WHERE is_starter = 1 ORDER BY id LIMIT 1").fetchone()
     return db.row_to_companion(row)
 
 
-def _lesson_or_404(lesson_id: str) -> tuple[LearningPath, Lesson]:
+CUSTOM_PREFIX = "custom-"
+
+
+def custom_paths(user_id: int) -> list[LearningPath]:
+    with db.connect() as conn:
+        rows = conn.execute("SELECT id, data FROM custom_paths WHERE user_id = ? ORDER BY id", (user_id,)).fetchall()
+    return [path_from_dict(f"{CUSTOM_PREFIX}{r['id']}", json.loads(r["data"])) for r in rows]
+
+
+def user_paths(user_id: int) -> list[LearningPath]:
+    """The curated paths plus any paths this learner's companion designed for them."""
+    return list(PATHS) + custom_paths(user_id)
+
+
+def path_for(user_id: int, path_id: str) -> LearningPath | None:
+    if path_id in PATHS_BY_ID:
+        return PATHS_BY_ID[path_id]
+    return next((p for p in custom_paths(user_id) if p.id == path_id), None) if path_id.startswith(CUSTOM_PREFIX) else None
+
+
+def find_for(user_id: int, lesson_id: str) -> tuple[LearningPath, Lesson] | None:
     found = find_lesson(lesson_id)
+    if found or not lesson_id.startswith(CUSTOM_PREFIX):
+        return found
+    path = path_for(user_id, lesson_id.rsplit("-", 1)[0])
+    lesson = next((l for l in path.lessons if l.id == lesson_id), None) if path else None
+    return (path, lesson) if lesson else None
+
+
+def _lesson_or_404(user_id: int, lesson_id: str) -> tuple[LearningPath, Lesson]:
+    found = find_for(user_id, lesson_id)
     if not found:
         raise HTTPException(404, "Lesson not found")
     return found
@@ -65,9 +96,9 @@ def _cached_lesson(companion_id: int, lesson_id: str) -> str | None:
     return row["body"] if row else None
 
 
-def lesson_context(companion_id: int, lesson_id: str) -> dict:
+def lesson_context(user_id: int, companion_id: int, lesson_id: str) -> dict:
     """What a companion needs to tutor a learner through a lesson (used by chat)."""
-    path, lesson = _lesson_or_404(lesson_id)
+    path, lesson = _lesson_or_404(user_id, lesson_id)
     body = lesson_brief(lesson)
     taught = _cached_lesson(companion_id, lesson_id)
     if taught:
@@ -78,12 +109,12 @@ def lesson_context(companion_id: int, lesson_id: str) -> dict:
 def _material(user: dict, teacher: dict, source_type: str, source_ref: str) -> tuple[str, str, list[Lesson]]:
     """Return (title, material text, lessons covered) for a study source the learner can see."""
     if source_type == "lesson":
-        path, lesson = _lesson_or_404(source_ref)
+        path, lesson = _lesson_or_404(user["id"], source_ref)
         text = lesson_brief(lesson)
         taught = _cached_lesson(teacher["id"], lesson.id)
         return lesson.title, f"Lesson id: {lesson.id}\n{text}" + (f"\n\nLesson as taught:\n{taught}" if taught else ""), [lesson]
     if source_type == "path":
-        path = PATHS_BY_ID.get(source_ref)
+        path = path_for(user["id"], source_ref)
         if not path:
             raise HTTPException(404, "Learning path not found")
         text = "\n\n".join(f"Lesson id: {l.id}\n{lesson_brief(l)}" for l in path.lessons)
@@ -139,22 +170,62 @@ def _path_view(path: LearningPath, stats: dict[str, dict]) -> dict:
                 "best_score": stats.get(l.id, {}).get("best")} for l in path.lessons]
     done = sum(l["status"] == "completed" for l in lessons)
     return {"id": path.id, "title": path.title, "description": path.description, "level": path.level,
-            "topic": path.topic, "lessons": lessons, "completed": done, "total": len(lessons)}
+            "topic": path.topic, "lessons": lessons, "completed": done, "total": len(lessons),
+            "custom": path.id.startswith(CUSTOM_PREFIX)}
 
 
 @router.get("/paths")
 def list_paths(user: dict = User):
     stats = _lesson_stats(user["id"])
-    return [_path_view(p, stats) for p in PATHS]
+    return [_path_view(p, stats) for p in user_paths(user["id"])]
+
+
+class NewCustomPath(BaseModel):
+    topic: str = Field(min_length=3, max_length=120)
+    level: Literal["beginner", "intermediate", "advanced"] = "beginner"
+    lessons: int = Field(5, ge=3, le=8)
+    companion_id: int | None = None
+
+
+MAX_CUSTOM_PATHS = 20
+
+
+@router.post("/custom-paths", status_code=201)
+async def create_custom_path(body: NewCustomPath, user: dict = User):
+    with db.connect() as conn:
+        if conn.execute("SELECT COUNT(*) FROM custom_paths WHERE user_id = ?", (user["id"],)).fetchone()[0] >= MAX_CUSTOM_PATHS:
+            raise HTTPException(409, f"You can have up to {MAX_CUSTOM_PATHS} custom paths. Delete one to make another.")
+    teacher = teacher_for(user, body.companion_id)
+    data = await tutor.design_path(companions.persona_for(teacher, user["id"]), user, body.topic.strip(), body.level, body.lessons)
+    if data is None:
+        raise HTTPException(502, "Your companion couldn't design that path right now. Try again or rephrase the topic.")
+    with db.connect() as conn:
+        cur = conn.execute("INSERT INTO custom_paths (user_id, companion_id, data, created_at) VALUES (?, ?, ?, ?)",
+                           (user["id"], teacher["id"], json.dumps(data), db.now()))
+    return _path_view(path_from_dict(f"{CUSTOM_PREFIX}{cur.lastrowid}", data), {})
+
+
+@router.delete("/custom-paths/{path_id}", status_code=204)
+def delete_custom_path(path_id: str, user: dict = User):
+    path = path_for(user["id"], path_id) if path_id.startswith(CUSTOM_PREFIX) else None
+    if path is None:
+        raise HTTPException(404, "Custom path not found")
+    ids = [l.id for l in path.lessons]
+    marks = ",".join("?" * len(ids))
+    with db.connect() as conn:
+        conn.execute("DELETE FROM custom_paths WHERE id = ? AND user_id = ?", (int(path_id[len(CUSTOM_PREFIX):]), user["id"]))
+        conn.execute(f"DELETE FROM lesson_progress WHERE user_id = ? AND lesson_id IN ({marks})", (user["id"], *ids))
+        conn.execute(f"DELETE FROM lesson_content WHERE lesson_id IN ({marks})", ids)
 
 
 @router.get("/lessons/{lesson_id}")
 async def get_lesson(lesson_id: str, companion_id: int | None = None, user: dict = User):
-    path, lesson = _lesson_or_404(lesson_id)
+    path, lesson = _lesson_or_404(user["id"], lesson_id)
     teacher = teacher_for(user, companion_id)
     body = _cached_lesson(teacher["id"], lesson_id)
     if body is None:
-        body = await tutor.teach_lesson(Persona.model_validate(teacher["persona"]), path, lesson)
+        # Cached lessons are shared by everyone this companion teaches, so no learner's custom instructions.
+        body = await tutor.teach_lesson(companions.persona_for(teacher, None), path, lesson)
         if body is None:
             raise HTTPException(502, "Your companion couldn't prepare this lesson right now. Try again.")
         with db.connect() as conn:
@@ -179,7 +250,7 @@ async def get_lesson(lesson_id: str, companion_id: int | None = None, user: dict
 
 @router.post("/lessons/{lesson_id}/complete", status_code=204)
 def complete_lesson(lesson_id: str, user: dict = User):
-    _lesson_or_404(lesson_id)
+    _lesson_or_404(user["id"], lesson_id)
     with db.connect() as conn:
         conn.execute("INSERT INTO lesson_progress (user_id, lesson_id, status, updated_at) VALUES (?, ?, 'completed', ?) "
                      "ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'completed', updated_at = excluded.updated_at",
@@ -236,7 +307,7 @@ async def create_assessment(body: NewAssessment, user: dict = User):
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
     exam = body.kind == "exam"
     n = EXAM_QUESTIONS if exam else QUIZ_QUESTIONS
-    questions = await tutor.make_questions(Persona.model_validate(teacher["persona"]), user, material, n, lessons, exam)
+    questions = await tutor.make_questions(companions.persona_for(teacher, user["id"]), user, material, n, lessons, exam)
     if not questions:
         raise HTTPException(502, "Your companion couldn't write questions right now. Try again.")
     with db.connect() as conn:
@@ -287,7 +358,7 @@ def submit_assessment(assessment_id: int, body: Submission, user: dict = User):
             if q["lesson_id"]:
                 by_lesson.setdefault(q["lesson_id"], []).append(q["correct"])
         result["by_lesson"] = [
-            {"lesson_id": lid, "title": find_lesson(lid)[1].title, "correct": sum(m), "total": len(m)}
+            {"lesson_id": lid, "title": find_for(user["id"], lid)[1].title, "correct": sum(m), "total": len(m)}
             for lid, m in by_lesson.items()
         ]
     return result
@@ -324,7 +395,7 @@ def _deck_summaries(user_id: int, deck_id: int | None = None) -> list[dict]:
 async def create_deck(body: NewDeck, user: dict = User):
     teacher = teacher_for(user, body.companion_id)
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
-    cards = await tutor.make_cards(Persona.model_validate(teacher["persona"]), user, material, body.count, lessons)
+    cards = await tutor.make_cards(companions.persona_for(teacher, user["id"]), user, material, body.count, lessons)
     if not cards:
         raise HTTPException(502, "Your companion couldn't make flashcards right now. Try again.")
     now = db.now()
@@ -409,7 +480,7 @@ async def make_summary(body: NewSummary, user: dict = User):
     if body.source_type == "lesson":
         taught = _cached_lesson(teacher["id"], body.source_ref)
         material = taught or material
-    summary = await tutor.summarize(Persona.model_validate(teacher["persona"]), user, title, material)
+    summary = await tutor.summarize(companions.persona_for(teacher, user["id"]), user, title, material)
     if summary is None:
         raise HTTPException(502, "Your companion couldn't summarise this right now. Try again.")
     record_activity(user["id"])
@@ -422,7 +493,7 @@ async def make_summary(body: NewSummary, user: dict = User):
 class NewPlan(BaseModel):
     weekly_minutes: int = Field(120, ge=30, le=1200)
     weeks: int = Field(4, ge=1, le=12)
-    paths: list[str] = Field(default_factory=list, max_length=len(PATHS))
+    paths: list[str] = Field(default_factory=list, max_length=50)
     companion_id: int | None = None
 
 
@@ -439,9 +510,9 @@ def _plan_view(row: dict, user_id: int) -> dict:
             "SELECT source_ref FROM decks WHERE user_id = ? AND created_at >= ?", (user_id, since))}
     for week in plan["weeks"]:
         # Drop items whose lesson has since been removed from the curriculum.
-        week["items"] = [i for i in week["items"] if find_lesson(i["lesson_id"])]
+        week["items"] = [i for i in week["items"] if find_for(user_id, i["lesson_id"])]
         for item in week["items"]:
-            path, lesson = find_lesson(item["lesson_id"])
+            path, lesson = find_for(user_id, item["lesson_id"])
             item |= {"title": lesson.title, "path_id": path.id, "path_title": path.title}
             item["done"] = {
                 "lesson": stats.get(lesson.id, {}).get("status") == "completed",
@@ -465,7 +536,8 @@ def get_plan(user: dict = User):
 
 @router.post("/study-plan", status_code=201)
 async def create_plan(body: NewPlan, user: dict = User):
-    unknown = [p for p in body.paths if p not in PATHS_BY_ID]
+    available = user_paths(user["id"])
+    unknown = [p for p in body.paths if p not in {a.id for a in available}]
     if unknown:
         raise HTTPException(422, f"Unknown learning path: {', '.join(unknown)}")
     teacher = teacher_for(user, body.companion_id)
@@ -475,8 +547,9 @@ async def create_plan(body: NewPlan, user: dict = User):
     with db.connect() as conn:
         memories = [r["fact"] for r in conn.execute(
             "SELECT fact FROM memories WHERE user_id = ? AND companion_id = ?", (user["id"], teacher["id"]))]
-    plan = await tutor.plan_study(Persona.model_validate(teacher["persona"]), user, memories, completed, scores,
-                                  body.weekly_minutes, body.weeks, body.paths)
+    plan = await tutor.plan_study(companions.persona_for(teacher, user["id"]), user, memories, completed, scores,
+                                  body.weekly_minutes, body.weeks,
+                                  [p for p in available if not body.paths or p.id in body.paths])
     if plan is None or not any(w.items for w in plan.weeks):
         raise HTTPException(502, "Your companion couldn't build a plan right now. Try again.")
     plan.weeks = [w for w in plan.weeks if w.items]
@@ -505,7 +578,7 @@ def _streak(days: set[str]) -> int:
 def progress(user: dict = User):
     uid = user["id"]
     stats = _lesson_stats(uid)
-    paths = [_path_view(p, stats) for p in PATHS]
+    paths = [_path_view(p, stats) for p in user_paths(uid)]
     with db.connect() as conn:
         days = {r["day"] for r in conn.execute("SELECT day FROM activity WHERE user_id = ?", (uid,))}
         quiz = conn.execute("SELECT COUNT(*) AS n, AVG(100.0 * score / total) AS avg FROM assessments "
@@ -519,8 +592,8 @@ def progress(user: dict = User):
     today = _utcnow().date()
     week = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     needs_review = [
-        {"lesson_id": lid, "title": find_lesson(lid)[1].title, "best_score": s["best"]}
-        for lid, s in stats.items() if find_lesson(lid) and s.get("best") is not None and s["best"] < PASS_MARK
+        {"lesson_id": lid, "title": find_for(uid, lid)[1].title, "best_score": s["best"]}
+        for lid, s in stats.items() if find_for(uid, lid) and s.get("best") is not None and s["best"] < PASS_MARK
     ]
     next_lesson = next(({"lesson_id": l["id"], "title": l["title"], "path_title": p["title"]}
                         for p in paths for l in p["lessons"] if l["status"] != "completed"), None)

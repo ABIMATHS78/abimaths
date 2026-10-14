@@ -215,8 +215,8 @@ async def summarize(persona: Persona, learner: dict, what: str, material: str) -
 
 
 async def plan_study(persona: Persona, learner: dict, memories: list[str], completed: set[str],
-                     quiz_scores: dict[str, int], weekly_minutes: int, weeks: int, focus_paths: list[str]) -> StudyPlan | None:
-    paths = [p for p in PATHS if not focus_paths or p.id in focus_paths]
+                     quiz_scores: dict[str, int], weekly_minutes: int, weeks: int,
+                     paths: list[LearningPath]) -> StudyPlan | None:
     valid = {l.id for p in paths for l in p.lessons}
     if settings.offline:
         plan = _offline_plan(paths, completed, weekly_minutes, weeks)
@@ -263,3 +263,65 @@ def _offline_plan(paths: list[LearningPath], completed: set[str], weekly_minutes
             out.append(PlanWeek(week=w, focus=" and ".join(focus), items=items))
     return StudyPlan(overview="A steady plan that works through your paths in order with a quiz after each lesson. "
                               "(Demo mode plan.)", weeks=out)
+
+
+# -------------------------------------------------------------- custom paths
+
+
+class DesignedLesson(BaseModel):
+    title: str = Field(description="Specific lesson title, under 70 characters.")
+    objectives: list[str] = Field(description="2-3 learning objectives starting with a verb.")
+    key_points: list[str] = Field(description="3-5 accurate, well-established facts the lesson must teach, one sentence each.")
+    minutes: int = Field(description="Estimated minutes, 5-20.")
+
+
+class DesignedPath(BaseModel):
+    title: str = Field(description="Path title, under 60 characters.")
+    description: str = Field(description="One or two sentences on what the learner will be able to do.")
+    lessons: list[DesignedLesson]
+
+
+async def design_path(persona: Persona, learner: dict, topic: str, level: str, n_lessons: int) -> dict | None:
+    """Design a learning path on a topic the learner chose. Returns the stored JSON shape."""
+    if settings.offline:
+        designed = _offline_path(topic, n_lessons)
+    else:
+        prompt = (
+            f"Design a {n_lessons}-lesson learning path on this topic: {topic!r}, for a {level} learner. "
+            f"{_learner_line(learner)}\n"
+            "Order lessons from foundations to application, each building on the last. Key points must be accurate "
+            "and well established; leave out anything contested, fast-changing or that you are unsure of. If the topic "
+            "is not about AI or technology, design the path around how AI relates to it."
+        )
+        designed = await _parse(persona, prompt, DesignedPath, effort="high")
+    if designed is None:
+        return None
+    lessons = [
+        {"title": l.title.strip()[:90], "objectives": [o.strip()[:200] for o in l.objectives if o.strip()][:3],
+         "key_points": [k.strip()[:300] for k in l.key_points if k.strip()][:5],
+         "minutes": max(5, min(20, l.minutes))}
+        for l in designed.lessons
+    ]
+    lessons = [l for l in lessons if l["title"] and l["objectives"] and len(l["key_points"]) >= 2][:n_lessons]
+    if not lessons:
+        return None
+    return {"title": designed.title.strip()[:80], "description": designed.description.strip()[:400],
+            "level": level, "topic": topic, "lessons": lessons}
+
+
+def _offline_path(topic: str, n: int) -> DesignedPath:
+    stages = [
+        ("What {t} is", "Explain what {t} means", "{T} is the topic of this demo path; real paths are designed by your companion."),
+        ("Why {t} matters", "Describe why {t} is useful", "Understanding {t} helps you judge where AI fits."),
+        ("Key ideas in {t}", "Name the core ideas of {t}", "Every field has a few core ideas worth learning first."),
+        ("{T} in practice", "Apply {t} to a real example", "Practising on real examples makes ideas stick."),
+        ("Risks and limits of {t}", "Recognise the limits of {t}", "Knowing the limits of a tool is part of using it well."),
+        ("Next steps with {t}", "Plan what to learn next about {t}", "Learning is a loop: try, reflect, and go deeper."),
+    ]
+    t, T = topic.strip(), topic.strip()[:1].upper() + topic.strip()[1:]
+    lessons = [
+        DesignedLesson(title=a.format(t=t, T=T), objectives=[b.format(t=t, T=T)],
+                       key_points=[c.format(t=t, T=T), "(Demo mode: set ANTHROPIC_API_KEY for a real path.)"], minutes=10)
+        for a, b, c in (stages * 2)[:n]
+    ]
+    return DesignedPath(title=f"{T}: a learning path", description=f"A demo path about {t}.", lessons=lessons)
