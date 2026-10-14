@@ -75,7 +75,8 @@ def send(msg: EmailMessage) -> None:
 
 
 def due_digests(now: datetime | None = None) -> list[tuple[dict, list[dict], str]]:
-    """Learners who should get today's email, with their reminders. Marks them as done for their day."""
+    """Learners who should get today's email, with their reminders. Each is claimed for their day
+    before it's sent, so it goes out at most once a day."""
     now = now or datetime.now(timezone.utc)
     out, users = [], []
     with db.connect() as conn:
@@ -83,11 +84,16 @@ def due_digests(now: datetime | None = None) -> list[tuple[dict, list[dict], str
             local = learning.local_now(u, now)
             today = local.date().isoformat()
             if local.hour >= reminders.reminder_hour(u) and (u["last_digest_on"] or "") < today:
-                conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?", (today, u["id"]))
-                users.append(u)
+                if conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ? AND COALESCE(last_digest_on, '') < ?",
+                                (today, u["id"], today)).rowcount:
+                    users.append(u)
     for u in users:
-        # Notices, streaks and due work matter in an email; new posts alone aren't worth one.
-        items = [r for r in reminders.reminders(u) if r["kind"] != "new_posts"]
+        try:
+            # Notices, streaks and due work matter in an email; new posts alone aren't worth one.
+            items = [r for r in reminders.reminders(u) if r["kind"] != "new_posts"]
+        except Exception:
+            log.exception("reminders for user %s failed", u["id"])
+            continue
         if items:
             with db.connect() as conn:
                 out.append((u, items, ensure_token(conn, u["id"])))

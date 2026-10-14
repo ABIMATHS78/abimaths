@@ -40,7 +40,7 @@ def local_now(user: dict, now: datetime | None = None) -> datetime:
     now = now or _utcnow()
     try:
         return now.astimezone(ZoneInfo(user.get("timezone") or "UTC"))
-    except (ZoneInfoNotFoundError, ValueError):
+    except (ZoneInfoNotFoundError, ValueError, OSError):
         return now.astimezone(timezone.utc)
 
 

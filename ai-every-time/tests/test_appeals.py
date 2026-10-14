@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.test_app import signup
+from tests.test_app import persona, signup
 from tests.test_community import as_user
 from tests.test_staff import make_path, reported_zara
 
@@ -96,6 +96,32 @@ def test_upheld_appeal_is_final_for_that_removal(client, staff):
     assert client.post(f"/api/companions/{zara['id']}/appeal", json={"message": MESSAGE}).status_code == 409
     assert client.post(f"/api/companions/{zara['id']}/publish").status_code == 409  # still can't be republished
     assert any("removal stands" in r["text"] for r in client.get("/api/reminders").json() if r["kind"] == "notice")
+
+
+def test_moderators_cant_decide_their_own_appeals(client, staff):
+    staff(client)
+    # Mo, a moderator, designs a companion that Boss then removes.
+    as_user(client, "mo@example.com", "Mo")
+    mine = client.post("/api/companions", json={"persona": persona()}).json()
+    client.post(f"/api/companions/{mine['id']}/publish")
+    as_user(client, "boss@example.com", "Boss")
+    client.post(f"/api/staff/companions/{mine['id']}", json={"action": "remove", "note": "Pretends to be a real teacher."})
+    as_user(client, "mo@example.com", "Mo")
+    assert client.post(f"/api/companions/{mine['id']}/appeal", json={"message": MESSAGE}).status_code == 201
+
+    [item] = client.get("/api/staff/appeals").json()
+    assert item["can_decide"] is False
+    assert client.post(f"/api/staff/appeals/{item['id']}", json={"decision": "overturn"}).status_code == 403
+    assert not [r for r in client.get("/api/reminders").json() if r["link"] == "#/staff/appeals"]
+    assert client.get(f"/api/companions/{mine['id']}").json()["removed"]
+
+    # A third moderator gives it the second look.
+    as_user(client, "kai@example.com", "Kai")
+    kai = client.get("/api/me").json()
+    as_user(client, "boss@example.com", "Boss")
+    client.post(f"/api/staff/users/{kai['id']}/role", json={"role": "moderator"})
+    as_user(client, "kai@example.com", "Kai")
+    assert client.post(f"/api/staff/appeals/{item['id']}", json={"decision": "overturn"}).status_code == 200
 
 
 def test_only_your_own_removed_companions_can_be_appealed(client, staff):

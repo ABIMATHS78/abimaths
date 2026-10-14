@@ -6,6 +6,7 @@ explaining it."""
 from __future__ import annotations
 
 import json
+import sqlite3
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -117,10 +118,11 @@ def appeal(user: dict, companion_id: int, body: AppealIn) -> dict:
         removal = latest_removal(conn, companion_id) if c["removed"] else None
         if removal is None:
             raise HTTPException(409, "Only a companion a moderator removed from the community can be appealed")
-        if conn.execute("SELECT 1 FROM appeals WHERE removal_id = ?", (removal["id"],)).fetchone():
+        try:
+            conn.execute("INSERT INTO appeals (companion_id, user_id, removal_id, message, created_at) VALUES (?, ?, ?, ?, ?)",
+                         (companion_id, user["id"], removal["id"], body.message.strip(), db.now()))
+        except sqlite3.IntegrityError:  # one appeal per removal
             raise HTTPException(409, "You've already appealed this decision")
-        conn.execute("INSERT INTO appeals (companion_id, user_id, removal_id, message, created_at) VALUES (?, ?, ?, ?, ?)",
-                     (companion_id, user["id"], removal["id"], body.message.strip(), db.now()))
     return moderation_for_owner(db.row_to_companion(c))
 
 
@@ -141,8 +143,8 @@ def appeals_queue(status: Literal["open", "upheld", "overturned"] = "open", user
         "decision_note": r["decision_note"], "decided_at": r["decided_at"], "decided_by": r["decided_by_name"],
         "designer": r["designer"], "companion": found[r["companion_id"]],
         "removal": {"note": r["removal_note"], "at": r["removed_at"], "by": r["removed_by_name"]},
-        # A second look means someone other than the moderator who removed it.
-        "can_decide": r["removed_by"] != user["id"],
+        # A second look means someone other than the moderator who removed it, and not the designer.
+        "can_decide": user["id"] not in (r["removed_by"], r["user_id"]),
     } for r in rows]
 
 
@@ -156,16 +158,22 @@ def decide_appeal(appeal_id: int, body: AppealDecision, user: dict = Moderator):
     """overturn: put the companion back in the community. uphold: the removal stands, and the appeal is closed."""
     note = body.note.strip()
     with db.connect() as conn:
+        # Take the write lock first, so two moderators deciding at once can't both act on an open appeal.
+        conn.execute("BEGIN IMMEDIATE")
         a = conn.execute("SELECT a.*, l.staff_id AS removed_by FROM appeals a JOIN moderation_log l ON l.id = a.removal_id "
                          "WHERE a.id = ?", (appeal_id,)).fetchone()
         if a is None:
             raise HTTPException(404, "Appeal not found")
         if a["status"] != "open":
             raise HTTPException(409, f"This appeal was already decided ({a['status']})")
+        if a["user_id"] == user["id"]:
+            raise HTTPException(403, "This is your own appeal. Another moderator will decide it.")
         if a["removed_by"] == user["id"]:
             raise HTTPException(403, "You removed this companion. Ask another moderator to take the second look.")
         if body.decision == "uphold" and not note:
             raise HTTPException(422, "Explain to the designer why the removal stands")
+        conn.execute("UPDATE appeals SET status = ?, decided_by = ?, decision_note = ?, decided_at = ? WHERE id = ?",
+                     ("overturned" if body.decision == "overturn" else "upheld", user["id"], note, db.now(), appeal_id))
         c = conn.execute("SELECT * FROM companions WHERE id = ?", (a["companion_id"],)).fetchone()
         name = json.loads(c["persona"])["name"]
         if body.decision == "overturn":
@@ -174,8 +182,6 @@ def decide_appeal(appeal_id: int, body: AppealDecision, user: dict = Moderator):
             text = f"Your appeal was accepted: {name} is back in the community." + (f" {note}" if note else "")
         else:
             text = f"Your appeal about {name} had a second look, and the removal stands: {note}"
-        conn.execute("UPDATE appeals SET status = ?, decided_by = ?, decision_note = ?, decided_at = ? WHERE id = ?",
-                     ("overturned" if body.decision == "overturn" else "upheld", user["id"], note, db.now(), appeal_id))
         log(conn, user["id"], "companion", c["id"], f"appeal:{body.decision}", note)
         notify(conn, a["user_id"], text, f"#/c/{c['id']}")
     return {"ok": True}

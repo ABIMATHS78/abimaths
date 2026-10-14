@@ -241,12 +241,15 @@ async function router() {
   const hash = location.hash || "#/feed";
   if (!state.me) {
     // Not api(): its sign-in redirect would pull pages open to everyone, like the reset link, back to the welcome page.
+    const nav = state.nav;
     const res = await fetch("/api/me", { credentials: "same-origin" }).catch(() => null);
-    state.me = res?.ok ? await res.json() : null;
+    const me = res?.ok ? await res.json() : null;
+    if (nav !== state.nav) return;  // a newer navigation took over while this one waited
+    state.me = me;
   }
   // Reminders follow the learner's own day, so learn their time zone the first time we can.
-  if (state.me && !state.me.timezone && deviceZone) {
-    state.me.timezone = deviceZone;
+  if (state.me && !state.me.timezone && deviceZone && state.zoneSentFor !== state.me.id) {
+    state.zoneSentFor = state.me.id;
     api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }).then((me) => { state.me = me; }).catch(() => {});
   }
   $("#banner").hidden = !state.me?.offline_mode;
@@ -1393,11 +1396,12 @@ function showAppeal(c, onSent) {
     </form>`);
   $("#appealForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+    const nav = state.nav;
     try {
       await api(`/api/companions/${c.id}/appeal`, { method: "POST", body: { message: e.target.message.value.trim() } });
       $("#dialog").close();
       toast("Appeal sent. You'll get a notice when it's decided.");
-      onSent();
+      if (nav === state.nav) onSent();  // not if the learner has moved to another page meanwhile
     } catch (err) { $("#appealErr").textContent = err.message; }
   });
 }

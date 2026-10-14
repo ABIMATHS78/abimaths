@@ -127,6 +127,19 @@ def test_reset_needs_email_set_up(client):
     assert r.status_code == 409 and "isn't set up" in r.json()["detail"]
 
 
+def test_securing_the_account_cancels_reset_links(client, mailbox):
+    signup(client)
+    client.post("/api/auth/forgot", json={"email": "ada@example.com"})
+    assert client.post("/api/me/password", json={"current_password": "correct horse", "new_password": "a new password"}).status_code == 204
+    assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(), "password": "attacker's choice"}).status_code == 400
+
+    client.post("/api/auth/forgot", json={"email": "ada@example.com"})
+    assert client.post("/api/me/sign-out-others", json={}).status_code == 204
+    assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(), "password": "attacker's choice"}).status_code == 400
+    client.post("/api/auth/logout")
+    assert login(client, password="a new password").status_code == 200
+
+
 def test_change_password_and_sign_out_other_devices(client, monkeypatch):
     from app.config import settings
 
@@ -161,6 +174,7 @@ def test_wrong_passwords_are_slowed_down(client):
         assert login(client, password="guess").status_code == 401
     r = login(client)  # even the right password waits now
     assert r.status_code == 429 and "Too many wrong passwords" in r.json()["detail"]
+    assert "reset" not in r.json()["detail"]  # email isn't set up here, so resetting isn't offered
     # Unknown emails behave the same, so this doesn't reveal who has an account.
     for _ in range(account.GUESSES):
         login(client, email="nobody@example.com", password="guess")
@@ -184,6 +198,13 @@ def test_download_my_data(client):
             break
         time.sleep(0.05)
     client.get("/api/lessons/what-is-ai")
+    quiz = client.post("/api/assessments", json={"source_type": "lesson", "source_ref": "what-is-ai"}).json()
+    # Answers stay on the server until the quiz is submitted, in the download too.
+    [unsubmitted] = client.get("/api/me/export").json()["quizzes_and_exams"]
+    assert "answer_index" not in json.dumps(unsubmitted) and "explanation" not in json.dumps(unsubmitted)
+    client.post(f"/api/assessments/{quiz['id']}/submit", json={"answers": [0] * quiz["total"]})
+    [submitted] = client.get("/api/me/export").json()["quizzes_and_exams"]
+    assert all("answer_index" in q and "your_answer" in q for q in submitted["questions"])
     as_user(client, "bo@example.com", "Bo")
     assert client.post("/api/companions/1/chat", json={"message": "Bo's private question"}).status_code == 200
     as_user(client, "ada@example.com", "Ada")

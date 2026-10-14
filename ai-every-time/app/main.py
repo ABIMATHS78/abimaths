@@ -65,8 +65,10 @@ User = Depends(auth.current_user)
 def _known_zone(v: str) -> str:
     if v:
         try:
+            if len(v) > 64:
+                raise ValueError
             ZoneInfo(v)
-        except (ZoneInfoNotFoundError, ValueError):
+        except (ZoneInfoNotFoundError, ValueError, OSError):  # OSError: names that can't be file names
             raise ValueError("unknown time zone")
     return v
 

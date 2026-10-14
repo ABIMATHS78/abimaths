@@ -35,9 +35,10 @@ def _staff_work(user: dict) -> list[dict]:
         if role in auth.CAN["moderate"]:
             reported = conn.execute("SELECT COUNT(DISTINCT r.companion_id) FROM reports r "
                                     "JOIN companions c ON c.id = r.companion_id WHERE c.removed = 0").fetchone()[0]
-            # The moderator who removed a companion can't decide its appeal, so theirs aren't counted.
+            # Only appeals this moderator can decide: not about their own removals, and not their own.
             appeals = conn.execute("SELECT COUNT(*) FROM appeals a JOIN moderation_log l ON l.id = a.removal_id "
-                                   "WHERE a.status = 'open' AND l.staff_id IS NOT ?", (uid,)).fetchone()[0]
+                                   "WHERE a.status = 'open' AND l.staff_id IS NOT ? AND a.user_id != ?",
+                                   (uid, uid)).fetchone()[0]
             if reported:
                 out.append({"kind": "staff", "priority": 1, "count": reported, "link": "#/staff/reports",
                             "text": f"{_plural(reported, 'reported companion')} waiting for a moderator."})

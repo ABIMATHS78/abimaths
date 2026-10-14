@@ -14,6 +14,8 @@ self.addEventListener("push", (event) => {
     icon: "/static/icons/icon-192.png",
     badge: "/static/icons/badge-96.png",
     tag: data.tag || undefined,
+    // Today's reminder replaces yesterday's if it's still showing, and should still alert.
+    renotify: Boolean(data.tag),
     data: { url: data.url || "/#/feed" },
   }));
 });

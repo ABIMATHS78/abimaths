@@ -134,7 +134,11 @@ def test_subscriptions_only_reach_browser_push_services(client, service):
 
     for endpoint in ("http://fcm.googleapis.com/fcm/send/x", "https://evil.example/fcm/send/x",
                      "https://fcm.googleapis.com.evil.example/x", "https://169.254.169.254/latest/meta-data",
-                     "https://fcm.googleapis.com:8443/x", "https://user:pw@fcm.googleapis.com/x", "not a url"):
+                     "https://fcm.googleapis.com:8443/x", "https://user:pw@fcm.googleapis.com/x", "not a url",
+                     # Parsers disagree about backslashes: requests would send these to the host before the "\".
+                     "https://attacker.example\\.fcm.googleapis.com/fcm/send/x", "https://127.0.0.1\\.fcm.googleapis.com/x",
+                     "https://169.254.169.254\\.push.apple.com/x", "https://fcm.googleapis.com\t/x",
+                     "https://fcm.googleapis.com%2f@evil.example/x", "https://fcm.googleapis.com。evil.example/x"):
         assert subscribe(client, Device(endpoint)).status_code == 422, endpoint
     for endpoint in ("https://web.push.apple.com/QF1aB", "https://updates.push.services.mozilla.com/wpush/v2/gAAAA",
                      "https://wns2-par02p.notify.windows.com/w/?token=AAA"):
@@ -157,6 +161,55 @@ def test_subscriptions_only_reach_browser_push_services(client, service):
     assert len(client.get("/api/push/devices").json()) == 1
     assert client.post("/api/push/unsubscribe", json={"endpoint": ok.endpoint}).status_code == 204
     assert client.get("/api/push/devices").json() == []
+
+
+def test_bad_addresses_already_stored_are_never_contacted(client, service):
+    from app import db
+
+    me = signup(client)
+    sneaky = Device("https://127.0.0.1\\.fcm.googleapis.com/x").subscription()
+    with db.connect() as conn:  # e.g. saved before the rules were tightened
+        conn.execute("INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, created_at) VALUES (?, ?, ?, ?, ?)",
+                     (me["id"], sneaky["endpoint"], sneaky["keys"]["p256dh"], sneaky["keys"]["auth"], db.now()))
+    assert client.post("/api/push/test").status_code == 409
+    assert service.requests == [] and client.get("/api/push/devices").json() == []
+
+
+def test_push_services_cant_redirect_messages(client, monkeypatch):
+    """Without a stand-in, each message gets a real requests session that refuses to follow redirects."""
+    import requests
+    from requests.adapters import BaseAdapter
+
+    from app import push
+    from app.config import settings
+
+    seen = []
+
+    class Redirecting(BaseAdapter):
+        def send(self, request, **kwargs):
+            seen.append(request.url)
+            r = requests.Response()
+            r.status_code, r.url, r._content = 307, request.url, b""
+            r.headers["Location"] = "https://169.254.169.254/latest/meta-data"
+            r.request = request
+            return r
+
+        def close(self):
+            pass
+
+    class Session(requests.Session):
+        def __init__(self):
+            super().__init__()
+            self.mount("https://", Redirecting())
+
+    monkeypatch.setattr(settings, "push_contact", "mailto:team@aieverytime.example")
+    monkeypatch.setattr(push.requests, "Session", Session)
+    signup(client)
+    phone = Device()
+    subscribe(client, phone)
+    assert client.post("/api/push/test").status_code == 409  # not delivered...
+    assert seen == [phone.endpoint]  # ...and the redirect wasn't followed
+    assert client.get("/api/push/devices").json()[0]["endpoint"] == phone.endpoint  # nor held against the device
 
 
 def test_learner_keeps_ten_newest_devices(client, service):
@@ -279,9 +332,40 @@ def test_notices_are_pushed_once_as_they_happen(client, service, monkeypatch):
     assert run(NIGHT) == 0
 
 
+def test_one_learners_failure_doesnt_stop_the_others(client, service, monkeypatch):
+    from app import db, push
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "reminder_hour", 7)  # no daily reminders due at NIGHT
+    ada = signup(client)
+    subscribe(client, Device("https://fcm.googleapis.com/fcm/send/ada"))
+    as_user(client, "bo@example.com", "Bo")
+    bo = client.get("/api/me").json()
+    bos_phone = Device("https://fcm.googleapis.com/fcm/send/bo")
+    subscribe(client, bos_phone)
+    with db.connect() as conn:
+        for uid in (ada["id"], bo["id"]):
+            conn.execute("INSERT INTO notices (user_id, text, link, created_at) VALUES (?, 'News', '', ?)", (uid, db.now()))
+
+    real = push.send_to_user
+
+    async def failing_for_ada(user_id, *args, **kwargs):
+        if user_id == ada["id"]:
+            raise RuntimeError("something unexpected")
+        return await real(user_id, *args, **kwargs)
+
+    monkeypatch.setattr(push, "send_to_user", failing_for_ada)
+    assert run(NIGHT) == 1 and len(service.to(bos_phone)) == 1
+
+
 def test_reminder_settings(client):
     from app.config import settings
 
+    for i, zone in enumerate(("America", "A" * 300, "../../etc/passwd")):  # a folder, too long for a file name, a path
+        r = client.post("/api/auth/signup", json={"email": f"z{i}@example.com", "password": "correct horse",
+                                                   "display_name": "Z", "timezone": zone})
+        assert r.status_code == 201 and r.json()["timezone"] == "", zone
+        client.post("/api/auth/logout")
     r = client.post("/api/auth/signup", json={"email": "ada@example.com", "password": "correct horse",
                                                "display_name": "Ada", "timezone": "Mars/Olympus_Mons"})
     assert r.status_code == 201 and r.json()["timezone"] == ""  # an unknown zone never blocks sign-up

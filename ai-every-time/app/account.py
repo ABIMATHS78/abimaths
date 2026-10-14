@@ -15,7 +15,7 @@ from email.message import EmailMessage
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from app import auth, db, digest
+from app import auth, db, digest, learning
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -46,7 +46,8 @@ def check_guesses(email: str) -> None:
         n = conn.execute("SELECT COUNT(*) FROM login_failures WHERE email = ? AND created_at > ?",
                          (email, _ago(GUESS_WINDOW_MINUTES))).fetchone()[0]
     if n >= GUESSES:
-        raise HTTPException(429, f"Too many wrong passwords. Try again in {GUESS_WINDOW_MINUTES} minutes, or reset your password.")
+        reset = ", or reset your password" if digest.email_available() else ""
+        raise HTTPException(429, f"Too many wrong passwords. Try again in {GUESS_WINDOW_MINUTES} minutes{reset}.")
 
 
 def wrong_password(email: str) -> None:
@@ -71,9 +72,11 @@ def _confirm_password(user: dict, password: str) -> None:
 
 
 def _sign_out_elsewhere(conn, user_id: int, keep_session: str | None, keep_device: str | None) -> None:
-    """End every other session, and stop notifications on every other device."""
+    """End every other session, stop notifications on every other device, and cancel reset links:
+    whoever is securing the account shouldn't leave a way back in."""
     conn.execute("DELETE FROM sessions WHERE user_id = ? AND token IS NOT ?", (user_id, keep_session))
     conn.execute("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint IS NOT ?", (user_id, keep_device))
+    conn.execute("UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL", (db.now(), user_id))
 
 
 # -------------------------------------------------------------- forgotten password
@@ -149,8 +152,7 @@ def reset(body: Reset, response: Response):
         if row is None:
             raise HTTPException(400, "This link has expired or was already used. Ask for a new one.")
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), row["user_id"]))
-        conn.execute("UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL", (db.now(), row["user_id"]))
-        _sign_out_elsewhere(conn, row["user_id"], None, None)
+        _sign_out_elsewhere(conn, row["user_id"], None, None)  # this link and any others stop working too
         conn.execute("DELETE FROM login_failures WHERE email = ?", (row["email"],))
     auth.set_cookie(response, auth.create_session(row["user_id"]))
 
@@ -228,9 +230,9 @@ def export(user: dict = User):
             "memories": rows("SELECT companion_id, fact, created_at FROM memories WHERE user_id = ? ORDER BY id"),
             "post_reactions": rows("SELECT post_id, kind, created_at FROM engagements WHERE user_id = ? ORDER BY created_at"),
             "lessons": rows("SELECT lesson_id, status, updated_at FROM lesson_progress WHERE user_id = ? ORDER BY updated_at"),
-            "quizzes_and_exams": [r | {"questions": json.loads(r["questions"]), "answers": json.loads(r["answers"] or "null")}
-                                  for r in rows("SELECT kind, title, source_type, source_ref, questions, answers, score, total, "
-                                                "created_at, submitted_at FROM assessments WHERE user_id = ? ORDER BY id")],
+            # As the quiz page shows them: answers only once submitted.
+            "quizzes_and_exams": [learning._public_assessment(r, reveal=r["submitted_at"] is not None)
+                                  for r in rows("SELECT * FROM assessments WHERE user_id = ? ORDER BY id")],
             "flashcard_decks": decks,
             "study_plans": [r | {"plan": json.loads(r["plan"])} for r in rows(
                 "SELECT weekly_minutes, plan, created_at FROM study_plans WHERE user_id = ? ORDER BY id")],

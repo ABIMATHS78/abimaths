@@ -16,16 +16,19 @@ import asyncio
 import base64
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from urllib.parse import urlsplit
 
+import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import APIRouter, Depends, HTTPException, Request
 from py_vapid import Vapid, VapidException
 from pydantic import BaseModel, Field, field_validator
 from pywebpush import WebPushException, webpush
+from urllib3.util import parse_url
 
 from app import auth, companions, db, learning, reminders
 from app.config import settings
@@ -46,8 +49,9 @@ MAX_FAILURES = 5
 # subscription can't make the server send requests anywhere else.
 PUSH_HOSTS = ("fcm.googleapis.com", "android.googleapis.com", "push.services.mozilla.com",
               "push.apple.com", "notify.windows.com")
-# The HTTP client for push services (None: requests). Tests put a stand-in push service here.
+# Tests put a stand-in push service here. Otherwise each message gets its own session (see _session).
 HTTP = None
+_HOSTNAME = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 
 
 # ------------------------------------------------------------------------- keys
@@ -105,15 +109,22 @@ def _require_available() -> None:
 
 
 def push_service(endpoint: str) -> bool:
-    """True for an https address at one of the push services browsers use."""
+    """True for an https address at one of the push services browsers use.
+
+    The standard library's parser and urllib3's (which `requests` sends with) must agree on the
+    host: they read oddities such as a backslash differently, which would otherwise let an
+    address pass this check and then go somewhere else."""
+    if not endpoint.isascii() or not endpoint.isprintable() or "\\" in endpoint or " " in endpoint:
+        return False
     try:
-        url = urlsplit(endpoint)
+        url, sent = urlsplit(endpoint), parse_url(endpoint)
         port = url.port
-    except ValueError:
+    except ValueError:  # urllib3's parse errors are ValueErrors too
         return False
     host = (url.hostname or "").lower()
-    return (url.scheme == "https" and port in (None, 443) and not url.username and not url.password
-            and any(host == h or host.endswith("." + h) for h in PUSH_HOSTS))
+    return (url.scheme == "https" and sent.scheme == "https" and port in (None, 443) and sent.port in (None, 443)
+            and not url.username and not url.password and not sent.auth and (sent.host or "").lower() == host
+            and _HOSTNAME.fullmatch(host) is not None and any(host == h or host.endswith("." + h) for h in PUSH_HOSTS))
 
 
 class Keys(BaseModel):
@@ -252,14 +263,24 @@ def message(title: str, body: str, link: str, tag: str) -> dict:
     return {"title": title[:80], "body": body[:240], "url": "/" + link.lstrip("/"), "tag": tag}
 
 
+def _session() -> requests.Session:
+    """A session for one message. It refuses redirects, so a push service can't send it elsewhere."""
+    session = requests.Session()
+    session.max_redirects = 0
+    return session
+
+
 def _send(sub: dict, data: dict, ttl: int, topic: str | None) -> str:
     """Send to one device: "sent", "gone" (it unsubscribed), "failed" (it rejected the message)
     or "retry" (a problem on our side or the push service's that isn't the device's fault)."""
+    if not push_service(sub["endpoint"]):  # checked again in case the rules tightened since it was saved
+        return "gone"
     headers = {"Urgency": "normal"} | ({"Topic": topic} if topic else {})
+    session = HTTP or _session()
     try:
         webpush({"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}},
                 json.dumps(data), vapid_private_key=vapid(), vapid_claims={"sub": contact()},
-                ttl=ttl, timeout=10, headers=headers, requests_session=HTTP)
+                ttl=ttl, timeout=10, headers=headers, requests_session=session)
         return "sent"
     except WebPushException as e:
         status = e.status_code
@@ -271,6 +292,9 @@ def _send(sub: dict, data: dict, ttl: int, topic: str | None) -> str:
         log.error("notifications can't be signed; check AIET_PUSH_CONTACT: %s", e)
     except OSError as e:  # network errors, including requests' exceptions
         log.warning("notification to device %s failed: %s", sub["id"], e)
+    finally:
+        if session is not HTTP:
+            session.close()
     return "retry"
 
 
@@ -293,20 +317,23 @@ async def send_to_user(user_id: int, data: dict, ttl: int, topic: str | None = N
 
 
 def pending_notices() -> list[dict]:
-    """Unread notices not pushed yet, for learners with notifications on. Marked as pushed straight away."""
+    """Unread notices not pushed yet, for learners with notifications on. Each is claimed (marked as
+    pushed) before it's sent, and only by one claimant, so it goes out at most once."""
+    claimed = []
     with db.connect() as conn:
         rows = [dict(r) for r in conn.execute(
             "SELECT * FROM notices n WHERE n.pushed_at IS NULL AND n.read_at IS NULL "
             "AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.user_id = n.user_id) ORDER BY n.id LIMIT 100")]
-        if rows:
-            ids = [r["id"] for r in rows]
-            conn.execute(f"UPDATE notices SET pushed_at = ? WHERE id IN ({','.join('?' * len(ids))})", (db.now(), *ids))
-    return rows
+        for r in rows:
+            if conn.execute("UPDATE notices SET pushed_at = ? WHERE id = ? AND pushed_at IS NULL",
+                            (db.now(), r["id"])).rowcount:
+                claimed.append(r)
+    return claimed
 
 
 def due_daily(now: datetime | None = None) -> list[tuple[dict, list[dict]]]:
     """Learners whose daily reminder is due on their devices now, with their reminders.
-    Marks them done for their day, so it goes out at most once a day."""
+    Each is claimed for their day before it's sent, so it goes out at most once a day."""
     now = now or datetime.now(timezone.utc)
     due = []
     with db.connect() as conn:
@@ -316,12 +343,17 @@ def due_daily(now: datetime | None = None) -> list[tuple[dict, list[dict]]]:
             local, start = learning.local_now(u, now), reminders.reminder_hour(u)
             today = local.date().isoformat()
             if start <= local.hour < start + DAILY_WINDOW_HOURS and (u["last_push_on"] or "") < today:
-                conn.execute("UPDATE users SET last_push_on = ? WHERE id = ?", (today, u["id"]))
-                due.append(u)
+                if conn.execute("UPDATE users SET last_push_on = ? WHERE id = ? AND COALESCE(last_push_on, '') < ?",
+                                (today, u["id"], today)).rowcount:
+                    due.append(u)
     out = []
     for u in due:
-        # Notices were pushed when they happened, and new posts alone aren't worth a buzz.
-        items = [r for r in reminders.reminders(u) if r["kind"] not in ("notice", "new_posts")]
+        try:
+            # Notices were pushed when they happened, and new posts alone aren't worth a buzz.
+            items = [r for r in reminders.reminders(u) if r["kind"] not in ("notice", "new_posts")]
+        except Exception:
+            log.exception("reminders for user %s failed", u["id"])
+            continue
         if items:
             out.append((u, items))
     return out
@@ -335,13 +367,20 @@ def daily_message(user: dict, items: list[dict]) -> dict:
 
 
 async def run_once(now: datetime | None = None) -> int:
-    """Push new notices, then any daily reminders that are due. Returns how many messages got through."""
+    """Push new notices, then any daily reminders that are due. Returns how many messages got through.
+    Everything here is already claimed, so one learner's failure mustn't stop the others' messages."""
     delivered = 0
     for n in pending_notices():
-        delivered += await send_to_user(
-            n["user_id"], message("AI Every Time", n["text"], n["link"] or "#/feed", f"notice-{n['id']}"), NOTICE_TTL)
+        try:
+            data = message("AI Every Time", n["text"], n["link"] or "#/feed", f"notice-{n['id']}")
+            delivered += await send_to_user(n["user_id"], data, NOTICE_TTL)
+        except Exception:
+            log.exception("notice %s for user %s failed", n["id"], n["user_id"])
     for user, items in due_daily(now):
-        delivered += await send_to_user(user["id"], daily_message(user, items), DAILY_TTL, topic="daily")
+        try:
+            delivered += await send_to_user(user["id"], daily_message(user, items), DAILY_TTL, topic="daily")
+        except Exception:
+            log.exception("daily reminder for user %s failed", user["id"])
     return delivered
 
 
