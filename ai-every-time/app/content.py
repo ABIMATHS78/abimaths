@@ -11,7 +11,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from app import db, llm
+from app import companions, db, llm
 from app.config import settings
 from app.persona import Persona
 
@@ -110,19 +110,20 @@ def unrecord(user_id: int, post_id: int, kind: str) -> None:
 
 def feed(user_id: int, companion_id: int | None = None, limit: int = 30) -> list[dict]:
     """Posts from followed companions (or one visible companion), newest first."""
-    where = "p.companion_id = ?" if companion_id else "p.companion_id IN (SELECT companion_id FROM follows WHERE user_id = ?)"
-    arg = companion_id if companion_id else user_id
+    # Following a companion that was later unpublished or hidden must not keep its posts in the feed.
+    where = "p.companion_id = :cid" if companion_id else "p.companion_id IN (SELECT companion_id FROM follows WHERE user_id = :uid)"
     with db.connect() as conn:
         rows = conn.execute(
             f"""
             SELECT p.*,
               (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'like') AS likes,
               (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'helpful') AS helpful,
-              EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = ? AND e.kind = 'like') AS liked,
-              EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = ? AND e.kind = 'helpful') AS marked_helpful
-            FROM posts p WHERE {where} ORDER BY p.id DESC LIMIT ?
+              EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = :uid AND e.kind = 'like') AS liked,
+              EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = :uid AND e.kind = 'helpful') AS marked_helpful
+            FROM posts p JOIN companions c ON c.id = p.companion_id
+            WHERE {where} AND {companions.VISIBLE_SQL} ORDER BY p.id DESC LIMIT :limit
             """,
-            (user_id, user_id, arg, limit),
+            {"uid": user_id, "cid": companion_id, "limit": limit},
         ).fetchall()
     return [dict(r) | {"liked": bool(r["liked"]), "marked_helpful": bool(r["marked_helpful"])} for r in rows]
 

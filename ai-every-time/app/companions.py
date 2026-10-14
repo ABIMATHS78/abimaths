@@ -13,6 +13,8 @@ from app.persona import Persona
 from app.starter_companions import STARTER_COMPANIONS
 
 MAX_VERSIONS = 50
+# A published companion is hidden for review once this many learners report it.
+REPORTS_TO_HIDE = 3
 
 
 def seed_starters() -> None:
@@ -42,9 +44,24 @@ def get(companion_id: int) -> dict:
     return db.row_to_companion(row)
 
 
-def visible_to(companion: dict, user_id: int) -> bool:
-    """Starter companions are public; learner-designed ones are private to their owner."""
-    return companion["is_starter"] or companion["owner_id"] == user_id
+def visible_to(companion: dict, user_id: int | None) -> bool:
+    """Starter companions are public. Learner-designed ones are private to their owner
+    unless published to the community (and not hidden after reports)."""
+    if companion["is_starter"] or (user_id is not None and companion["owner_id"] == user_id):
+        return True
+    return companion["is_public"] and not companion["hidden"]
+
+
+# SQL equivalent of visible_to, for a query aliasing companions as `c` with the user id bound to `:uid`.
+VISIBLE_SQL = "(c.is_starter = 1 OR c.owner_id = :uid OR (c.is_public = 1 AND c.hidden = 0))"
+
+
+def for_viewer(companion: dict, user_id: int) -> dict:
+    """What a learner may see. Custom instructions are the designer's own and stay private."""
+    if companion["owner_id"] == user_id:
+        return companion
+    persona = companion["persona"] | {"custom_instructions": ""}
+    return companion | {"persona": persona}
 
 
 def get_visible(companion_id: int, user_id: int) -> dict:
@@ -62,15 +79,53 @@ def get_owned(companion_id: int, user_id: int) -> dict:
     return c
 
 
+def persona_for(companion: dict, user_id: int | None) -> Persona:
+    """The persona used when this companion talks to a learner. Custom instructions apply only to the
+    designer's own sessions; pass user_id=None for content shared across learners (e.g. cached lessons)."""
+    persona = Persona.model_validate(companion["persona"])
+    if user_id is None or companion["owner_id"] != user_id:
+        persona = persona.model_copy(update={"custom_instructions": ""})
+    return persona
+
+
 def list_for(user_id: int) -> list[dict]:
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT c.*, (f.user_id IS NOT NULL) AS following FROM companions c "
-            "LEFT JOIN follows f ON f.companion_id = c.id AND f.user_id = ? "
-            "WHERE c.is_starter = 1 OR c.owner_id = ? ORDER BY c.is_starter ASC, c.id ASC",
-            (user_id, user_id),
+            "SELECT c.*, (f.user_id IS NOT NULL) AS following, u.display_name AS designer, "
+            "(SELECT COUNT(*) FROM follows f2 WHERE f2.companion_id = c.id) AS followers "
+            "FROM companions c "
+            "LEFT JOIN follows f ON f.companion_id = c.id AND f.user_id = :uid "
+            "LEFT JOIN users u ON u.id = c.owner_id "
+            f"WHERE {VISIBLE_SQL} ORDER BY c.is_starter ASC, c.id ASC",
+            {"uid": user_id},
         ).fetchall()
-    return [db.row_to_companion(r) | {"following": bool(r["following"])} for r in rows]
+    return [
+        for_viewer(db.row_to_companion(r), user_id)
+        | {"following": bool(r["following"]), "designer": r["designer"], "followers": r["followers"]}
+        for r in rows
+    ]
+
+
+def set_published(user_id: int, companion_id: int, public: bool) -> dict:
+    c = get_owned(companion_id, user_id)
+    if public and c["hidden"]:
+        raise HTTPException(409, "This companion was hidden after reports from other learners and can't be republished.")
+    with db.connect() as conn:
+        conn.execute("UPDATE companions SET is_public = ?, published_at = ? WHERE id = ?",
+                     (int(public), db.now() if public else None, companion_id))
+    return get(companion_id)
+
+
+def report(user_id: int, companion_id: int, reason: str) -> None:
+    c = get_visible(companion_id, user_id)
+    if c["is_starter"] or c["owner_id"] == user_id:
+        raise HTTPException(400, "Only other learners' community companions can be reported.")
+    with db.connect() as conn:
+        conn.execute("INSERT OR IGNORE INTO reports (user_id, companion_id, reason, created_at) VALUES (?, ?, ?, ?)",
+                     (user_id, companion_id, reason, db.now()))
+        n = conn.execute("SELECT COUNT(*) FROM reports WHERE companion_id = ?", (companion_id,)).fetchone()[0]
+        if n >= REPORTS_TO_HIDE:
+            conn.execute("UPDATE companions SET hidden = 1 WHERE id = ?", (companion_id,))
 
 
 def create(user_id: int, persona: Persona, remixed_from: int | None = None) -> dict:
@@ -91,8 +146,12 @@ def create(user_id: int, persona: Persona, remixed_from: int | None = None) -> d
 
 def remix(user_id: int, source_id: int, overrides: dict | None = None) -> dict:
     source = get_visible(source_id, user_id)
-    data = source["persona"] | (overrides or {})
-    if not overrides or "name" not in overrides:
+    overrides = overrides or {}
+    data = source["persona"] | overrides
+    if source["owner_id"] != user_id:
+        # Another designer's private instructions never carry over into a remix.
+        data["custom_instructions"] = overrides.get("custom_instructions", "")
+    if "name" not in overrides:
         data["name"] = f"My {source['persona']['name']}"[:40]
     return create(user_id, Persona.model_validate(data), remixed_from=source_id)
 

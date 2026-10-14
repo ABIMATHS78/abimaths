@@ -291,3 +291,12 @@ def lesson_brief(lesson: Lesson) -> str:
         f"Lesson: {lesson.title}\nObjectives:\n" + "\n".join(f"- {o}" for o in lesson.objectives)
         + "\nKey points (accurate core; teach all of them):\n" + "\n".join(f"- {k}" for k in lesson.key_points)
     )
+
+
+def path_from_dict(path_id: str, data: dict) -> LearningPath:
+    """Build a learner's custom path (stored as JSON) with stable lesson ids."""
+    lessons = tuple(
+        Lesson(f"{path_id}-{i + 1}", l["title"], tuple(l["objectives"]), tuple(l["key_points"]), int(l.get("minutes", 10)))
+        for i, l in enumerate(data["lessons"])
+    )
+    return LearningPath(path_id, data["title"], data["description"], data["level"], data.get("topic", ""), lessons)

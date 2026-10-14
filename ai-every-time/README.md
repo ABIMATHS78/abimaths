@@ -23,6 +23,11 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Study plans** | The learner sets weekly time, number of weeks and which paths to focus on. The companion plans each week from their goals, memories, finished lessons and weak quiz scores. Plan items tick off as the learner completes them. |
 | **Progress tracking** | Day streak, last 7 days of activity, lessons completed, quiz average, best exam score, cards mastered and due, progress per path, lessons worth reviewing (best score under 70%), and the next lesson. |
 | **Content intelligence** | Views, likes, "helpful" marks, shares and follow-up questions are weighted (1, 3, 4, 5 and 6) and averaged per topic (`app/content.py`). Companions steer their next posts toward the topics learners value most. |
+| **Community companions** | Learners can publish a companion they designed. Others can then find it in the Community section, follow it, chat with it and remix it. What stays private: the designer's custom instructions (they only shape the designer's own chats), and everyone's chats and memories. Learners can report a community companion (impersonation, harmful, misleading, spam, other); after 3 reports it is hidden for review. Unpublishing removes it, and its posts, from everyone else's view. |
+| **Photo avatars** | Upload a PNG, JPEG or WebP (up to 2 MB) instead of the drawn face. Files are identified by their content, not their name, and served so they can't run as a web page. A photo is only visible to people who can see the companion. |
+| **Voice** | Each companion has voice settings: on/off, accent, speed and pitch. Learners can have replies read aloud (🔊 on any reply, or "Read aloud" for every reply) and can dictate questions (🎤). This uses the browser's own speech features, so there's no server cost; how it sounds depends on the voices installed on the device. |
+| **Custom learning paths** | A learner names any topic and their companion designs a 3-8 lesson path for them, with objectives and key points. It works with everything else: lessons, tutoring, quizzes, mock exams, flashcards, study plans and progress. These paths are private and marked as not expert-reviewed. |
+| **Reminders** | A "Today" panel on the feed and a bell in the sidebar list what's waiting: a streak at risk, flashcards due, the next study-plan item (or one that's overdue), an unfinished quiz, a lesson to continue, and new posts from followed companions. |
 
 ## Run it
 
@@ -73,6 +78,12 @@ The tests run in offline mode and cover:
 - summaries and lesson tutoring
 - study plans that follow progress
 - progress, streaks, and per-learner access rules for quizzes and decks
+- publishing, private custom instructions, unpublishing, and hiding after reports
+- photo upload checks (type, size, ownership, visibility, safe headers)
+- voice settings validation
+- custom paths, end to end and private to their owner
+- reminders
+- upgrading an older database
 
 ## How it's built
 
@@ -84,7 +95,8 @@ app/
   llm.py                Claude: system prompt from the persona, streamed chat, memory extraction, post writing
   curriculum.py         Learning paths, lessons, objectives and vetted key points
   tutor.py              Claude: lessons, quiz/exam questions, flashcards, summaries, study plans
-  learning.py           Learning API: paths, lessons, assessments, decks and reviews, plans, progress
+  learning.py           Learning API: paths (curated + custom), lessons, assessments, decks and reviews, plans, progress
+  reminders.py          What's waiting for the learner, worked out from existing data
   content.py            Topic scores from engagement, post generation, background schedule
   companions.py         Create / remix / edit / version / follow
   auth.py, db.py        Password logins (scrypt) with cookie sessions; SQLite storage
@@ -100,8 +112,8 @@ static/                 Single-page web app (no build step)
 
 ## Next steps
 
-- **Public sharing** of learner-designed companions (today they are private to their owner).
-- **Voice**, and **uploaded photo avatars**.
-- **Learner-made paths**: companions turning any topic into a new path, with an expert review step before publishing.
-- **Reminders**: notifications for cards due and the next study-plan item.
+- **A moderation screen** for reviewing reported companions and restoring or removing them. Today a hidden companion stays hidden until someone changes the database.
+- **Email or push reminders** built on the same reminder list (needs an email or push provider).
+- **Sharing custom paths** with the community after expert review.
+- **Server-side voices** for consistent, higher-quality speech on every device (needs a text-to-speech provider).
 - **Postgres** in place of SQLite, and a job queue in place of the in-process scheduler, for multi-instance deployment.

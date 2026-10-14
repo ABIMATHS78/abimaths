@@ -23,7 +23,7 @@ async function api(path, { method = "GET", body } = {}) {
   if (res.status === 401 && !path.startsWith("/api/auth")) {
     state.me = null;
     location.hash = "#/welcome";
-    throw new Error("Please sign in");
+    throw new StaleView("Please sign in");
   }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
@@ -73,7 +73,7 @@ function md(src) {
   return html;
 }
 
-const avatarUrl = (c) => `/api/companions/${c.id}/avatar.svg?v=${encodeURIComponent(c.updated_at || "")}`;
+const avatarUrl = (c) => `/api/companions/${c.id}/avatar?v=${encodeURIComponent(c.updated_at || "")}`;
 const avatarImg = (c, size = 48) => `<img class="avatar" src="${avatarUrl(c)}" width="${size}" height="${size}" alt="${esc(c.persona.name)}">`;
 const label = (s) => s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const timeAgo = (iso) => {
@@ -83,6 +83,53 @@ const timeAgo = (iso) => {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return `${Math.floor(s / 86400)}d ago`;
 };
+
+/* ------------------------------------------------------------------- voice */
+
+const canSpeak = "speechSynthesis" in window;
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const prefs = {
+  get(k, d) { try { const v = localStorage.getItem(`aiet.${k}`); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(`aiet.${k}`, JSON.stringify(v)); } catch {} },
+};
+
+function plainText(markdown) {
+  return markdown.replace(/```[\s\S]*?```/g, " ").replace(/[`*_#>]+/g, "").replace(/\[(.*?)\]\(.*?\)/g, "$1")
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/\s+/g, " ").trim();
+}
+
+/* Read text aloud in a companion's voice: the closest installed voice to its accent, at its rate and pitch. */
+function speak(text, voice) {
+  if (!canSpeak || !voice?.enabled) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(plainText(text));
+  const voices = speechSynthesis.getVoices();
+  const lang = voice.lang || "en-US";
+  u.voice = voices.find((v) => v.lang === lang) || voices.find((v) => v.lang.startsWith(lang.split("-")[0])) || null;
+  u.lang = lang;
+  u.rate = voice.rate ?? 1;
+  u.pitch = voice.pitch ?? 1;
+  speechSynthesis.speak(u);
+}
+
+/* Dictation into a textarea, where the browser supports speech recognition. */
+function wireMic(button, textarea) {
+  if (!Recognition) { button.remove(); return; }
+  let rec = null;
+  button.addEventListener("click", () => {
+    if (rec) { rec.stop(); return; }
+    rec = new Recognition();
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    const before = textarea.value ? textarea.value.trimEnd() + " " : "";
+    rec.onresult = (e) => { textarea.value = before + [...e.results].map((r) => r[0].transcript).join(""); };
+    rec.onend = () => { rec = null; button.classList.remove("on"); button.setAttribute("aria-pressed", "false"); textarea.focus(); };
+    rec.onerror = (e) => { if (e.error !== "aborted") toast("Couldn't hear that. Check microphone permission."); };
+    button.classList.add("on");
+    button.setAttribute("aria-pressed", "true");
+    rec.start();
+  });
+}
 
 /* Stream a companion's reply; calls onText with the text so far. */
 async function streamChat(companionId, body, onText) {
@@ -158,11 +205,25 @@ function shell(active, inner) {
           ${primary ? `<a href="#/c/${primary}" class="${active === "mine" ? "active" : ""}">💬 My companion</a>` : ""}
           <a href="#/studio/new" class="${active === "studio" ? "active" : ""}">✨ Design a companion</a>
         </nav>
+        <a href="#/feed" class="bell" id="bell" title="Reminders" hidden>🔔 <span></span></a>
         <div class="me"><div><b>${esc(state.me.display_name)}</b><div class="muted small">${esc(state.me.level)}</div></div></div>
       </aside>
       <main class="main">${inner}</main>
     </div>`;
+  refreshBell();
   return $(".main");
+}
+
+/* The sidebar bell shows how many reminders are waiting. */
+async function refreshBell() {
+  const bell = $("#bell");
+  if (!bell) return;
+  try {
+    const rem = await fetch("/api/reminders", { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : []));
+    if (!document.body.contains(bell)) return;
+    bell.hidden = !rem.length;
+    $("span", bell).textContent = `${rem.length} reminder${rem.length === 1 ? "" : "s"}`;
+  } catch {}
 }
 
 /* ------------------------------------------------------------------ welcome */
@@ -174,7 +235,7 @@ async function viewWelcome() {
         <div class="logo" style="margin:0 0 24px">AI <span>Every</span> Time</div>
         <h1>Every piece of AI content is the <em>start</em> of a learning relationship.</h1>
         <p class="muted" style="font-size:18px">Follow, chat with and learn from always-available AI Learning Companions from around the world, each with their own face, voice and expertise. Or design your own companion, exactly the way you want it.</p>
-        <div class="faces">${[1, 2, 3, 4, 5, 6, 7, 8].map((i) => `<img class="avatar" src="/api/companions/${i}/avatar.svg" width="56" height="56" alt="">`).join("")}</div>
+        <div class="faces">${[1, 2, 3, 4, 5, 6, 7, 8].map((i) => `<img class="avatar" src="/api/companions/${i}/avatar" width="56" height="56" alt="">`).join("")}</div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
       </div>
       <div class="card">
@@ -236,6 +297,8 @@ function companionCard(c, { onboarding = false } = {}) {
         <div>
           <h3>${esc(p.name)} ${esc(p.flag)} ${mine ? '<span class="mine-badge">Yours</span>' : ""}</h3>
           <div class="muted small">${esc(p.country)}${isPrimary ? " · Your primary companion" : ""}</div>
+          ${!c.is_starter && !mine ? `<div class="muted small">Community · designed by ${esc(c.designer || "a learner")}</div>` : ""}
+          ${mine && c.hidden ? `<div class="small error">Hidden after reports from other learners</div>` : mine && c.is_public ? `<div class="small" style="color:var(--accent)">● Published to the community</div>` : ""}
         </div>
       </div>
       <p class="tagline">${esc(p.tagline)}</p>
@@ -248,6 +311,7 @@ function companionCard(c, { onboarding = false } = {}) {
           : `<a class="btn primary" href="#/c/${c.id}">Chat</a>
              ${mine ? "" : `<button class="btn ${c.following ? "on" : ""}" data-act="follow">${c.following ? "Following" : "Follow"}</button>`}
              ${mine ? `<a class="btn" href="#/studio/${c.id}">Edit</a>` : `<a class="btn" href="#/studio/remix/${c.id}">Remix</a>`}
+             ${mine && !c.hidden ? `<button class="btn ghost" data-act="publish">${c.is_public ? "Unpublish" : "Publish"}</button>` : ""}
              ${isPrimary ? "" : `<button class="btn ghost" data-act="primary">Make primary</button>`}`}
       </div>
     </article>`;
@@ -265,6 +329,8 @@ function wireCompanionCards(root, list, rerender) {
           state.me = await api("/api/me");
           if (act === "choose") { toast(`${c.persona.name} is now your companion`); location.hash = `#/c/${c.id}`; return; }
           toast(`${c.persona.name} is now your primary companion`);
+        } else if (act === "publish") {
+          if (!(await togglePublish(c))) return;
         } else if (act === "follow") {
           await api(`/api/companions/${c.id}/follow`, { method: c.following ? "DELETE" : "POST" });
           toast(c.following ? `Unfollowed ${c.persona.name}` : `Following ${c.persona.name}`);
@@ -273,6 +339,18 @@ function wireCompanionCards(root, list, rerender) {
       } catch (err) { toast(err.message); }
     });
   });
+}
+
+const PUBLISH_NOTE = "Publishing lets every learner find, follow, chat with and remix this companion. " +
+  "Its name, face, bio, personality and style become public, and so do the posts it writes. " +
+  "Your display name is shown as its designer. " +
+  "Your custom instructions, chats and memories stay private. You can unpublish at any time.\n\nPublish?";
+
+async function togglePublish(c) {
+  if (!c.is_public && !confirm(PUBLISH_NOTE)) return false;
+  await api(`/api/companions/${c.id}/publish`, { method: c.is_public ? "DELETE" : "POST" });
+  toast(c.is_public ? `${c.persona.name} is private again` : `${c.persona.name} is now in the community`);
+  return true;
 }
 
 async function viewOnboarding() {
@@ -362,23 +440,35 @@ async function viewFeed() {
       <div><h1 style="margin:0">Your feed</h1><div class="muted">Fresh lessons from the companions you follow. Every post is a conversation starter.</div></div>
       <a class="btn" href="#/companions">Find more companions</a>
     </div>
+    <div id="today"></div>
     <div class="stack" id="posts">
       ${posts.length ? posts.map((p) => postCard(p, byId[p.companion_id])).join("") : `<div class="card empty">Follow a few companions to fill your feed. <a href="#/companions">Browse companions</a></div>`}
     </div>`);
   wirePosts(main, posts, viewFeed);
+  const rem = (await api("/api/reminders")).filter((r) => r.kind !== "new_posts");
+  if (rem.length) {
+    $("#today").innerHTML = `<div class="card today"><h3>Today</h3><ul>${rem.map((r) => `<li><a href="${r.link}">${esc(r.text)}</a></li>`).join("")}</ul></div>`;
+  }
+  await api("/api/reminders/feed-seen", { method: "POST" });
+  refreshBell();
 }
 
 /* --------------------------------------------------------------- companions */
 
 async function viewCompanions() {
   const list = await api("/api/companions");
-  const mine = list.filter((c) => !c.is_starter), starters = list.filter((c) => c.is_starter);
+  const mine = list.filter((c) => c.owner_id === state.me.id), starters = list.filter((c) => c.is_starter);
+  const community = list.filter((c) => !c.is_starter && c.owner_id !== state.me.id).sort((a, b) => b.followers - a.followers);
   const main = shell("companions", `
     <h1>Companions</h1>
     <p class="muted">Each companion represents a country and brings their own expertise, perspective and voice.</p>
     ${mine.length ? `<h2>Your companions</h2><div class="grid" style="margin-bottom:28px">${mine.map((c) => companionCard(c)).join("")}</div>` : ""}
     <h2>Around the world</h2>
-    <div class="grid">${starters.map((c) => companionCard(c)).join("")}</div>`);
+    <div class="grid" style="margin-bottom:28px">${starters.map((c) => companionCard(c)).join("")}</div>
+    <h2>Community</h2>
+    <p class="muted">Companions designed and shared by other learners.</p>
+    ${community.length ? `<div class="grid">${community.map((c) => companionCard(c)).join("")}</div>`
+      : `<div class="card empty">No community companions yet. Design one and publish it to be the first.</div>`}`);
   wireCompanionCards(main, list, viewCompanions);
 }
 
@@ -400,9 +490,12 @@ async function viewCompanion(m) {
         <h1 style="margin:0">${esc(p.name)} ${esc(p.flag)}</h1>
         <div class="muted">${esc(p.tagline || p.country)}</div>
         <div class="row small" style="margin-top:6px">${p.expertise.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}<span class="muted">${c.followers} follower${c.followers === 1 ? "" : "s"}</span></div>
+        ${!c.is_starter && !c.is_mine ? `<div class="muted small" style="margin-top:4px">Community companion designed by ${esc(c.designer || "a learner")}</div>` : ""}
       </div>
       <div class="row">
-        ${c.is_mine ? `<a class="btn" href="#/studio/${id}">Edit companion</a>` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button><a class="btn" href="#/studio/remix/${id}">Remix</a>`}
+        ${canSpeak && p.voice.enabled ? `<button class="btn ghost" id="readAloud" aria-pressed="false">🔈 Read aloud</button>` : ""}
+        ${c.is_mine ? `<a class="btn" href="#/studio/${id}">Edit companion</a>${c.hidden ? "" : `<button class="btn ghost" id="pubBtn">${c.is_public ? "Unpublish" : "Publish"}</button>`}` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button><a class="btn" href="#/studio/remix/${id}">Remix</a>`}
+        ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button>` : ""}
       </div>
     </div>
     <div class="chat-layout">
@@ -411,6 +504,7 @@ async function viewCompanion(m) {
         <div id="ctx"></div>
         <form class="composer" id="composer">
           <textarea id="input" rows="1" maxlength="4000" placeholder="Ask ${esc(p.name)} anything about AI…" aria-label="Message"></textarea>
+          <button type="button" class="btn ghost mic" id="mic" title="Speak your question" aria-pressed="false">🎤</button>
           <button class="btn primary" id="send">Send</button>
         </form>
       </section>
@@ -440,14 +534,38 @@ async function viewCompanion(m) {
     </div>`);
 
   const log = $("#log");
+  const speakBtn = (el, text) => {
+    if (!canSpeak || !p.voice.enabled) return;
+    const b = document.createElement("button");
+    b.className = "linkbtn speak";
+    b.type = "button";
+    b.title = `Hear ${p.name}`;
+    b.textContent = "🔊";
+    b.addEventListener("click", () => speak(text, p.voice));
+    el.appendChild(b);
+  };
   const addMsg = (role, text) => {
     const el = document.createElement("div");
     el.className = `msg ${role}`;
     el.innerHTML = role === "assistant" ? `<div class="prose">${md(text)}</div>` : esc(text).replace(/\n/g, "<br>");
+    if (role === "assistant") speakBtn(el, text);
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     return el;
   };
+  let readAloud = prefs.get("readAloud", false);
+  const readBtn = $("#readAloud");
+  const syncRead = () => {
+    if (!readBtn) return;
+    readBtn.classList.toggle("on", readAloud);
+    readBtn.setAttribute("aria-pressed", String(readAloud));
+    readBtn.textContent = readAloud ? "🔊 Reading aloud" : "🔈 Read aloud";
+  };
+  syncRead();
+  readBtn?.addEventListener("click", () => { readAloud = !readAloud; prefs.set("readAloud", readAloud); if (!readAloud) speechSynthesis.cancel(); syncRead(); });
+  wireMic($("#mic"), $("#input"));
+  $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
+  $("#reportBtn")?.addEventListener("click", () => showReport(c));
   if (!messages.length) {
     addMsg("assistant", `Hi ${state.me.display_name}! I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}\n\nWhat would you like to learn today?`);
   }
@@ -522,10 +640,12 @@ async function viewCompanion(m) {
     addMsg("user", text);
     const bubble = addMsg("assistant", "…");
     try {
-      await streamChat(id, { message: text, post_id: contextPost?.id ?? null }, (acc) => {
+      const reply = await streamChat(id, { message: text, post_id: contextPost?.id ?? null }, (acc) => {
         bubble.innerHTML = `<div class="prose">${md(acc)}</div>`;
         log.scrollTop = log.scrollHeight;
       });
+      speakBtn(bubble, reply);
+      if (readAloud) speak(reply, p.voice);
       contextPost = null;
       renderCtx();
       setTimeout(async () => renderMem(await api(`/api/companions/${id}/memories`)), 2500);
@@ -566,9 +686,20 @@ function blankPersona() {
     personality: { warmth: 70, humor: 40, formality: 40, directness: 60, enthusiasm: 60, patience: 80 },
     writing_style: { length: "balanced", level: state.me.level, emoji: "light", uses_analogies: true, uses_local_examples: true, signature_phrase: "", sample_line: "" },
     avatar: { skin: "#C68642", hair_style: "short", hair_color: "#2C1B10", background: "#6C5CE7", accessory: "none", accessory_color: "#222222", expression: "smile", shirt: "#1E272E" },
+    voice: { enabled: true, lang: "en-US", rate: 1, pitch: 1 },
     interests: [], custom_instructions: "",
   };
 }
+
+const ACCENTS = [
+  ["en-US", "English (United States)"], ["en-GB", "English (United Kingdom)"], ["en-NG", "English (Nigeria)"],
+  ["en-KE", "English (Kenya)"], ["en-GH", "English (Ghana)"], ["en-ZA", "English (South Africa)"], ["en-IN", "English (India)"],
+  ["en-AU", "English (Australia)"], ["en-CA", "English (Canada)"], ["en-IE", "English (Ireland)"], ["en-PH", "English (Philippines)"],
+  ["fr-FR", "French"], ["es-ES", "Spanish (Spain)"], ["es-MX", "Spanish (Mexico)"], ["pt-BR", "Portuguese (Brazil)"],
+  ["de-DE", "German"], ["it-IT", "Italian"], ["ja-JP", "Japanese"], ["ko-KR", "Korean"], ["zh-CN", "Chinese (Mandarin)"],
+  ["hi-IN", "Hindi"], ["ar-SA", "Arabic"], ["sw-KE", "Swahili"], ["yo-NG", "Yoruba"], ["tr-TR", "Turkish"], ["id-ID", "Indonesian"],
+];
+const PHOTO_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 async function viewStudio({ mode, id }) {
   state.options ||= await api("/api/options");
@@ -613,6 +744,13 @@ async function viewStudio({ mode, id }) {
         </fieldset>
 
         <fieldset><legend>Face</legend>
+          <div class="row photo-row">
+            <label class="btn" for="photoInput">📷 Upload a photo</label>
+            <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp" hidden>
+            <button type="button" class="btn ghost danger" id="photoRemove" hidden>Remove photo</button>
+            <span class="muted small">PNG, JPEG or WebP up to 2 MB. Use an image you have the rights to; companions can't pretend to be real people.</span>
+          </div>
+          <div class="muted small" id="faceHint">Or draw a face:</div>
           <label>Skin tone ${swatches("skin", SKIN)}</label>
           <label>Hair style ${choice("hair_style", o.hair_styles)}</label>
           <label>Hair colour ${swatches("hair_color", HAIR)}</label>
@@ -650,8 +788,20 @@ async function viewStudio({ mode, id }) {
           <label>A line in their voice <span class="hint">Shows the companion how they sound</span><textarea name="ws.sample_line" maxlength="300"></textarea></label>
         </fieldset>
 
+        <fieldset><legend>Voice</legend>
+          ${canSpeak ? "" : `<div class="muted small">Your browser can't read text aloud, but you can still set a voice for other devices.</div>`}
+          <label class="check"><input type="checkbox" data-voice="enabled"> Let learners hear this companion read replies aloud</label>
+          <div class="three">
+            <label>Accent <select data-voice="lang">${ACCENTS.map(([v, t]) => `<option value="${v}">${t}</option>`).join("")}</select></label>
+            <label>Speed <input type="range" min="0.5" max="2" step="0.05" data-voice="rate"></label>
+            <label>Pitch <input type="range" min="0" max="2" step="0.05" data-voice="pitch"></label>
+          </div>
+          <div class="row"><button type="button" class="btn" id="voiceTest" ${canSpeak ? "" : "disabled"}>▶ Hear a sample</button>
+            <span class="muted small">Uses the voices installed on this device, so it may sound different elsewhere.</span></div>
+        </fieldset>
+
         <fieldset><legend>Custom instructions</legend>
-          <label><span class="hint">Anything else about how they should teach you. e.g. "Quiz me at the end of every explanation" or "Relate everything to finance, my field"</span>
+          <label><span class="hint">Private to you: they shape only your own chats, even if you publish this companion. Anything else about how they should teach you. e.g. "Quiz me at the end of every explanation" or "Relate everything to finance, my field"</span>
             <textarea name="custom_instructions" maxlength="1500"></textarea></label>
         </fieldset>
 
@@ -688,8 +838,51 @@ async function viewStudio({ mode, id }) {
   F("ws.uses_analogies").checked = persona.writing_style.uses_analogies;
   F("ws.uses_local_examples").checked = persona.writing_style.uses_local_examples;
 
+  const syncVoice = () => $$("[data-voice]", form).forEach((el) => {
+    const v = persona.voice[el.dataset.voice];
+    if (el.type === "checkbox") el.checked = v; else el.value = v;
+  });
+  if (!ACCENTS.some(([v]) => v === persona.voice.lang)) $("[data-voice=lang]", form).insertAdjacentHTML("afterbegin", `<option value="${esc(persona.voice.lang)}">${esc(persona.voice.lang)}</option>`);
+  syncVoice();
+  $("#voiceTest").addEventListener("click", () => speak(
+    persona.writing_style.sample_line || `Hi! I'm ${persona.name || "your companion"}. ${persona.writing_style.signature_phrase || "Let's learn together."}`,
+    { ...persona.voice, enabled: true }));
+
+  /* Photo: kept in the page until saved, then uploaded (or removed) after the companion is stored. */
+  const photo = { file: null, url: null, remove: false, existing: false };
+  if (mode === "edit") {
+    const r = await fetch(`/api/companions/${id}/avatar`, { method: "GET", credentials: "same-origin" });
+    photo.existing = r.ok && !r.headers.get("content-type").startsWith("image/svg");
+  }
+  const syncPhoto = () => {
+    const has = photo.file || (photo.existing && !photo.remove);
+    $("#photoRemove").hidden = !has;
+    $("#faceHint").textContent = has ? "The photo is shown instead of the drawn face. The face below is kept as a backup." : "Or draw a face:";
+    preview();
+  };
+  $("#photoInput").addEventListener("change", (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    if (!PHOTO_TYPES.includes(f.type)) return toast("Choose a PNG, JPEG or WebP image");
+    if (f.size > 2 * 1024 * 1024) return toast("Photos can be up to 2 MB");
+    if (photo.url) URL.revokeObjectURL(photo.url);
+    photo.file = f; photo.url = URL.createObjectURL(f); photo.remove = false;
+    syncPhoto();
+  });
+  $("#photoRemove").addEventListener("click", () => {
+    if (photo.url) URL.revokeObjectURL(photo.url);
+    photo.file = null; photo.url = null; photo.remove = photo.existing;
+    syncPhoto();
+  });
+
   form.addEventListener("input", (e) => {
     const t = e.target;
+    if (t.dataset.voice) {
+      const k = t.dataset.voice;
+      persona.voice[k] = t.type === "checkbox" ? t.checked : k === "lang" ? t.value : +t.value;
+      return;
+    }
     if (t.dataset.trait) persona.personality[t.dataset.trait] = +t.value;
     else if (t.name === "interests") persona.interests = t.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 8);
     else if (t.name?.startsWith("ws.")) set(`writing_style.${t.name.slice(3)}`, t.type === "checkbox" ? t.checked : t.value);
@@ -750,6 +943,8 @@ async function viewStudio({ mode, id }) {
     const traits = SLIDERS.map(([k, lo, hi]) => (persona.personality[k] >= 60 ? hi : persona.personality[k] <= 40 ? lo : null)).filter(Boolean);
     $("#pvVoice").innerHTML = `<b>Personality:</b> ${esc(traits.join(", ") || "Balanced")}<br><b>Teaches:</b> ${esc(TEACH_DESC[persona.teaching_style])}<br><b>Writes:</b> ${esc(label(persona.writing_style.length))}, ${esc(persona.writing_style.level)} level${persona.writing_style.sample_line ? `<br><i>“${esc(persona.writing_style.sample_line)}”</i>` : ""}`;
     clearTimeout(pvTimer);
+    if (photo.file) { $("#pv").src = photo.url; return; }
+    if (photo.existing && !photo.remove) { $("#pv").src = `/api/companions/${id}/avatar?v=${encodeURIComponent(source.updated_at)}`; return; }
     pvTimer = setTimeout(async () => {
       const res = await fetch("/api/avatar/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(persona.avatar) });
       if (!res.ok) return;
@@ -759,7 +954,7 @@ async function viewStudio({ mode, id }) {
       $("#pv").src = pvUrl;
     }, 120);
   }
-  preview();
+  syncPhoto();
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -771,6 +966,12 @@ async function viewStudio({ mode, id }) {
       if (mode === "edit") saved = await api(`/api/companions/${id}`, { method: "PUT", body: persona });
       else if (mode === "remix") saved = await api(`/api/companions/${id}/remix`, { method: "POST", body: { overrides: persona, make_primary: true } });
       else saved = await api("/api/companions", { method: "POST", body: { persona, make_primary: true } });
+      if (photo.file) {
+        const r = await fetch(`/api/companions/${saved.id}/photo`, { method: "PUT", body: photo.file, credentials: "same-origin" });
+        if (!r.ok) toast((await r.json().catch(() => ({}))).detail || "The photo couldn't be uploaded");
+      } else if (photo.remove) {
+        await api(`/api/companions/${saved.id}/photo`, { method: "DELETE" });
+      }
       state.me = await api("/api/me");
       toast(mode === "edit" ? "Changes saved" : `${saved.persona.name} is ready to teach you`);
       location.hash = `#/c/${saved.id}`;
@@ -850,6 +1051,25 @@ async function studyAction(kind, sourceType, sourceRef, { companionId = null, bu
   }
 }
 
+function showReport(c) {
+  showDialog(`<h2>Report ${esc(c.persona.name)}</h2>
+    <p>Reports go to our moderators. A companion reported by several learners is hidden while it's reviewed.</p>
+    <form id="reportForm" class="stack">
+      ${[["impersonation", "Pretends to be a real person or organisation"], ["harmful", "Harmful, hateful or unsafe"],
+         ["misleading", "Teaches false or misleading information"], ["spam", "Spam or advertising"], ["other", "Something else"]]
+        .map(([v, t]) => `<label class="check"><input type="radio" name="reason" value="${v}" required> ${t}</label>`).join("")}
+      <button class="btn danger">Send report</button>
+    </form>`);
+  $("#reportForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/companions/${c.id}/report`, { method: "POST", body: { reason: e.target.reason.value } });
+      $("#dialog").close();
+      toast("Thanks. Your report was sent.");
+    } catch (err) { toast(err.message); }
+  });
+}
+
 function showDialog(html) {
   let d = $("#dialog");
   if (!d) {
@@ -873,12 +1093,24 @@ async function viewLearn() {
   const main = shell("learn", `
     <h1>Learning paths</h1>
     <p class="muted">Structured courses taught by your companion, in their own voice. Finish lessons, test yourself, and take a mock exam at the end of each path.</p>
+    <form class="card stack" id="newPath">
+      <div><h3 style="margin:0">✨ Learn anything: ask your companion for a path</h3>
+        <div class="muted small">Name a topic and your companion designs a step-by-step path just for you.</div></div>
+      <div class="new-path-row">
+        <input type="text" name="topic" minlength="3" maxlength="120" required placeholder="e.g. AI for small farms, computer vision for healthcare, LLMs for lawyers" aria-label="Topic">
+        <select name="level" aria-label="Level">${["beginner", "intermediate", "advanced"].map((v) => `<option value="${v}" ${v === state.me.level ? "selected" : ""}>${label(v)}</option>`).join("")}</select>
+        <select name="lessons" aria-label="Number of lessons">${[3, 4, 5, 6, 8].map((n) => `<option value="${n}" ${n === 5 ? "selected" : ""}>${n} lessons</option>`).join("")}</select>
+        <button class="btn primary">Design my path</button>
+      </div>
+    </form>
     <div class="stack">
       ${paths.map((p) => `
         <section class="card stack" data-path="${p.id}">
           <div class="row spread">
-            <div><h2 style="margin:0">${esc(p.title)}</h2><div class="muted small">${esc(label(p.level))} · ${p.total} lessons · ${p.completed}/${p.total} done</div></div>
+            <div><h2 style="margin:0">${esc(p.title)}</h2><div class="muted small">${esc(label(p.level))} · ${p.total} lessons · ${p.completed}/${p.total} done</div>
+              ${p.custom ? `<div class="small custom-badge">Made for you by your companion · not reviewed by experts, so double-check key facts</div>` : ""}</div>
             <div class="row">
+              ${p.custom ? `<button class="btn ghost danger" data-act="delete">Delete</button>` : ""}
               <button class="btn" data-act="cards">🃏 Flashcards</button>
               <button class="btn primary" data-act="exam">🎓 Mock exam</button>
             </div>
@@ -891,10 +1123,30 @@ async function viewLearn() {
           </ol>
         </section>`).join("")}
     </div>`);
-  $$("[data-path]", main).forEach((el) => el.addEventListener("click", (e) => {
+  $$("[data-path]", main).forEach((el) => el.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-act]");
-    if (b) studyAction(b.dataset.act === "exam" ? "exam" : "cards", "path", el.dataset.path, { button: b });
+    if (!b) return;
+    if (b.dataset.act === "delete") {
+      if (!confirm("Delete this path? Its lesson progress goes too. Quiz results stay in your history.")) return;
+      await api(`/api/custom-paths/${el.dataset.path}`, { method: "DELETE" });
+      toast("Path deleted");
+      return viewLearn();
+    }
+    studyAction(b.dataset.act === "exam" ? "exam" : "cards", "path", el.dataset.path, { button: b });
   }));
+  $("#newPath", main).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = $("button", f);
+    btn.disabled = true; btn.textContent = "Designing…";
+    try {
+      const path = await api("/api/custom-paths", { method: "POST", body: { topic: f.topic.value.trim(), level: f.level.value, lessons: +f.lessons.value } });
+      toast(`"${path.title}" is ready`);
+      if (document.body.contains(f)) viewLearn();
+    } catch (err) {
+      toast(err.message);
+      btn.disabled = false; btn.textContent = "Design my path";
+    }
+  });
 }
 
 async function viewLesson(m) {
@@ -917,7 +1169,7 @@ async function viewLesson(m) {
     <div class="lesson-layout">
       <article class="card stack">
         <div class="row">
-          <img class="avatar" src="/api/companions/${t.id}/avatar.svg?v=${encodeURIComponent(t.updated_at)}" width="44" height="44" alt="">
+          <img class="avatar" src="/api/companions/${t.id}/avatar?v=${encodeURIComponent(t.updated_at)}" width="44" height="44" alt="">
           <div><b>${esc(t.name)} ${esc(t.flag)}</b><div class="muted small">${lesson.minutes} min lesson${lesson.best_score != null ? ` · your best quiz: ${lesson.best_score}%` : ""}</div></div>
         </div>
         <div class="prose">${md(lesson.body)}</div>

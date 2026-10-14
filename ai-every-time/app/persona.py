@@ -79,6 +79,15 @@ class WritingStyle(BaseModel):
     sample_line: str = Field("", max_length=300, description="An example sentence in the companion's voice.")
 
 
+class Voice(BaseModel):
+    """Read-aloud settings, used by the browser's speech synthesis."""
+
+    enabled: bool = True
+    lang: str = Field("en-US", pattern=r"^[a-z]{2,3}(-[A-Z]{2})?$", description="BCP 47 accent hint, e.g. en-NG")
+    rate: float = Field(1.0, ge=0.5, le=2.0)
+    pitch: float = Field(1.0, ge=0.0, le=2.0)
+
+
 class Persona(BaseModel):
     name: str = Field(..., min_length=1, max_length=40)
     tagline: str = Field("", max_length=120)
@@ -91,6 +100,7 @@ class Persona(BaseModel):
     personality: Personality = Field(default_factory=Personality)
     writing_style: WritingStyle = Field(default_factory=WritingStyle)
     avatar: Avatar = Field(default_factory=Avatar)
+    voice: Voice = Field(default_factory=Voice)
     interests: list[str] = Field(default_factory=list, max_length=8)
     custom_instructions: str = Field("", max_length=1500)
 
