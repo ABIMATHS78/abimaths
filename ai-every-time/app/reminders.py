@@ -1,7 +1,8 @@
 """In-app reminders: what's waiting for the learner right now.
 
 Computed on request from existing data, so there is nothing to schedule or keep
-in sync. Email or push delivery can later be layered on the same list.
+in sync. The daily email (app.digest) and phone notifications (app.push) are built
+from the same list.
 """
 
 from __future__ import annotations
@@ -11,9 +12,16 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 
 from app import auth, companions, db, learning
+from app.config import settings
 
 router = APIRouter(prefix="/api")
 User = Depends(auth.current_user)
+
+
+def reminder_hour(user: dict) -> int:
+    """The hour of their own day at which the learner wants the daily reminder."""
+    hour = user.get("reminder_hour")
+    return settings.reminder_hour if hour is None else hour
 
 
 def _current_plan_item(user_id: int) -> dict | None:
@@ -56,8 +64,8 @@ def reminders(user: dict = User):
 
     for n in notices:
         out.append({"kind": "notice", "priority": 0, "id": n["id"], "text": n["text"], "link": n["link"] or "#/feed"})
-    today = datetime.now(timezone.utc).date()
-    streak = learning._streak(days)
+    today = learning.local_now(user).date()
+    streak = learning._streak(days, today)
     if streak and today.isoformat() not in days:
         out.append({"kind": "streak", "priority": 1, "text": f"Keep your {streak}-day streak going: study something today.",
                     "link": "#/progress"})

@@ -191,6 +191,26 @@ CREATE TABLE IF NOT EXISTS activity (
     day TEXT NOT NULL,
     PRIMARY KEY (user_id, day)
 );
+-- Phones and browsers a learner turned notifications on for. The endpoint is the device's
+-- address at its browser's push service; the keys encrypt messages for that device only.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    device TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    last_sent_at TEXT,
+    failures INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+-- Keys the server makes once and keeps, such as the VAPID key that push subscriptions are tied to.
+CREATE TABLE IF NOT EXISTS server_keys (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -230,6 +250,10 @@ MIGRATIONS = [
     ("custom_paths", "reviewed_by", "INTEGER"),
     ("custom_paths", "submitted_at", "TEXT"),
     ("custom_paths", "reviewed_at", "TEXT"),
+    ("users", "timezone", "TEXT NOT NULL DEFAULT ''"),
+    ("users", "reminder_hour", "INTEGER"),
+    ("users", "last_push_on", "TEXT"),
+    ("notices", "pushed_at", "TEXT"),
 ]
 
 

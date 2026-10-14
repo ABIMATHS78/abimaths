@@ -7,14 +7,15 @@ import logging
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import auth, companions, content, db, digest, learning, llm, reminders, staff
+from app import auth, companions, content, db, digest, learning, llm, push, reminders, staff
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -39,6 +40,8 @@ async def lifespan(_: FastAPI):
         _spawn(content.autogen_loop())
     if digest.email_available():
         _spawn(digest.digest_loop())
+    if push.available():
+        _spawn(push.push_loop())
     if settings.offline:
         log.warning("No Anthropic credentials found: running in offline demo mode.")
     yield
@@ -51,10 +54,31 @@ app.include_router(learning.router)
 app.include_router(reminders.router)
 app.include_router(staff.router)
 app.include_router(digest.router)
+app.include_router(push.router)
 User = Depends(auth.current_user)
 
 
 # ------------------------------------------------------------------------- auth
+
+
+def _known_zone(v: str) -> str:
+    if v:
+        try:
+            ZoneInfo(v)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise ValueError("unknown time zone")
+    return v
+
+
+def _zone_or_unknown(v: str) -> str:
+    try:
+        return _known_zone(v)
+    except ValueError:
+        return ""
+
+
+# An IANA time zone name such as "Africa/Lagos", as browsers report it. Empty means unknown (UTC).
+TimeZone = Annotated[str, Field(max_length=64), AfterValidator(_known_zone)]
 
 
 class Signup(BaseModel):
@@ -63,6 +87,8 @@ class Signup(BaseModel):
     display_name: str = Field(min_length=1, max_length=60)
     level: Literal["beginner", "intermediate", "advanced"] = "beginner"
     goals: str = Field("", max_length=500)
+    # Reported by the browser. One the server doesn't know is ignored rather than blocking sign-up.
+    timezone: Annotated[str, AfterValidator(_zone_or_unknown)] = ""
 
 
 class Login(BaseModel):
@@ -75,6 +101,9 @@ class ProfileUpdate(BaseModel):
     level: Literal["beginner", "intermediate", "advanced"] | None = None
     goals: str | None = Field(None, max_length=500)
     email_reminders: bool | None = None
+    timezone: TimeZone | None = None
+    # The hour of their own day for the daily reminder, by email and notification.
+    reminder_hour: int | None = Field(None, ge=0, le=23)
 
 
 def _set_cookie(response: Response, token: str) -> None:
@@ -87,9 +116,10 @@ def signup(body: Signup, response: Response):
     try:
         with db.connect() as conn:
             cur = conn.execute(
-                "INSERT INTO users (email, display_name, password_hash, level, goals, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (email, display_name, password_hash, level, goals, timezone, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (body.email.lower(), body.display_name.strip(), auth.hash_password(body.password), body.level,
-                 body.goals.strip(), db.now()),
+                 body.goals.strip(), body.timezone, db.now()),
             )
             # Start every learner following the starter companions so their feed isn't empty.
             conn.execute("INSERT INTO follows (user_id, companion_id, created_at) "
@@ -126,7 +156,10 @@ def _load_user(user_id: int) -> dict:
 
 @app.get("/api/me")
 def me(user: dict = User):
-    return auth.public_user(user) | {"offline_mode": settings.offline, "email_available": digest.email_available()}
+    return auth.public_user(user) | {
+        "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
+        "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
+    }
 
 
 @app.patch("/api/me")
@@ -424,7 +457,7 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
         content.record(user["id"], post["id"], "ask")
     elif body.lesson_id:
         post = learning.lesson_context(user["id"], companion_id, body.lesson_id)
-    learning.record_activity(user["id"])
+    learning.record_activity(user)
 
     with db.connect() as conn:
         conn.execute("INSERT INTO messages (user_id, companion_id, role, content, post_id, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
@@ -492,3 +525,9 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/sw.js", include_in_schema=False)
+def service_worker():
+    # Served from the root so it can show notifications for the whole app; no-cache so updates reach devices.
+    return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})

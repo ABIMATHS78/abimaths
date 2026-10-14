@@ -1,7 +1,8 @@
 """Daily reminder email, sent through any SMTP server.
 
-Opt-in per learner. The email lists the same reminders as the in-app "Today" panel and
-carries a one-click unsubscribe (RFC 8058) as well as a link to a confirmation page.
+Opt-in per learner, at the hour they chose in their own time zone. The email lists the
+same reminders as the in-app "Today" panel and carries a one-click unsubscribe (RFC 8058)
+as well as a link to a confirmation page.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from app import db, reminders
+from app import db, learning, reminders
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -74,17 +75,16 @@ def send(msg: EmailMessage) -> None:
 
 
 def due_digests(now: datetime | None = None) -> list[tuple[dict, list[dict], str]]:
-    """Learners who should get today's email, with their reminders. Marks them as done for today."""
+    """Learners who should get today's email, with their reminders. Marks them as done for their day."""
     now = now or datetime.now(timezone.utc)
-    if now.hour < settings.digest_hour_utc:
-        return []
-    today = now.date().isoformat()
-    out = []
+    out, users = [], []
     with db.connect() as conn:
-        users = [dict(r) for r in conn.execute(
-            "SELECT * FROM users WHERE email_reminders = 1 AND (last_digest_on IS NULL OR last_digest_on < ?)", (today,))]
-        for u in users:
-            conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?", (today, u["id"]))
+        for u in [dict(r) for r in conn.execute("SELECT * FROM users WHERE email_reminders = 1")]:
+            local = learning.local_now(u, now)
+            today = local.date().isoformat()
+            if local.hour >= reminders.reminder_hour(u) and (u["last_digest_on"] or "") < today:
+                conn.execute("UPDATE users SET last_digest_on = ? WHERE id = ?", (today, u["id"]))
+                users.append(u)
     for u in users:
         # Notices, streaks and due work matter in an email; new posts alone aren't worth one.
         items = [r for r in reminders.reminders(u) if r["kind"] != "new_posts"]

@@ -150,6 +150,68 @@ async function streamChat(companionId, body, onText) {
   return acc;
 }
 
+/* ----------------------------------------------------------- notifications */
+
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const installedApp = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const deviceZone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })();
+let installPrompt = null;
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  // A tapped notification asks an open tab to show its page.
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type !== "open") return;
+    const url = new URL(e.data.url, location.origin);
+    if (url.origin === location.origin) location.hash = url.hash || "#/feed";
+  });
+}
+/* Browsers that can install the app ask through this event; the sidebar shows an Install button instead of their banner. */
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  const b = $("#installBtn");
+  if (b) b.hidden = false;
+});
+
+const keyBytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const sameBytes = (buf, bytes) => !!buf && new Uint8Array(buf).length === bytes.length && new Uint8Array(buf).every((v, i) => v === bytes[i]);
+
+async function pushSubscription() {
+  if (!pushSupported) return null;
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+/* Turn notifications on for this device: ask permission, subscribe at the browser's push service, tell the server. */
+async function enablePush() {
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error(permission === "denied" ? "Notifications are blocked for this site in your browser's settings." : "Notifications weren't allowed.");
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  const key = keyBytes((await api("/api/push/key")).public_key);
+  let sub = await reg.pushManager.getSubscription();
+  // A subscription made for another server key can't receive this server's messages.
+  if (sub && !sameBytes(sub.options.applicationServerKey, key)) { await sub.unsubscribe(); sub = null; }
+  // Subscribing goes through the browser maker's push service, which can be unreachable; don't wait forever.
+  sub ||= await Promise.race([
+    reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Your browser's notification service didn't answer. Try again in a moment.")), 20000)),
+  ]);
+  await api("/api/push/subscriptions", { method: "POST", body: sub.toJSON() });
+}
+
+/* Turn notifications off for this device (also used when signing out). */
+async function disablePush() {
+  const sub = await pushSubscription().catch(() => null);
+  if (!sub) return;
+  await api("/api/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } }).catch(() => {});
+  await sub.unsubscribe().catch(() => {});
+}
+
 /* ------------------------------------------------------------------- router */
 
 const routes = [
@@ -176,6 +238,11 @@ async function router() {
   const hash = location.hash || "#/feed";
   if (!state.me) {
     try { state.me = await api("/api/me"); } catch { state.me = null; }
+  }
+  // Reminders follow the learner's own day, so learn their time zone the first time we can.
+  if (state.me && !state.me.timezone && deviceZone) {
+    state.me.timezone = deviceZone;
+    api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }).then((me) => { state.me = me; }).catch(() => {});
   }
   $("#banner").hidden = !state.me?.offline_mode;
   $("#banner").textContent = "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
@@ -206,12 +273,20 @@ function shell(active, inner) {
           ${nav.map(([k, i, t]) => `<a href="#/${k}" class="${active === k ? "active" : ""}">${i} ${t}</a>`).join("")}
           ${primary ? `<a href="#/c/${primary}" class="${active === "mine" ? "active" : ""}">💬 My companion</a>` : ""}
           <a href="#/studio/new" class="${active === "studio" ? "active" : ""}">✨ Design a companion</a>
+          <button type="button" class="install" id="installBtn" ${installPrompt ? "" : "hidden"}>📲 Install the app</button>
         </nav>
         <a href="#/feed" class="bell" id="bell" title="Reminders" hidden>🔔 <span></span></a>
         <div class="me"><div><b>${esc(state.me.display_name)}</b><div class="muted small">${esc(state.me.level)}</div></div></div>
       </aside>
       <main class="main">${inner}</main>
     </div>`;
+  $("#installBtn").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => {});
+    installPrompt = null;
+    $("#installBtn")?.setAttribute("hidden", "");
+  });
   refreshBell();
   return $(".main");
 }
@@ -272,7 +347,7 @@ async function viewWelcome() {
   $("#authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
-    const body = tab === "signup" ? f : { email: f.email, password: f.password };
+    const body = tab === "signup" ? { ...f, timezone: deviceZone } : { email: f.email, password: f.password };
     $("#authErr").textContent = "";
     $("#authBtn").disabled = true;
     try {
@@ -1009,36 +1084,113 @@ async function viewStudio({ mode, id }) {
 
 /* ------------------------------------------------------------------ profile */
 
+const hourLabel = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
 async function viewProfile() {
+  const me = state.me;
   const main = shell("profile", `
     <h1>Your profile</h1>
-    <form class="card stack" id="prof" style="max-width:560px">
-      <label>Name <input type="text" name="display_name" maxlength="60" required></label>
-      <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
-      <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
-      <label class="check"><input type="checkbox" name="email_reminders" ${state.me.email_available ? "" : "disabled"}> Email me a daily reminder when something is waiting</label>
-      ${state.me.email_available ? `<div class="muted small" style="margin-top:-8px">Sent to ${esc(state.me.email)}. Every email has a link to stop them.</div>`
-        : `<div class="muted small" style="margin-top:-8px">Email reminders aren't set up on this server yet.</div>`}
-      <div class="error" id="profErr"></div>
-      <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
-    </form>`);
+    <div class="stack" style="max-width:640px">
+      <form class="card stack" id="prof">
+        <label>Name <input type="text" name="display_name" maxlength="60" required></label>
+        <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
+        <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
+        <div class="error" id="profErr"></div>
+        <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
+      </form>
+      <form class="card stack" id="remForm">
+        <div><h2 style="margin:0">Reminders</h2>
+          <div class="muted small">Once a day, when something is waiting: a streak to keep, flashcards due, the next step in your study plan.</div></div>
+        <label>Time of your daily reminder
+          <select name="reminder_hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === me.reminder_hour ? "selected" : ""}>${hourLabel(h)}</option>`).join("")}</select></label>
+        <div class="muted small" id="zoneLine" style="margin-top:-8px"></div>
+        <label class="check"><input type="checkbox" name="email_reminders" ${me.email_available ? "" : "disabled"} ${me.email_reminders ? "checked" : ""}> Email me the daily reminder</label>
+        <div class="muted small" style="margin-top:-8px">${me.email_available ? `Sent to ${esc(me.email)}. Every email has a link to stop them.` : "Email reminders aren't set up on this server yet."}</div>
+        <div class="error" id="remErr"></div>
+        <div><button class="btn primary">Save reminders</button></div>
+        <div class="push-box stack" id="pushBox"></div>
+      </form>
+    </div>`);
   const f = $("#prof", main);
-  f.display_name.value = state.me.display_name; f.level.value = state.me.level; f.goals.value = state.me.goals;
-  f.email_reminders.checked = state.me.email_reminders;
+  f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals;
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const body = Object.fromEntries(new FormData(f));
-      if (state.me.email_available) body.email_reminders = f.email_reminders.checked; else delete body.email_reminders;
-      state.me = await api("/api/me", { method: "PATCH", body });
+      state.me = await api("/api/me", { method: "PATCH", body: Object.fromEntries(new FormData(f)) });
       toast("Profile saved");
     } catch (err) { $("#profErr").textContent = err.message; }
   });
   $("#logout").addEventListener("click", async () => {
+    await disablePush();
     await api("/api/auth/logout", { method: "POST" });
     state.me = null;
     location.hash = "#/welcome";
   });
+
+  const renderZone = () => {
+    $("#zoneLine").innerHTML = `Times are in your time zone, ${esc(state.me.timezone || "UTC")}.`
+      + (deviceZone && deviceZone !== state.me.timezone ? ` <button type="button" class="linkbtn" id="useZone">Use this device's (${esc(deviceZone)})</button>` : "");
+    $("#useZone")?.addEventListener("click", async () => {
+      try { state.me = await api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }); toast("Time zone updated"); renderZone(); }
+      catch (err) { toast(err.message); }
+    });
+  };
+  renderZone();
+  $("#remForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = { reminder_hour: +e.target.reminder_hour.value };
+    if (state.me.email_available) body.email_reminders = e.target.email_reminders.checked;
+    try {
+      state.me = await api("/api/me", { method: "PATCH", body });
+      $("#remErr").textContent = "";
+      toast("Reminders saved");
+    } catch (err) { $("#remErr").textContent = err.message; }
+  });
+
+  const box = $("#pushBox");
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-push]");
+    if (!b) return;
+    b.disabled = true;
+    try {
+      if (b.dataset.push === "on") { await enablePush(); toast("Notifications are on for this device"); }
+      else if (b.dataset.push === "off") { await disablePush(); toast("Notifications are off for this device"); }
+      else if (b.dataset.push === "test") { await api("/api/push/test", { method: "POST" }); toast("Sent. It should appear in a few seconds."); }
+      else if (b.dataset.push === "all-off") {
+        await api("/api/push/devices", { method: "DELETE" });
+        const sub = await pushSubscription().catch(() => null);
+        if (sub) await sub.unsubscribe().catch(() => {});
+        toast("Notifications are off on all your devices");
+      }
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+    renderPushBox(box);
+  });
+  renderPushBox(box);
+}
+
+/* Whether this device gets notifications, and how to turn them on where the browser allows it. */
+async function renderPushBox(box) {
+  const [devices, sub] = await Promise.all([api("/api/push/devices"), pushSubscription().catch(() => null)]);
+  if (!document.body.contains(box)) return;
+  const here = sub && devices.find((d) => d.endpoint === sub.endpoint);
+  const others = devices.filter((d) => d !== here);
+  const note = (html) => `<p class="small" style="margin:0">${html}</p>`;
+  let status;
+  if (!state.me.push_available) status = note(`<span class="muted">Notifications aren't set up on this server yet.</span>`);
+  else if (!pushSupported) {
+    status = note(isIOS && !installedApp
+      ? "On iPhone and iPad, notifications come through the Home Screen app: tap <b>Share</b>, then <b>Add to Home Screen</b>, open AI Every Time from there and turn them on here."
+      : `<span class="muted">This browser can't show notifications.</span>`);
+  } else if (Notification.permission === "denied") {
+    status = note("Notifications are blocked for this site. Allow them in your browser's site settings, then come back here.");
+  } else if (here) {
+    status = note(`✅ On for this device (${esc(here.device)}).`)
+      + `<div class="row"><button type="button" class="btn" data-push="test">Send a test</button><button type="button" class="btn ghost" data-push="off">Turn off on this device</button></div>`;
+  } else {
+    status = `<div class="row"><button type="button" class="btn primary" data-push="on">🔔 Turn on notifications on this device</button></div>`;
+  }
+  box.innerHTML = `<h3 style="margin:0">Notifications on your phone or computer</h3>${status}
+    ${others.length ? `<div class="muted small">Also on: ${others.map((d) => esc(d.device)).join(", ")}. <button type="button" class="linkbtn" data-push="all-off">Turn off everywhere</button></div>` : ""}`;
 }
 
 
