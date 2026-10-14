@@ -5,7 +5,7 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Cookie, HTTPException
+from fastapi import Cookie, Depends, HTTPException
 
 from app import db
 from app.config import settings
@@ -66,7 +66,32 @@ def optional_user(aiet_session: str | None = Cookie(default=None)) -> dict | Non
         return None
 
 
+ROLES = ("learner", "reviewer", "moderator", "admin")
+# What each staff role may do. Admins can do everything, including assigning roles.
+CAN = {
+    "moderate": {"moderator", "admin"},  # review reported community companions
+    "review": {"reviewer", "admin"},     # expert-review learner-made paths before they're shared
+    "admin": {"admin"},
+}
+
+
+def role_of(u: dict) -> str:
+    """Emails in AIET_ADMIN_EMAILS are always admins, so a deployment can't lock itself out."""
+    return "admin" if u["email"].lower() in settings.admin_emails else (u.get("role") or "learner")
+
+
+def require(permission: str):
+    """FastAPI dependency factory: the signed-in user, if their role allows `permission`."""
+
+    def dep(user: dict = Depends(current_user)) -> dict:
+        if role_of(user) not in CAN[permission]:
+            raise HTTPException(403, "You don't have permission to do that")
+        return user
+
+    return dep
+
+
 def public_user(u: dict) -> dict:
     return {k: u[k] for k in ("id", "email", "display_name", "level", "goals", "primary_companion_id", "onboarded")} | {
-        "onboarded": bool(u["onboarded"])
+        "onboarded": bool(u["onboarded"]), "role": role_of(u), "email_reminders": bool(u.get("email_reminders")),
     }

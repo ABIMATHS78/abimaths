@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
-from app import auth, companions, content, db, learning, llm, reminders
+from app import auth, companions, content, db, digest, learning, llm, reminders, staff
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -37,6 +37,8 @@ async def lifespan(_: FastAPI):
     _spawn(content.ensure_initial_posts())
     if settings.autogen_interval_minutes > 0:
         _spawn(content.autogen_loop())
+    if digest.email_available():
+        _spawn(digest.digest_loop())
     if settings.offline:
         log.warning("No Anthropic credentials found: running in offline demo mode.")
     yield
@@ -47,6 +49,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
 app.include_router(learning.router)
 app.include_router(reminders.router)
+app.include_router(staff.router)
+app.include_router(digest.router)
 User = Depends(auth.current_user)
 
 
@@ -70,6 +74,7 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = Field(None, min_length=1, max_length=60)
     level: Literal["beginner", "intermediate", "advanced"] | None = None
     goals: str | None = Field(None, max_length=500)
+    email_reminders: bool | None = None
 
 
 def _set_cookie(response: Response, token: str) -> None:
@@ -121,12 +126,18 @@ def _load_user(user_id: int) -> dict:
 
 @app.get("/api/me")
 def me(user: dict = User):
-    return auth.public_user(user) | {"offline_mode": settings.offline}
+    return auth.public_user(user) | {"offline_mode": settings.offline, "email_available": digest.email_available()}
 
 
 @app.patch("/api/me")
 def update_me(body: ProfileUpdate, user: dict = User):
     changes = body.model_dump(exclude_none=True)
+    if changes.get("email_reminders") and not digest.email_available():
+        raise HTTPException(409, "Email reminders aren't set up on this server yet")
+    if "email_reminders" in changes:
+        changes["email_reminders"] = int(changes["email_reminders"])
+        with db.connect() as conn:
+            digest.ensure_token(conn, user["id"])
     if changes:
         cols = ", ".join(f"{k} = ?" for k in changes)
         with db.connect() as conn:
@@ -281,7 +292,9 @@ def _image_type(data: bytes) -> str | None:
 def companion_avatar(companion_id: int, user: dict | None = Depends(auth.optional_user)):
     # Starter faces are public (they appear on the welcome page); others follow companion visibility.
     c = companions.get(companion_id)
-    if not companions.visible_to(c, user["id"] if user else None):
+    # Moderators also need to see hidden companions' faces to review them.
+    moderator = user is not None and auth.role_of(user) in auth.CAN["moderate"]
+    if not companions.visible_to(c, user["id"] if user else None) and not moderator:
         raise HTTPException(404, "Companion not found")
     with db.connect() as conn:
         photo = conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?", (companion_id,)).fetchone()

@@ -49,9 +49,13 @@ def reminders(user: dict = User):
             f"AND p.id > :seen AND {companions.VISIBLE_SQL}", {"uid": uid, "seen": seen}).fetchone()[0]
         unfinished = conn.execute("SELECT id, title FROM assessments WHERE user_id = ? AND submitted_at IS NULL "
                                   "ORDER BY id DESC LIMIT 1", (uid,)).fetchone()
+        notices = conn.execute("SELECT id, text, link FROM notices WHERE user_id = ? AND read_at IS NULL "
+                               "ORDER BY id DESC LIMIT 5", (uid,)).fetchall()
         started = conn.execute("SELECT lesson_id FROM lesson_progress WHERE user_id = ? AND status = 'started' "
                                "ORDER BY updated_at DESC", (uid,)).fetchall()
 
+    for n in notices:
+        out.append({"kind": "notice", "priority": 0, "id": n["id"], "text": n["text"], "link": n["link"] or "#/feed"})
     today = datetime.now(timezone.utc).date()
     streak = learning._streak(days)
     if streak and today.isoformat() not in days:
@@ -79,6 +83,12 @@ def reminders(user: dict = User):
         out.append({"kind": "new_posts", "priority": 5, "count": new_posts,
                     "text": f"{new_posts} new post{'s' if new_posts != 1 else ''} from companions you follow.", "link": "#/feed"})
     return sorted(out, key=lambda r: r["priority"])
+
+
+@router.post("/reminders/notices/{notice_id}/read", status_code=204)
+def read_notice(notice_id: int, user: dict = User):
+    with db.connect() as conn:
+        conn.execute("UPDATE notices SET read_at = ? WHERE id = ? AND user_id = ?", (db.now(), notice_id, user["id"]))
 
 
 @router.post("/reminders/feed-seen", status_code=204)

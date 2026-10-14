@@ -108,6 +108,8 @@ def list_for(user_id: int) -> list[dict]:
 
 def set_published(user_id: int, companion_id: int, public: bool) -> dict:
     c = get_owned(companion_id, user_id)
+    if public and c["removed"]:
+        raise HTTPException(409, "This companion was removed from the community by a moderator and can't be republished.")
     if public and c["hidden"]:
         raise HTTPException(409, "This companion was hidden after reports from other learners and can't be republished.")
     with db.connect() as conn:

@@ -56,14 +56,33 @@ def teacher_for(user: dict, companion_id: int | None) -> dict:
 CUSTOM_PREFIX = "custom-"
 
 
-def custom_paths(user_id: int) -> list[LearningPath]:
+def _custom_rows(user_id: int) -> list[dict]:
+    """The learner's own custom paths, then other learners' paths that passed expert review."""
     with db.connect() as conn:
-        rows = conn.execute("SELECT id, data FROM custom_paths WHERE user_id = ? ORDER BY id", (user_id,)).fetchall()
-    return [path_from_dict(f"{CUSTOM_PREFIX}{r['id']}", json.loads(r["data"])) for r in rows]
+        rows = conn.execute(
+            "SELECT p.*, u.display_name AS owner_name FROM custom_paths p JOIN users u ON u.id = p.user_id "
+            "WHERE p.user_id = ? OR p.status = 'approved' ORDER BY (p.user_id = ?) DESC, p.id", (user_id, user_id),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def custom_paths(user_id: int) -> list[LearningPath]:
+    return [path_from_dict(f"{CUSTOM_PREFIX}{r['id']}", json.loads(r["data"])) for r in _custom_rows(user_id)]
+
+
+def path_meta(user_id: int) -> dict[str, dict]:
+    """Sharing status of each custom path the learner can see, keyed by path id."""
+    return {
+        f"{CUSTOM_PREFIX}{r['id']}": {
+            "mine": r["user_id"] == user_id, "status": r["status"], "suggested_by": r["owner_name"],
+            "review_note": r["review_note"] if r["user_id"] == user_id else "",
+        }
+        for r in _custom_rows(user_id)
+    }
 
 
 def user_paths(user_id: int) -> list[LearningPath]:
-    """The curated paths plus any paths this learner's companion designed for them."""
+    """The curated paths, the learner's own custom paths, and community paths that passed expert review."""
     return list(PATHS) + custom_paths(user_id)
 
 
@@ -164,20 +183,20 @@ def _lesson_stats(user_id: int) -> dict[str, dict]:
     return stats
 
 
-def _path_view(path: LearningPath, stats: dict[str, dict]) -> dict:
+def _path_view(path: LearningPath, stats: dict[str, dict], meta: dict | None = None) -> dict:
     lessons = [{"id": l.id, "title": l.title, "minutes": l.minutes, "objectives": list(l.objectives),
                 "status": stats.get(l.id, {}).get("status", "not_started"),
                 "best_score": stats.get(l.id, {}).get("best")} for l in path.lessons]
     done = sum(l["status"] == "completed" for l in lessons)
     return {"id": path.id, "title": path.title, "description": path.description, "level": path.level,
             "topic": path.topic, "lessons": lessons, "completed": done, "total": len(lessons),
-            "custom": path.id.startswith(CUSTOM_PREFIX)}
+            "custom": path.id.startswith(CUSTOM_PREFIX)} | (meta or {}).get(path.id, {})
 
 
 @router.get("/paths")
 def list_paths(user: dict = User):
-    stats = _lesson_stats(user["id"])
-    return [_path_view(p, stats) for p in user_paths(user["id"])]
+    stats, meta = _lesson_stats(user["id"]), path_meta(user["id"])
+    return [_path_view(p, stats, meta) for p in user_paths(user["id"])]
 
 
 class NewCustomPath(BaseModel):
@@ -202,14 +221,50 @@ async def create_custom_path(body: NewCustomPath, user: dict = User):
     with db.connect() as conn:
         cur = conn.execute("INSERT INTO custom_paths (user_id, companion_id, data, created_at) VALUES (?, ?, ?, ?)",
                            (user["id"], teacher["id"], json.dumps(data), db.now()))
-    return _path_view(path_from_dict(f"{CUSTOM_PREFIX}{cur.lastrowid}", data), {})
+    pid = f"{CUSTOM_PREFIX}{cur.lastrowid}"
+    return _path_view(path_from_dict(pid, data), {}, path_meta(user["id"]))
+
+
+def _own_path(user_id: int, path_id: str) -> tuple[LearningPath, dict]:
+    """A custom path the learner made (not merely one shared with them), with its sharing status."""
+    path = path_for(user_id, path_id) if path_id.startswith(CUSTOM_PREFIX) else None
+    meta = path_meta(user_id).get(path_id)
+    if path is None or not meta or not meta["mine"]:
+        raise HTTPException(404, "Custom path not found")
+    return path, meta
+
+
+def _path_row_id(path_id: str) -> int:
+    return int(path_id[len(CUSTOM_PREFIX):])
+
+
+@router.post("/custom-paths/{path_id}/submit")
+def submit_for_review(path_id: str, user: dict = User):
+    """Ask an expert reviewer to check this path so it can be shared with every learner."""
+    _, meta = _own_path(user["id"], path_id)
+    if meta["status"] not in ("private", "rejected"):
+        raise HTTPException(409, f"This path is already {meta['status']}")
+    with db.connect() as conn:
+        conn.execute("UPDATE custom_paths SET status = 'pending', submitted_at = ?, review_note = '' WHERE id = ?",
+                     (db.now(), _path_row_id(path_id)))
+    return path_meta(user["id"])[path_id]
+
+
+@router.post("/custom-paths/{path_id}/withdraw")
+def withdraw_from_review(path_id: str, user: dict = User):
+    _, meta = _own_path(user["id"], path_id)
+    if meta["status"] != "pending":
+        raise HTTPException(409, "Only paths waiting for review can be withdrawn")
+    with db.connect() as conn:
+        conn.execute("UPDATE custom_paths SET status = 'private' WHERE id = ?", (_path_row_id(path_id),))
+    return path_meta(user["id"])[path_id]
 
 
 @router.delete("/custom-paths/{path_id}", status_code=204)
 def delete_custom_path(path_id: str, user: dict = User):
-    path = path_for(user["id"], path_id) if path_id.startswith(CUSTOM_PREFIX) else None
-    if path is None:
-        raise HTTPException(404, "Custom path not found")
+    path, meta = _own_path(user["id"], path_id)
+    if meta["status"] == "approved":
+        raise HTTPException(409, "This path is shared with the community. Ask a reviewer to unshare it before deleting.")
     ids = [l.id for l in path.lessons]
     marks = ",".join("?" * len(ids))
     with db.connect() as conn:
@@ -578,7 +633,10 @@ def _streak(days: set[str]) -> int:
 def progress(user: dict = User):
     uid = user["id"]
     stats = _lesson_stats(uid)
-    paths = [_path_view(p, stats) for p in user_paths(uid)]
+    meta = path_meta(uid)
+    # Community paths count once the learner has started them; their own and curated paths always count.
+    paths = [v for v in (_path_view(p, stats, meta) for p in user_paths(uid))
+             if v.get("mine", True) or any(l["status"] != "not_started" for l in v["lessons"])]
     with db.connect() as conn:
         days = {r["day"] for r in conn.execute("SELECT day FROM activity WHERE user_id = ?", (uid,))}
         quiz = conn.execute("SELECT COUNT(*) AS n, AVG(100.0 * score / total) AS avg FROM assessments "

@@ -23,6 +23,20 @@ class Settings:
     session_days: int = field(default_factory=lambda: _int("AIET_SESSION_DAYS", 30))
     secure_cookies: bool = field(default_factory=lambda: os.environ.get("AIET_SECURE_COOKIES") == "1")
     history_turns: int = field(default_factory=lambda: _int("AIET_HISTORY_TURNS", 20))
+    # Comma-separated emails that are always admins (how the first admin gets in).
+    admin_emails: frozenset = field(default_factory=lambda: frozenset(
+        e.strip().lower() for e in os.environ.get("AIET_ADMIN_EMAILS", "").split(",") if e.strip()))
+    # Email reminders: any SMTP server. Leave AIET_SMTP_HOST unset to turn email off.
+    smtp_host: str = field(default_factory=lambda: os.environ.get("AIET_SMTP_HOST", ""))
+    smtp_port: int = field(default_factory=lambda: _int("AIET_SMTP_PORT", 587))
+    smtp_user: str = field(default_factory=lambda: os.environ.get("AIET_SMTP_USER", ""))
+    smtp_password: str = field(default_factory=lambda: os.environ.get("AIET_SMTP_PASSWORD", ""))
+    smtp_starttls: bool = field(default_factory=lambda: os.environ.get("AIET_SMTP_STARTTLS", "1") == "1")
+    mail_from: str = field(default_factory=lambda: os.environ.get("AIET_MAIL_FROM", ""))
+    # Public address of the site, used for links in emails.
+    public_url: str = field(default_factory=lambda: os.environ.get("AIET_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
+    # UTC hour after which the daily reminder email goes out.
+    digest_hour_utc: int = field(default_factory=lambda: _int("AIET_DIGEST_HOUR_UTC", 7))
 
 
 settings = Settings()

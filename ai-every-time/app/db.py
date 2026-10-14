@@ -167,6 +167,25 @@ CREATE TABLE IF NOT EXISTS custom_paths (
     data TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- Every moderation or review decision, for accountability.
+CREATE TABLE IF NOT EXISTS moderation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    staff_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    target_type TEXT NOT NULL CHECK (target_type IN ('companion', 'path', 'user')),
+    target_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+-- Messages to a learner about decisions on their companions or paths, shown with their reminders.
+CREATE TABLE IF NOT EXISTS notices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    link TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    read_at TEXT
+);
 CREATE TABLE IF NOT EXISTS activity (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -201,6 +220,16 @@ MIGRATIONS = [
     ("companions", "hidden", "INTEGER NOT NULL DEFAULT 0"),
     ("companions", "published_at", "TEXT"),
     ("users", "feed_seen_post_id", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "role", "TEXT NOT NULL DEFAULT 'learner'"),
+    ("users", "email_reminders", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "unsubscribe_token", "TEXT"),
+    ("users", "last_digest_on", "TEXT"),
+    ("companions", "removed", "INTEGER NOT NULL DEFAULT 0"),
+    ("custom_paths", "status", "TEXT NOT NULL DEFAULT 'private'"),
+    ("custom_paths", "review_note", "TEXT NOT NULL DEFAULT ''"),
+    ("custom_paths", "reviewed_by", "INTEGER"),
+    ("custom_paths", "submitted_at", "TEXT"),
+    ("custom_paths", "reviewed_at", "TEXT"),
 ]
 
 
@@ -233,6 +262,7 @@ def row_to_companion(row: sqlite3.Row) -> dict:
         "remixed_from": row["remixed_from"],
         "is_public": bool(row["is_public"]),
         "hidden": bool(row["hidden"]),
+        "removed": bool(row["removed"]),
         "published_at": row["published_at"],
         "persona": _with_defaults(json.loads(row["persona"])),
         "created_at": row["created_at"],
