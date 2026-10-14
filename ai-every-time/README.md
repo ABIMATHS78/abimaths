@@ -27,7 +27,10 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Photo avatars** | Upload a PNG, JPEG or WebP (up to 2 MB) instead of the drawn face. Files are identified by their content, not their name, and served so they can't run as a web page. A photo is only visible to people who can see the companion. |
 | **Voice** | Each companion has voice settings: on/off, accent, speed and pitch. Learners can have replies read aloud (🔊 on any reply, or "Read aloud" for every reply) and can dictate questions (🎤). This uses the browser's own speech features, so there's no server cost; how it sounds depends on the voices installed on the device. |
 | **Custom learning paths** | A learner names any topic and their companion designs a 3-8 lesson path for them, with objectives and key points. It works with everything else: lessons, tutoring, quizzes, mock exams, flashcards, study plans and progress. These paths are private and marked as not expert-reviewed. |
-| **Reminders** | A "Today" panel on the feed and a bell in the sidebar list what's waiting: a streak at risk, flashcards due, the next study-plan item (or one that's overdue), an unfinished quiz, a lesson to continue, and new posts from followed companions. |
+| **Staff roles** | Learners, reviewers, moderators and admins. Emails listed in `AIET_ADMIN_EMAILS` are always admins, so a new deployment can't lock itself out. Admins assign the other roles on the Staff page; nobody can change their own role. |
+| **Moderation** | Moderators see every reported community companion: its report count, reasons and details. They can restore it (if hidden), dismiss the reports (if still visible), or remove it from the community for good, with a required note. The designer keeps a private copy and can't republish it. Every decision is logged and the designer is told the outcome. |
+| **Shared paths, expert reviewed** | A learner can submit a custom path for sharing. A reviewer checks it and can correct its title, description, lesson titles, objectives and key points, but not the number of lessons, so learners' progress still lines up. Corrections clear the cached lesson text, so companions re-teach from the corrected facts. Approved paths appear for every learner with an "Expert reviewed · suggested by …" badge. Reviewers can reject (with a note) or later unshare, and can't approve their own paths. |
+| **Reminders** | A "Today" panel on the feed and a bell in the sidebar list what's waiting: a streak at risk, flashcards due, the next study-plan item (or one that's overdue), an unfinished quiz, a lesson to continue, new posts from followed companions, and notices about moderation and review decisions. Learners can opt in to a **daily reminder email** through any SMTP server. It carries one-click unsubscribe (RFC 8058), and its unsubscribe page asks for confirmation so email link-scanners can't unsubscribe people by accident. |
 
 ## Run it
 
@@ -54,6 +57,11 @@ Without an API key, the app runs in **demo mode**: it works end to end, but comp
 | `AIET_SECURE_COOKIES` | off | Set to `1` behind HTTPS |
 | `AIET_HISTORY_TURNS` | `20` | Past conversation turns sent with each message |
 | `AIET_OFFLINE` | off | Set to `1` to force demo mode |
+| `AIET_ADMIN_EMAILS` | — | Comma-separated emails that are always admins |
+| `AIET_SMTP_HOST`, `AIET_SMTP_PORT`, `AIET_SMTP_USER`, `AIET_SMTP_PASSWORD`, `AIET_SMTP_STARTTLS` | — / 587 / — / — / on | SMTP server for reminder emails; email is off while `AIET_SMTP_HOST` is unset |
+| `AIET_MAIL_FROM` | — | Sender address for reminder emails (required for email) |
+| `AIET_PUBLIC_URL` | `http://127.0.0.1:8000` | The site's public address, used for links in emails |
+| `AIET_DIGEST_HOUR_UTC` | `7` | Hour (UTC) after which the daily email goes out |
 
 ## Tests
 
@@ -84,6 +92,10 @@ The tests run in offline mode and cover:
 - custom paths, end to end and private to their owner
 - reminders
 - upgrading an older database
+- staff roles and permissions
+- moderation: restore, dismiss, remove, logging and notices to designers
+- path review: approve with corrections, reject, resubmit, withdraw, unshare, no self-approval
+- email reminders: opt-in, daily digest, sending, one-click unsubscribe
 
 ## How it's built
 
@@ -97,6 +109,8 @@ app/
   tutor.py              Claude: lessons, quiz/exam questions, flashcards, summaries, study plans
   learning.py           Learning API: paths (curated + custom), lessons, assessments, decks and reviews, plans, progress
   reminders.py          What's waiting for the learner, worked out from existing data
+  staff.py              Moderation queue, path review queue, roles, decision log
+  digest.py             Daily reminder email over SMTP, and unsubscribe
   content.py            Topic scores from engagement, post generation, background schedule
   companions.py         Create / remix / edit / version / follow
   auth.py, db.py        Password logins (scrypt) with cookie sessions; SQLite storage
@@ -112,8 +126,7 @@ static/                 Single-page web app (no build step)
 
 ## Next steps
 
-- **A moderation screen** for reviewing reported companions and restoring or removing them. Today a hidden companion stays hidden until someone changes the database.
-- **Email or push reminders** built on the same reminder list (needs an email or push provider).
-- **Sharing custom paths** with the community after expert review.
+- **Push notifications** on phones, built on the same reminder list (needs a push service).
+- **Appeals**, so a designer can ask for a second look after a removal.
 - **Server-side voices** for consistent, higher-quality speech on every device (needs a text-to-speech provider).
 - **Postgres** in place of SQLite, and a job queue in place of the in-process scheduler, for multi-instance deployment.

@@ -168,6 +168,7 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
+  [/^#\/staff(?:\/(reports|paths|roles|log))?$/, viewStaff],
 ];
 
 async function router() {
@@ -195,6 +196,7 @@ window.addEventListener("hashchange", router);
 function shell(active, inner) {
   const nav = [["feed", "🏠", "Feed"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
     ["companions", "🌍", "Companions"], ["profile", "👤", "Profile"]];
+  if (state.me?.role && state.me.role !== "learner") nav.push(["staff", "🛡️", "Staff"]);
   const primary = state.me?.primary_companion_id;
   app.innerHTML = `
     <div class="shell">
@@ -447,7 +449,16 @@ async function viewFeed() {
   wirePosts(main, posts, viewFeed);
   const rem = (await api("/api/reminders")).filter((r) => r.kind !== "new_posts");
   if (rem.length) {
-    $("#today").innerHTML = `<div class="card today"><h3>Today</h3><ul>${rem.map((r) => `<li><a href="${r.link}">${esc(r.text)}</a></li>`).join("")}</ul></div>`;
+    $("#today").innerHTML = `<div class="card today"><h3>Today</h3><ul>${rem.map((r) => r.kind === "notice"
+      ? `<li class="notice"><span>📣 <a href="${esc(r.link)}">${esc(r.text)}</a></span><button class="linkbtn" data-read="${r.id}">Dismiss</button></li>`
+      : `<li><a href="${esc(r.link)}">${esc(r.text)}</a></li>`).join("")}</ul></div>`;
+    $("#today").addEventListener("click", async (e) => {
+      const id = e.target.dataset.read;
+      if (!id) return;
+      await api(`/api/reminders/notices/${id}/read`, { method: "POST" });
+      e.target.closest("li").remove();
+      refreshBell();
+    });
   }
   await api("/api/reminders/feed-seen", { method: "POST" });
   refreshBell();
@@ -1005,15 +1016,21 @@ async function viewProfile() {
       <label>Name <input type="text" name="display_name" maxlength="60" required></label>
       <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
       <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
+      <label class="check"><input type="checkbox" name="email_reminders" ${state.me.email_available ? "" : "disabled"}> Email me a daily reminder when something is waiting</label>
+      ${state.me.email_available ? `<div class="muted small" style="margin-top:-8px">Sent to ${esc(state.me.email)}. Every email has a link to stop them.</div>`
+        : `<div class="muted small" style="margin-top:-8px">Email reminders aren't set up on this server yet.</div>`}
       <div class="error" id="profErr"></div>
       <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
     </form>`);
   const f = $("#prof", main);
   f.display_name.value = state.me.display_name; f.level.value = state.me.level; f.goals.value = state.me.goals;
+  f.email_reminders.checked = state.me.email_reminders;
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      state.me = await api("/api/me", { method: "PATCH", body: Object.fromEntries(new FormData(f)) });
+      const body = Object.fromEntries(new FormData(f));
+      if (state.me.email_available) body.email_reminders = f.email_reminders.checked; else delete body.email_reminders;
+      state.me = await api("/api/me", { method: "PATCH", body });
       toast("Profile saved");
     } catch (err) { $("#profErr").textContent = err.message; }
   });
@@ -1088,6 +1105,18 @@ const STATUS_ICON = { completed: "✅", started: "🟣", not_started: "⚪" };
 
 /* -------------------------------------------------------------------- learn */
 
+function pathBadge(p) {
+  if (!p.custom) return "";
+  if (!p.mine) return `<div class="small custom-badge ok">✔ Expert reviewed · suggested by ${esc(p.suggested_by)}</div>`;
+  const text = {
+    private: "Made for you by your companion · not reviewed by experts, so double-check key facts",
+    pending: "Waiting for expert review before it's shared",
+    approved: "✔ Expert reviewed and shared with every learner",
+    rejected: `Not approved for sharing: ${esc(p.review_note)}`,
+  }[p.status];
+  return `<div class="small custom-badge ${p.status === "approved" ? "ok" : p.status === "rejected" ? "bad" : ""}">${text}</div>`;
+}
+
 async function viewLearn() {
   const paths = await api("/api/paths");
   const main = shell("learn", `
@@ -1108,9 +1137,11 @@ async function viewLearn() {
         <section class="card stack" data-path="${p.id}">
           <div class="row spread">
             <div><h2 style="margin:0">${esc(p.title)}</h2><div class="muted small">${esc(label(p.level))} · ${p.total} lessons · ${p.completed}/${p.total} done</div>
-              ${p.custom ? `<div class="small custom-badge">Made for you by your companion · not reviewed by experts, so double-check key facts</div>` : ""}</div>
+              ${pathBadge(p)}</div>
             <div class="row">
-              ${p.custom ? `<button class="btn ghost danger" data-act="delete">Delete</button>` : ""}
+              ${p.custom && p.mine && ["private", "rejected"].includes(p.status) ? `<button class="btn ghost" data-act="submit">Share with community</button>` : ""}
+              ${p.custom && p.mine && p.status === "pending" ? `<button class="btn ghost" data-act="withdraw">Withdraw from review</button>` : ""}
+              ${p.custom && p.mine && p.status !== "approved" ? `<button class="btn ghost danger" data-act="delete">Delete</button>` : ""}
               <button class="btn" data-act="cards">🃏 Flashcards</button>
               <button class="btn primary" data-act="exam">🎓 Mock exam</button>
             </div>
@@ -1126,6 +1157,15 @@ async function viewLearn() {
   $$("[data-path]", main).forEach((el) => el.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-act]");
     if (!b) return;
+    if (b.dataset.act === "submit" || b.dataset.act === "withdraw") {
+      if (b.dataset.act === "submit" && !confirm("Send this path to an expert reviewer? If approved, every learner can take it, " +
+        "and it will show you as the person who suggested it. The reviewer may correct its key facts.")) return;
+      try {
+        await api(`/api/custom-paths/${el.dataset.path}/${b.dataset.act}`, { method: "POST" });
+        toast(b.dataset.act === "submit" ? "Sent for expert review" : "Withdrawn from review");
+      } catch (err) { toast(err.message); }
+      return viewLearn();
+    }
     if (b.dataset.act === "delete") {
       if (!confirm("Delete this path? Its lesson progress goes too. Quiz results stay in your history.")) return;
       await api(`/api/custom-paths/${el.dataset.path}`, { method: "DELETE" });
@@ -1409,6 +1449,142 @@ function planForm(paths, minutes) {
     </div>
     <button class="btn primary">Create my plan</button>
   </form>`;
+}
+
+
+/* -------------------------------------------------------------------- staff */
+
+const ROLE_CAN = { moderator: ["reports", "log"], reviewer: ["paths", "log"], admin: ["reports", "paths", "roles", "log"] };
+const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
+const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
+
+async function viewStaff(m) {
+  const tabs = ROLE_CAN[state.me.role] || [];
+  if (!tabs.length) { location.hash = "#/feed"; return; }
+  const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
+  const names = { reports: "Reported companions", paths: "Path reviews", roles: "Roles", log: "Decision log" };
+  const main = shell("staff", `
+    <h1>Staff</h1>
+    <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
+    <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
+  const body = $("#staffBody", main);
+  await { reports: staffReports, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+}
+
+async function staffReports(body, m) {
+  const list = await api("/api/staff/companions");
+  if (!list.length) { body.innerHTML = `<div class="card empty">No open reports. 🎉</div>`; return; }
+  body.innerHTML = list.map((c) => `
+    <article class="card stack" data-id="${c.id}">
+      <div class="row">
+        <img class="avatar" src="/api/companions/${c.id}/avatar?v=${encodeURIComponent(c.updated_at)}" width="56" height="56" alt="">
+        <div style="flex:1">
+          <h3 style="margin:0">${esc(c.persona.name)} ${esc(c.persona.flag)} ${c.hidden ? `<span class="chip bad">Hidden</span>` : `<span class="chip">Still visible</span>`}</h3>
+          <div class="muted small">Designed by ${esc(c.designer || "?")} · ${c.reports} report${c.reports === 1 ? "" : "s"} ·
+            ${Object.entries(c.reasons).map(([k, n]) => `${REASON_LABEL[k] || esc(k)} ×${n}`).join(", ")}</div>
+        </div>
+      </div>
+      <div class="small"><b>Tagline:</b> ${esc(c.persona.tagline) || "–"}<br><b>Bio:</b> ${esc(c.persona.bio) || "–"}<br>
+        <b>Sample line:</b> ${esc(c.persona.writing_style.sample_line) || "–"}<br><b>Expertise:</b> ${esc(c.persona.expertise.join(", ")) || "–"}</div>
+      <label>Note to the designer <span class="hint">Required when removing</span><textarea name="note" maxlength="500"></textarea></label>
+      <div class="row">
+        <button class="btn" data-act="${c.hidden ? "restore" : "dismiss"}">${c.hidden ? "Restore to community" : "Dismiss reports"}</button>
+        <button class="btn danger" data-act="remove">Remove from community</button>
+      </div>
+    </article>`).join("");
+  $$("[data-id]", body).forEach((el) => el.addEventListener("click", async (e) => {
+    const act = e.target.dataset.act;
+    if (!act) return;
+    const note = $("[name=note]", el).value.trim();
+    if (act === "remove" && !confirm("Remove this companion from the community for good? The designer keeps a private copy.")) return;
+    try {
+      await api(`/api/staff/companions/${el.dataset.id}`, { method: "POST", body: { action: act, note } });
+      toast("Decision saved and the designer was told");
+      staffReports(body, m);
+    } catch (err) { toast(err.message); }
+  }));
+}
+
+async function staffPaths(body, m) {
+  const [pending, shared] = await Promise.all([api("/api/staff/paths?status=pending"), api("/api/staff/paths?status=approved")]);
+  body.innerHTML = `
+    <h2>Waiting for review (${pending.length})</h2>
+    ${pending.length ? pending.map((p) => `
+      <form class="card stack review" data-id="${p.id}">
+        <div class="muted small">Suggested by ${esc(p.owner_name)} · ${esc(label(p.level))} · topic “${esc(p.topic)}” · submitted ${timeAgo(p.submitted_at)}</div>
+        <label>Title <input type="text" name="title" maxlength="80" value="${esc(p.title)}"></label>
+        <label>Description <textarea name="description" maxlength="400">${esc(p.description)}</textarea></label>
+        ${p.lessons.map((l, i) => `
+          <fieldset class="lesson-edit">
+            <legend>Lesson ${i + 1}</legend>
+            <div class="two"><label>Title <input type="text" data-l="${i}" data-f="title" maxlength="90" value="${esc(l.title)}"></label>
+              <label>Minutes <input type="number" data-l="${i}" data-f="minutes" min="5" max="20" value="${l.minutes}"></label></div>
+            <label>Objectives <span class="hint">One per line, up to 3</span><textarea data-l="${i}" data-f="objectives">${esc(l.objectives.join("\n"))}</textarea></label>
+            <label>Key points <span class="hint">One per line, 2 to 5. Check each one is accurate.</span><textarea data-l="${i}" data-f="key_points" rows="5">${esc(l.key_points.join("\n"))}</textarea></label>
+          </fieldset>`).join("")}
+        <label>Note to the learner <span class="hint">Required when rejecting</span><textarea name="note" maxlength="1000"></textarea></label>
+        <div class="row"><button class="btn primary" data-act="approve">Approve and share</button><button class="btn danger" data-act="reject">Reject</button></div>
+      </form>`).join("") : `<div class="card empty">Nothing to review.</div>`}
+    <h2 style="margin-top:20px">Shared paths (${shared.length})</h2>
+    ${shared.length ? `<div class="card"><table class="table"><thead><tr><th>Path</th><th>Suggested by</th><th>Reviewed</th><th></th></tr></thead><tbody>
+      ${shared.map((p) => `<tr data-id="${p.id}"><td>${esc(p.title)}</td><td>${esc(p.owner_name)}</td><td class="muted small">${timeAgo(p.reviewed_at)}</td>
+        <td><button class="btn ghost danger" data-unshare>Unshare</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="card empty">No shared paths yet.</div>`}`;
+  $$("form.review", body).forEach((f) => f.addEventListener("click", async (e) => {
+    const act = e.target.dataset.act;
+    if (!act) return;
+    e.preventDefault();
+    const n = $$("fieldset.lesson-edit", f).length;
+    const lessons = Array.from({ length: n }, (_, i) => {
+      const get = (k) => $(`[data-l="${i}"][data-f="${k}"]`, f).value;
+      return { title: get("title").trim(), minutes: +get("minutes"), objectives: lines(get("objectives")), key_points: lines(get("key_points")) };
+    });
+    const field = (n) => f.elements.namedItem(n).value.trim();
+    const payload = { decision: act, note: field("note") };
+    if (act === "approve") Object.assign(payload, { title: field("title"), description: field("description"), lessons });
+    try {
+      await api(`/api/staff/paths/${f.dataset.id}`, { method: "POST", body: payload });
+      toast(act === "approve" ? "Approved and shared with every learner" : "Rejected; the learner was told why");
+      staffPaths(body, m);
+    } catch (err) { toast(err.message); }
+  }));
+  $$("tr[data-id] [data-unshare]", body).forEach((b) => b.addEventListener("click", async () => {
+    const note = prompt("Why is this path being unshared? The learner who suggested it will see this.");
+    if (!note) return;
+    try {
+      await api(`/api/staff/paths/${b.closest("tr").dataset.id}`, { method: "POST", body: { decision: "unshare", note } });
+      toast("Path unshared");
+      staffPaths(body, m);
+    } catch (err) { toast(err.message); }
+  }));
+}
+
+async function staffRoles(body, m) {
+  body.innerHTML = `
+    <form class="card row" id="userSearch"><input type="text" name="q" placeholder="Search by name or email" aria-label="Search users" style="flex:1"><button class="btn">Search</button></form>
+    <div class="card"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead><tbody id="userRows"></tbody></table>
+    <p class="muted small">Moderators review reported companions. Reviewers check learner-made paths before they're shared. Admins can do both and assign roles.</p></div>`;
+  const load = async (q = "") => {
+    const users = await api(`/api/staff/users?q=${encodeURIComponent(q)}`);
+    $("#userRows", body).innerHTML = users.map((u) => `<tr data-id="${u.id}"><td>${esc(u.display_name)}</td><td>${esc(u.email)}</td><td>
+      ${u.fixed || u.id === state.me.id ? `${label(u.role)} <span class="muted small">(${u.fixed ? "set in server config" : "you"})</span>`
+        : `<select aria-label="Role for ${esc(u.display_name)}">${["learner", "reviewer", "moderator", "admin"].map((r) => `<option value="${r}" ${r === u.role ? "selected" : ""}>${label(r)}</option>`).join("")}</select>`}
+    </td></tr>`).join("");
+  };
+  $("#userSearch", body).addEventListener("submit", (e) => { e.preventDefault(); load(e.target.q.value); });
+  $("#userRows", body).addEventListener("change", async (e) => {
+    const id = e.target.closest("tr").dataset.id;
+    try { await api(`/api/staff/users/${id}/role`, { method: "POST", body: { role: e.target.value } }); toast("Role updated"); }
+    catch (err) { toast(err.message); load(); }
+  });
+  await load();
+}
+
+async function staffLog(body) {
+  const rows = await api("/api/staff/log");
+  body.innerHTML = rows.length ? `<div class="card"><table class="table"><thead><tr><th>When</th><th>Who</th><th>What</th><th>Note</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td class="muted small">${timeAgo(r.created_at)}</td><td>${esc(r.staff_name || "–")}</td>
+      <td>${esc(label(r.action.replace(":", " → ")))} ${esc(r.target_type)} #${r.target_id}</td><td class="small">${esc(r.note)}</td></tr>`).join("")}
+  </tbody></table></div>` : `<div class="card empty">No decisions yet.</div>`;
 }
 
 router();
