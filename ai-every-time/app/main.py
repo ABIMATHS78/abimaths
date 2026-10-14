@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import auth, companions, content, db, digest, learning, llm, push, reminders, staff
+from app import account, auth, companions, content, db, digest, learning, llm, push, reminders, staff
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -55,6 +55,7 @@ app.include_router(reminders.router)
 app.include_router(staff.router)
 app.include_router(digest.router)
 app.include_router(push.router)
+app.include_router(account.router)
 User = Depends(auth.current_user)
 
 
@@ -106,11 +107,6 @@ class ProfileUpdate(BaseModel):
     reminder_hour: int | None = Field(None, ge=0, le=23)
 
 
-def _set_cookie(response: Response, token: str) -> None:
-    response.set_cookie(auth.COOKIE, token, httponly=True, samesite="lax", secure=settings.secure_cookies,
-                        max_age=settings.session_days * 86400)
-
-
 @app.post("/api/auth/signup", status_code=201)
 def signup(body: Signup, response: Response):
     try:
@@ -128,17 +124,21 @@ def signup(body: Signup, response: Response):
             reminders.mark_feed_seen(conn, cur.lastrowid)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "An account with that email already exists")
-    _set_cookie(response, auth.create_session(cur.lastrowid))
+    auth.set_cookie(response, auth.create_session(cur.lastrowid))
     return me(_load_user(cur.lastrowid))
 
 
 @app.post("/api/auth/login")
 def login(body: Login, response: Response):
+    email = body.email.lower()
+    account.check_guesses(email)
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (body.email.lower(),)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
     if row is None or not auth.verify_password(body.password, row["password_hash"]):
+        account.wrong_password(email)
         raise HTTPException(401, "Wrong email or password")
-    _set_cookie(response, auth.create_session(row["id"]))
+    account.right_password(email)
+    auth.set_cookie(response, auth.create_session(row["id"]))
     return me(dict(row))
 
 

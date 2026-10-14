@@ -216,6 +216,7 @@ async function disablePush() {
 
 const routes = [
   [/^#\/welcome$/, viewWelcome, false],
+  [/^#\/reset\/([\w-]+)$/, viewReset, null],
   [/^#\/onboarding$/, viewOnboarding],
   [/^#\/feed$/, viewFeed],
   [/^#\/companions$/, viewCompanions],
@@ -235,9 +236,13 @@ const routes = [
 
 async function router() {
   state.nav++;
+  // A dialog belongs to the page that opened it (Back, a notification or a link can change pages under it).
+  if ($("#dialog")?.open) $("#dialog").close();
   const hash = location.hash || "#/feed";
   if (!state.me) {
-    try { state.me = await api("/api/me"); } catch { state.me = null; }
+    // Not api(): its sign-in redirect would pull pages open to everyone, like the reset link, back to the welcome page.
+    const res = await fetch("/api/me", { credentials: "same-origin" }).catch(() => null);
+    state.me = res?.ok ? await res.json() : null;
   }
   // Reminders follow the learner's own day, so learn their time zone the first time we can.
   if (state.me && !state.me.timezone && deviceZone) {
@@ -246,12 +251,13 @@ async function router() {
   }
   $("#banner").hidden = !state.me?.offline_mode;
   $("#banner").textContent = "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
+  // needsAuth: true = signed in, false = signed out, null = either.
   for (const [re, view, needsAuth = true] of routes) {
     const m = hash.match(re);
     if (!m) continue;
-    if (needsAuth && !state.me) { location.hash = "#/welcome"; return; }
-    if (!needsAuth && state.me) { location.hash = "#/feed"; return; }
-    if (needsAuth && !state.me.onboarded && !/^#\/(onboarding|studio)/.test(hash)) { location.hash = "#/onboarding"; return; }
+    if (needsAuth === true && !state.me) { location.hash = "#/welcome"; return; }
+    if (needsAuth === false && state.me) { location.hash = "#/feed"; return; }
+    if (needsAuth === true && !state.me.onboarded && !/^#\/(onboarding|studio)/.test(hash)) { location.hash = "#/onboarding"; return; }
     try { await view(m); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
     window.scrollTo(0, 0);
     return;
@@ -332,6 +338,7 @@ async function viewWelcome() {
           </label>
           <div class="error" id="authErr"></div>
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
+          <button type="button" class="linkbtn" id="forgotBtn" data-only="login" hidden>Forgot your password?</button>
         </form>
       </div>
     </section>`;
@@ -339,11 +346,12 @@ async function viewWelcome() {
   const setTab = (t) => {
     tab = t;
     $$("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
-    $$("[data-only=signup]").forEach((el) => (el.hidden = t !== "signup"));
+    $$("[data-only]").forEach((el) => (el.hidden = el.dataset.only !== t));
     $("#authBtn").textContent = t === "signup" ? "Create account" : "Sign in";
     $("[name=password]").autocomplete = t === "signup" ? "new-password" : "current-password";
   };
   $$("[data-tab]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  $("#forgotBtn").addEventListener("click", () => showForgot($("[name=email]").value.trim()));
   $("#authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
@@ -358,6 +366,57 @@ async function viewWelcome() {
     } finally {
       $("#authBtn").disabled = false;
     }
+  });
+}
+
+function showForgot(email) {
+  showDialog(`<h2>Forgot your password?</h2>
+    <p>Enter the email address of your account and we'll send a link for choosing a new password.</p>
+    <form id="forgotForm" class="stack">
+      <label>Email <input type="email" name="email" autocomplete="email" required value="${esc(email)}"></label>
+      <div class="small" id="forgotMsg" role="status"></div>
+      <button class="btn primary">Send the link</button>
+    </form>`);
+  $("#forgotForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("button", e.target);
+    btn.disabled = true;
+    try {
+      await api("/api/auth/forgot", { method: "POST", body: { email: e.target.email.value.trim() } });
+      $("#forgotMsg").textContent = "If there's an account with that address, a link is on its way. It works once, within the next hour.";
+    } catch (err) {
+      $("#forgotMsg").textContent = err.message;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* Opened from the emailed link. Works whether or not someone is signed in on this browser. */
+async function viewReset(m) {
+  app.innerHTML = `
+    <section class="card stack narrow-card">
+      <div class="logo" style="margin:0">AI <span>Every</span> Time</div>
+      <h1 style="margin:0">Choose a new password</h1>
+      <form id="resetForm" class="stack" novalidate>
+        <label>New password <span class="hint">At least 8 characters</span><input type="password" name="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Type it again <input type="password" name="again" autocomplete="new-password" required minlength="8"></label>
+        <div class="error" id="resetErr"></div>
+        <button class="btn primary">Save and sign in</button>
+      </form>
+      <p class="muted small" style="margin:0">This signs you out on every other phone and browser, and stops notifications on them.</p>
+    </section>`;
+  $("#resetForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (f.password.value.length < 8) { $("#resetErr").textContent = "Use at least 8 characters."; return; }
+    if (f.password.value !== f.again.value) { $("#resetErr").textContent = "The two passwords don't match."; return; }
+    try {
+      await api("/api/auth/reset", { method: "POST", body: { token: m[1], password: f.password.value } });
+      state.me = await api("/api/me");
+      toast("Password changed. You're signed in.");
+      // Replace the link in the history so the spent token isn't left behind.
+      location.replace(state.me.onboarded ? "#/feed" : "#/onboarding");
+    } catch (err) { $("#resetErr").textContent = err.message; }
   });
 }
 
@@ -1114,6 +1173,19 @@ async function viewProfile() {
         <div><button class="btn primary">Save reminders</button></div>
         <div class="push-box stack" id="pushBox"></div>
       </form>
+      <form class="card stack" id="pwForm">
+        <div><h2 style="margin:0">Password and devices</h2><div class="muted small" id="sessionsLine"></div></div>
+        <label>Current password <input type="password" name="current_password" autocomplete="current-password" required></label>
+        <label>New password <span class="hint">At least 8 characters</span><input type="password" name="new_password" autocomplete="new-password" required minlength="8"></label>
+        <div class="error" id="pwErr"></div>
+        <div class="row"><button class="btn primary">Change password</button><button type="button" class="btn ghost" id="signOutOthers">Sign out other devices</button></div>
+        <div class="muted small">Both sign out every other phone and browser and stop notifications on them.</div>
+      </form>
+      <div class="card stack">
+        <div><h2 style="margin:0">Your data</h2>
+          <div class="muted small">Your account, companions, chats, memories, progress and settings, in one file you can keep.</div></div>
+        <div class="row"><a class="btn" href="/api/me/export" download>⬇ Download my data</a><button type="button" class="btn danger" id="deleteAccount">Delete my account</button></div>
+      </div>
     </div>`);
   const f = $("#prof", main);
   f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals;
@@ -1170,6 +1242,60 @@ async function viewProfile() {
     renderPushBox(box);
   });
   renderPushBox(box);
+
+  const renderSessions = async () => {
+    const { others } = await api("/api/me/sessions");
+    $("#sessionsLine").textContent = others ? `You're also signed in on ${others} other phone${others === 1 ? "" : "s"} or browser${others === 1 ? "" : "s"}.`
+      : "You're only signed in here.";
+  };
+  renderSessions();
+  // This device keeps its notifications when the others are signed out.
+  const thisDevice = async () => (await pushSubscription().catch(() => null))?.endpoint || null;
+  $("#pwForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (f.new_password.value.length < 8) { $("#pwErr").textContent = "Use at least 8 characters for the new password."; return; }
+    try {
+      await api("/api/me/password", { method: "POST", body: {
+        current_password: f.current_password.value, new_password: f.new_password.value, keep_device: await thisDevice() } });
+      f.reset();
+      $("#pwErr").textContent = "";
+      toast("Password changed. Other devices are signed out.");
+      renderSessions(); renderPushBox(box);
+    } catch (err) { $("#pwErr").textContent = err.message; }
+  });
+  $("#signOutOthers").addEventListener("click", async () => {
+    if (!confirm("Sign out every other phone and browser? Notifications stop on them too.")) return;
+    try {
+      await api("/api/me/sign-out-others", { method: "POST", body: { keep_device: await thisDevice() } });
+      toast("Other devices are signed out");
+      renderSessions(); renderPushBox(box);
+    } catch (err) { toast(err.message); }
+  });
+  $("#deleteAccount").addEventListener("click", showDeleteAccount);
+}
+
+function showDeleteAccount() {
+  showDialog(`<h2>Delete your account?</h2>
+    <p>This deletes your account and everything in it, for good: the companions you designed (and their posts, which learners following them lose too), your chats, memories, progress, flashcards and settings.</p>
+    <p>You can <a href="/api/me/export" download>download your data</a> first.</p>
+    <form id="deleteForm" class="stack">
+      <label>Your password <input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="error" id="deleteErr"></div>
+      <button class="btn danger">Delete my account</button>
+    </form>`);
+  $("#deleteForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/me", { method: "DELETE", body: { password: e.target.password.value } });
+      const sub = await pushSubscription().catch(() => null);
+      if (sub) await sub.unsubscribe().catch(() => {});
+      state.me = null;
+      $("#dialog").close();
+      toast("Your account was deleted.");
+      location.hash = "#/welcome";
+    } catch (err) { $("#deleteErr").textContent = err.message; }
+  });
 }
 
 /* Whether this device gets notifications, and how to turn them on where the browser allows it. */
