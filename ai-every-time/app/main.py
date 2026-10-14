@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
@@ -161,11 +161,12 @@ def me(user: dict = User):
     return auth.public_user(user) | {
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
+        "email_confirmed": bool(user.get("email_confirmed_at")),
     }
 
 
 @app.patch("/api/me")
-def update_me(body: ProfileUpdate, user: dict = User):
+def update_me(body: ProfileUpdate, background: BackgroundTasks, user: dict = User):
     changes = body.model_dump(exclude_none=True)
     if changes.get("email_reminders") and not digest.email_available():
         raise HTTPException(409, "Email reminders aren't set up on this server yet")
@@ -173,6 +174,9 @@ def update_me(body: ProfileUpdate, user: dict = User):
         changes["email_reminders"] = int(changes["email_reminders"])
         with db.connect() as conn:
             digest.ensure_token(conn, user["id"])
+        if changes["email_reminders"] and not user["email_reminders"]:
+            # Nothing is emailed until the learner confirms the address is theirs.
+            digest.request_confirmation(user, background)
     if changes:
         cols = ", ".join(f"{k} = ?" for k in changes)
         with db.connect() as conn:
@@ -535,6 +539,12 @@ app.mount("/static", StaticFiles(directory=STATIC), name="static")
 @app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    # Browsers ask for this on pages that don't name an icon, such as an email link opened in a new tab.
+    return FileResponse(STATIC / "icons" / "favicon-32.png", media_type="image/png")
 
 
 @app.get("/sw.js", include_in_schema=False)

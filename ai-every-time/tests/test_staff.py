@@ -193,12 +193,18 @@ def test_email_reminders_opt_in_digest_and_unsubscribe(client, monkeypatch):
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
     monkeypatch.setattr(settings, "mail_from", "AI Every Time <hello@example.com>")
     monkeypatch.setattr(settings, "public_url", "https://aieverytime.example")
+    from tests.test_email import Mailbox
+
+    box = Mailbox()
+    monkeypatch.setattr(digest.smtplib, "SMTP", box)
     me = client.patch("/api/me", json={"email_reminders": True}).json()
-    assert me["email_reminders"] and me["email_available"]
+    assert me["email_reminders"] and me["email_available"] and not me["email_confirmed"]
 
     client.get("/api/lessons/tokens")  # something to remind about
     # Ada hasn't picked a reminder time and has no known time zone, so it's the default hour in UTC.
     monkeypatch.setattr(settings, "reminder_hour", 7)
+    assert digest.due_digests(datetime(2026, 1, 1, 7, 5, tzinfo=timezone.utc)) == []  # not until it's confirmed
+    assert client.post("/api/email/confirm", content=f"token={box.link_token('confirm')}").status_code == 200
     assert digest.due_digests(datetime(2026, 1, 1, 6, 59, tzinfo=timezone.utc)) == []
     due = digest.due_digests(datetime(2026, 1, 1, 7, 5, tzinfo=timezone.utc))
     assert len(due) == 1

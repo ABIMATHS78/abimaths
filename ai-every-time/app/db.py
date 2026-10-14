@@ -227,6 +227,14 @@ CREATE TABLE IF NOT EXISTS password_resets (
     expires_at TEXT NOT NULL,
     used_at TEXT
 );
+-- Links that confirm an email address belongs to the learner, sent before any reminder email.
+CREATE TABLE IF NOT EXISTS email_confirmations (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
 -- Recent wrong passwords per email, to slow down guessing.
 CREATE TABLE IF NOT EXISTS login_failures (
     email TEXT NOT NULL,
@@ -262,7 +270,8 @@ def connect() -> Iterator[sqlite3.Connection]:
 
 
 # Columns added after the first release. CREATE TABLE IF NOT EXISTS won't add them to
-# existing databases, so they are added here when missing.
+# existing databases, so they are added here when missing. An optional fourth item is SQL
+# that fills the new column in, run once, right after the column is added.
 MIGRATIONS = [
     ("companions", "is_public", "INTEGER NOT NULL DEFAULT 0"),
     ("companions", "hidden", "INTEGER NOT NULL DEFAULT 0"),
@@ -282,6 +291,8 @@ MIGRATIONS = [
     ("users", "reminder_hour", "INTEGER"),
     ("users", "last_push_on", "TEXT"),
     ("notices", "pushed_at", "TEXT"),
+    # Learners who turned on reminder emails before addresses were confirmed keep getting them.
+    ("users", "email_confirmed_at", "TEXT", "UPDATE users SET email_confirmed_at = created_at WHERE email_reminders = 1"),
 ]
 
 
@@ -289,10 +300,12 @@ def init_db() -> None:
     with connect() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
-        for table, column, ddl in MIGRATIONS:
+        for table, column, ddl, *backfill in MIGRATIONS:
             cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             if column not in cols:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                for sql in backfill:
+                    conn.execute(sql)
 
 
 def _with_defaults(persona: dict) -> dict:

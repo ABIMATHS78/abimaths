@@ -1171,7 +1171,7 @@ async function viewProfile() {
           <select name="reminder_hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === me.reminder_hour ? "selected" : ""}>${hourLabel(h)}</option>`).join("")}</select></label>
         <div class="muted small" id="zoneLine" style="margin-top:-8px"></div>
         <label class="check"><input type="checkbox" name="email_reminders" ${me.email_available ? "" : "disabled"} ${me.email_reminders ? "checked" : ""}> Email me the daily reminder</label>
-        <div class="muted small" style="margin-top:-8px">${me.email_available ? `Sent to ${esc(me.email)}. Every email has a link to stop them.` : "Email reminders aren't set up on this server yet."}</div>
+        <div class="muted small" id="emailLine" style="margin-top:-8px"></div>
         <div class="error" id="remErr"></div>
         <div><button class="btn primary">Save reminders</button></div>
         <div class="push-box stack" id="pushBox"></div>
@@ -1215,14 +1215,33 @@ async function viewProfile() {
     });
   };
   renderZone();
+  // Reminder emails only start once the learner confirms the address is theirs.
+  const renderEmail = () => {
+    const m = state.me, line = $("#emailLine");
+    if (!m.email_available) { line.textContent = "Email reminders aren't set up on this server yet."; return; }
+    line.innerHTML = m.email_confirmed
+      ? `Sent to ${esc(m.email)}, which you've confirmed. Every email has a link to stop them.`
+      : `Sent to ${esc(m.email)} once you confirm it's yours: ${m.email_reminders ? "look for the link in your inbox, or " : ""}`
+        + `<button type="button" class="textbtn" id="sendConfirm">${m.email_reminders ? "send it again" : "send a confirmation link"}</button>.`;
+    $("#sendConfirm")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try { await api("/api/email/confirmation", { method: "POST" }); toast("Sent. Check your inbox (and spam folder)."); }
+      catch (err) { toast(err.message); }
+      e.target.disabled = false;
+    });
+  };
+  renderEmail();
   $("#remForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = { reminder_hour: +e.target.reminder_hour.value };
     if (state.me.email_available) body.email_reminders = e.target.email_reminders.checked;
+    const wasOn = state.me.email_reminders;
     try {
       state.me = await api("/api/me", { method: "PATCH", body });
       $("#remErr").textContent = "";
-      toast("Reminders saved");
+      renderEmail();
+      toast(state.me.email_reminders && !wasOn && !state.me.email_confirmed
+        ? "Saved. We've emailed you a link: confirm your address to start getting reminder emails." : "Reminders saved");
     } catch (err) { $("#remErr").textContent = err.message; }
   });
 

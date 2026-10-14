@@ -28,6 +28,12 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
+def hash_token(token: str) -> str:
+    """How emailed one-time links are stored: a leaked database doesn't reveal working links.
+    The tokens are long and random, so a fast hash is enough."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(days=settings.session_days)

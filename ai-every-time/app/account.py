@@ -3,12 +3,10 @@ slowing down password guessing, downloading your data, and deleting your account
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import logging
 import secrets
-import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
@@ -31,10 +29,6 @@ GUESS_WINDOW_MINUTES = 15
 
 def _ago(minutes: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
-
-
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # --------------------------------------------------------------- password guessing
@@ -107,13 +101,6 @@ def reset_message(user: dict, token: str) -> EmailMessage:
     return msg
 
 
-def _send_reset(user: dict, token: str) -> None:
-    try:
-        digest.send(reset_message(user, token))
-    except (smtplib.SMTPException, OSError):
-        log.exception("password reset email to user %s failed", user["id"])
-
-
 @router.post("/auth/forgot", status_code=202)
 def forgot(body: Forgot, background: BackgroundTasks):
     """Email a link for choosing a new password. The answer is the same whether or not there's an
@@ -131,8 +118,8 @@ def forgot(body: Forgot, background: BackgroundTasks):
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(timezone.utc) + timedelta(minutes=RESET_MINUTES)).isoformat(timespec="seconds")
         conn.execute("INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                     (_hash(token), user["id"], db.now(), expires))
-    background.add_task(_send_reset, dict(user), token)
+                     (auth.hash_token(token), user["id"], db.now(), expires))
+    background.add_task(digest.send_quietly, reset_message(dict(user), token), user["id"])
     return {"ok": True}
 
 
@@ -148,12 +135,13 @@ def reset(body: Reset, response: Response):
     with db.connect() as conn:
         row = conn.execute("SELECT r.user_id, u.email FROM password_resets r JOIN users u ON u.id = r.user_id "
                            "WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?",
-                           (_hash(body.token), db.now())).fetchone()
+                           (auth.hash_token(body.token), db.now())).fetchone()
         if row is None:
             raise HTTPException(400, "This link has expired or was already used. Ask for a new one.")
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), row["user_id"]))
         _sign_out_elsewhere(conn, row["user_id"], None, None)  # this link and any others stop working too
         conn.execute("DELETE FROM login_failures WHERE email = ?", (row["email"],))
+        digest.mark_confirmed(conn, row["user_id"])  # the link reached them, so the address is theirs
     auth.set_cookie(response, auth.create_session(row["user_id"]))
 
 
@@ -219,7 +207,8 @@ def export(user: dict = User):
         data = {
             "exported_at": db.now(),
             "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "timezone", "reminder_hour",
-                                             "created_at")} | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
+                                             "email_confirmed_at", "created_at")}
+                       | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
             "companions_you_designed": designed,
             "companions_you_follow": rows(
                 "SELECT f.companion_id, json_extract(c.persona, '$.name') AS name, f.created_at FROM follows f "
