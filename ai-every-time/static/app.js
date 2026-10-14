@@ -6,9 +6,14 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const app = $("#app");
-const state = { me: null, options: null };
+const state = { me: null, options: null, nav: 0 };
+
+/* Thrown when a response arrives after the user has navigated elsewhere; the old view must not render. */
+class StaleView extends Error {}
+window.addEventListener("unhandledrejection", (e) => { if (e.reason instanceof StaleView) e.preventDefault(); });
 
 async function api(path, { method = "GET", body } = {}) {
+  const nav = state.nav;
   const res = await fetch(path, {
     method,
     headers: body !== undefined ? { "Content-Type": "application/json" } : {},
@@ -29,8 +34,9 @@ async function api(path, { method = "GET", body } = {}) {
     } catch {}
     throw new Error(msg);
   }
-  if (res.status === 204) return null;
-  return res.headers.get("content-type")?.includes("json") ? res.json() : res.text();
+  const data = res.status === 204 ? null : await (res.headers.get("content-type")?.includes("json") ? res.json() : res.text());
+  if (nav !== state.nav && method === "GET") throw new StaleView();
+  return data;
 }
 
 function toast(msg) {
@@ -78,6 +84,25 @@ const timeAgo = (iso) => {
   return `${Math.floor(s / 86400)}d ago`;
 };
 
+/* Stream a companion's reply; calls onText with the text so far. */
+async function streamChat(companionId, body, onText) {
+  const res = await fetch(`/api/companions/${companionId}/chat`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Couldn't send message");
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let acc = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    acc += dec.decode(value, { stream: true });
+    onText(acc);
+  }
+  return acc;
+}
+
 /* ------------------------------------------------------------------- router */
 
 const routes = [
@@ -90,9 +115,16 @@ const routes = [
   [/^#\/studio\/remix\/(\d+)$/, (m) => viewStudio({ mode: "remix", id: +m[1] })],
   [/^#\/studio\/(\d+)$/, (m) => viewStudio({ mode: "edit", id: +m[1] })],
   [/^#\/profile$/, viewProfile],
+  [/^#\/learn$/, viewLearn],
+  [/^#\/lesson\/([\w-]+)(?:\?companion=(\d+))?$/, viewLesson],
+  [/^#\/quiz\/(\d+)$/, viewQuiz],
+  [/^#\/practice$/, viewPractice],
+  [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
+  [/^#\/progress$/, viewProgress],
 ];
 
 async function router() {
+  state.nav++;
   const hash = location.hash || "#/feed";
   if (!state.me) {
     try { state.me = await api("/api/me"); } catch { state.me = null; }
@@ -105,7 +137,7 @@ async function router() {
     if (needsAuth && !state.me) { location.hash = "#/welcome"; return; }
     if (!needsAuth && state.me) { location.hash = "#/feed"; return; }
     if (needsAuth && !state.me.onboarded && !/^#\/(onboarding|studio)/.test(hash)) { location.hash = "#/onboarding"; return; }
-    try { await view(m); } catch (e) { console.error(e); toast(e.message); }
+    try { await view(m); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
     window.scrollTo(0, 0);
     return;
   }
@@ -114,7 +146,8 @@ async function router() {
 window.addEventListener("hashchange", router);
 
 function shell(active, inner) {
-  const nav = [["feed", "🏠", "Feed"], ["companions", "🌍", "Companions"], ["profile", "👤", "Profile"]];
+  const nav = [["feed", "🏠", "Feed"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
+    ["companions", "🌍", "Companions"], ["profile", "👤", "Profile"]];
   const primary = state.me?.primary_companion_id;
   app.innerHTML = `
     <div class="shell">
@@ -279,6 +312,12 @@ function postCard(post, c) {
         <button class="btn ${post.marked_helpful ? "on" : ""}" data-eng="helpful">💡 Helpful ${post.helpful || ""}</button>
         <button class="btn ghost" data-eng="share">↗ Share</button>
       </div>
+      <div class="row small">
+        <span class="muted">Study this:</span>
+        <button class="btn ghost" data-study="quiz">📝 Quiz me</button>
+        <button class="btn ghost" data-study="cards">🃏 Flashcards</button>
+        <button class="btn ghost" data-study="summary">📄 Summary</button>
+      </div>
     </article>`;
 }
 
@@ -294,6 +333,8 @@ function wirePosts(root, posts, rerender) {
     io?.observe(el);
     const post = posts.find((p) => p.id === +el.dataset.post);
     el.addEventListener("click", async (e) => {
+      const study = e.target.closest("[data-study]")?.dataset.study;
+      if (study) return studyAction(study, "post", String(post.id), { companionId: post.companion_id, button: e.target.closest("button") });
       const kind = e.target.closest("[data-eng]")?.dataset.eng;
       if (!kind) return;
       try {
@@ -384,6 +425,14 @@ async function viewCompanion(m) {
           <div id="mem"></div>
         </div>
         <div class="card">
+          <h3>Study this conversation</h3>
+          <div class="row" id="convStudy">
+            <button class="btn" data-study="summary">📄 Summarise</button>
+            <button class="btn" data-study="cards">🃏 Flashcards</button>
+            <button class="btn" data-study="quiz">📝 Quiz me</button>
+          </div>
+        </div>
+        <div class="card">
           <div class="row spread"><h3 style="margin:0">Recent posts</h3>${c.is_mine ? `<button class="btn" id="genBtn">Write a post</button>` : ""}</div>
           <div id="recent" class="stack small" style="margin-top:10px"></div>
         </div>
@@ -439,6 +488,10 @@ async function viewCompanion(m) {
     $("#input").focus();
   });
 
+  $("#convStudy").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-study]");
+    if (b) studyAction(b.dataset.study, "conversation", String(id), { companionId: id, button: b });
+  });
   $("#followBtn")?.addEventListener("click", async () => {
     await api(`/api/companions/${id}/follow`, { method: c.following ? "DELETE" : "POST" });
     viewCompanion(m);
@@ -469,21 +522,10 @@ async function viewCompanion(m) {
     addMsg("user", text);
     const bubble = addMsg("assistant", "…");
     try {
-      const res = await fetch(`/api/companions/${id}/chat`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
-        body: JSON.stringify({ message: text, post_id: contextPost?.id ?? null }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Couldn't send message");
-      const reader = res.body.getReader();
-      const dec = new TextDecoder();
-      let acc = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        acc += dec.decode(value, { stream: true });
+      await streamChat(id, { message: text, post_id: contextPost?.id ?? null }, (acc) => {
         bubble.innerHTML = `<div class="prose">${md(acc)}</div>`;
         log.scrollTop = log.scrollHeight;
-      }
+      });
       contextPost = null;
       renderCtx();
       setTimeout(async () => renderMem(await api(`/api/companions/${id}/memories`)), 2500);
@@ -779,6 +821,342 @@ async function viewProfile() {
     state.me = null;
     location.hash = "#/welcome";
   });
+}
+
+
+/* ------------------------------------------------------------ study actions */
+
+/* Start a quiz, make flashcards, or show a summary for a lesson, post or conversation. */
+async function studyAction(kind, sourceType, sourceRef, { companionId = null, button = null, examPath = false } = {}) {
+  const label = button?.textContent;
+  if (button) { button.disabled = true; button.textContent = "Preparing…"; }
+  try {
+    const companion_id = companionId ?? null;
+    if (kind === "quiz" || kind === "exam") {
+      const a = await api("/api/assessments", { method: "POST", body: { kind, source_type: sourceType, source_ref: sourceRef, companion_id } });
+      location.hash = `#/quiz/${a.id}`;
+    } else if (kind === "cards") {
+      const d = await api("/api/decks", { method: "POST", body: { source_type: sourceType, source_ref: sourceRef, companion_id, count: 10 } });
+      toast(`${d.total} flashcards ready`);
+      location.hash = `#/review?deck=${d.id}`;
+    } else if (kind === "summary") {
+      const s = await api("/api/summaries", { method: "POST", body: { source_type: sourceType, source_ref: sourceRef, companion_id } });
+      showDialog(`<h2>${esc(s.title)}</h2><p>${esc(s.summary)}</p><h3>Key takeaways</h3><ul>${s.key_takeaways.map((t) => `<li>${esc(t)}</li>`).join("")}</ul><p><b>Next step:</b> ${esc(s.next_step)}</p>`);
+    }
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    if (button && document.body.contains(button)) { button.disabled = false; button.textContent = label; }
+  }
+}
+
+function showDialog(html) {
+  let d = $("#dialog");
+  if (!d) {
+    d = document.createElement("dialog");
+    d.id = "dialog";
+    d.className = "card dialog";
+    document.body.appendChild(d);
+    d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.close(); });
+  }
+  d.innerHTML = `<div class="prose">${html}</div><div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>Done</button></div>`;
+  d.showModal();
+}
+
+const bar = (done, total) => `<div class="bar" role="progressbar" aria-valuenow="${done}" aria-valuemax="${total}"><span style="width:${total ? Math.round((100 * done) / total) : 0}%"></span></div>`;
+const STATUS_ICON = { completed: "✅", started: "🟣", not_started: "⚪" };
+
+/* -------------------------------------------------------------------- learn */
+
+async function viewLearn() {
+  const paths = await api("/api/paths");
+  const main = shell("learn", `
+    <h1>Learning paths</h1>
+    <p class="muted">Structured courses taught by your companion, in their own voice. Finish lessons, test yourself, and take a mock exam at the end of each path.</p>
+    <div class="stack">
+      ${paths.map((p) => `
+        <section class="card stack" data-path="${p.id}">
+          <div class="row spread">
+            <div><h2 style="margin:0">${esc(p.title)}</h2><div class="muted small">${esc(label(p.level))} · ${p.total} lessons · ${p.completed}/${p.total} done</div></div>
+            <div class="row">
+              <button class="btn" data-act="cards">🃏 Flashcards</button>
+              <button class="btn primary" data-act="exam">🎓 Mock exam</button>
+            </div>
+          </div>
+          <p style="margin:0">${esc(p.description)}</p>
+          ${bar(p.completed, p.total)}
+          <ol class="lessons">
+            ${p.lessons.map((l) => `<li><a href="#/lesson/${l.id}">${STATUS_ICON[l.status]} ${esc(l.title)}</a>
+              <span class="muted small">${l.minutes} min${l.best_score != null ? ` · best quiz ${l.best_score}%` : ""}</span></li>`).join("")}
+          </ol>
+        </section>`).join("")}
+    </div>`);
+  $$("[data-path]", main).forEach((el) => el.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-act]");
+    if (b) studyAction(b.dataset.act === "exam" ? "exam" : "cards", "path", el.dataset.path, { button: b });
+  }));
+}
+
+async function viewLesson(m) {
+  const lessonId = m[1], companionId = m[2] ? +m[2] : null;
+  const main = shell("learn", `<div class="card empty">Your companion is preparing this lesson…</div>`);
+  const [lesson, list] = await Promise.all([
+    api(`/api/lessons/${lessonId}${companionId ? `?companion_id=${companionId}` : ""}`),
+    api("/api/companions"),
+  ]);
+  const t = lesson.teacher;
+  const teachers = list.filter((c) => c.following || c.owner_id === state.me.id);
+  main.innerHTML = `
+    <div class="muted small"><a href="#/learn">Learning paths</a> › ${esc(lesson.path.title)}</div>
+    <div class="row spread" style="margin:8px 0 16px">
+      <h1 style="margin:0">${esc(lesson.title)}</h1>
+      <label class="row small" style="font-weight:500">Taught by
+        <select id="teacher" style="width:auto">${teachers.map((c) => `<option value="${c.id}" ${c.id === t.id ? "selected" : ""}>${esc(c.persona.name)} ${esc(c.persona.flag)}</option>`).join("")}</select>
+      </label>
+    </div>
+    <div class="lesson-layout">
+      <article class="card stack">
+        <div class="row">
+          <img class="avatar" src="/api/companions/${t.id}/avatar.svg?v=${encodeURIComponent(t.updated_at)}" width="44" height="44" alt="">
+          <div><b>${esc(t.name)} ${esc(t.flag)}</b><div class="muted small">${lesson.minutes} min lesson${lesson.best_score != null ? ` · your best quiz: ${lesson.best_score}%` : ""}</div></div>
+        </div>
+        <div class="prose">${md(lesson.body)}</div>
+        <div class="row">
+          <button class="btn ${lesson.status === "completed" ? "on" : "primary"}" id="complete">${lesson.status === "completed" ? "✅ Completed" : "Mark as complete"}</button>
+          <button class="btn" data-study="quiz">📝 Quiz me</button>
+          <button class="btn" data-study="cards">🃏 Flashcards</button>
+          <button class="btn" data-study="summary">📄 Summary</button>
+        </div>
+        <div class="row spread">
+          ${lesson.prev ? `<a class="btn ghost" href="#/lesson/${lesson.prev}">← Previous</a>` : "<span></span>"}
+          ${lesson.next ? `<a class="btn ghost" href="#/lesson/${lesson.next}">Next lesson →</a>` : `<a class="btn ghost" href="#/learn">Back to paths</a>`}
+        </div>
+      </article>
+      <aside class="card chat tutor">
+        <div class="row" style="padding:14px 16px 0"><h3 style="margin:0">Ask ${esc(t.name)} about this lesson</h3></div>
+        <div class="log" id="tlog"><div class="msg assistant"><div class="prose"><p>Stuck on anything here, or want another example? Ask me.</p></div></div></div>
+        <form class="composer" id="tform">
+          <textarea id="tinput" rows="1" maxlength="4000" placeholder="Ask a question…" aria-label="Question"></textarea>
+          <button class="btn primary" id="tsend">Ask</button>
+        </form>
+      </aside>
+    </div>`;
+  $("#teacher").addEventListener("change", (e) => (location.hash = `#/lesson/${lessonId}?companion=${e.target.value}`));
+  $("#complete").addEventListener("click", async () => {
+    await api(`/api/lessons/${lessonId}/complete`, { method: "POST" });
+    toast("Lesson completed");
+    if (lesson.next) location.hash = `#/lesson/${lesson.next}${companionId ? `?companion=${companionId}` : ""}`;
+    else location.hash = "#/learn";
+  });
+  $$("[data-study]", main).forEach((b) => b.addEventListener("click", () => studyAction(b.dataset.study, "lesson", lessonId, { companionId: t.id, button: b })));
+
+  const log = $("#tlog"), input = $("#tinput");
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#tform").requestSubmit(); } });
+  $("#tform").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    $("#tsend").disabled = true;
+    const u = document.createElement("div"); u.className = "msg user"; u.textContent = text; log.appendChild(u);
+    const a = document.createElement("div"); a.className = "msg assistant"; a.textContent = "…"; log.appendChild(a);
+    try {
+      await streamChat(t.id, { message: text, lesson_id: lessonId }, (acc) => { a.innerHTML = `<div class="prose">${md(acc)}</div>`; log.scrollTop = log.scrollHeight; });
+    } catch (err) { a.innerHTML = `<span class="error">${esc(err.message)}</span>`; }
+    $("#tsend").disabled = false;
+  });
+}
+
+/* ------------------------------------------------------------ quizzes/exams */
+
+async function viewQuiz(m) {
+  const id = +m[1];
+  const a = await api(`/api/assessments/${id}`);
+  if (a.submitted_at) return renderResults(a);
+  const exam = a.kind === "exam";
+  const main = shell("practice", `
+    <div class="row spread"><h1 style="margin:0">${esc(a.title)}</h1>${exam ? `<div class="timer" id="timer"></div>` : ""}</div>
+    <p class="muted">${a.total} questions${exam ? ` · ${a.time_limit_minutes} minutes · pass mark 70%` : ""}</p>
+    <form id="quiz" class="stack">
+      ${a.questions.map((q, i) => `
+        <fieldset class="card question">
+          <legend><b>${i + 1}.</b> ${esc(q.question)}</legend>
+          ${q.options.map((o, j) => `<label class="option"><input type="radio" name="q${i}" value="${j}"> <span>${esc(o)}</span></label>`).join("")}
+        </fieldset>`).join("")}
+      <div class="row"><button class="btn primary" id="submitQuiz">Submit answers</button><span class="muted small" id="answered"></span></div>
+    </form>`);
+  const form = $("#quiz", main);
+  const count = () => ($("#answered").textContent = `${a.questions.filter((_, i) => form.querySelector(`[name=q${i}]:checked`)).length} of ${a.total} answered`);
+  form.addEventListener("change", count); count();
+  let timer;
+  const submit = async () => {
+    clearInterval(timer);
+    const answers = a.questions.map((_, i) => { const c = form.querySelector(`[name=q${i}]:checked`); return c ? +c.value : null; });
+    $("#submitQuiz").disabled = true;
+    try {
+      const result = await api(`/api/assessments/${id}/submit`, { method: "POST", body: { answers } });
+      if (document.body.contains(form)) renderResults(result);
+    }
+    catch (err) { toast(err.message); $("#submitQuiz").disabled = false; }
+  };
+  form.addEventListener("submit", (e) => { e.preventDefault(); submit(); });
+  if (exam) {
+    const end = new Date(a.created_at).getTime() + a.time_limit_minutes * 60000;
+    const tick = () => {
+      const left = Math.max(0, end - Date.now());
+      $("#timer").textContent = `⏱ ${Math.floor(left / 60000)}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
+      if (!left) { toast("Time's up! Submitting your exam."); submit(); }
+    };
+    tick(); timer = setInterval(() => { if (!document.body.contains($("#timer"))) return clearInterval(timer); tick(); }, 1000);
+  }
+}
+
+function renderResults(r) {
+  const main = shell("practice", `
+    <h1>${esc(r.title)}</h1>
+    <div class="card row spread result ${r.percent >= 70 ? "pass" : "fail"}">
+      <div><div class="big">${r.percent}%</div><div class="muted">${r.score} of ${r.total} correct${r.over_time ? " · submitted after the time limit" : ""}</div></div>
+      <div><b>${r.percent >= 70 ? "Passed. Nice work!" : "Keep going: review and try again."}</b></div>
+    </div>
+    ${r.by_lesson ? `<div class="card"><h3>By lesson</h3>${r.by_lesson.map((b) => `<div class="row spread small"><a href="#/lesson/${b.lesson_id}">${esc(b.title)}</a><span>${b.correct}/${b.total}</span></div>${bar(b.correct, b.total)}`).join("")}</div>` : ""}
+    <div class="stack" style="margin-top:16px">
+      ${r.questions.map((q, i) => `
+        <div class="card question ${q.correct ? "right" : "wrong"}">
+          <b>${i + 1}. ${esc(q.question)}</b>
+          <ul class="options">${q.options.map((o, j) => `<li class="${j === q.answer_index ? "correct" : j === q.your_answer ? "chosen" : ""}">${j === q.answer_index ? "✔" : j === q.your_answer ? "✘" : "•"} ${esc(o)}</li>`).join("")}</ul>
+          ${q.your_answer == null ? `<div class="muted small">Not answered</div>` : ""}
+          <div class="small explain">${esc(q.explanation)}</div>
+        </div>`).join("")}
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn primary" id="retry">Try a new ${r.kind === "exam" ? "exam" : "quiz"}</button>
+      ${r.source_type === "lesson" ? `<a class="btn" href="#/lesson/${r.source_ref}">Back to lesson</a>` : ""}
+      <a class="btn" href="#/practice">All practice</a>
+    </div>`);
+  $("#retry", main).addEventListener("click", (e) => studyAction(r.kind, r.source_type, r.source_ref, { companionId: r.companion_id, button: e.target }));
+}
+
+/* ----------------------------------------------------------------- practice */
+
+async function viewPractice() {
+  const [due, decks, quizzes] = await Promise.all([api("/api/review?limit=100"), api("/api/decks"), api("/api/assessments")]);
+  const main = shell("practice", `
+    <h1>Practice</h1>
+    <div class="card row spread">
+      <div><h2 style="margin:0">🃏 ${due.length} card${due.length === 1 ? "" : "s"} due</h2><div class="muted small">Spaced repetition brings each card back just before you'd forget it.</div></div>
+      ${due.length ? `<a class="btn primary" href="#/review">Start review</a>` : `<a class="btn" href="#/learn">Make cards from a lesson</a>`}
+    </div>
+    <h2 style="margin-top:24px">Flashcard decks</h2>
+    ${decks.length ? `<div class="grid">${decks.map((d) => `
+      <div class="card stack" data-deck="${d.id}">
+        <b>${esc(d.title)}</b>
+        <div class="muted small">${d.total} cards · ${d.due} due · ${d.mastered} mastered</div>
+        ${bar(d.mastered, d.total)}
+        <div class="row"><a class="btn" href="#/review?deck=${d.id}">Review</a><button class="btn ghost danger" data-del>Delete</button></div>
+      </div>`).join("")}</div>` : `<div class="card empty">No decks yet. Make flashcards from any lesson, post or conversation.</div>`}
+    <h2 style="margin-top:24px">Quizzes and exams</h2>
+    ${quizzes.length ? `<div class="card"><table class="table"><thead><tr><th>Title</th><th>Score</th><th>Date</th></tr></thead><tbody>
+      ${quizzes.map((q) => `<tr><td><a href="#/quiz/${q.id}">${esc(q.title)}</a></td><td>${q.percent != null ? `${q.percent}%` : `<span class="muted">Not finished</span>`}</td><td class="muted small">${timeAgo(q.created_at)}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="card empty">No quizzes yet. Every lesson and post has a "Quiz me" button.</div>`}`);
+  $$("[data-deck]", main).forEach((el) => $("[data-del]", el).addEventListener("click", async () => {
+    if (!confirm("Delete this deck?")) return;
+    await api(`/api/decks/${el.dataset.deck}`, { method: "DELETE" });
+    viewPractice();
+  }));
+}
+
+async function viewReview(m) {
+  const deckId = m[1] ? +m[1] : null;
+  const cards = await api(`/api/review${deckId ? `?deck_id=${deckId}` : ""}`);
+  let i = 0, reviewed = 0;
+  const main = shell("practice", `<h1>Flashcard review</h1><div id="rv"></div>`);
+  const render = () => {
+    const card = cards[i];
+    if (!card) {
+      $("#rv").innerHTML = `<div class="card empty"><h2>All caught up 🎉</h2><p>You reviewed ${reviewed} card${reviewed === 1 ? "" : "s"}. They'll come back when it's time.</p><a class="btn primary" href="#/practice">Back to practice</a></div>`;
+      return;
+    }
+    $("#rv").innerHTML = `
+      <div class="muted small">${esc(card.deck_title)} · ${i + 1} of ${cards.length}</div>
+      <button class="card flashcard" id="flip" aria-live="polite"><div class="front">${esc(card.front)}</div><div class="back" hidden>${esc(card.back)}</div><div class="muted small hint">Tap to reveal</div></button>
+      <div class="row grades" hidden>
+        <button class="btn danger" data-g="again">Again</button><button class="btn" data-g="good">Good</button><button class="btn primary" data-g="easy">Easy</button>
+      </div>`;
+    $("#flip").addEventListener("click", () => { $(".back").hidden = false; $(".hint").hidden = true; $(".grades").hidden = false; });
+    $$("[data-g]").forEach((b) => b.addEventListener("click", async () => {
+      await api(`/api/cards/${card.id}/review`, { method: "POST", body: { grade: b.dataset.g } });
+      reviewed++; i++;
+      if (document.body.contains(main)) render();
+    }));
+  };
+  render();
+}
+
+/* ----------------------------------------------------------------- progress */
+
+async function viewProgress() {
+  const [p, plan, paths] = await Promise.all([api("/api/progress"), api("/api/study-plan"), api("/api/paths")]);
+  const tile = (v, t) => `<div class="card tile"><div class="big">${v}</div><div class="muted small">${t}</div></div>`;
+  const ACT = { lesson: "📖 Lesson", quiz: "📝 Quiz", flashcards: "🃏 Flashcards", exam: "🎓 Mock exam" };
+  const main = shell("progress", `
+    <h1>Your progress</h1>
+    <div class="tiles">
+      ${tile(`🔥 ${p.streak_days}`, `day streak`)}
+      ${tile(`${p.lessons_completed}/${p.lessons_total}`, "lessons completed")}
+      ${tile(p.quiz_average != null ? `${p.quiz_average}%` : "–", `quiz average (${p.quizzes_taken} taken)`)}
+      ${tile(p.best_exam != null ? `${p.best_exam}%` : "–", `best mock exam (${p.exams_taken} taken)`)}
+      ${tile(`${p.cards_mastered}/${p.cards_total}`, `cards mastered · ${p.cards_due} due`)}
+      ${tile(p.questions_asked, "questions asked")}
+    </div>
+    <div class="two-col">
+      <div class="stack">
+        <div class="card"><h3>Last 7 days</h3><div class="week">${p.last_7_days.map((d) => `<div class="day ${d.active ? "on" : ""}" title="${d.day}"><span>${new Date(d.day + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "short" })}</span></div>`).join("")}</div></div>
+        ${p.next_lesson ? `<div class="card row spread"><div><div class="muted small">Up next · ${esc(p.next_lesson.path_title)}</div><b>${esc(p.next_lesson.title)}</b></div><a class="btn primary" href="#/lesson/${p.next_lesson.lesson_id}">Continue</a></div>` : ""}
+        <div class="card"><h3>Paths</h3>${p.paths.map((x) => `<div class="row spread small"><span>${esc(x.title)}</span><span>${x.completed}/${x.total}</span></div>${bar(x.completed, x.total)}`).join("")}</div>
+        ${p.needs_review.length ? `<div class="card"><h3>Worth reviewing</h3>${p.needs_review.map((x) => `<div class="row spread small"><a href="#/lesson/${x.lesson_id}">${esc(x.title)}</a><span class="muted">best ${x.best_score}%</span></div>`).join("")}</div>` : ""}
+      </div>
+      <div class="card stack" id="planCard">
+        <div class="row spread"><h2 style="margin:0">Study plan</h2>${plan ? `<span class="muted small">${plan.done}/${plan.total} done</span>` : ""}</div>
+        ${plan ? `
+          <p style="margin:0">${esc(plan.overview)}</p>
+          ${bar(plan.done, plan.total)}
+          ${plan.weeks.map((w) => `<div class="plan-week"><h4>Week ${w.week}: ${esc(w.focus)} ${w.done ? "✅" : ""}</h4><ul>${w.items.map((it) => `
+            <li class="${it.done ? "done" : ""}"><button class="linkbtn plan-item" data-act="${it.activity}" data-lesson="${it.lesson_id}" data-path="${it.path_id}">${it.done ? "✅" : "⬜"} ${ACT[it.activity]}: ${esc(it.title)}</button><div class="muted small">${esc(it.note)}</div></li>`).join("")}</ul></div>`).join("")}
+          <details><summary>Make a new plan</summary>${planForm(paths, plan.weekly_minutes)}</details>` : `
+          <p class="muted" style="margin:0">Tell your companion how much time you have, and they'll plan your weeks around your goals and progress.</p>${planForm(paths, 120)}`}
+      </div>
+    </div>`);
+  $$(".plan-item", main).forEach((b) => b.addEventListener("click", () => {
+    const act = b.dataset.act;
+    if (act === "lesson") location.hash = `#/lesson/${b.dataset.lesson}`;
+    else if (act === "exam") studyAction("exam", "path", b.dataset.path, { button: b });
+    else studyAction(act === "flashcards" ? "cards" : "quiz", "lesson", b.dataset.lesson, { button: b });
+  }));
+  $("#planForm", main).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = $("button", f);
+    const body = { weekly_minutes: +f.weekly_minutes.value, weeks: +f.weeks.value, paths: $$("[name=paths]:checked", f).map((c) => c.value) };
+    btn.disabled = true; btn.textContent = "Planning…";
+    try {
+      await api("/api/study-plan", { method: "POST", body });
+      toast("Your study plan is ready");
+      if (document.body.contains(f)) viewProgress();
+    }
+    catch (err) { toast(err.message); btn.disabled = false; btn.textContent = "Create my plan"; }
+  });
+}
+
+function planForm(paths, minutes) {
+  return `<form id="planForm" class="stack" style="margin-top:10px">
+    <div class="two">
+      <label>Time per week <select name="weekly_minutes">${[30, 60, 120, 180, 300, 600].map((v) => `<option value="${v}" ${v === minutes ? "selected" : ""}>${v < 60 ? `${v} minutes` : `${v / 60} hour${v === 60 ? "" : "s"}`}</option>`).join("")}</select></label>
+      <label>Length <select name="weeks">${[1, 2, 4, 6, 8, 12].map((v) => `<option value="${v}" ${v === 4 ? "selected" : ""}>${v} week${v === 1 ? "" : "s"}</option>`).join("")}</select></label>
+    </div>
+    <div><b class="small">Focus on</b> <span class="muted small">(none selected = all paths)</span>
+      <div class="choice" style="margin-top:6px">${paths.map((p) => `<label class="check small"><input type="checkbox" name="paths" value="${p.id}"> ${esc(p.title)}</label>`).join("")}</div>
+    </div>
+    <button class="btn primary">Create my plan</button>
+  </form>`;
 }
 
 router();

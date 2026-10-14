@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr, Field
 
-from app import auth, companions, content, db, llm
+from app import auth, companions, content, db, learning, llm
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -45,6 +45,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
+app.include_router(learning.router)
 User = Depends(auth.current_user)
 
 
@@ -305,6 +306,7 @@ def insights(user: dict = User):
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     post_id: int | None = None
+    lesson_id: str | None = Field(None, max_length=80)
 
 
 def _memories(user_id: int, companion_id: int) -> list[dict]:
@@ -331,6 +333,9 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
     post = _visible_post(body.post_id, user["id"]) if body.post_id else None
     if post:
         content.record(user["id"], post["id"], "ask")
+    elif body.lesson_id:
+        post = learning.lesson_context(companion_id, body.lesson_id)
+    learning.record_activity(user["id"])
 
     with db.connect() as conn:
         conn.execute("INSERT INTO messages (user_id, companion_id, role, content, post_id, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
