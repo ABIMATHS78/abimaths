@@ -83,17 +83,19 @@ class Forgot(BaseModel):
 def reset_message(user: dict, token: str) -> EmailMessage:
     link = f"{settings.public_url}/#/reset/{token}"
     rules = f"The link works once, within the next {RESET_MINUTES} minutes, and signs you out everywhere else."
+    # The name only once the address is known to be theirs; until then it's whatever was typed at sign-up.
+    name = user["display_name"] if user.get("email_confirmed_at") else ""
     msg = EmailMessage()
     msg["Subject"] = "Choose a new password for AI Every Time"
     msg["From"] = settings.mail_from
     msg["To"] = user["email"]
     msg.set_content(
-        f"Hi {user['display_name']},\n\nSomeone asked to reset the password for your AI Every Time account. "
+        f"{f'Hi {name}' if name else 'Hello'},\n\nSomeone asked to reset the password for your AI Every Time account. "
         f"If it was you, choose a new one here:\n\n{link}\n\n{rules}\n\n"
         "If it wasn't you, you can ignore this email. Your password hasn't changed.\n"
     )
     msg.add_alternative(
-        f"<p>Hi {html.escape(user['display_name'])},</p><p>Someone asked to reset the password for your AI Every Time "
+        f"<p>{f'Hi {html.escape(name)}' if name else 'Hello'},</p><p>Someone asked to reset the password for your AI Every Time "
         f'account. If it was you, <a href="{html.escape(link)}">choose a new password</a>.</p><p>{rules}</p>'
         '<p style="color:#777;font-size:12px">If it wasn\'t you, you can ignore this email. Your password hasn\'t changed.</p>',
         subtype="html",
@@ -108,12 +110,9 @@ def forgot(body: Forgot, background: BackgroundTasks):
     if not digest.email_available():
         raise HTTPException(409, "Password reset by email isn't set up on this server. Ask the site's admin for help.")
     with db.connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         user = conn.execute("SELECT * FROM users WHERE email = ?", (body.email.lower(),)).fetchone()
-        if user is None:
-            return {"ok": True}
-        recent = conn.execute("SELECT COUNT(*) FROM password_resets WHERE user_id = ? AND created_at > ?",
-                              (user["id"], _ago(60))).fetchone()[0]
-        if recent >= RESETS_PER_HOUR:
+        if user is None or not digest.claim_send(conn, user["email"], "reset", RESETS_PER_HOUR):
             return {"ok": True}
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(timezone.utc) + timedelta(minutes=RESET_MINUTES)).isoformat(timespec="seconds")

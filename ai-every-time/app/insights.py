@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 
-from app import auth, content, db, digest
+from app import auth, content, db, usage
 from app.config import settings
 
 router = APIRouter(prefix="/api/staff")
@@ -79,9 +79,7 @@ def insights(user: dict = Depends(auth.require("admin"))):
             "kinds": kinds,
             "turned_away": {"allowance": refused.get("allowance", none), "site": refused.get("site", none)},
             "units_last_24h": last_24h,
-            "limits": {"allowance": settings.ai_allowance,
-                       "unconfirmed": min(settings.ai_allowance_unconfirmed, settings.ai_allowance)
-                       if digest.email_available() and settings.ai_allowance > 0 else None,
+            "limits": {"allowance": settings.ai_allowance, "unconfirmed": usage.unconfirmed_allowance(),
                        "site": settings.ai_site_limit},
         },
     }

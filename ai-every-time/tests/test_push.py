@@ -15,6 +15,7 @@ from py_vapid import Vapid
 
 from tests.test_app import persona, signup
 from tests.test_community import as_user
+from tests.test_email import mailbox  # noqa: F401  (fixture)
 
 ANDROID_CHROME = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36"
 IPHONE_SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
@@ -301,6 +302,18 @@ def test_daily_reminder_skips_quiet_days(client, service):
     day = datetime(2026, 3, 10, hour, 30, tzinfo=timezone.utc)
     # New posts alone aren't worth a buzz, and nothing else is waiting.
     assert push.due_daily(day) == [] and service.requests == []
+
+
+def test_daily_reminder_leaves_the_confirm_email_nudge_to_the_app(client, service, mailbox):
+    from app import push
+    from app.config import settings
+
+    signup(client)
+    client.patch("/api/me", json={"email_reminders": True})
+    subscribe(client, Device())
+    assert any(r["kind"] == "confirm_email" for r in client.get("/api/reminders").json())
+    # Nothing else is waiting, and a buzz every day to confirm the address would be nagging.
+    assert push.due_daily(datetime(2026, 3, 10, settings.reminder_hour, 30, tzinfo=timezone.utc)) == []
 
 
 def test_notices_are_pushed_once_as_they_happen(client, service, monkeypatch):

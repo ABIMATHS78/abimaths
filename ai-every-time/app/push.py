@@ -349,8 +349,9 @@ def due_daily(now: datetime | None = None) -> list[tuple[dict, list[dict]]]:
     out = []
     for u in due:
         try:
-            # Notices were pushed when they happened, and new posts alone aren't worth a buzz.
-            items = [r for r in reminders.reminders(u) if r["kind"] not in ("notice", "new_posts")]
+            # Notices were pushed when they happened, new posts alone aren't worth a buzz, and a nudge
+            # to confirm the email address belongs in the app rather than a buzz every day.
+            items = [r for r in reminders.reminders(u) if r["kind"] not in ("notice", "new_posts", "confirm_email")]
         except Exception:
             log.exception("reminders for user %s failed", u["id"])
             continue

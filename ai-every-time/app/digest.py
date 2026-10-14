@@ -21,7 +21,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app import auth, db, learning, reminders
+from app import auth, db, learning, reminders, usage
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,8 @@ router = APIRouter(prefix="/api/email")
 CHECK_EVERY_SECONDS = 15 * 60
 CONFIRM_DAYS = 7
 CONFIRMATIONS_PER_HOUR = 3
+# All the links one address can be sent in a day, whatever accounts ask for them.
+ASKED_EMAILS_PER_DAY = 10
 
 
 def email_available() -> bool:
@@ -88,11 +90,27 @@ def send_quietly(msg: EmailMessage, user_id: int) -> None:
 # ------------------------------------------------------------- confirming addresses
 
 
+def claim_send(conn, address: str, kind: str, per_hour: int) -> bool:
+    """Whether another `kind` email ("confirm" or "reset") may go to this address now, noting it if
+    so. Counted by address, not account, so deleting an account and making it again doesn't start
+    the count over. Call inside BEGIN IMMEDIATE, so two requests can't both take the last one."""
+    now = datetime.now(timezone.utc)
+    hour_ago, day_ago = ((now - timedelta(hours=h)).isoformat(timespec="seconds") for h in (1, 24))
+    key = auth.hash_token(address.lower())
+    conn.execute("DELETE FROM email_sends WHERE created_at < ?", (day_ago,))
+    this_hour, today = conn.execute("SELECT COALESCE(SUM(kind = ? AND created_at > ?), 0), COUNT(*) FROM email_sends "
+                                    "WHERE address_hash = ?", (kind, hour_ago, key)).fetchone()
+    if this_hour >= per_hour or today >= ASKED_EMAILS_PER_DAY:
+        return False
+    conn.execute("INSERT INTO email_sends (address_hash, kind, created_at) VALUES (?, ?, ?)", (key, kind, db.now()))
+    return True
+
+
 def _what_confirming_does() -> str:
     text = "It lets AI Every Time send the reminder emails you choose to get."
-    full, unconfirmed = settings.ai_allowance, min(settings.ai_allowance_unconfirmed, settings.ai_allowance)
-    if full > 0 and unconfirmed < full:
-        text += f" It also raises your AI requests from {unconfirmed} to {full} a day."
+    lower = usage.unconfirmed_allowance()
+    if lower is not None:
+        text += f" It also raises your AI requests from {lower} to {settings.ai_allowance} a day."
     return text
 
 
@@ -103,13 +121,14 @@ def confirmation_message(user: dict, token: str) -> EmailMessage:
     msg["Subject"] = "Confirm your email for AI Every Time"
     msg["From"] = settings.mail_from
     msg["To"] = user["email"]
+    # No name: the address isn't known to be theirs yet, and the name is whatever was typed at sign-up.
     msg.set_content(
-        f"Hi {user['display_name']},\n\nPlease confirm that this is your email address on AI Every Time:\n\n{link}\n\n"
+        f"Hello,\n\nPlease confirm that this is your email address on AI Every Time:\n\n{link}\n\n"
         f"{why}\n\nThe link works for {CONFIRM_DAYS} days. "
         "If you didn't make an account on AI Every Time, you can ignore this email.\n"
     )
     msg.add_alternative(
-        f"<p>Hi {html.escape(user['display_name'])},</p><p>Please confirm that this is your email address on AI Every "
+        f"<p>Hello,</p><p>Please confirm that this is your email address on AI Every "
         f'Time.</p><p><a href="{html.escape(link)}">Confirm my email</a></p><p>{html.escape(why)}</p>'
         f"<p>The link works for {CONFIRM_DAYS} days.</p><p style=\"color:#777;font-size:12px\">If you didn't make an "
         "account on AI Every Time, you can ignore this email.</p>",
@@ -124,11 +143,9 @@ def request_confirmation(user: dict, background: BackgroundTasks, per_hour: int 
     email is sent after the response. Returns whether one was sent."""
     if user.get("email_confirmed_at") or not email_available():
         return False
-    hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(timespec="seconds")
     with db.connect() as conn:
-        recent = conn.execute("SELECT COUNT(*) FROM email_confirmations WHERE user_id = ? AND created_at > ?",
-                              (user["id"], hour_ago)).fetchone()[0]
-        if recent >= per_hour:
+        conn.execute("BEGIN IMMEDIATE")
+        if not claim_send(conn, user["email"], "confirm", per_hour):
             return False
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(timezone.utc) + timedelta(days=CONFIRM_DAYS)).isoformat(timespec="seconds")

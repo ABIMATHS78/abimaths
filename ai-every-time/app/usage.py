@@ -32,6 +32,8 @@ WINDOW_HOURS = 24
 COSTS = {"chat": 1, "lesson": 1, "quiz": 1, "exam": 2, "flashcards": 1, "summary": 1, "plan": 1, "path": 2, "post": 1}
 NAMES = {"exam": "A mock exam", "path": "A new learning path"}
 BUSY = "AI Every Time is very busy right now, so new AI requests are paused. Please try again in an hour or so."
+BUSY_UNCONFIRMED = ("AI Every Time is very busy right now, so AI requests are paused for accounts that haven't confirmed "
+                    "their email address. Confirm yours from your profile to carry on, or try again in an hour or so.")
 
 # The usage record that tokens from Claude responses belong to, set around each request.
 _current: ContextVar[int | None] = ContextVar("ai_usage_record", default=None)
@@ -41,15 +43,34 @@ def _since() -> str:
     return (datetime.now(timezone.utc) - timedelta(hours=WINDOW_HOURS)).isoformat(timespec="seconds")
 
 
-def allowance(user: dict) -> int | None:
-    """Units the learner may use in any 24 hours; None means no limit."""
+def _ceiling_message(user: dict) -> str | None:
+    """What the site ceiling tells this learner once it's reached, or None if it doesn't hold them. While
+    email is set up it holds only learners who haven't confirmed their address, so a flood of
+    throwaway accounts can't pause everyone else. Admins are never held."""
+    from app import digest
+
+    if auth.role_of(user) == "admin":
+        return None
+    if not digest.email_available():
+        return BUSY
+    return None if user.get("email_confirmed_at") else BUSY_UNCONFIRMED
+
+
+def unconfirmed_allowance() -> int | None:
+    """The smaller allowance for learners who haven't confirmed their email address, if there is one:
+    only while email is set up, and only when it's below the full allowance (0 turns it off)."""
     from app import digest  # imported here: digest is further up the chain of modules than this one
 
+    lower = settings.ai_allowance_unconfirmed
+    return lower if digest.email_available() and 0 < lower < settings.ai_allowance else None
+
+
+def allowance(user: dict) -> int | None:
+    """Units the learner may use in any 24 hours; None means no limit."""
     if auth.role_of(user) == "admin" or settings.ai_allowance <= 0:
         return None
-    if digest.email_available() and not user.get("email_confirmed_at"):
-        return min(settings.ai_allowance_unconfirmed, settings.ai_allowance)
-    return settings.ai_allowance
+    lower = unconfirmed_allowance()
+    return lower if lower is not None and not user.get("email_confirmed_at") else settings.ai_allowance
 
 
 def _spent(conn, user_id: int) -> list:
@@ -75,6 +96,10 @@ def _in_words(wait: timedelta) -> str:
     return f"about {hours} hour{'' if hours == 1 else 's'}"
 
 
+def _requests(n: int) -> str:
+    return f"{n} AI request{'' if n == 1 else 's'}"
+
+
 def _refusal(kind: str, limit: int, rows: list) -> tuple[str, timedelta]:
     """What to tell a learner whose allowance doesn't cover this request, and how long until it will."""
     cost, used = COSTS[kind], sum(r["units"] for r in rows)
@@ -85,14 +110,14 @@ def _refusal(kind: str, limit: int, rows: list) -> tuple[str, timedelta]:
             wait = datetime.fromisoformat(r["created_at"]) + timedelta(hours=WINDOW_HOURS) - datetime.now(timezone.utc)
             break
     if wait is None:  # it costs more than the whole allowance
-        return f"{NAMES.get(kind, 'This')} needs {cost} AI requests, more than your allowance of {limit}.", timedelta(hours=WINDOW_HOURS)
-    if used >= limit:
-        text = f"You've reached your limit of {limit} AI requests in 24 hours."
+        text, wait = f"{NAMES.get(kind, 'This')} needs {_requests(cost)}, more than your limit of {limit}.", timedelta(hours=WINDOW_HOURS)
     else:
-        text = f"{NAMES.get(kind, 'This request')} counts as {cost} AI requests, and you have {limit - used} left."
-    text += f" You can ask again in {_in_words(wait)}."
+        text = (f"You've reached your limit of {_requests(limit)} in 24 hours." if used >= limit else
+                f"{NAMES.get(kind, 'This request')} counts as {_requests(cost)}, and you have {limit - used} left.")
+        text += f" You can ask again in {_in_words(wait)}."
     if limit < settings.ai_allowance:
-        text += f" Confirm your email address to raise your limit to {settings.ai_allowance}."
+        text += (f" Confirm your email address to raise your limit to {settings.ai_allowance}: you can send yourself "
+                 "a link from your profile.")
     return text, wait
 
 
@@ -106,10 +131,11 @@ def reserve(user: dict, kind: str) -> int:
             rows = _spent(conn, user["id"])
             if sum(r["units"] for r in rows) + cost > limit:
                 refusal = ("allowance", *_refusal(kind, limit, rows))
-        if refusal is None and settings.ai_site_limit > 0 and auth.role_of(user) != "admin":
+        busy = _ceiling_message(user) if settings.ai_site_limit > 0 else None
+        if refusal is None and busy:
             total = conn.execute("SELECT COALESCE(SUM(units), 0) FROM ai_usage WHERE created_at > ?", (_since(),)).fetchone()[0]
             if total + cost > settings.ai_site_limit:
-                refusal = ("site", BUSY, timedelta(hours=1))
+                refusal = ("site", busy, timedelta(hours=1))
         if refusal:
             # Counted per learner per hour, so a stream of refused requests takes almost no room.
             conn.execute("INSERT INTO ai_refusals (hour, user_id, reason, count) VALUES (?, ?, ?, 1) "

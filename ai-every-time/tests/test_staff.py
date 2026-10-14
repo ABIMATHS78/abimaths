@@ -6,6 +6,7 @@ import pytest
 
 from tests.test_app import persona, signup
 from tests.test_community import as_user
+from tests.test_email import mailbox  # noqa: F401  (fixture)
 
 
 @pytest.fixture()
@@ -245,3 +246,12 @@ class FakeSMTP:
 
     def send_message(self, msg):
         self.sent.append("send")
+
+
+def test_admin_emails_need_a_confirmed_address_while_email_is_on(client, admin_email, mailbox):
+    """Otherwise whoever signs up with the address before its owner would be an admin."""
+    assert signup(client, email=admin_email, name="Boss")["role"] == "learner"
+    assert client.get("/api/staff/insights").status_code == 403
+    assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200
+    assert client.get("/api/me").json()["role"] == "admin"
+    assert client.get("/api/staff/insights").status_code == 200

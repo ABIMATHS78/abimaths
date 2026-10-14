@@ -87,8 +87,15 @@ CAN = {
 
 
 def role_of(u: dict) -> str:
-    """Emails in AIET_ADMIN_EMAILS are always admins, so a deployment can't lock itself out."""
-    return "admin" if u["email"].lower() in settings.admin_emails else (u.get("role") or "learner")
+    """Emails in AIET_ADMIN_EMAILS are always admins, so a deployment can't lock itself out. While email
+    is set up the address has to be confirmed first, so someone who signs up with it before its owner
+    doesn't become an admin. (The owner can take the account back with a password reset.)"""
+    if u["email"].lower() in settings.admin_emails:
+        from app import digest  # imported here: digest needs this module
+
+        if u.get("email_confirmed_at") or not digest.email_available():
+            return "admin"
+    return u.get("role") or "learner"
 
 
 def require(permission: str):

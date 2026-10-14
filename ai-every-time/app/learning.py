@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app import auth, companions, content, db, tutor, usage
@@ -287,10 +287,14 @@ def delete_custom_path(path_id: str, user: dict = User):
 
 
 @router.get("/lessons/{lesson_id}")
-async def get_lesson(lesson_id: str, companion_id: int | None = None, user: dict = User):
+async def get_lesson(request: Request, lesson_id: str, companion_id: int | None = None, user: dict = User):
     path, lesson = _lesson_or_404(user["id"], lesson_id)
     teacher = teacher_for(user, companion_id)
     body = _cached_lesson(teacher["id"], lesson_id)
+    # Writing a lesson spends an AI request on a GET, which a page on another site could make the
+    # learner's browser send just by opening a link, so only the app itself can ask for one.
+    if body is None and request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        raise HTTPException(403, "Open this lesson in AI Every Time to have it written.")
     if body is None:
         # Cached lessons are shared by everyone this companion teaches, so no learner's custom instructions.
         # Only the learner who asks first spends a request on it.

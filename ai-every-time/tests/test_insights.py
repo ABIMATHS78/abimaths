@@ -61,15 +61,15 @@ def test_insights_count_learners_learning_and_ai_use(client, monkeypatch):
 def test_insights_count_tokens_failures_and_old_requests_apart(client, monkeypatch):
     from app import db, main, usage
     from app.config import settings
-    from tests.test_usage import answer, tokens
+    from tests.test_usage import message, tokens
 
     monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
     user = main._load_user(signup(client, email="boss@example.com", name="Boss")["id"])
     with usage.recording(usage.reserve(user, "summary")):
-        usage.record_tokens(answer(usage=tokens(1000, 200, cache_read=500, cache_write=100), stop_reason="end_turn"))
+        usage.record_tokens(message("{}", usage=tokens(1000, 200, cache_read=500, cache_write=100)))
     with usage.recording(usage.reserve(user, "plan")):
         usage.failed()
-    usage.record_tokens(answer(usage=tokens(300, 400)))  # a scheduled post
+    usage.record_tokens(message("{}", usage=tokens(300, 400)))  # a scheduled post
     old = usage.reserve(user, "chat")
     with db.connect() as conn:  # from before the 14 days
         conn.execute("UPDATE ai_usage SET created_at = '2000-01-01T00:00:00+00:00' WHERE id = ?", (old,))

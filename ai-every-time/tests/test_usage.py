@@ -6,8 +6,7 @@ from types import SimpleNamespace
 
 import anthropic
 import pytest
-from anthropic.types.beta import BetaUsage
-from pydantic import ValidationError
+from anthropic.types.beta import BetaMessage, BetaUsage
 
 from tests.test_app import persona, signup
 from tests.test_community import as_user
@@ -53,9 +52,17 @@ def tokens(i=100, o=50, cache_read=0, cache_write=0, iterations=None) -> BetaUsa
                                      "cache_creation_input_tokens": cache_write, "iterations": iterations})
 
 
-def answer(parsed=None, stop_reason="end_turn", usage=None, model="claude-opus-5-5"):
-    """A response from Claude as the code reads it."""
-    return SimpleNamespace(parsed_output=parsed, stop_reason=stop_reason, usage=usage or tokens(), model=model)
+def message(text="", stop_reason="end_turn", usage=None, model="claude-opus-5-5") -> BetaMessage:
+    """A response from Claude, as the SDK hands it back."""
+    return BetaMessage.model_validate({
+        "id": "msg_test", "type": "message", "role": "assistant", "model": model, "stop_reason": stop_reason,
+        "stop_sequence": None, "content": [{"type": "text", "text": text}] if text else [],
+        "usage": (usage or tokens()).model_dump()})
+
+
+def answer(parsed, usage=None, model="claude-opus-5-5") -> BetaMessage:
+    """A structured answer: the JSON of `parsed`."""
+    return message(parsed.model_dump_json(), usage=usage, model=model)
 
 
 class FakeStream:
@@ -87,8 +94,8 @@ class FakeClaude:
         self.answers = answers
         self.beta = SimpleNamespace(messages=self)
 
-    async def parse(self, *, output_format, **kwargs):
-        outcome = self.answers[output_format.__name__]
+    async def create(self, *, output_config, **kwargs):  # the schema says what was asked for
+        outcome = self.answers[output_config["format"]["schema"]["title"]]
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
@@ -170,7 +177,7 @@ def test_mock_exams_and_new_paths_count_double(client, monkeypatch):
 
     monkeypatch.setattr(settings, "ai_allowance", 1)
     exam = client.post("/api/assessments", json={"kind": "exam", "source_type": "path", "source_ref": "ai-foundations"})
-    assert exam.json()["detail"].startswith("A mock exam needs 2 AI requests, more than your allowance of 1.")
+    assert exam.json()["detail"] == "A mock exam needs 2 AI requests, more than your limit of 1."
 
 
 def test_every_kind_of_ai_request_counts(client):
@@ -214,18 +221,18 @@ def test_failed_calls_are_refunded_and_unusable_answers_count(client, claude):
     assert summary().status_code == 502
     assert used(client) == 0 and (records()[-1]["units"], records()[-1]["failed"]) == (0, 1)
 
-    # Claude answered, so these count even though the answer couldn't be used.
-    claude.answers["Summary"] = answer(stop_reason="refusal", usage=tokens(900, 12))
-    assert summary().status_code == 502
-    try:
-        Summary.model_validate_json('{"summary": "cut sh')
-    except ValidationError as e:
-        claude.answers["Summary"] = e  # a reply cut short doesn't fit the schema
-    assert summary().status_code == 502
+    # Claude answered, so these count, with their tokens, even though the answer couldn't be used:
+    # refused, cut short, and not fitting the schema.
+    for unusable in (message(stop_reason="refusal", usage=tokens(900, 0)),
+                     message('{"summary": "cut sh', stop_reason="max_tokens", usage=tokens(1000, 16000)),
+                     message("Here is a summary in prose instead.", usage=tokens(800, 30))):
+        claude.answers["Summary"] = unusable
+        assert summary().status_code == 502
     claude.answers["Summary"] = answer(Summary(summary="Short.", key_takeaways=["a"], next_step="Quiz."), usage=tokens(1000, 80))
-    assert summary().status_code == 200
-    assert used(client) == 3
-    assert [(r["units"], r["input_tokens"], r["output_tokens"]) for r in records()[-3:]] == [(1, 900, 12), (1, 0, 0), (1, 1000, 80)]
+    assert summary().json()["summary"] == "Short."
+    assert used(client) == 4
+    assert [(r["units"], r["input_tokens"], r["output_tokens"]) for r in records()[-4:]] == [
+        (1, 900, 0), (1, 1000, 16000), (1, 800, 30), (1, 1000, 80)]
 
 
 def test_chat_records_the_reply_and_the_memories_taken_from_it(client, claude):
@@ -234,7 +241,7 @@ def test_chat_records_the_reply_and_the_memories_taken_from_it(client, claude):
     signup(client)
     cid = starter(client)
     # The first model declined and the fallback model answered: both attempts count.
-    final = SimpleNamespace(stop_reason="end_turn", model="claude-opus-4-8", usage=tokens(1100, 200, iterations=[
+    final = message("Tokens are chunks of text.", model="claude-opus-4-8", usage=tokens(1100, 200, iterations=[
         {"type": "message", "input_tokens": 1100, "output_tokens": 0, "cache_read_input_tokens": 800,
          "cache_creation_input_tokens": 0},
         {"type": "fallback_message", "model": "claude-opus-4-8", "input_tokens": 1100, "output_tokens": 200,
@@ -267,7 +274,8 @@ def test_confirming_the_email_address_raises_the_allowance(client, mailbox, monk
     chat(client, cid)
     chat(client, cid)
     r = chat(client, cid)
-    assert r.status_code == 429 and r.json()["detail"].endswith("Confirm your email address to raise your limit to 4.")
+    assert r.status_code == 429 and r.json()["detail"].endswith(
+        "Confirm your email address to raise your limit to 4: you can send yourself a link from your profile.")
     assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200
     assert chat(client, cid).status_code == 200
     assert client.get("/api/me").json()["ai_allowance"] == {"limit": 4, "used": 3, "remaining": 1, "confirm_raises_to": None}
@@ -339,7 +347,7 @@ def test_tokens_are_recorded_for_work_no_learner_asked_for(client, monkeypatch):
     from app import db, usage
 
     signup(client)
-    usage.record_tokens(answer(usage=tokens(300, 600, cache_read=200)))  # e.g. a starter companion's scheduled post
+    usage.record_tokens(message("{}", usage=tokens(300, 600, cache_read=200)))  # e.g. a starter companion's scheduled post
     rec = records()[-1]
     assert (rec["user_id"], rec["kind"], rec["units"], rec["input_tokens"], rec["output_tokens"], rec["cache_read_tokens"]) == (
         None, "automatic", 0, 300, 600, 200)
@@ -349,13 +357,74 @@ def test_tokens_are_recorded_for_work_no_learner_asked_for(client, monkeypatch):
 
     with monkeypatch.context() as m:
         m.setattr(db, "connect", broken)
-        usage.record_tokens(answer())  # bookkeeping never breaks a request
+        usage.record_tokens(message("{}"))  # bookkeeping never breaks a request
 
 
-def test_ai_requests_are_in_the_data_download_and_outlive_the_account(client):
+def test_ai_requests_are_in_the_data_download_and_outlive_the_account(client, monkeypatch):
+    from app import db
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ai_allowance", 1)
     signup(client)
     chat(client, starter(client))
-    [req] = client.get("/api/me/export").json()["ai_requests"]
+    chat(client, starter(client))  # turned away
+    data = client.get("/api/me/export").json()
+    [req] = data["ai_requests"]
     assert req["kind"] == "chat" and req["units"] == 1
+    assert [(r["reason"], r["count"]) for r in data["ai_requests_turned_away"]] == [("allowance", 1)]
     assert client.request("DELETE", "/api/me", json={"password": "correct horse"}).status_code == 204
-    assert [(r["user_id"], r["kind"]) for r in records()] == [(None, "chat")]  # in the totals, without the account
+    # In the totals, without the account.
+    assert [(r["user_id"], r["kind"]) for r in records()] == [(None, "chat")]
+    with db.connect() as conn:
+        assert [tuple(r) for r in conn.execute("SELECT user_id, reason, count FROM ai_refusals")] == [(None, "allowance", 1)]
+
+
+def test_refusals_say_how_to_raise_the_limit(client, mailbox, monkeypatch):
+    from app import digest
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ai_allowance", 4)
+    monkeypatch.setattr(settings, "ai_allowance_unconfirmed", 1)
+    signup(client)
+    hint = " Confirm your email address to raise your limit to 4: you can send yourself a link from your profile."
+    exam = client.post("/api/assessments", json={"kind": "exam", "source_type": "path", "source_ref": "ai-foundations"})
+    assert exam.json()["detail"] == "A mock exam needs 2 AI requests, more than your limit of 1." + hint
+    chat(client, starter(client))
+    assert chat(client, starter(client)).json()["detail"] == (
+        "You've reached your limit of 1 AI request in 24 hours. You can ask again in about 24 hours." + hint)
+
+    # 0 turns the smaller allowance off, as AIET_AI_ALLOWANCE=0 turns the limit off.
+    monkeypatch.setattr(settings, "ai_allowance_unconfirmed", 0)
+    assert client.get("/api/me").json()["ai_allowance"] == {"limit": 4, "used": 1, "remaining": 3, "confirm_raises_to": None}
+    assert "raises your AI requests" not in digest._what_confirming_does()
+
+
+def test_other_sites_cannot_have_lessons_written(client):
+    """Opening a lesson writes it (once) on a GET, which a page on another site could send from the
+    learner's browser with a link; only the app itself can have one written."""
+    signup(client)
+    r = client.get("/api/lessons/tokens", headers={"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate"})
+    assert r.status_code == 403 and used(client) == 0
+    assert client.get("/api/lessons/tokens", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+    assert used(client) == 1
+    # Once written it costs nothing, so a link from anywhere can open it.
+    assert client.get("/api/lessons/tokens", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200
+    assert client.get("/api/lessons/next-token").status_code == 200  # browsers that don't say where requests come from
+    assert used(client) == 2
+
+
+def test_the_site_ceiling_holds_only_unconfirmed_learners_while_email_is_on(client, mailbox, monkeypatch):
+    """So a flood of throwaway accounts can fill the ceiling but can't pause learners who confirmed."""
+    from app import usage
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ai_site_limit", 2)
+    signup(client)
+    assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200
+    as_user(client, "bo@example.com", "Bo")
+    chat(client, starter(client))
+    chat(client, starter(client))
+    r = chat(client, starter(client))
+    assert r.status_code == 429 and r.json()["detail"] == usage.BUSY_UNCONFIRMED
+    as_user(client, "ada@example.com", "Ada")
+    assert chat(client, starter(client)).status_code == 200

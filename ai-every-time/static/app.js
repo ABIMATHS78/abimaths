@@ -1155,7 +1155,8 @@ async function viewStudio({ mode, id }) {
 const hourLabel = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 async function viewProfile() {
-  state.me = await api("/api/me");  // fresh: AI requests left, and an address confirmed in another tab
+  // Fresh: AI requests left, and an address confirmed in another tab. Offline, what we have will do.
+  state.me = await api("/api/me").catch((err) => { if (err instanceof StaleView) throw err; return state.me; });
   const me = state.me;
   const main = shell("profile", `
     <h1>Your profile</h1>
@@ -1234,8 +1235,15 @@ async function viewProfile() {
     const b = e.target.closest("[data-confirm]");
     if (!b) return;
     b.disabled = true;
-    try { await api("/api/email/confirmation", { method: "POST" }); toast("Sent. Check your inbox (and spam folder)."); }
-    catch (err) { toast(err.message); }
+    try {
+      const r = await api("/api/email/confirmation", { method: "POST" });
+      if (r.confirmed) {  // confirmed meanwhile, perhaps in another tab
+        state.me = await api("/api/me");
+        renderAllowance();
+        renderEmail();
+        toast("Your email address is already confirmed.");
+      } else toast("Sent. Check your inbox (and spam folder).");
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
     b.disabled = false;
   });
   // Reminder emails only start once the learner confirms the address is theirs.

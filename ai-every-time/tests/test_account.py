@@ -74,10 +74,12 @@ def test_reset_links_expire_and_are_limited(client, mailbox):
     assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(0), "password": "a new password"}).status_code == 204
     assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(1), "password": "a new password"}).status_code == 400
 
-    with db.connect() as conn:
+    with db.connect() as conn:  # an hour later
         conn.execute("DELETE FROM password_resets")
+        conn.execute("UPDATE email_sends SET created_at = '2000-01-01T00:00:00+00:00'")
     client.post("/api/auth/logout")
     client.post("/api/auth/forgot", json={"email": "ada@example.com"})
+    assert len(mailbox.sent) == account.RESETS_PER_HOUR + 1
     with db.connect() as conn:
         conn.execute("UPDATE password_resets SET expires_at = '2000-01-01T00:00:00+00:00'")
     assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(), "password": "a new password"}).status_code == 400
