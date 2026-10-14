@@ -150,10 +150,73 @@ async function streamChat(companionId, body, onText) {
   return acc;
 }
 
+/* ----------------------------------------------------------- notifications */
+
+const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const installedApp = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const deviceZone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })();
+let installPrompt = null;
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+  // A tapped notification asks an open tab to show its page.
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.type !== "open") return;
+    const url = new URL(e.data.url, location.origin);
+    if (url.origin === location.origin) location.hash = url.hash || "#/feed";
+  });
+}
+/* Browsers that can install the app ask through this event; the sidebar shows an Install button instead of their banner. */
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  const b = $("#installBtn");
+  if (b) b.hidden = false;
+});
+
+const keyBytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const sameBytes = (buf, bytes) => !!buf && new Uint8Array(buf).length === bytes.length && new Uint8Array(buf).every((v, i) => v === bytes[i]);
+
+async function pushSubscription() {
+  if (!pushSupported) return null;
+  const reg = await navigator.serviceWorker.getRegistration("/");
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+/* Turn notifications on for this device: ask permission, subscribe at the browser's push service, tell the server. */
+async function enablePush() {
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") {
+    throw new Error(permission === "denied" ? "Notifications are blocked for this site in your browser's settings." : "Notifications weren't allowed.");
+  }
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  const key = keyBytes((await api("/api/push/key")).public_key);
+  let sub = await reg.pushManager.getSubscription();
+  // A subscription made for another server key can't receive this server's messages.
+  if (sub && !sameBytes(sub.options.applicationServerKey, key)) { await sub.unsubscribe(); sub = null; }
+  // Subscribing goes through the browser maker's push service, which can be unreachable; don't wait forever.
+  sub ||= await Promise.race([
+    reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Your browser's notification service didn't answer. Try again in a moment.")), 20000)),
+  ]);
+  await api("/api/push/subscriptions", { method: "POST", body: sub.toJSON() });
+}
+
+/* Turn notifications off for this device (also used when signing out). */
+async function disablePush() {
+  const sub = await pushSubscription().catch(() => null);
+  if (!sub) return;
+  await api("/api/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } }).catch(() => {});
+  await sub.unsubscribe().catch(() => {});
+}
+
 /* ------------------------------------------------------------------- router */
 
 const routes = [
   [/^#\/welcome$/, viewWelcome, false],
+  [/^#\/reset\/([\w-]+)$/, viewReset, null],
   [/^#\/onboarding$/, viewOnboarding],
   [/^#\/feed$/, viewFeed],
   [/^#\/companions$/, viewCompanions],
@@ -168,23 +231,36 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(reports|paths|roles|log))?$/, viewStaff],
+  [/^#\/staff(?:\/(reports|appeals|paths|roles|log))?$/, viewStaff],
 ];
 
 async function router() {
   state.nav++;
+  // A dialog belongs to the page that opened it (Back, a notification or a link can change pages under it).
+  if ($("#dialog")?.open) $("#dialog").close();
   const hash = location.hash || "#/feed";
   if (!state.me) {
-    try { state.me = await api("/api/me"); } catch { state.me = null; }
+    // Not api(): its sign-in redirect would pull pages open to everyone, like the reset link, back to the welcome page.
+    const nav = state.nav;
+    const res = await fetch("/api/me", { credentials: "same-origin" }).catch(() => null);
+    const me = res?.ok ? await res.json() : null;
+    if (nav !== state.nav) return;  // a newer navigation took over while this one waited
+    state.me = me;
+  }
+  // Reminders follow the learner's own day, so learn their time zone the first time we can.
+  if (state.me && !state.me.timezone && deviceZone && state.zoneSentFor !== state.me.id) {
+    state.zoneSentFor = state.me.id;
+    api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }).then((me) => { state.me = me; }).catch(() => {});
   }
   $("#banner").hidden = !state.me?.offline_mode;
   $("#banner").textContent = "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
+  // needsAuth: true = signed in, false = signed out, null = either.
   for (const [re, view, needsAuth = true] of routes) {
     const m = hash.match(re);
     if (!m) continue;
-    if (needsAuth && !state.me) { location.hash = "#/welcome"; return; }
-    if (!needsAuth && state.me) { location.hash = "#/feed"; return; }
-    if (needsAuth && !state.me.onboarded && !/^#\/(onboarding|studio)/.test(hash)) { location.hash = "#/onboarding"; return; }
+    if (needsAuth === true && !state.me) { location.hash = "#/welcome"; return; }
+    if (needsAuth === false && state.me) { location.hash = "#/feed"; return; }
+    if (needsAuth === true && !state.me.onboarded && !/^#\/(onboarding|studio)/.test(hash)) { location.hash = "#/onboarding"; return; }
     try { await view(m); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
     window.scrollTo(0, 0);
     return;
@@ -206,12 +282,20 @@ function shell(active, inner) {
           ${nav.map(([k, i, t]) => `<a href="#/${k}" class="${active === k ? "active" : ""}">${i} ${t}</a>`).join("")}
           ${primary ? `<a href="#/c/${primary}" class="${active === "mine" ? "active" : ""}">💬 My companion</a>` : ""}
           <a href="#/studio/new" class="${active === "studio" ? "active" : ""}">✨ Design a companion</a>
+          <button type="button" class="install" id="installBtn" ${installPrompt ? "" : "hidden"}>📲 Install the app</button>
         </nav>
         <a href="#/feed" class="bell" id="bell" title="Reminders" hidden>🔔 <span></span></a>
         <div class="me"><div><b>${esc(state.me.display_name)}</b><div class="muted small">${esc(state.me.level)}</div></div></div>
       </aside>
       <main class="main">${inner}</main>
     </div>`;
+  $("#installBtn").addEventListener("click", async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice.catch(() => {});
+    installPrompt = null;
+    $("#installBtn")?.setAttribute("hidden", "");
+  });
   refreshBell();
   return $(".main");
 }
@@ -257,6 +341,7 @@ async function viewWelcome() {
           </label>
           <div class="error" id="authErr"></div>
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
+          <button type="button" class="linkbtn" id="forgotBtn" data-only="login" hidden>Forgot your password?</button>
         </form>
       </div>
     </section>`;
@@ -264,15 +349,16 @@ async function viewWelcome() {
   const setTab = (t) => {
     tab = t;
     $$("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
-    $$("[data-only=signup]").forEach((el) => (el.hidden = t !== "signup"));
+    $$("[data-only]").forEach((el) => (el.hidden = el.dataset.only !== t));
     $("#authBtn").textContent = t === "signup" ? "Create account" : "Sign in";
     $("[name=password]").autocomplete = t === "signup" ? "new-password" : "current-password";
   };
   $$("[data-tab]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  $("#forgotBtn").addEventListener("click", () => showForgot($("[name=email]").value.trim()));
   $("#authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
-    const body = tab === "signup" ? f : { email: f.email, password: f.password };
+    const body = tab === "signup" ? { ...f, timezone: deviceZone } : { email: f.email, password: f.password };
     $("#authErr").textContent = "";
     $("#authBtn").disabled = true;
     try {
@@ -283,6 +369,57 @@ async function viewWelcome() {
     } finally {
       $("#authBtn").disabled = false;
     }
+  });
+}
+
+function showForgot(email) {
+  showDialog(`<h2>Forgot your password?</h2>
+    <p>Enter the email address of your account and we'll send a link for choosing a new password.</p>
+    <form id="forgotForm" class="stack">
+      <label>Email <input type="email" name="email" autocomplete="email" required value="${esc(email)}"></label>
+      <div class="small" id="forgotMsg" role="status"></div>
+      <button class="btn primary">Send the link</button>
+    </form>`);
+  $("#forgotForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("button", e.target);
+    btn.disabled = true;
+    try {
+      await api("/api/auth/forgot", { method: "POST", body: { email: e.target.email.value.trim() } });
+      $("#forgotMsg").textContent = "If there's an account with that address, a link is on its way. It works once, within the next hour.";
+    } catch (err) {
+      $("#forgotMsg").textContent = err.message;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* Opened from the emailed link. Works whether or not someone is signed in on this browser. */
+async function viewReset(m) {
+  app.innerHTML = `
+    <section class="card stack narrow-card">
+      <div class="logo" style="margin:0">AI <span>Every</span> Time</div>
+      <h1 style="margin:0">Choose a new password</h1>
+      <form id="resetForm" class="stack" novalidate>
+        <label>New password <span class="hint">At least 8 characters</span><input type="password" name="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Type it again <input type="password" name="again" autocomplete="new-password" required minlength="8"></label>
+        <div class="error" id="resetErr"></div>
+        <button class="btn primary">Save and sign in</button>
+      </form>
+      <p class="muted small" style="margin:0">This signs you out on every other phone and browser, and stops notifications on them.</p>
+    </section>`;
+  $("#resetForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (f.password.value.length < 8) { $("#resetErr").textContent = "Use at least 8 characters."; return; }
+    if (f.password.value !== f.again.value) { $("#resetErr").textContent = "The two passwords don't match."; return; }
+    try {
+      await api("/api/auth/reset", { method: "POST", body: { token: m[1], password: f.password.value } });
+      state.me = await api("/api/me");
+      toast("Password changed. You're signed in.");
+      // Replace the link in the history so the spent token isn't left behind.
+      location.replace(state.me.onboarded ? "#/feed" : "#/onboarding");
+    } catch (err) { $("#resetErr").textContent = err.message; }
   });
 }
 
@@ -300,7 +437,9 @@ function companionCard(c, { onboarding = false } = {}) {
           <h3>${esc(p.name)} ${esc(p.flag)} ${mine ? '<span class="mine-badge">Yours</span>' : ""}</h3>
           <div class="muted small">${esc(p.country)}${isPrimary ? " · Your primary companion" : ""}</div>
           ${!c.is_starter && !mine ? `<div class="muted small">Community · designed by ${esc(c.designer || "a learner")}</div>` : ""}
-          ${mine && c.hidden ? `<div class="small error">Hidden after reports from other learners</div>` : mine && c.is_public ? `<div class="small" style="color:var(--accent)">● Published to the community</div>` : ""}
+          ${mine && c.removed ? `<div class="small error">Removed from the community by a moderator</div>`
+            : mine && c.hidden ? `<div class="small error">Hidden after reports from other learners</div>`
+            : mine && c.is_public ? `<div class="small" style="color:var(--accent)">● Published to the community</div>` : ""}
         </div>
       </div>
       <p class="tagline">${esc(p.tagline)}</p>
@@ -509,6 +648,7 @@ async function viewCompanion(m) {
         ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button>` : ""}
       </div>
     </div>
+    ${c.moderation ? removalCard(c) : ""}
     <div class="chat-layout">
       <section class="card chat">
         <div class="log" id="log"></div>
@@ -577,6 +717,7 @@ async function viewCompanion(m) {
   wireMic($("#mic"), $("#input"));
   $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
+  $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
   if (!messages.length) {
     addMsg("assistant", `Hi ${state.me.display_name}! I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}\n\nWhat would you like to learn today?`);
   }
@@ -1009,36 +1150,180 @@ async function viewStudio({ mode, id }) {
 
 /* ------------------------------------------------------------------ profile */
 
+const hourLabel = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
 async function viewProfile() {
+  const me = state.me;
   const main = shell("profile", `
     <h1>Your profile</h1>
-    <form class="card stack" id="prof" style="max-width:560px">
-      <label>Name <input type="text" name="display_name" maxlength="60" required></label>
-      <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
-      <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
-      <label class="check"><input type="checkbox" name="email_reminders" ${state.me.email_available ? "" : "disabled"}> Email me a daily reminder when something is waiting</label>
-      ${state.me.email_available ? `<div class="muted small" style="margin-top:-8px">Sent to ${esc(state.me.email)}. Every email has a link to stop them.</div>`
-        : `<div class="muted small" style="margin-top:-8px">Email reminders aren't set up on this server yet.</div>`}
-      <div class="error" id="profErr"></div>
-      <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
-    </form>`);
+    <div class="stack" style="max-width:640px">
+      <form class="card stack" id="prof">
+        <label>Name <input type="text" name="display_name" maxlength="60" required></label>
+        <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
+        <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
+        <div class="error" id="profErr"></div>
+        <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
+      </form>
+      <form class="card stack" id="remForm">
+        <div><h2 style="margin:0">Reminders</h2>
+          <div class="muted small">Once a day, when something is waiting: a streak to keep, flashcards due, the next step in your study plan.</div></div>
+        <label>Time of your daily reminder
+          <select name="reminder_hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === me.reminder_hour ? "selected" : ""}>${hourLabel(h)}</option>`).join("")}</select></label>
+        <div class="muted small" id="zoneLine" style="margin-top:-8px"></div>
+        <label class="check"><input type="checkbox" name="email_reminders" ${me.email_available ? "" : "disabled"} ${me.email_reminders ? "checked" : ""}> Email me the daily reminder</label>
+        <div class="muted small" style="margin-top:-8px">${me.email_available ? `Sent to ${esc(me.email)}. Every email has a link to stop them.` : "Email reminders aren't set up on this server yet."}</div>
+        <div class="error" id="remErr"></div>
+        <div><button class="btn primary">Save reminders</button></div>
+        <div class="push-box stack" id="pushBox"></div>
+      </form>
+      <form class="card stack" id="pwForm">
+        <div><h2 style="margin:0">Password and devices</h2><div class="muted small" id="sessionsLine"></div></div>
+        <label>Current password <input type="password" name="current_password" autocomplete="current-password" required></label>
+        <label>New password <span class="hint">At least 8 characters</span><input type="password" name="new_password" autocomplete="new-password" required minlength="8"></label>
+        <div class="error" id="pwErr"></div>
+        <div class="row"><button class="btn primary">Change password</button><button type="button" class="btn ghost" id="signOutOthers">Sign out other devices</button></div>
+        <div class="muted small">Both sign out every other phone and browser and stop notifications on them.</div>
+      </form>
+      <div class="card stack">
+        <div><h2 style="margin:0">Your data</h2>
+          <div class="muted small">Your account, companions, chats, memories, progress and settings, in one file you can keep.</div></div>
+        <div class="row"><a class="btn" href="/api/me/export" download>⬇ Download my data</a><button type="button" class="btn danger" id="deleteAccount">Delete my account</button></div>
+      </div>
+    </div>`);
   const f = $("#prof", main);
-  f.display_name.value = state.me.display_name; f.level.value = state.me.level; f.goals.value = state.me.goals;
-  f.email_reminders.checked = state.me.email_reminders;
+  f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals;
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const body = Object.fromEntries(new FormData(f));
-      if (state.me.email_available) body.email_reminders = f.email_reminders.checked; else delete body.email_reminders;
-      state.me = await api("/api/me", { method: "PATCH", body });
+      state.me = await api("/api/me", { method: "PATCH", body: Object.fromEntries(new FormData(f)) });
       toast("Profile saved");
     } catch (err) { $("#profErr").textContent = err.message; }
   });
   $("#logout").addEventListener("click", async () => {
+    await disablePush();
     await api("/api/auth/logout", { method: "POST" });
     state.me = null;
     location.hash = "#/welcome";
   });
+
+  const renderZone = () => {
+    $("#zoneLine").innerHTML = `Times are in your time zone, ${esc(state.me.timezone || "UTC")}.`
+      + (deviceZone && deviceZone !== state.me.timezone ? ` <button type="button" class="linkbtn" id="useZone">Use this device's (${esc(deviceZone)})</button>` : "");
+    $("#useZone")?.addEventListener("click", async () => {
+      try { state.me = await api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }); toast("Time zone updated"); renderZone(); }
+      catch (err) { toast(err.message); }
+    });
+  };
+  renderZone();
+  $("#remForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = { reminder_hour: +e.target.reminder_hour.value };
+    if (state.me.email_available) body.email_reminders = e.target.email_reminders.checked;
+    try {
+      state.me = await api("/api/me", { method: "PATCH", body });
+      $("#remErr").textContent = "";
+      toast("Reminders saved");
+    } catch (err) { $("#remErr").textContent = err.message; }
+  });
+
+  const box = $("#pushBox");
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-push]");
+    if (!b) return;
+    b.disabled = true;
+    try {
+      if (b.dataset.push === "on") { await enablePush(); toast("Notifications are on for this device"); }
+      else if (b.dataset.push === "off") { await disablePush(); toast("Notifications are off for this device"); }
+      else if (b.dataset.push === "test") { await api("/api/push/test", { method: "POST" }); toast("Sent. It should appear in a few seconds."); }
+      else if (b.dataset.push === "all-off") {
+        await api("/api/push/devices", { method: "DELETE" });
+        const sub = await pushSubscription().catch(() => null);
+        if (sub) await sub.unsubscribe().catch(() => {});
+        toast("Notifications are off on all your devices");
+      }
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+    renderPushBox(box);
+  });
+  renderPushBox(box);
+
+  const renderSessions = async () => {
+    const { others } = await api("/api/me/sessions");
+    $("#sessionsLine").textContent = others ? `You're also signed in on ${others} other phone${others === 1 ? "" : "s"} or browser${others === 1 ? "" : "s"}.`
+      : "You're only signed in here.";
+  };
+  renderSessions();
+  // This device keeps its notifications when the others are signed out.
+  const thisDevice = async () => (await pushSubscription().catch(() => null))?.endpoint || null;
+  $("#pwForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    if (f.new_password.value.length < 8) { $("#pwErr").textContent = "Use at least 8 characters for the new password."; return; }
+    try {
+      await api("/api/me/password", { method: "POST", body: {
+        current_password: f.current_password.value, new_password: f.new_password.value, keep_device: await thisDevice() } });
+      f.reset();
+      $("#pwErr").textContent = "";
+      toast("Password changed. Other devices are signed out.");
+      renderSessions(); renderPushBox(box);
+    } catch (err) { $("#pwErr").textContent = err.message; }
+  });
+  $("#signOutOthers").addEventListener("click", async () => {
+    if (!confirm("Sign out every other phone and browser? Notifications stop on them too.")) return;
+    try {
+      await api("/api/me/sign-out-others", { method: "POST", body: { keep_device: await thisDevice() } });
+      toast("Other devices are signed out");
+      renderSessions(); renderPushBox(box);
+    } catch (err) { toast(err.message); }
+  });
+  $("#deleteAccount").addEventListener("click", showDeleteAccount);
+}
+
+function showDeleteAccount() {
+  showDialog(`<h2>Delete your account?</h2>
+    <p>This deletes your account and everything in it, for good: the companions you designed (and their posts, which learners following them lose too), your chats, memories, progress, flashcards and settings.</p>
+    <p>You can <a href="/api/me/export" download>download your data</a> first.</p>
+    <form id="deleteForm" class="stack">
+      <label>Your password <input type="password" name="password" autocomplete="current-password" required></label>
+      <div class="error" id="deleteErr"></div>
+      <button class="btn danger">Delete my account</button>
+    </form>`);
+  $("#deleteForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/me", { method: "DELETE", body: { password: e.target.password.value } });
+      const sub = await pushSubscription().catch(() => null);
+      if (sub) await sub.unsubscribe().catch(() => {});
+      state.me = null;
+      $("#dialog").close();
+      toast("Your account was deleted.");
+      location.hash = "#/welcome";
+    } catch (err) { $("#deleteErr").textContent = err.message; }
+  });
+}
+
+/* Whether this device gets notifications, and how to turn them on where the browser allows it. */
+async function renderPushBox(box) {
+  const [devices, sub] = await Promise.all([api("/api/push/devices"), pushSubscription().catch(() => null)]);
+  if (!document.body.contains(box)) return;
+  const here = sub && devices.find((d) => d.endpoint === sub.endpoint);
+  const others = devices.filter((d) => d !== here);
+  const note = (html) => `<p class="small" style="margin:0">${html}</p>`;
+  let status;
+  if (!state.me.push_available) status = note(`<span class="muted">Notifications aren't set up on this server yet.</span>`);
+  else if (!pushSupported) {
+    status = note(isIOS && !installedApp
+      ? "On iPhone and iPad, notifications come through the Home Screen app: tap <b>Share</b>, then <b>Add to Home Screen</b>, open AI Every Time from there and turn them on here."
+      : `<span class="muted">This browser can't show notifications.</span>`);
+  } else if (Notification.permission === "denied") {
+    status = note("Notifications are blocked for this site. Allow them in your browser's site settings, then come back here.");
+  } else if (here) {
+    status = note(`✅ On for this device (${esc(here.device)}).`)
+      + `<div class="row"><button type="button" class="btn" data-push="test">Send a test</button><button type="button" class="btn ghost" data-push="off">Turn off on this device</button></div>`;
+  } else {
+    status = `<div class="row"><button type="button" class="btn primary" data-push="on">🔔 Turn on notifications on this device</button></div>`;
+  }
+  box.innerHTML = `<h3 style="margin:0">Notifications on your phone or computer</h3>${status}
+    ${others.length ? `<div class="muted small">Also on: ${others.map((d) => esc(d.device)).join(", ")}. <button type="button" class="linkbtn" data-push="all-off">Turn off everywhere</button></div>` : ""}`;
 }
 
 
@@ -1084,6 +1369,40 @@ function showReport(c) {
       $("#dialog").close();
       toast("Thanks. Your report was sent.");
     } catch (err) { toast(err.message); }
+  });
+}
+
+/* For the designer of a removed companion: why, and where their appeal stands. */
+function removalCard(c) {
+  const m = c.moderation, a = m.appeal;
+  const when = m.removed_at ? ` on ${new Date(m.removed_at).toLocaleDateString()}` : "";
+  const status = !a ? (m.can_appeal ? `<div><button class="btn" id="appealBtn">Ask for a second look</button></div>` : "")
+    : a.status === "open" ? `<div class="small"><b>Your appeal is waiting</b> for a moderator who wasn't part of the first decision.</div>`
+    : `<div class="small"><b>Your appeal had a second look, and the removal stands:</b> ${esc(a.decision_note)}</div>`;
+  return `<div class="card removal stack">
+    <div><b>A moderator removed ${esc(c.persona.name)} from the community${esc(when)}.</b> It's still yours to chat with and edit privately.</div>
+    ${m.note ? `<div class="small">Their reason: “${esc(m.note)}”</div>` : ""}
+    ${status}
+  </div>`;
+}
+
+function showAppeal(c, onSent) {
+  showDialog(`<h2>Ask for a second look at ${esc(c.persona.name)}</h2>
+    <p>A different moderator will review the removal. Tell them what you think was missed, such as how the companion is meant to be used or what you've changed since.</p>
+    <form id="appealForm" class="stack">
+      <label>Your appeal <textarea name="message" rows="5" minlength="10" maxlength="1000" required></textarea></label>
+      <div class="error" id="appealErr"></div>
+      <button class="btn primary">Send appeal</button>
+    </form>`);
+  $("#appealForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const nav = state.nav;
+    try {
+      await api(`/api/companions/${c.id}/appeal`, { method: "POST", body: { message: e.target.message.value.trim() } });
+      $("#dialog").close();
+      toast("Appeal sent. You'll get a notice when it's decided.");
+      if (nav === state.nav) onSent();  // not if the learner has moved to another page meanwhile
+    } catch (err) { $("#appealErr").textContent = err.message; }
   });
 }
 
@@ -1454,7 +1773,7 @@ function planForm(paths, minutes) {
 
 /* -------------------------------------------------------------------- staff */
 
-const ROLE_CAN = { moderator: ["reports", "log"], reviewer: ["paths", "log"], admin: ["reports", "paths", "roles", "log"] };
+const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["reports", "appeals", "paths", "roles", "log"] };
 const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
 const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -1462,13 +1781,46 @@ async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
-  const names = { reports: "Reported companions", paths: "Path reviews", roles: "Roles", log: "Decision log" };
+  const names = { reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
-  await { reports: staffReports, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+  await { reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+}
+
+async function staffAppeals(body, m) {
+  const list = await api("/api/staff/appeals");
+  if (!list.length) { body.innerHTML = `<div class="card empty">No appeals waiting. 🎉</div>`; return; }
+  body.innerHTML = list.map((a) => {
+    const c = a.companion, p = c.persona;
+    return `
+    <article class="card stack" data-id="${a.id}">
+      <div class="row">
+        <img class="avatar" src="/api/companions/${c.id}/avatar?v=${encodeURIComponent(c.updated_at)}" width="56" height="56" alt="">
+        <div style="flex:1"><h3 style="margin:0">${esc(p.name)} ${esc(p.flag)}</h3>
+          <div class="muted small">Designed by ${esc(a.designer || "?")} · appealed ${timeAgo(a.created_at)}</div></div>
+      </div>
+      <div class="small"><b>Removed</b> ${timeAgo(a.removal.at)} by ${esc(a.removal.by || "a former moderator")}: “${esc(a.removal.note)}”</div>
+      <div class="small"><b>The designer's appeal:</b> “${esc(a.message)}”</div>
+      <div class="small"><b>Tagline:</b> ${esc(p.tagline) || "–"}<br><b>Bio:</b> ${esc(p.bio) || "–"}<br>
+        <b>Sample line:</b> ${esc(p.writing_style.sample_line) || "–"}<br><b>Expertise:</b> ${esc(p.expertise.join(", ")) || "–"}</div>
+      ${a.can_decide ? `
+        <label>Note to the designer <span class="hint">Required when the removal stands</span><textarea name="note" maxlength="500"></textarea></label>
+        <div class="row"><button class="btn" data-act="overturn">Restore to the community</button><button class="btn danger" data-act="uphold">Keep it removed</button></div>`
+        : `<div class="muted small">You removed this companion, so another moderator gives it the second look.</div>`}
+    </article>`;
+  }).join("");
+  $$("[data-id]", body).forEach((el) => el.addEventListener("click", async (e) => {
+    const act = e.target.dataset.act;
+    if (!act) return;
+    try {
+      await api(`/api/staff/appeals/${el.dataset.id}`, { method: "POST", body: { decision: act, note: $("[name=note]", el).value.trim() } });
+      toast(act === "overturn" ? "Restored, and the designer was told" : "The removal stands, and the designer was told why");
+      staffAppeals(body, m);
+    } catch (err) { toast(err.message); }
+  }));
 }
 
 async function staffReports(body, m) {

@@ -5,7 +5,7 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Cookie, Depends, HTTPException
+from fastapi import Cookie, Depends, HTTPException, Response
 
 from app import db
 from app.config import settings
@@ -42,6 +42,11 @@ def create_session(user_id: int) -> str:
 def delete_session(token: str) -> None:
     with db.connect() as conn:
         conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+
+
+def set_cookie(response: Response, token: str) -> None:
+    response.set_cookie(COOKIE, token, httponly=True, samesite="lax", secure=settings.secure_cookies,
+                        max_age=settings.session_days * 86400)
 
 
 def current_user(aiet_session: str | None = Cookie(default=None)) -> dict:

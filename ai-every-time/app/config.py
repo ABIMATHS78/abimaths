@@ -35,8 +35,12 @@ class Settings:
     mail_from: str = field(default_factory=lambda: os.environ.get("AIET_MAIL_FROM", ""))
     # Public address of the site, used for links in emails.
     public_url: str = field(default_factory=lambda: os.environ.get("AIET_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
-    # UTC hour after which the daily reminder email goes out.
-    digest_hour_utc: int = field(default_factory=lambda: _int("AIET_DIGEST_HOUR_UTC", 7))
+    # Default hour for the daily reminder (email and notifications) in each learner's own time zone,
+    # or UTC until it's known. Learners can choose another hour. AIET_DIGEST_HOUR_UTC is the old name.
+    reminder_hour: int = field(default_factory=lambda: _int("AIET_REMINDER_HOUR", _int("AIET_DIGEST_HOUR_UTC", 7)))
+    # How push services can reach whoever runs this server: a mailto: address or an https:// address.
+    # Defaults to the AIET_MAIL_FROM address, then an https AIET_PUBLIC_URL. Notifications are off without one.
+    push_contact: str = field(default_factory=lambda: os.environ.get("AIET_PUSH_CONTACT", ""))
 
 
 settings = Settings()

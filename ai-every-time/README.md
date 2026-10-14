@@ -2,7 +2,7 @@
 
 The 24/7 AI learning hub. Learners follow, chat with and learn from always-available **AI Learning Companions**. Each companion represents a country and has its own face, personality, expertise and writing voice. Learners can also **design their own companion** when they create an account, and change it whenever they like.
 
-It includes the companion core (starter companions, the companion designer, chat with memory, self-publishing content) and structured learning taught by those companions: learning paths, lessons, quizzes, mock exams, flashcards, summaries, study plans and progress tracking.
+It includes the companion core (starter companions, the companion designer, chat with memory, self-publishing content) and structured learning taught by those companions: learning paths, lessons, quizzes, mock exams, flashcards, summaries, study plans and progress tracking. It installs on phones and computers like an app, reminds learners at the time they choose in their own time zone, and gives them control of their account and data.
 
 ## What's in it
 
@@ -29,8 +29,11 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Custom learning paths** | A learner names any topic and their companion designs a 3-8 lesson path for them, with objectives and key points. It works with everything else: lessons, tutoring, quizzes, mock exams, flashcards, study plans and progress. These paths are private and marked as not expert-reviewed. |
 | **Staff roles** | Learners, reviewers, moderators and admins. Emails listed in `AIET_ADMIN_EMAILS` are always admins, so a new deployment can't lock itself out. Admins assign the other roles on the Staff page; nobody can change their own role. |
 | **Moderation** | Moderators see every reported community companion: its report count, reasons and details. They can restore it (if hidden), dismiss the reports (if still visible), or remove it from the community for good, with a required note. The designer keeps a private copy and can't republish it. Every decision is logged and the designer is told the outcome. |
+| **Appeals** | The designer of a removed companion sees why on its page and can ask for a second look, once per removal. Appeals go to the Staff page's Appeals tab. Neither the moderator who made the removal nor the designer (if they're staff themselves) can decide one. Another moderator either restores the companion to the community or keeps it removed, with a required note. The decision is logged and the designer is told. |
 | **Shared paths, expert reviewed** | A learner can submit a custom path for sharing. A reviewer checks it and can correct its title, description, lesson titles, objectives and key points, but not the number of lessons, so learners' progress still lines up. Corrections clear the cached lesson text, so companions re-teach from the corrected facts. Approved paths appear for every learner with an "Expert reviewed · suggested by …" badge. Reviewers can reject (with a note) or later unshare, and can't approve their own paths. |
-| **Reminders** | A "Today" panel on the feed and a bell in the sidebar list what's waiting: a streak at risk, flashcards due, the next study-plan item (or one that's overdue), an unfinished quiz, a lesson to continue, new posts from followed companions, and notices about moderation and review decisions. Learners can opt in to a **daily reminder email** through any SMTP server. It carries one-click unsubscribe (RFC 8058), and its unsubscribe page asks for confirmation so email link-scanners can't unsubscribe people by accident. |
+| **Reminders** | A "Today" panel on the feed and a bell in the sidebar list what's waiting: a streak at risk, flashcards due, the next study-plan item (or one that's overdue), an unfinished quiz, a lesson to continue, new posts from followed companions, and notices about moderation and review decisions. Staff also see the work waiting in their queues: reported companions, appeals they can decide, and paths to review. Learners pick the hour of their **daily reminder**, which follows their own time zone, as do streaks and study days. They can get it by email (any SMTP server) or as a notification. The email carries one-click unsubscribe (RFC 8058), and its unsubscribe page asks for confirmation so email link-scanners can't unsubscribe people by accident. |
+| **Installable app and notifications** | The site installs on phones and computers like an app (manifest, icons and a service worker). Learners turn notifications on for each device from their profile and can send a test. The daily reminder arrives from their own companion; a reminder that would come more than 3 hours late is skipped rather than sent at night. Notices about decisions on their companions and paths arrive as they happen. On iPhone and iPad, notifications work once the app is on the Home Screen, and the profile explains how. Signing out turns notifications off for that device. |
+| **Account and privacy** | Forgotten passwords are reset with an emailed link: it works once, for an hour, and only a hash of it is stored. Learners can change their password and sign out other devices; both also stop notifications on the other devices. After 10 wrong passwords for an email in 15 minutes, sign-in pauses for that email. **Download my data** gives one JSON file with everything the account holds (answers to unfinished quizzes stay hidden). **Delete my account** (password required) removes it all, including the companions the learner designed and any paths they shared with the community. |
 
 ## Run it
 
@@ -46,6 +49,8 @@ Open http://127.0.0.1:8000.
 
 Without an API key, the app runs in **demo mode**: it works end to end, but companions give templated replies and posts. A banner says so.
 
+Notifications need two things. First, a contact address that browsers' push services can reach you at: `AIET_PUSH_CONTACT`, or else the `AIET_MAIL_FROM` address or an https `AIET_PUBLIC_URL`. Second, HTTPS in production (browsers allow notifications on `localhost` for testing). The server makes its own push (VAPID) key the first time it's needed and keeps it in the database.
+
 ### Configuration
 
 | Variable | Default | Meaning |
@@ -58,10 +63,11 @@ Without an API key, the app runs in **demo mode**: it works end to end, but comp
 | `AIET_HISTORY_TURNS` | `20` | Past conversation turns sent with each message |
 | `AIET_OFFLINE` | off | Set to `1` to force demo mode |
 | `AIET_ADMIN_EMAILS` | — | Comma-separated emails that are always admins |
-| `AIET_SMTP_HOST`, `AIET_SMTP_PORT`, `AIET_SMTP_USER`, `AIET_SMTP_PASSWORD`, `AIET_SMTP_STARTTLS` | — / 587 / — / — / on | SMTP server for reminder emails; email is off while `AIET_SMTP_HOST` is unset |
-| `AIET_MAIL_FROM` | — | Sender address for reminder emails (required for email) |
+| `AIET_SMTP_HOST`, `AIET_SMTP_PORT`, `AIET_SMTP_USER`, `AIET_SMTP_PASSWORD`, `AIET_SMTP_STARTTLS` | — / 587 / — / — / on | SMTP server for reminder and password-reset emails; email is off while `AIET_SMTP_HOST` is unset |
+| `AIET_MAIL_FROM` | — | Sender address for emails (required for email) |
 | `AIET_PUBLIC_URL` | `http://127.0.0.1:8000` | The site's public address, used for links in emails |
-| `AIET_DIGEST_HOUR_UTC` | `7` | Hour (UTC) after which the daily email goes out |
+| `AIET_REMINDER_HOUR` | `7` | Default hour of the daily reminder in each learner's own time zone (UTC until it's known); learners can change it. `AIET_DIGEST_HOUR_UTC` still works as the old name |
+| `AIET_PUSH_CONTACT` | from `AIET_MAIL_FROM` or an https `AIET_PUBLIC_URL` | `mailto:` address or `https://` site that push services can contact you at; notifications are off without one |
 
 ## Tests
 
@@ -95,7 +101,20 @@ The tests run in offline mode and cover:
 - staff roles and permissions
 - moderation: restore, dismiss, remove, logging and notices to designers
 - path review: approve with corrections, reject, resubmit, withdraw, unshare, no self-approval
-- email reminders: opt-in, daily digest, sending, one-click unsubscribe
+- email reminders: opt-in, daily digest at the learner's hour, sending, one-click unsubscribe
+- the installable app: manifest, icons and the service worker served from the root
+- notifications: subscriptions only for browser push services (including addresses that parsers read differently), one device changing hands, ten devices per learner
+- stored addresses checked again before sending, redirects refused, and one learner's failure not stopping the others
+- messages encrypted for the device and signed with the server's VAPID key (decrypted in the tests with the device's own key)
+- forgetting gone devices, and counting rejected messages but not push service outages
+- the daily reminder at the learner's hour and time zone, at most once a day, and skipped when hours late or when there's nothing to say
+- notices pushed once, and not ones from before notifications were on
+- reminder time and time zone settings (including names like `Asia/Calcutta` that Chrome uses), and streaks on the learner's own calendar
+- appeals: one per removal, not decided by the remover or the designer, restore or keep removed, notices and log, a later removal can be appealed
+- staff queues in reminders
+- password reset by email: no account enumeration, single use, expiry, at most three links an hour, signing out everywhere
+- changing the password and signing out other devices (both cancel outstanding reset links), and limits on wrong passwords
+- data download (no secrets, no one else's data, no answers to unfinished quizzes) and account deletion
 
 ## How it's built
 
@@ -108,15 +127,20 @@ app/
   curriculum.py         Learning paths, lessons, objectives and vetted key points
   tutor.py              Claude: lessons, quiz/exam questions, flashcards, summaries, study plans
   learning.py           Learning API: paths (curated + custom), lessons, assessments, decks and reviews, plans, progress
-  reminders.py          What's waiting for the learner, worked out from existing data
-  staff.py              Moderation queue, path review queue, roles, decision log
+  reminders.py          What's waiting for the learner (and for staff), worked out from existing data
+  staff.py              Moderation queue, appeals, path review queue, roles, decision log
   digest.py             Daily reminder email over SMTP, and unsubscribe
+  push.py               Notifications: subscriptions, the VAPID key, encrypted delivery, the daily schedule
+  account.py            Password reset and change, signing out other devices, guessing limits, data download, deletion
   content.py            Topic scores from engagement, post generation, background schedule
   companions.py         Create / remix / edit / version / follow
   auth.py, db.py        Password logins (scrypt) with cookie sessions; SQLite storage
   main.py               HTTP API + static app
-static/                 Single-page web app (no build step)
+static/                 Single-page web app (no build step), service worker (sw.js), manifest and icons
+scripts/make_icons.py   Draws the app icons (needs Pillow)
 ```
+
+**Notifications.** Each message is encrypted for one device (RFC 8291) and signed with the server's VAPID key (RFC 8292), using `pywebpush`. The server only sends to the push services browsers use (Google, Mozilla, Apple, Microsoft), so a made-up subscription can't make it send requests anywhere else. To make that hold, an address must parse to the same host in both the standard library and urllib3 (which sends the request), it's checked again before every send, and redirects aren't followed. A device whose subscription has gone (404/410) is forgotten at once. A device that rejects five messages in a row is forgotten too; push service outages don't count against it. Each notice and each daily reminder is claimed before it's sent, so it goes out at most once, and one learner's failure doesn't hold up anyone else's. An in-process loop checks every minute; the email digest has its own loop.
 
 **Prompt structure.** The system prompt has two parts. The first holds the fixed platform rules plus the persona; it is cached. Learner-written custom instructions go here too, *after* the platform rules, so they can change a companion's voice but not the rules. The second part holds learner data that changes often: profile, memories, and the post being discussed.
 
@@ -126,7 +150,7 @@ static/                 Single-page web app (no build step)
 
 ## Next steps
 
-- **Push notifications** on phones, built on the same reminder list (needs a push service).
-- **Appeals**, so a designer can ask for a second look after a removal.
+- **Confirm email addresses** (double opt-in) before sending reminder emails, so nobody can sign someone else up for them.
+- **Daily limits on AI use** per learner, to keep costs predictable when anyone can sign up.
 - **Server-side voices** for consistent, higher-quality speech on every device (needs a text-to-speech provider).
-- **Postgres** in place of SQLite, and a job queue in place of the in-process scheduler, for multi-instance deployment.
+- **Postgres** in place of SQLite, and a job queue in place of the in-process loops (posts, emails, notifications), for multi-instance deployment.

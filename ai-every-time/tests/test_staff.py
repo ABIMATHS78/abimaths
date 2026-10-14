@@ -197,14 +197,14 @@ def test_email_reminders_opt_in_digest_and_unsubscribe(client, monkeypatch):
     assert me["email_reminders"] and me["email_available"]
 
     client.get("/api/lessons/tokens")  # something to remind about
-    early = datetime(2026, 1, 1, settings.digest_hour_utc - 1, tzinfo=timezone.utc) if settings.digest_hour_utc else None
-    if early:
-        assert digest.due_digests(early) == []
-    due = digest.due_digests()
+    # Ada hasn't picked a reminder time and has no known time zone, so it's the default hour in UTC.
+    monkeypatch.setattr(settings, "reminder_hour", 7)
+    assert digest.due_digests(datetime(2026, 1, 1, 6, 59, tzinfo=timezone.utc)) == []
+    due = digest.due_digests(datetime(2026, 1, 1, 7, 5, tzinfo=timezone.utc))
     assert len(due) == 1
     user, items, token = due[0]
     assert any(i["kind"] == "continue_lesson" for i in items)
-    assert digest.due_digests() == []  # once a day
+    assert digest.due_digests(datetime(2026, 1, 1, 21, 0, tzinfo=timezone.utc)) == []  # once a day
 
     msg = digest.build_message(user, items, token)
     assert msg["To"] == "ada@example.com" and "List-Unsubscribe=One-Click" == msg["List-Unsubscribe-Post"]

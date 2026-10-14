@@ -5,8 +5,9 @@ companion, by default the learner's primary companion."""
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -34,9 +35,20 @@ def _iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds")
 
 
-def record_activity(user_id: int) -> None:
+def local_now(user: dict, now: datetime | None = None) -> datetime:
+    """The time in the learner's own time zone, or UTC until it's known."""
+    now = now or _utcnow()
+    try:
+        return now.astimezone(ZoneInfo(user.get("timezone") or "UTC"))
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        return now.astimezone(timezone.utc)
+
+
+def record_activity(user: dict) -> None:
+    """Mark today as a study day. Days follow the learner's own calendar, so streaks match their evenings."""
     with db.connect() as conn:
-        conn.execute("INSERT OR IGNORE INTO activity (user_id, day) VALUES (?, ?)", (user_id, _utcnow().date().isoformat()))
+        conn.execute("INSERT OR IGNORE INTO activity (user_id, day) VALUES (?, ?)",
+                     (user["id"], local_now(user).date().isoformat()))
 
 
 def teacher_for(user: dict, companion_id: int | None) -> dict:
@@ -289,7 +301,7 @@ async def get_lesson(lesson_id: str, companion_id: int | None = None, user: dict
     with db.connect() as conn:
         conn.execute("INSERT OR IGNORE INTO lesson_progress (user_id, lesson_id, status, updated_at) VALUES (?, ?, 'started', ?)",
                      (user["id"], lesson_id, db.now()))
-    record_activity(user["id"])
+    record_activity(user)
     idx = path.lessons.index(lesson)
     stats = _lesson_stats(user["id"]).get(lesson_id, {})
     return {
@@ -310,7 +322,7 @@ def complete_lesson(lesson_id: str, user: dict = User):
         conn.execute("INSERT INTO lesson_progress (user_id, lesson_id, status, updated_at) VALUES (?, ?, 'completed', ?) "
                      "ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'completed', updated_at = excluded.updated_at",
                      (user["id"], lesson_id, db.now()))
-    record_activity(user["id"])
+    record_activity(user)
 
 
 # ---------------------------------------------------------------- quizzes & exams
@@ -401,7 +413,7 @@ def submit_assessment(assessment_id: int, body: Submission, user: dict = User):
     with db.connect() as conn:
         conn.execute("UPDATE assessments SET answers = ?, score = ?, submitted_at = ? WHERE id = ?",
                      (json.dumps(answers), score, db.now(), assessment_id))
-    record_activity(user["id"])
+    record_activity(user)
     result = _public_assessment(_assessment_row(user["id"], assessment_id), reveal=True)
     if row["time_limit_minutes"]:
         elapsed = _utcnow() - datetime.fromisoformat(row["created_at"])
@@ -515,7 +527,7 @@ def review_card(card_id: int, body: Review, user: dict = User):
         conn.execute("UPDATE cards SET box = ?, due_at = ?, reviews = reviews + 1, lapses = ? WHERE id = ?",
                      (box, _iso(due), lapses, card_id))
         updated = dict(conn.execute("SELECT * FROM cards WHERE id = ?", (card_id,)).fetchone())
-    record_activity(user["id"])
+    record_activity(user)
     return updated
 
 
@@ -538,7 +550,7 @@ async def make_summary(body: NewSummary, user: dict = User):
     summary = await tutor.summarize(companions.persona_for(teacher, user["id"]), user, title, material)
     if summary is None:
         raise HTTPException(502, "Your companion couldn't summarise this right now. Try again.")
-    record_activity(user["id"])
+    record_activity(user)
     return {"title": title, **summary.model_dump()}
 
 
@@ -618,8 +630,7 @@ async def create_plan(body: NewPlan, user: dict = User):
 # -------------------------------------------------------------------- progress
 
 
-def _streak(days: set[str]) -> int:
-    today = _utcnow().date()
+def _streak(days: set[str], today: date) -> int:
     # A streak survives until the end of the day after the last active day.
     d = today if today.isoformat() in days else today - timedelta(days=1)
     n = 0
@@ -647,7 +658,7 @@ def progress(user: dict = User):
             f"SELECT COUNT(*) AS total, COALESCE(SUM(c.due_at <= ?), 0) AS due, COALESCE(SUM(c.box >= {MASTERED_BOX}), 0) AS mastered "
             "FROM cards c JOIN decks d ON d.id = c.deck_id WHERE d.user_id = ?", (db.now(), uid)).fetchone()
         chats = conn.execute("SELECT COUNT(*) FROM messages WHERE user_id = ? AND role = 'user'", (uid,)).fetchone()[0]
-    today = _utcnow().date()
+    today = local_now(user).date()
     week = [(today - timedelta(days=i)).isoformat() for i in range(6, -1, -1)]
     needs_review = [
         {"lesson_id": lid, "title": find_for(uid, lid)[1].title, "best_score": s["best"]}
@@ -656,7 +667,7 @@ def progress(user: dict = User):
     next_lesson = next(({"lesson_id": l["id"], "title": l["title"], "path_title": p["title"]}
                         for p in paths for l in p["lessons"] if l["status"] != "completed"), None)
     return {
-        "streak_days": _streak(days),
+        "streak_days": _streak(days, today),
         "active_days": len(days),
         "last_7_days": [{"day": d, "active": d in days} for d in week],
         "lessons_completed": sum(p["completed"] for p in paths),

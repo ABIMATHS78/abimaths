@@ -177,6 +177,20 @@ CREATE TABLE IF NOT EXISTS moderation_log (
     note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
+-- A designer asking for a second look at the removal of their companion: one appeal per removal,
+-- decided by someone other than the moderator who removed it.
+CREATE TABLE IF NOT EXISTS appeals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    companion_id INTEGER NOT NULL REFERENCES companions(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    removal_id INTEGER NOT NULL UNIQUE REFERENCES moderation_log(id),
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'upheld', 'overturned')),
+    decided_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    decision_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    decided_at TEXT
+);
 -- Messages to a learner about decisions on their companions or paths, shown with their reminders.
 CREATE TABLE IF NOT EXISTS notices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -190,6 +204,40 @@ CREATE TABLE IF NOT EXISTS activity (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
     PRIMARY KEY (user_id, day)
+);
+-- Phones and browsers a learner turned notifications on for. The endpoint is the device's
+-- address at its browser's push service; the keys encrypt messages for that device only.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    device TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    last_sent_at TEXT,
+    failures INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+-- Links for choosing a new password. Each works once, for a short time; only a hash of the token is kept.
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+-- Recent wrong passwords per email, to slow down guessing.
+CREATE TABLE IF NOT EXISTS login_failures (
+    email TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_failures ON login_failures(email, created_at);
+-- Keys the server makes once and keeps, such as the VAPID key that push subscriptions are tied to.
+CREATE TABLE IF NOT EXISTS server_keys (
+    name TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 """
 
@@ -230,6 +278,10 @@ MIGRATIONS = [
     ("custom_paths", "reviewed_by", "INTEGER"),
     ("custom_paths", "submitted_at", "TEXT"),
     ("custom_paths", "reviewed_at", "TEXT"),
+    ("users", "timezone", "TEXT NOT NULL DEFAULT ''"),
+    ("users", "reminder_hour", "INTEGER"),
+    ("users", "last_push_on", "TEXT"),
+    ("notices", "pushed_at", "TEXT"),
 ]
 
 
