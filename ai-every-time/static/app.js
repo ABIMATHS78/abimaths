@@ -231,7 +231,7 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(reports|appeals|paths|roles|log))?$/, viewStaff],
+  [/^#\/staff(?:\/(insights|reports|appeals|paths|roles|log))?$/, viewStaff],
 ];
 
 async function router() {
@@ -1816,7 +1816,7 @@ function planForm(paths, minutes) {
 
 /* -------------------------------------------------------------------- staff */
 
-const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["reports", "appeals", "paths", "roles", "log"] };
+const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["insights", "reports", "appeals", "paths", "roles", "log"] };
 const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
 const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -1824,13 +1824,143 @@ async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
-  const names = { reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
+  const names = { insights: "Insights", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
-  await { reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+  await { insights: staffInsights, reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+}
+
+/* Insights (admins): learners, how they learn, and the AI the site uses against its allowances. */
+const KIND_LABEL = {
+  chat: "Chat replies", lesson: "Lessons, the first time taught", quiz: "Quizzes", exam: "Mock exams", flashcards: "Flashcard decks",
+  summary: "Summaries", plan: "Study plans", path: "Custom paths", post: "Companion posts", automatic: "Scheduled posts (no learner)",
+};
+const fmt = (n) => (n == null ? "–" : n >= 10000 ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n) : n.toLocaleString());
+const plural = (n, one, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;
+const utcDate = (day, opts) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
+const longDay = (day) => utcDate(day, { weekday: "short", day: "numeric", month: "short" });
+
+async function staffInsights(body) {
+  const { learners: l, learning: s, community: c, ai } = await api("/api/staff/insights");
+  const tile = (value, label, sub = "") => `<div class="card tile"><div class="big">${value}</div><div class="small">${label}</div>${sub ? `<div class="muted small">${sub}</div>` : ""}</div>`;
+  const share = (n) => (l.total ? `${Math.round((100 * n) / l.total)}% of learners` : "");
+  const sum = (rows, key) => rows.reduce((t, r) => t + (r[key] || 0), 0);
+  const away = ai.turned_away, lim = ai.limits, fallbacks = sum(ai.kinds, "fallbacks");
+  const limits = (lim.allowance > 0
+    ? `Each learner can make ${fmt(lim.allowance)} AI requests in any 24 hours${lim.unconfirmed != null && lim.unconfirmed < lim.allowance ? ` (${fmt(lim.unconfirmed)} until they confirm their email address)` : ""}; admins have no limit.`
+    : "Learners have no daily limit on AI requests.")
+    + (lim.site > 0 ? ` Everyone together can use ${fmt(lim.site)} in any 24 hours.` : " There's no ceiling for everyone together.");
+  body.innerHTML = `
+    <h2 class="section">Learners</h2>
+    <div class="tiles">
+      ${tile(fmt(l.total), "learners", `${fmt(l.new_this_week)} new this week`)}
+      ${tile(fmt(l.active_this_week), "studied this week", share(l.active_this_week))}
+      ${tile(fmt(l.confirmed), "confirmed their email", share(l.confirmed))}
+      ${tile(fmt(l.with_notifications), "get notifications", share(l.with_notifications))}
+    </div>
+    <h2 class="section">Learning this week</h2>
+    <div class="tiles">
+      ${tile(fmt(s.lessons_completed), "lessons completed")}
+      ${tile(fmt(s.quizzes), "quizzes and exams taken", s.quiz_average != null ? `average score ${s.quiz_average}%` : "")}
+      ${tile(fmt(s.chat_messages), "questions asked in chats")}
+      ${tile(fmt(c.designed), "companions designed by learners", `${fmt(c.published)} shared with the community`)}
+    </div>
+    <h2 class="section">AI requests, last 14 days</h2>
+    <div class="tiles">
+      ${tile(fmt(sum(ai.days, "requests")), "AI requests from learners", `${fmt(ai.units_last_24h)} counted in the last 24 hours${lim.site > 0 ? ` of ${fmt(lim.site)}` : ""}`
+        + (lim.site > 0 ? bar(Math.min(ai.units_last_24h, lim.site), lim.site) : ""))}
+      ${tile(fmt(sum(ai.kinds, "input_tokens") + sum(ai.kinds, "output_tokens") + sum(ai.kinds, "cache_read_tokens") + sum(ai.kinds, "cache_write_tokens")), "tokens", "input, output and cache, scheduled posts included")}
+      ${tile(fmt(away.allowance.requests + away.site.requests), "requests turned away",
+        `${plural(away.allowance.learners, "learner")} reached their limit${away.site.requests ? `; ${fmt(away.site.requests)} paused by the site ceiling` : ""}`)}
+      ${tile(fmt(sum(ai.kinds, "failed")), "failed calls to Claude", "not counted against anyone")}
+    </div>
+    <div class="card stack">
+      <div><h3 style="margin:0">AI requests per day</h3>
+        <div class="muted small">Requests from learners that went through, ${esc(utcDate(ai.days[0].day, { day: "numeric", month: "short" }))} to ${esc(utcDate(ai.days.at(-1).day, { day: "numeric", month: "short" }))} (UTC days). Mock exams and custom paths count once here.</div></div>
+      ${sum(ai.days, "requests") ? dayChart(ai.days) : `<div class="empty">No AI requests from learners in the last 14 days.</div>`}
+      <details><summary>Show as a table</summary><div class="table-wrap"><table class="table num">
+        <thead><tr><th>Day</th><th>Requests</th><th>Tokens</th></tr></thead>
+        <tbody>${ai.days.map((d) => `<tr><td>${esc(longDay(d.day))}</td><td>${d.requests.toLocaleString()}</td><td>${d.tokens.toLocaleString()}</td></tr>`).join("")}</tbody>
+      </table></div></details>
+    </div>
+    <div class="card stack">
+      <div><h3 style="margin:0">What the AI was asked for</h3>
+        <div class="muted small">Last 14 days. Tokens are what Claude reported, counting every attempt.${fallbacks ? ` ${plural(fallbacks, "answer")} came from a fallback model after the first one declined.` : ""}</div></div>
+      ${ai.kinds.length ? `<div class="table-wrap"><table class="table num">
+        <thead><tr><th>Request</th><th>Requests</th><th>Failed</th><th>Input tokens</th><th>Output tokens</th><th>Cache reads</th><th>Cache writes</th></tr></thead>
+        <tbody>${ai.kinds.map((k) => `<tr><td>${esc(KIND_LABEL[k.kind] || k.kind)}</td>${["requests", "failed", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map((f) => `<td>${(k[f] || 0).toLocaleString()}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>` : `<div class="empty">Nothing yet.</div>`}
+      <p class="small" style="margin:0">${limits} <span class="muted">Set on the server with AIET_AI_ALLOWANCE, AIET_AI_ALLOWANCE_UNCONFIRMED and AIET_AI_SITE_LIMIT.</span></p>
+    </div>
+    <div class="two-col">
+      <div class="card stack">
+        <div><h3 style="margin:0">Topics learners value most</h3>
+          <div class="muted small">Engagement per post over the last 30 days, weighted towards likes, shares and follow-up questions.</div></div>
+        ${c.topics.length ? rankBars(c.topics.map((t) => ({ label: t.topic, value: t.score }))) : `<div class="empty">No one has engaged with posts in the last 30 days.</div>`}
+      </div>
+      <div class="card stack">
+        <div><h3 style="margin:0">Most followed community companions</h3>
+          <div class="muted small">Companions learners designed and shared.</div></div>
+        ${c.most_followed.length ? `<table class="table num"><thead><tr><th>Companion</th><th>Followers</th></tr></thead><tbody>
+          ${c.most_followed.map((x) => `<tr><td><a href="#/c/${x.id}">${esc(x.name)} ${esc(x.flag || "")}</a> <span class="muted small">by ${esc(x.designer || "a former learner")}</span></td><td>${x.followers.toLocaleString()}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="empty">No community companions yet.</div>`}
+      </div>
+    </div>`;
+  wireDayChart(body, ai.days);
+}
+
+/* Gridline spacing that gives two to four clean steps above zero. */
+function niceStep(max) {
+  const raw = Math.max(max, 4) / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5, 10].map((x) => x * mag).find((x) => x >= raw);
+}
+
+/* One series by day: thin columns from a single baseline, the peak labelled, hairline gridlines. */
+function dayChart(days) {
+  const max = Math.max(...days.map((d) => d.requests)), step = niceStep(max), top = Math.ceil(max / step) * step;
+  const peak = days.findIndex((d) => d.requests === max);
+  return `<div class="colchart">
+    <div class="plot">
+      ${Array.from({ length: top / step + 1 }, (_, i) => `<div class="gridline${i ? "" : " base"}" style="bottom:${(100 * i * step) / top}%"><span>${fmt(i * step)}</span></div>`).join("")}
+      <div class="cols">${days.map((d, i) => `<button type="button" class="col" data-i="${i}" aria-label="${esc(longDay(d.day))}: ${plural(d.requests, "AI request")}, ${plural(d.tokens, "token")}">
+        <span class="colbar" style="height:${(100 * d.requests) / top}%">${i === peak ? `<span class="collabel">${fmt(d.requests)}</span>` : ""}</span></button>`).join("")}</div>
+    </div>
+    <div class="xaxis" aria-hidden="true">${days.map((d) => `<span>${esc(utcDate(d.day, { day: "numeric" }))}</span>`).join("")}</div>
+    <div class="charttip" hidden></div>
+  </div>`;
+}
+
+/* The tooltip follows the pointer or keyboard focus over each day's column (the whole column is the target). */
+function wireDayChart(root, days) {
+  const chart = $(".colchart", root);
+  if (!chart) return;
+  const tip = $(".charttip", chart);
+  const show = (col) => {
+    const d = days[+col.dataset.i], value = document.createElement("b"), when = document.createElement("div");
+    value.textContent = plural(d.requests, "AI request");
+    when.className = "muted";
+    when.textContent = `${longDay(d.day)} · ${plural(d.tokens, "token")}`;
+    tip.replaceChildren(value, when);
+    tip.hidden = false;
+    const box = chart.getBoundingClientRect(), r = col.getBoundingClientRect(), barTop = col.firstElementChild.getBoundingClientRect().top;
+    const half = tip.offsetWidth / 2;
+    tip.style.left = `${Math.min(Math.max(r.left + r.width / 2 - box.left, half), box.width - half)}px`;
+    tip.style.top = `${Math.min(barTop, r.bottom - 6) - box.top - 8}px`;
+  };
+  chart.addEventListener("pointerover", (e) => { const col = e.target.closest(".col"); if (col) show(col); });
+  chart.addEventListener("focusin", (e) => { const col = e.target.closest(".col"); if (col) show(col); });
+  chart.addEventListener("pointerleave", () => { if (!chart.contains(document.activeElement)) tip.hidden = true; });
+  chart.addEventListener("focusout", () => { tip.hidden = true; });
+}
+
+/* Ranked horizontal bars for one series, each value at its bar's tip. */
+function rankBars(rows) {
+  const max = Math.max(...rows.map((r) => r.value)) || 1;
+  return `<div class="rankbars">${rows.map((r) => `<div>${esc(r.label)}</div>
+    <div class="track"><span style="width:${(100 * r.value) / max}%"></span></div><div class="value">${esc(r.value.toLocaleString())}</div>`).join("")}</div>`;
 }
 
 async function staffAppeals(body, m) {

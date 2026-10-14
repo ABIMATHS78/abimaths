@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import account, auth, companions, content, db, digest, learning, llm, push, reminders, staff, usage
+from app import account, auth, companions, content, db, digest, insights, learning, llm, push, reminders, staff, usage
 from app.avatar import render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -53,6 +53,7 @@ app = FastAPI(title="AI Every Time", lifespan=lifespan)
 app.include_router(learning.router)
 app.include_router(reminders.router)
 app.include_router(staff.router)
+app.include_router(insights.router)
 app.include_router(digest.router)
 app.include_router(push.router)
 app.include_router(account.router)
@@ -449,7 +450,7 @@ def disengage(post_id: int, kind: Literal["like", "helpful"], user: dict = User)
 
 
 @app.get("/api/insights/topics")
-def insights(user: dict = User):
+def topic_insights(user: dict = User):
     return content.topic_scores()
 
 
