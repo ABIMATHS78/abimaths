@@ -563,6 +563,14 @@ def index():
     return FileResponse(STATIC / "index.html")
 
 
+@app.get("/healthz", include_in_schema=False)
+def healthz():
+    """For hosting platforms and the container's health check: the app is up and its database answers."""
+    with db.connect() as conn:
+        conn.execute("SELECT 1").fetchone()
+    return {"ok": True}
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon():
     # Browsers ask for this on pages that don't name an icon, such as an email link opened in a new tab.

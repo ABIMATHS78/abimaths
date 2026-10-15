@@ -34,8 +34,8 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Reminders** | A "Today" panel on the feed and a bell in the sidebar list what's waiting: a streak at risk, flashcards due, the next study-plan item (or one that's overdue), an unfinished quiz, a lesson to continue, new posts from followed companions, and notices about moderation and review decisions. Staff also see the work waiting in their queues: reported companions, appeals they can decide, and paths to review. Learners pick the hour of their **daily reminder**, which follows their own time zone, as do streaks and study days. They can get it by email (any SMTP server, to a confirmed address) or as a notification. The email carries one-click unsubscribe (RFC 8058), and its unsubscribe page asks for confirmation so email link-scanners can't unsubscribe people by accident. |
 | **Installable app and notifications** | The site installs on phones and computers like an app (manifest, icons and a service worker). Learners turn notifications on for each device from their profile and can send a test. The daily reminder arrives from their own companion; a reminder that would come more than 3 hours late is skipped rather than sent at night. Notices about decisions on their companions and paths arrive as they happen. On iPhone and iPad, notifications work once the app is on the Home Screen, and the profile explains how. Signing out turns notifications off for that device. |
 | **Confirmed email addresses** | Reminder emails only go to an address its owner has confirmed (double opt-in), so nobody can sign someone else up for them. Sign-up emails a confirmation link, and learners can ask for another from their profile. One address gets at most 3 links an hour and 10 emails of this kind (confirmation and password-reset links) a day, however many accounts ask, so nobody can use the site to flood someone's inbox; until it's confirmed, those emails leave out the name typed at sign-up. The link works once, for 7 days, only a hash of it is stored, and it opens a page with a button, so mail scanners that follow links can't confirm for anyone. Resetting the password by email also confirms the address. Learners who had reminder emails on before confirmation existed keep getting them. |
-| **Daily AI allowance** | Each learner can make 100 AI requests in any 24 hours (configurable). A chat reply, a lesson the first time it's taught, a quiz, flashcards, a summary, a study plan or a post counts one; a mock exam or a custom path counts two. The profile shows what's left. When it runs out, the learner is told when they can ask again, and a chat message that was turned away goes back in the text box. A call to Claude that fails is refunded; an answer that came back but couldn't be used still counts, so failures can't be turned into free requests. Until learners confirm their email address the allowance is lower (30), which makes floods of throwaway accounts less useful. Admins have no limit. An optional ceiling covers everyone together; while email is set up it only pauses learners who haven't confirmed their address, so throwaway accounts can't pause everyone else. |
-| **Insights** | Admins see how the site is doing on the Staff page: learners (new, studying this week, confirmed, with notifications), learning this week, AI requests per day over the last 14 days, requests and tokens by kind, requests turned away and failed calls, the limits in force, the topics learners value most and the most followed community companions. |
+| **Daily AI allowance** | Each learner can make 100 AI requests in any 24 hours (configurable). A chat reply, a lesson the first time it's taught, a quiz, flashcards, a summary, a study plan or a post counts one; a mock exam or a custom path counts two. The profile shows what's left. When it runs out, the learner is told when they can ask again, and a chat message that was turned away goes back in the text box. A call to Claude that fails is refunded; an answer that came back but couldn't be used still counts, so failures can't be turned into free requests. Until learners confirm their email address the allowance is lower (30), which makes floods of throwaway accounts less useful. Admins have no limit, and on the Staff page's People tab they can give a learner an allowance of their own, for a class or a paid plan. An optional ceiling covers everyone together; while email is set up it only pauses learners who haven't confirmed their address, so throwaway accounts can't pause everyone else. |
+| **Insights** | Admins see how the site is doing on the Staff page: learners (new, studying this week, confirmed, with notifications), learning this week, AI requests per day over the last 14 days, requests, tokens and estimated cost by kind, requests turned away and failed calls, the limits in force, the topics learners value most and the most followed community companions. |
 | **Account and privacy** | Forgotten passwords are reset with an emailed link: it works once, for an hour, and only a hash of it is stored. Learners can change their password and sign out other devices; both also stop notifications on the other devices. After 10 wrong passwords for an email in 15 minutes, sign-in pauses for that email. **Download my data** gives one JSON file with everything the account holds, including its AI requests (answers to unfinished quizzes stay hidden). **Delete my account** (password required) removes it all, including the companions the learner designed and any paths they shared with the community. |
 
 ## Try it in your browser
@@ -81,6 +81,29 @@ Notifications need two things. First, a contact address that browsers' push serv
 | `AIET_AI_ALLOWANCE` | `100` | AI requests each learner can make in any 24 hours (mock exams and custom paths count two); `0` for no limit. It applies in demo mode too |
 | `AIET_AI_ALLOWANCE_UNCONFIRMED` | `30` | The allowance until a learner confirms their email address; only while email is set up. `0` turns it off |
 | `AIET_AI_SITE_LIMIT` | `0` (none) | A ceiling on everyone's AI requests together in any 24 hours, against floods of new accounts. Admins aren't held to it, nor, while email is set up, are learners who have confirmed their address |
+| `AIET_PRICES` | built in | Prices for the cost estimate on Insights, as JSON: `{"model": [input, output, cache read]}` in US dollars per million tokens. Changes the built-in list prices or adds models |
+
+## Deploy it
+
+The app is one process with a SQLite database, so it runs as a single instance with storage that's kept between restarts. The Docker image works anywhere that runs containers with a persistent volume, such as a small virtual server, Fly.io, Railway, or Render with a disk. Run one copy per database: the reminder emails, notifications and scheduled posts run inside it.
+
+```bash
+cd ai-every-time
+docker build -t ai-every-time .
+docker run -d --name ai-every-time --restart unless-stopped -p 8000:8000 -v aiet-data:/data \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e AIET_PUBLIC_URL=https://learn.example.com -e AIET_SECURE_COOKIES=1 \
+  -e AIET_ADMIN_EMAILS=you@example.com \
+  -e AIET_SMTP_HOST=smtp.example.com -e AIET_SMTP_USER=... -e AIET_SMTP_PASSWORD=... \
+  -e AIET_MAIL_FROM="AI Every Time <hello@example.com>" \
+  ai-every-time
+```
+
+- Serve it over HTTPS (your host's, or a reverse proxy such as Caddy or nginx in front of port 8000), with `AIET_SECURE_COOKIES=1` and `AIET_PUBLIC_URL` set to the public address. Notifications need HTTPS.
+- With email set up, sign up with the admin address and confirm it from the email; then the Staff pages appear.
+- Learners' data is in the `/data` volume (`/data/ai_every_time.db`). Back it up while the app runs with `docker exec ai-every-time python -c "import sqlite3; sqlite3.connect('/data/ai_every_time.db').backup(sqlite3.connect('/data/backup.db'))"`, then copy `backup.db` somewhere safe.
+- `/healthz` answers when the app and its database are up, for your host's health checks; the image checks itself with it too. The app runs as an ordinary user, not root.
+- Set `AIET_AI_ALLOWANCE` (and `AIET_AI_SITE_LIMIT`) to keep costs predictable, and watch the estimated cost on Insights.
 
 ## Tests
 
@@ -132,6 +155,9 @@ The tests run in offline mode and cover:
 - the AI allowance: the limit and how long it says to wait, what each kind of request costs, lessons free once taught, refunds for failed calls but not for unusable answers, a lower allowance until the email address is confirmed, admins, the site ceiling, parallel requests that can't overspend, and a new companion's first post
 - AI usage records: tokens from every attempt when a fallback model answers, chat replies and the memories taken from them, scheduled posts, the data download, and records outliving a deleted account
 - Insights: for admins only, and the counts behind its numbers
+- allowances that admins give a learner (including no limit, and back to the usual), logged and told to the learner
+- the cost estimate: list prices, dated model names, models without a price, and `AIET_PRICES`
+- the health check
 - link limits that follow the address, so deleting and remaking an account doesn't reset them, and that hold for requests made at the same moment; no sign-up name in mail to an unconfirmed address
 - tokens recorded for answers that were refused or cut short, with the real SDK's request and response shapes in the tests' stand-in for Claude
 - lessons that other sites can't have written, the ceiling not pausing learners who confirmed, refusal counts outliving a deleted account, `AIET_AI_ALLOWANCE_UNCONFIRMED=0`, admin emails that need confirming, and no daily notification nagging to confirm
@@ -160,6 +186,7 @@ app/
   main.py               HTTP API + static app
 static/                 Single-page web app (no build step), service worker (sw.js), manifest and icons
 scripts/make_icons.py   Draws the app icons (needs Pillow)
+Dockerfile              The image for deploying it (see Deploy it)
 ```
 
 **Notifications.** Each message is encrypted for one device (RFC 8291) and signed with the server's VAPID key (RFC 8292), using `pywebpush`. The server only sends to the push services browsers use (Google, Mozilla, Apple, Microsoft), so a made-up subscription can't make it send requests anywhere else. To make that hold, an address must parse to the same host in both the standard library and urllib3 (which sends the request), it's checked again before every send, and redirects aren't followed. A device whose subscription has gone (404/410) is forgotten at once. A device that rejects five messages in a row is forgotten too; push service outages don't count against it. Each notice and each daily reminder is claimed before it's sent, so it goes out at most once, and one learner's failure doesn't hold up anyone else's. An in-process loop checks every minute; the email digest has its own loop.
@@ -174,7 +201,6 @@ scripts/make_icons.py   Draws the app icons (needs Pillow)
 
 ## Next steps
 
-- **Estimated cost** on the Insights page, from the token counts and the model's prices.
-- **Allowances per learner** that admins can raise, for a class or a paid plan.
+- **Limits on sign-ups per network address**, once the app's hosting is known (they need the address the host's proxy reports).
 - **Server-side voices** for consistent, higher-quality speech on every device (needs a text-to-speech provider).
 - **Postgres** in place of SQLite, and a job queue in place of the in-process loops (posts, emails, notifications), for multi-instance deployment.
