@@ -10,11 +10,12 @@ from __future__ import annotations
 import logging
 import random
 import re
-from typing import AsyncIterator
+from typing import AsyncIterator, TypeVar
 
 import anthropic
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from app import usage
 from app.config import settings
 from app.persona import (
     EMOJI_TEXT,
@@ -25,6 +26,7 @@ from app.persona import (
 )
 
 log = logging.getLogger(__name__)
+T = TypeVar("T", bound=BaseModel)
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -109,6 +111,31 @@ def client() -> anthropic.AsyncAnthropic:
     return _async_client
 
 
+async def ask(schema: type[T], effort: str, **request) -> T | None:
+    """Ask Claude for an answer in the shape of `schema` (structured outputs). The tokens are recorded
+    before the answer is read, so they count even when it can't be used: refused, cut short at
+    max_tokens, or not fitting the schema, which all give None. (messages.parse raises on those
+    before handing back the response, and its tokens with it.) A call that doesn't go through
+    raises anthropic.APIError."""
+    resp = await client().beta.messages.create(
+        model=settings.model,
+        output_config={"effort": effort, "format": {"type": "json_schema", "schema": anthropic.transform_schema(schema)}},
+        betas=[FALLBACK_BETA],
+        fallbacks="default",
+        **request,
+    )
+    usage.record_tokens(resp)
+    if resp.stop_reason in ("refusal", "max_tokens"):
+        log.warning("%s answer stopped: %s", schema.__name__, resp.stop_reason)
+        return None
+    try:
+        # Without streaming, a model that declined part-way leaves no partial text behind.
+        return schema.model_validate_json("".join(b.text for b in resp.content if b.type == "text"))
+    except ValidationError:
+        log.warning("%s answer didn't fit the schema", schema.__name__)
+        return None
+
+
 # --------------------------------------------------------------------------- chat
 
 
@@ -134,16 +161,20 @@ async def stream_reply(
             async for text in stream.text_stream:
                 yield text
             final = await stream.get_final_message()
+        usage.record_tokens(final)
         if final.stop_reason == "refusal":
             yield "\n\nI can't help with that one, but I'm happy to keep exploring AI with you. What else is on your mind?"
         elif final.stop_reason == "max_tokens":
             yield "\n\n(I'll stop there; ask me to continue if you want more.)"
     except anthropic.RateLimitError:
+        usage.failed()
         yield "I'm getting a lot of questions right now. Give me a moment and try again."
     except anthropic.APIStatusError as e:
+        usage.failed()
         log.error("Claude API error %s: %s", e.status_code, e.message)
         yield "Something went wrong on my side. Please try again."
     except anthropic.APIConnectionError:
+        usage.failed()
         log.exception("Claude connection error")
         yield "I couldn't connect just now. Please try again in a moment."
 
@@ -184,21 +215,11 @@ async def extract_memories(persona: Persona, existing: list[str], user_msg: str,
         f"Learner: {user_msg}\n\n{persona.name}: {reply}"
     )
     try:
-        resp = await client().beta.messages.parse(
-            model=settings.model,
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
-            output_format=MemoryUpdate,
-            output_config={"effort": "low"},
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
-        )
+        update = await ask(MemoryUpdate, "low", max_tokens=2000, messages=[{"role": "user", "content": prompt}])
     except anthropic.APIError:
         log.exception("memory extraction failed")
         return []
-    if resp.stop_reason == "refusal" or resp.parsed_output is None:
-        return []
-    return [f.strip()[:200] for f in resp.parsed_output.new_facts if f.strip()][:5]
+    return [f.strip()[:200] for f in update.new_facts if f.strip()][:5] if update else []
 
 
 _PATTERNS = [
@@ -242,22 +263,13 @@ async def generate_post(persona: Persona, top_topics: list[str], recent_titles: 
         "Teach one concrete, useful idea, accurate and timeless rather than news you can't verify."
     )
     try:
-        resp = await client().beta.messages.parse(
-            model=settings.model,
-            max_tokens=8000,
-            system=[{"type": "text", "text": PLATFORM_RULES + "\n\n" + persona_prompt(persona)}],
-            messages=[{"role": "user", "content": prompt}],
-            output_format=GeneratedPost,
-            output_config={"effort": "high"},
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
-        )
+        return await ask(GeneratedPost, "high", max_tokens=8000,
+                         system=[{"type": "text", "text": PLATFORM_RULES + "\n\n" + persona_prompt(persona)}],
+                         messages=[{"role": "user", "content": prompt}])
     except anthropic.APIError:
+        usage.failed()
         log.exception("content generation failed for %s", persona.name)
         return None
-    if resp.stop_reason == "refusal":
-        return None
-    return resp.parsed_output
 
 
 _OFFLINE_IDEAS = {

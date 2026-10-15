@@ -227,12 +227,56 @@ CREATE TABLE IF NOT EXISTS password_resets (
     expires_at TEXT NOT NULL,
     used_at TEXT
 );
+-- Links that confirm an email address belongs to the learner, sent before any reminder email.
+CREATE TABLE IF NOT EXISTS email_confirmations (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+-- Emails sent because someone asked (confirmation and password-reset links), by a hash of the
+-- address and kept a day, so their limits hold even when an account is deleted and made again.
+CREATE TABLE IF NOT EXISTS email_sends (
+    address_hash TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_sends ON email_sends(address_hash, created_at);
 -- Recent wrong passwords per email, to slow down guessing.
 CREATE TABLE IF NOT EXISTS login_failures (
     email TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_login_failures ON login_failures(email, created_at);
+-- One row per AI request: what it was for, what it cost against the learner's allowance, and the
+-- tokens Claude reported. Rows outlive a deleted account, without the account, as usage totals.
+-- Work no learner asked for (kind 'automatic') has no user. A failed request costs nothing.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    units INTEGER NOT NULL DEFAULT 0,
+    failed INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    model TEXT NOT NULL DEFAULT '',
+    fallback INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_user ON ai_usage(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_time ON ai_usage(created_at);
+-- AI requests turned away by a learner's allowance or the site ceiling, counted per learner per hour.
+-- Like ai_usage, the counts outlive a deleted account, without the account.
+CREATE TABLE IF NOT EXISTS ai_refusals (
+    hour TEXT NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reason TEXT NOT NULL CHECK (reason IN ('allowance', 'site')),
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (hour, user_id, reason)
+);
 -- Keys the server makes once and keeps, such as the VAPID key that push subscriptions are tied to.
 CREATE TABLE IF NOT EXISTS server_keys (
     name TEXT PRIMARY KEY,
@@ -261,8 +305,18 @@ def connect() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _confirm_existing(conn: sqlite3.Connection) -> None:
+    """Addresses in use before confirmation existed that count as confirmed: learners who had reminder
+    emails on keep getting them, and the admins named in AIET_ADMIN_EMAILS keep their role."""
+    admins = sorted(settings.admin_emails)
+    conn.execute("UPDATE users SET email_confirmed_at = created_at WHERE email_reminders = 1 "
+                 f"OR lower(email) IN ({', '.join('?' * len(admins))})", admins)
+
+
 # Columns added after the first release. CREATE TABLE IF NOT EXISTS won't add them to
-# existing databases, so they are added here when missing.
+# existing databases, so they are added here when missing. An optional fourth item fills
+# the new column in (SQL, or a function given the connection), run once, right after the
+# column is added.
 MIGRATIONS = [
     ("companions", "is_public", "INTEGER NOT NULL DEFAULT 0"),
     ("companions", "hidden", "INTEGER NOT NULL DEFAULT 0"),
@@ -282,6 +336,7 @@ MIGRATIONS = [
     ("users", "reminder_hour", "INTEGER"),
     ("users", "last_push_on", "TEXT"),
     ("notices", "pushed_at", "TEXT"),
+    ("users", "email_confirmed_at", "TEXT", _confirm_existing),
 ]
 
 
@@ -289,10 +344,12 @@ def init_db() -> None:
     with connect() as conn:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.executescript(SCHEMA)
-        for table, column, ddl in MIGRATIONS:
+        for table, column, ddl, *backfill in MIGRATIONS:
             cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             if column not in cols:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                for fill in backfill:
+                    fill(conn) if callable(fill) else conn.execute(fill)
 
 
 def _with_defaults(persona: dict) -> dict:

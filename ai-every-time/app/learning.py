@@ -9,10 +9,10 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import auth, companions, content, db, tutor
+from app import auth, companions, content, db, tutor, usage
 from app.curriculum import PATHS, PATHS_BY_ID, LearningPath, Lesson, find_lesson, lesson_brief, path_from_dict
 
 router = APIRouter(prefix="/api")
@@ -227,7 +227,8 @@ async def create_custom_path(body: NewCustomPath, user: dict = User):
         if conn.execute("SELECT COUNT(*) FROM custom_paths WHERE user_id = ?", (user["id"],)).fetchone()[0] >= MAX_CUSTOM_PATHS:
             raise HTTPException(409, f"You can have up to {MAX_CUSTOM_PATHS} custom paths. Delete one to make another.")
     teacher = teacher_for(user, body.companion_id)
-    data = await tutor.design_path(companions.persona_for(teacher, user["id"]), user, body.topic.strip(), body.level, body.lessons)
+    with usage.spend(user, "path"):
+        data = await tutor.design_path(companions.persona_for(teacher, user["id"]), user, body.topic.strip(), body.level, body.lessons)
     if data is None:
         raise HTTPException(502, "Your companion couldn't design that path right now. Try again or rephrase the topic.")
     with db.connect() as conn:
@@ -286,13 +287,19 @@ def delete_custom_path(path_id: str, user: dict = User):
 
 
 @router.get("/lessons/{lesson_id}")
-async def get_lesson(lesson_id: str, companion_id: int | None = None, user: dict = User):
+async def get_lesson(request: Request, lesson_id: str, companion_id: int | None = None, user: dict = User):
     path, lesson = _lesson_or_404(user["id"], lesson_id)
     teacher = teacher_for(user, companion_id)
     body = _cached_lesson(teacher["id"], lesson_id)
+    # Writing a lesson spends an AI request on a GET, which a page on another site could make the
+    # learner's browser send just by opening a link, so only the app itself can ask for one.
+    if body is None and request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        raise HTTPException(403, "Open this lesson in AI Every Time to have it written.")
     if body is None:
         # Cached lessons are shared by everyone this companion teaches, so no learner's custom instructions.
-        body = await tutor.teach_lesson(companions.persona_for(teacher, None), path, lesson)
+        # Only the learner who asks first spends a request on it.
+        with usage.spend(user, "lesson"):
+            body = await tutor.teach_lesson(companions.persona_for(teacher, None), path, lesson)
         if body is None:
             raise HTTPException(502, "Your companion couldn't prepare this lesson right now. Try again.")
         with db.connect() as conn:
@@ -374,7 +381,8 @@ async def create_assessment(body: NewAssessment, user: dict = User):
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
     exam = body.kind == "exam"
     n = EXAM_QUESTIONS if exam else QUIZ_QUESTIONS
-    questions = await tutor.make_questions(companions.persona_for(teacher, user["id"]), user, material, n, lessons, exam)
+    with usage.spend(user, body.kind):
+        questions = await tutor.make_questions(companions.persona_for(teacher, user["id"]), user, material, n, lessons, exam)
     if not questions:
         raise HTTPException(502, "Your companion couldn't write questions right now. Try again.")
     with db.connect() as conn:
@@ -462,7 +470,8 @@ def _deck_summaries(user_id: int, deck_id: int | None = None) -> list[dict]:
 async def create_deck(body: NewDeck, user: dict = User):
     teacher = teacher_for(user, body.companion_id)
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
-    cards = await tutor.make_cards(companions.persona_for(teacher, user["id"]), user, material, body.count, lessons)
+    with usage.spend(user, "flashcards"):
+        cards = await tutor.make_cards(companions.persona_for(teacher, user["id"]), user, material, body.count, lessons)
     if not cards:
         raise HTTPException(502, "Your companion couldn't make flashcards right now. Try again.")
     now = db.now()
@@ -547,7 +556,8 @@ async def make_summary(body: NewSummary, user: dict = User):
     if body.source_type == "lesson":
         taught = _cached_lesson(teacher["id"], body.source_ref)
         material = taught or material
-    summary = await tutor.summarize(companions.persona_for(teacher, user["id"]), user, title, material)
+    with usage.spend(user, "summary"):
+        summary = await tutor.summarize(companions.persona_for(teacher, user["id"]), user, title, material)
     if summary is None:
         raise HTTPException(502, "Your companion couldn't summarise this right now. Try again.")
     record_activity(user)
@@ -614,9 +624,10 @@ async def create_plan(body: NewPlan, user: dict = User):
     with db.connect() as conn:
         memories = [r["fact"] for r in conn.execute(
             "SELECT fact FROM memories WHERE user_id = ? AND companion_id = ?", (user["id"], teacher["id"]))]
-    plan = await tutor.plan_study(companions.persona_for(teacher, user["id"]), user, memories, completed, scores,
-                                  body.weekly_minutes, body.weeks,
-                                  [p for p in available if not body.paths or p.id in body.paths])
+    with usage.spend(user, "plan"):
+        plan = await tutor.plan_study(companions.persona_for(teacher, user["id"]), user, memories, completed, scores,
+                                      body.weekly_minutes, body.weeks,
+                                      [p for p in available if not body.paths or p.id in body.paths])
     if plan is None or not any(w.items for w in plan.weeks):
         raise HTTPException(502, "Your companion couldn't build a plan right now. Try again.")
     plan.weeks = [w for w in plan.weeks if w.items]

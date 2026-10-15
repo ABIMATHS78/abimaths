@@ -41,6 +41,12 @@ class Settings:
     # How push services can reach whoever runs this server: a mailto: address or an https:// address.
     # Defaults to the AIET_MAIL_FROM address, then an https AIET_PUBLIC_URL. Notifications are off without one.
     push_contact: str = field(default_factory=lambda: os.environ.get("AIET_PUSH_CONTACT", ""))
+    # AI requests each learner can make in any 24 hours (a chat message counts 1; see app/usage.py). 0: no limit.
+    ai_allowance: int = field(default_factory=lambda: _int("AIET_AI_ALLOWANCE", 100))
+    # The allowance until a learner confirms their email address (only while email is set up).
+    ai_allowance_unconfirmed: int = field(default_factory=lambda: _int("AIET_AI_ALLOWANCE_UNCONFIRMED", 30))
+    # A ceiling on everyone's AI requests together in any 24 hours, against floods of new accounts. 0: none.
+    ai_site_limit: int = field(default_factory=lambda: _int("AIET_AI_SITE_LIMIT", 0))
 
 
 settings = Settings()

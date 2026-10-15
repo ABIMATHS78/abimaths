@@ -3,12 +3,10 @@ slowing down password guessing, downloading your data, and deleting your account
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
 import logging
 import secrets
-import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
@@ -31,10 +29,6 @@ GUESS_WINDOW_MINUTES = 15
 
 def _ago(minutes: int) -> str:
     return (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
-
-
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 # --------------------------------------------------------------- password guessing
@@ -89,29 +83,24 @@ class Forgot(BaseModel):
 def reset_message(user: dict, token: str) -> EmailMessage:
     link = f"{settings.public_url}/#/reset/{token}"
     rules = f"The link works once, within the next {RESET_MINUTES} minutes, and signs you out everywhere else."
+    # The name only once the address is known to be theirs; until then it's whatever was typed at sign-up.
+    name = user["display_name"] if user.get("email_confirmed_at") else ""
     msg = EmailMessage()
     msg["Subject"] = "Choose a new password for AI Every Time"
     msg["From"] = settings.mail_from
     msg["To"] = user["email"]
     msg.set_content(
-        f"Hi {user['display_name']},\n\nSomeone asked to reset the password for your AI Every Time account. "
+        f"{f'Hi {name}' if name else 'Hello'},\n\nSomeone asked to reset the password for your AI Every Time account. "
         f"If it was you, choose a new one here:\n\n{link}\n\n{rules}\n\n"
         "If it wasn't you, you can ignore this email. Your password hasn't changed.\n"
     )
     msg.add_alternative(
-        f"<p>Hi {html.escape(user['display_name'])},</p><p>Someone asked to reset the password for your AI Every Time "
+        f"<p>{f'Hi {html.escape(name)}' if name else 'Hello'},</p><p>Someone asked to reset the password for your AI Every Time "
         f'account. If it was you, <a href="{html.escape(link)}">choose a new password</a>.</p><p>{rules}</p>'
         '<p style="color:#777;font-size:12px">If it wasn\'t you, you can ignore this email. Your password hasn\'t changed.</p>',
         subtype="html",
     )
     return msg
-
-
-def _send_reset(user: dict, token: str) -> None:
-    try:
-        digest.send(reset_message(user, token))
-    except (smtplib.SMTPException, OSError):
-        log.exception("password reset email to user %s failed", user["id"])
 
 
 @router.post("/auth/forgot", status_code=202)
@@ -121,18 +110,15 @@ def forgot(body: Forgot, background: BackgroundTasks):
     if not digest.email_available():
         raise HTTPException(409, "Password reset by email isn't set up on this server. Ask the site's admin for help.")
     with db.connect() as conn:
+        conn.execute("BEGIN IMMEDIATE")
         user = conn.execute("SELECT * FROM users WHERE email = ?", (body.email.lower(),)).fetchone()
-        if user is None:
-            return {"ok": True}
-        recent = conn.execute("SELECT COUNT(*) FROM password_resets WHERE user_id = ? AND created_at > ?",
-                              (user["id"], _ago(60))).fetchone()[0]
-        if recent >= RESETS_PER_HOUR:
+        if user is None or not digest.claim_send(conn, user["email"], "reset", RESETS_PER_HOUR):
             return {"ok": True}
         token = secrets.token_urlsafe(32)
         expires = (datetime.now(timezone.utc) + timedelta(minutes=RESET_MINUTES)).isoformat(timespec="seconds")
         conn.execute("INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                     (_hash(token), user["id"], db.now(), expires))
-    background.add_task(_send_reset, dict(user), token)
+                     (auth.hash_token(token), user["id"], db.now(), expires))
+    background.add_task(digest.send_quietly, reset_message(dict(user), token), user["id"])
     return {"ok": True}
 
 
@@ -148,12 +134,13 @@ def reset(body: Reset, response: Response):
     with db.connect() as conn:
         row = conn.execute("SELECT r.user_id, u.email FROM password_resets r JOIN users u ON u.id = r.user_id "
                            "WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?",
-                           (_hash(body.token), db.now())).fetchone()
+                           (auth.hash_token(body.token), db.now())).fetchone()
         if row is None:
             raise HTTPException(400, "This link has expired or was already used. Ask for a new one.")
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), row["user_id"]))
         _sign_out_elsewhere(conn, row["user_id"], None, None)  # this link and any others stop working too
         conn.execute("DELETE FROM login_failures WHERE email = ?", (row["email"],))
+        digest.mark_confirmed(conn, row["user_id"])  # the link reached them, so the address is theirs
     auth.set_cookie(response, auth.create_session(row["user_id"]))
 
 
@@ -219,7 +206,8 @@ def export(user: dict = User):
         data = {
             "exported_at": db.now(),
             "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "timezone", "reminder_hour",
-                                             "created_at")} | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
+                                             "email_confirmed_at", "created_at")}
+                       | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
             "companions_you_designed": designed,
             "companions_you_follow": rows(
                 "SELECT f.companion_id, json_extract(c.persona, '$.name') AS name, f.created_at FROM follows f "
@@ -245,6 +233,9 @@ def export(user: dict = User):
             "notices": rows("SELECT text, created_at, read_at FROM notices WHERE user_id = ? ORDER BY id"),
             "study_days": [r["day"] for r in rows("SELECT day FROM activity WHERE user_id = ? ORDER BY day")],
             "notification_devices": rows("SELECT device, created_at, last_sent_at FROM push_subscriptions WHERE user_id = ?"),
+            "ai_requests": rows("SELECT kind, units, failed, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+                                "model, created_at FROM ai_usage WHERE user_id = ? ORDER BY id"),
+            "ai_requests_turned_away": rows("SELECT hour, reason, count FROM ai_refusals WHERE user_id = ? ORDER BY hour"),
         }
     return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="ai-every-time-data.json"'})
@@ -257,7 +248,8 @@ class DeleteAccount(BaseModel):
 @router.delete("/me", status_code=204)
 def delete_account(body: DeleteAccount, response: Response, user: dict = User):
     """Delete the account and everything in it: the companions they designed and their posts, chats,
-    memories, progress and devices. Staff decisions they made stay in the log without their name."""
+    memories, progress and devices. Staff decisions they made stay in the log, and their AI requests
+    in the usage totals, without their name."""
     _confirm_password(user, body.password)
     with db.connect() as conn:
         # Lessons companions wrote for the learner's own paths aren't covered by the cascade.

@@ -44,7 +44,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), 2400);
+  toast._t = setTimeout(() => t.classList.remove("show"), Math.max(2400, msg.length * 60));  // time to read longer ones
 }
 
 /* Minimal, safe markdown: escape first, then a few inline/block rules. */
@@ -231,7 +231,7 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(reports|appeals|paths|roles|log))?$/, viewStaff],
+  [/^#\/staff(?:\/(insights|reports|appeals|paths|roles|log))?$/, viewStaff],
 ];
 
 async function router() {
@@ -363,6 +363,7 @@ async function viewWelcome() {
     $("#authBtn").disabled = true;
     try {
       state.me = await api(`/api/auth/${tab}`, { method: "POST", body });
+      if (tab === "signup" && state.me.email_available) toast("Welcome! We've emailed you a link to confirm your address.");
       location.hash = state.me.onboarded ? "#/feed" : "#/onboarding";
     } catch (err) {
       $("#authErr").textContent = err.message;
@@ -803,6 +804,7 @@ async function viewCompanion(m) {
       setTimeout(async () => renderMem(await api(`/api/companions/${id}/memories`)), 2500);
     } catch (err) {
       bubble.innerHTML = `<span class="error">${esc(err.message)}</span>`;
+      if (!input.value) input.value = text;  // not sent, so it isn't lost
     } finally {
       $("#send").disabled = false;
       input.focus();
@@ -1153,6 +1155,8 @@ async function viewStudio({ mode, id }) {
 const hourLabel = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 async function viewProfile() {
+  // Fresh: AI requests left, and an address confirmed in another tab. Offline, what we have will do.
+  state.me = await api("/api/me").catch((err) => { if (err instanceof StaleView) throw err; return state.me; });
   const me = state.me;
   const main = shell("profile", `
     <h1>Your profile</h1>
@@ -1164,6 +1168,7 @@ async function viewProfile() {
         <div class="error" id="profErr"></div>
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
       </form>
+      <div class="card stack" id="aiCard"></div>
       <form class="card stack" id="remForm">
         <div><h2 style="margin:0">Reminders</h2>
           <div class="muted small">Once a day, when something is waiting: a streak to keep, flashcards due, the next step in your study plan.</div></div>
@@ -1171,7 +1176,7 @@ async function viewProfile() {
           <select name="reminder_hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === me.reminder_hour ? "selected" : ""}>${hourLabel(h)}</option>`).join("")}</select></label>
         <div class="muted small" id="zoneLine" style="margin-top:-8px"></div>
         <label class="check"><input type="checkbox" name="email_reminders" ${me.email_available ? "" : "disabled"} ${me.email_reminders ? "checked" : ""}> Email me the daily reminder</label>
-        <div class="muted small" style="margin-top:-8px">${me.email_available ? `Sent to ${esc(me.email)}. Every email has a link to stop them.` : "Email reminders aren't set up on this server yet."}</div>
+        <div class="muted small" id="emailLine" style="margin-top:-8px"></div>
         <div class="error" id="remErr"></div>
         <div><button class="btn primary">Save reminders</button></div>
         <div class="push-box stack" id="pushBox"></div>
@@ -1215,14 +1220,53 @@ async function viewProfile() {
     });
   };
   renderZone();
+  // What's left of the daily AI allowance. Confirming the email address can raise it.
+  const renderAllowance = () => {
+    const a = state.me.ai_allowance;
+    $("#aiCard").innerHTML = `<div><h2 style="margin:0">AI requests</h2>
+      <div class="muted small">Every chat reply, quiz, flashcard deck, summary and study plan is written by AI, and so is each lesson the first time it's taught. Each counts as one request for 24 hours; mock exams and new learning paths count as two.</div></div>`
+      + (a.limit === null ? `<div>Your account has no daily limit.</div>`
+        : `${bar(a.remaining, a.limit)}<div style="margin-top:-6px"><b>${a.remaining}</b> of ${a.limit} left</div>`)
+      + (a.confirm_raises_to ? `<div class="muted small">Confirm your email address to raise your limit to ${a.confirm_raises_to}: `
+        + `<button type="button" class="textbtn" data-confirm>send a confirmation link</button>.</div>` : "");
+  };
+  renderAllowance();
+  main.addEventListener("click", async (e) => {  // both "send a confirmation link" buttons
+    const b = e.target.closest("[data-confirm]");
+    if (!b) return;
+    b.disabled = true;
+    try {
+      const r = await api("/api/email/confirmation", { method: "POST" });
+      if (r.confirmed) {  // confirmed meanwhile, perhaps in another tab
+        state.me = await api("/api/me");
+        renderAllowance();
+        renderEmail();
+        toast("Your email address is already confirmed.");
+      } else toast("Sent. Check your inbox (and spam folder).");
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+    b.disabled = false;
+  });
+  // Reminder emails only start once the learner confirms the address is theirs.
+  const renderEmail = () => {
+    const m = state.me, line = $("#emailLine");
+    if (!m.email_available) { line.textContent = "Email reminders aren't set up on this server yet."; return; }
+    line.innerHTML = m.email_confirmed
+      ? `Sent to ${esc(m.email)}, which you've confirmed. Every email has a link to stop them.`
+      : `Sent to ${esc(m.email)} once you confirm it's yours: ${m.email_reminders ? "look for the link in your inbox, or " : ""}`
+        + `<button type="button" class="textbtn" data-confirm>${m.email_reminders ? "send it again" : "send a confirmation link"}</button>.`;
+  };
+  renderEmail();
   $("#remForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = { reminder_hour: +e.target.reminder_hour.value };
     if (state.me.email_available) body.email_reminders = e.target.email_reminders.checked;
+    const wasOn = state.me.email_reminders;
     try {
       state.me = await api("/api/me", { method: "PATCH", body });
       $("#remErr").textContent = "";
-      toast("Reminders saved");
+      renderEmail();
+      toast(state.me.email_reminders && !wasOn && !state.me.email_confirmed
+        ? "Saved. We've emailed you a link: confirm your address to start getting reminder emails." : "Reminders saved");
     } catch (err) { $("#remErr").textContent = err.message; }
   });
 
@@ -1511,10 +1555,17 @@ async function viewLearn() {
 async function viewLesson(m) {
   const lessonId = m[1], companionId = m[2] ? +m[2] : null;
   const main = shell("learn", `<div class="card empty">Your companion is preparing this lesson…</div>`);
-  const [lesson, list] = await Promise.all([
-    api(`/api/lessons/${lessonId}${companionId ? `?companion_id=${companionId}` : ""}`),
-    api("/api/companions"),
-  ]);
+  let lesson, list;
+  try {
+    [lesson, list] = await Promise.all([
+      api(`/api/lessons/${lessonId}${companionId ? `?companion_id=${companionId}` : ""}`),
+      api("/api/companions"),
+    ]);
+  } catch (err) {  // e.g. the daily AI requests are used up, or the companion couldn't write it
+    if (err instanceof StaleView) throw err;
+    main.innerHTML = `<div class="card empty stack"><div>${esc(err.message)}</div><div><a class="btn" href="#/learn">Back to learning paths</a></div></div>`;
+    return;
+  }
   const t = lesson.teacher;
   const teachers = list.filter((c) => c.following || c.owner_id === state.me.id);
   main.innerHTML = `
@@ -1573,7 +1624,10 @@ async function viewLesson(m) {
     const a = document.createElement("div"); a.className = "msg assistant"; a.textContent = "…"; log.appendChild(a);
     try {
       await streamChat(t.id, { message: text, lesson_id: lessonId }, (acc) => { a.innerHTML = `<div class="prose">${md(acc)}</div>`; log.scrollTop = log.scrollHeight; });
-    } catch (err) { a.innerHTML = `<span class="error">${esc(err.message)}</span>`; }
+    } catch (err) {
+      a.innerHTML = `<span class="error">${esc(err.message)}</span>`;
+      if (!input.value) input.value = text;  // not sent, so it isn't lost
+    }
     $("#tsend").disabled = false;
   });
 }
@@ -1773,7 +1827,7 @@ function planForm(paths, minutes) {
 
 /* -------------------------------------------------------------------- staff */
 
-const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["reports", "appeals", "paths", "roles", "log"] };
+const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["insights", "reports", "appeals", "paths", "roles", "log"] };
 const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
 const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -1781,13 +1835,143 @@ async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
-  const names = { reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
+  const names = { insights: "Insights", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
-  await { reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+  await { insights: staffInsights, reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+}
+
+/* Insights (admins): learners, how they learn, and the AI the site uses against its allowances. */
+const KIND_LABEL = {
+  chat: "Chat replies", lesson: "Lessons, the first time taught", quiz: "Quizzes", exam: "Mock exams", flashcards: "Flashcard decks",
+  summary: "Summaries", plan: "Study plans", path: "Custom paths", post: "Companion posts", automatic: "Scheduled posts (no learner)",
+};
+const fmt = (n) => (n == null ? "–" : n >= 10000 ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n) : n.toLocaleString());
+const plural = (n, one, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;
+const utcDate = (day, opts) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
+const longDay = (day) => utcDate(day, { weekday: "short", day: "numeric", month: "short" });
+
+async function staffInsights(body) {
+  const { learners: l, learning: s, community: c, ai } = await api("/api/staff/insights");
+  const tile = (value, label, sub = "") => `<div class="card tile"><div class="big">${value}</div><div class="small">${label}</div>${sub ? `<div class="muted small">${sub}</div>` : ""}</div>`;
+  const share = (n) => (l.total ? `${Math.round((100 * n) / l.total)}% of learners` : "");
+  const sum = (rows, key) => rows.reduce((t, r) => t + (r[key] || 0), 0);
+  const away = ai.turned_away, lim = ai.limits, fallbacks = sum(ai.kinds, "fallbacks");
+  const limits = (lim.allowance > 0
+    ? `Each learner can make ${fmt(lim.allowance)} AI requests in any 24 hours${lim.unconfirmed != null && lim.unconfirmed < lim.allowance ? ` (${fmt(lim.unconfirmed)} until they confirm their email address)` : ""}; admins have no limit.`
+    : "Learners have no daily limit on AI requests.")
+    + (lim.site > 0 ? ` Everyone together can use ${fmt(lim.site)} in any 24 hours.` : " There's no ceiling for everyone together.");
+  body.innerHTML = `
+    <h2 class="section">Learners</h2>
+    <div class="tiles">
+      ${tile(fmt(l.total), "learners", `${fmt(l.new_this_week)} new this week`)}
+      ${tile(fmt(l.active_this_week), "studied this week", share(l.active_this_week))}
+      ${tile(fmt(l.confirmed), "confirmed their email", share(l.confirmed))}
+      ${tile(fmt(l.with_notifications), "get notifications", share(l.with_notifications))}
+    </div>
+    <h2 class="section">Learning this week</h2>
+    <div class="tiles">
+      ${tile(fmt(s.lessons_completed), "lessons completed")}
+      ${tile(fmt(s.quizzes), "quizzes and exams taken", s.quiz_average != null ? `average score ${s.quiz_average}%` : "")}
+      ${tile(fmt(s.chat_messages), "questions asked in chats")}
+      ${tile(fmt(c.designed), "companions designed by learners", `${fmt(c.published)} shared with the community`)}
+    </div>
+    <h2 class="section">AI requests, last 14 days</h2>
+    <div class="tiles">
+      ${tile(fmt(sum(ai.days, "requests")), "AI requests from learners", `${fmt(ai.units_last_24h)} counted in the last 24 hours${lim.site > 0 ? ` of ${fmt(lim.site)}` : ""}`
+        + (lim.site > 0 ? bar(Math.min(ai.units_last_24h, lim.site), lim.site) : ""))}
+      ${tile(fmt(sum(ai.kinds, "input_tokens") + sum(ai.kinds, "output_tokens") + sum(ai.kinds, "cache_read_tokens") + sum(ai.kinds, "cache_write_tokens")), "tokens", "input, output and cache, scheduled posts included")}
+      ${tile(fmt(away.allowance.requests + away.site.requests), "requests turned away",
+        `${plural(away.allowance.learners, "learner")} reached their limit${away.site.requests ? `; ${fmt(away.site.requests)} paused by the site ceiling` : ""}`)}
+      ${tile(fmt(sum(ai.kinds, "failed")), "failed calls to Claude", "not counted against anyone")}
+    </div>
+    <div class="card stack">
+      <div><h3 style="margin:0">AI requests per day</h3>
+        <div class="muted small">Requests from learners that went through, ${esc(utcDate(ai.days[0].day, { day: "numeric", month: "short" }))} to ${esc(utcDate(ai.days.at(-1).day, { day: "numeric", month: "short" }))} (UTC days). Mock exams and custom paths count once here.</div></div>
+      ${sum(ai.days, "requests") ? dayChart(ai.days) : `<div class="empty">No AI requests from learners in the last 14 days.</div>`}
+      <details><summary>Show as a table</summary><div class="table-wrap"><table class="table num">
+        <thead><tr><th>Day</th><th>Requests</th><th>Tokens</th></tr></thead>
+        <tbody>${ai.days.map((d) => `<tr><td>${esc(longDay(d.day))}</td><td>${d.requests.toLocaleString()}</td><td>${d.tokens.toLocaleString()}</td></tr>`).join("")}</tbody>
+      </table></div></details>
+    </div>
+    <div class="card stack">
+      <div><h3 style="margin:0">What the AI was asked for</h3>
+        <div class="muted small">Last 14 days. Tokens are what Claude reported, counting every attempt.${fallbacks ? ` ${plural(fallbacks, "answer")} came from a fallback model after the first one declined.` : ""}</div></div>
+      ${ai.kinds.length ? `<div class="table-wrap"><table class="table num">
+        <thead><tr><th>Request</th><th>Requests</th><th>Failed</th><th>Input tokens</th><th>Output tokens</th><th>Cache reads</th><th>Cache writes</th></tr></thead>
+        <tbody>${ai.kinds.map((k) => `<tr><td>${esc(KIND_LABEL[k.kind] || k.kind)}</td>${["requests", "failed", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map((f) => `<td>${(k[f] || 0).toLocaleString()}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table></div>` : `<div class="empty">Nothing yet.</div>`}
+      <p class="small" style="margin:0">${limits} <span class="muted">Set on the server with AIET_AI_ALLOWANCE, AIET_AI_ALLOWANCE_UNCONFIRMED and AIET_AI_SITE_LIMIT.</span></p>
+    </div>
+    <div class="two-col">
+      <div class="card stack">
+        <div><h3 style="margin:0">Topics learners value most</h3>
+          <div class="muted small">Engagement per post over the last 30 days, weighted towards likes, shares and follow-up questions.</div></div>
+        ${c.topics.length ? rankBars(c.topics.map((t) => ({ label: t.topic, value: t.score }))) : `<div class="empty">No one has engaged with posts in the last 30 days.</div>`}
+      </div>
+      <div class="card stack">
+        <div><h3 style="margin:0">Most followed community companions</h3>
+          <div class="muted small">Companions learners designed and shared.</div></div>
+        ${c.most_followed.length ? `<table class="table num"><thead><tr><th>Companion</th><th>Followers</th></tr></thead><tbody>
+          ${c.most_followed.map((x) => `<tr><td><a href="#/c/${x.id}">${esc(x.name)} ${esc(x.flag || "")}</a> <span class="muted small">by ${esc(x.designer || "a former learner")}</span></td><td>${x.followers.toLocaleString()}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="empty">No community companions yet.</div>`}
+      </div>
+    </div>`;
+  wireDayChart(body, ai.days);
+}
+
+/* Gridline spacing that gives two to four clean steps above zero. */
+function niceStep(max) {
+  const raw = Math.max(max, 4) / 4, mag = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 5, 10].map((x) => x * mag).find((x) => x >= raw);
+}
+
+/* One series by day: thin columns from a single baseline, the peak labelled, hairline gridlines. */
+function dayChart(days) {
+  const max = Math.max(...days.map((d) => d.requests)), step = niceStep(max), top = Math.ceil(max / step) * step;
+  const peak = days.findIndex((d) => d.requests === max);
+  return `<div class="colchart">
+    <div class="plot">
+      ${Array.from({ length: top / step + 1 }, (_, i) => `<div class="gridline${i ? "" : " base"}" style="bottom:${(100 * i * step) / top}%"><span>${fmt(i * step)}</span></div>`).join("")}
+      <div class="cols">${days.map((d, i) => `<button type="button" class="col" data-i="${i}" aria-label="${esc(longDay(d.day))}: ${plural(d.requests, "AI request")}, ${plural(d.tokens, "token")}">
+        <span class="colbar" style="height:${(100 * d.requests) / top}%">${i === peak ? `<span class="collabel">${fmt(d.requests)}</span>` : ""}</span></button>`).join("")}</div>
+    </div>
+    <div class="xaxis" aria-hidden="true">${days.map((d) => `<span>${esc(utcDate(d.day, { day: "numeric" }))}</span>`).join("")}</div>
+    <div class="charttip" hidden></div>
+  </div>`;
+}
+
+/* The tooltip follows the pointer or keyboard focus over each day's column (the whole column is the target). */
+function wireDayChart(root, days) {
+  const chart = $(".colchart", root);
+  if (!chart) return;
+  const tip = $(".charttip", chart);
+  const show = (col) => {
+    const d = days[+col.dataset.i], value = document.createElement("b"), when = document.createElement("div");
+    value.textContent = plural(d.requests, "AI request");
+    when.className = "muted";
+    when.textContent = `${longDay(d.day)} · ${plural(d.tokens, "token")}`;
+    tip.replaceChildren(value, when);
+    tip.hidden = false;
+    const box = chart.getBoundingClientRect(), r = col.getBoundingClientRect(), barTop = col.firstElementChild.getBoundingClientRect().top;
+    const half = tip.offsetWidth / 2;
+    tip.style.left = `${Math.min(Math.max(r.left + r.width / 2 - box.left, half), box.width - half)}px`;
+    tip.style.top = `${Math.min(barTop, r.bottom - 6) - box.top - 8}px`;
+  };
+  chart.addEventListener("pointerover", (e) => { const col = e.target.closest(".col"); if (col) show(col); });
+  chart.addEventListener("focusin", (e) => { const col = e.target.closest(".col"); if (col) show(col); });
+  chart.addEventListener("pointerleave", () => { if (!chart.contains(document.activeElement)) tip.hidden = true; });
+  chart.addEventListener("focusout", () => { tip.hidden = true; });
+}
+
+/* Ranked horizontal bars for one series, each value at its bar's tip. */
+function rankBars(rows) {
+  const max = Math.max(...rows.map((r) => r.value)) || 1;
+  return `<div class="rankbars">${rows.map((r) => `<div>${esc(r.label)}</div>
+    <div class="track"><span style="width:${(100 * r.value) / max}%"></span></div><div class="value">${esc(r.value.toLocaleString())}</div>`).join("")}</div>`;
 }
 
 async function staffAppeals(body, m) {

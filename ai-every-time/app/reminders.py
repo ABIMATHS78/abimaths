@@ -95,6 +95,12 @@ def reminders(user: dict = User):
     for n in notices:
         out.append({"kind": "notice", "priority": 0, "id": n["id"], "text": n["text"], "link": n["link"] or "#/feed"})
     out += _staff_work(user)
+    from app import digest  # imported here: digest builds its emails from this list
+
+    if user.get("email_reminders") and not user.get("email_confirmed_at") and digest.email_available():
+        out.append({"kind": "confirm_email", "priority": 2, "link": "#/profile",
+                    "text": "Confirm your email address to start getting reminder emails. Use the link we emailed you, "
+                            "or send a new one from your profile."})
     today = learning.local_now(user).date()
     streak = learning._streak(days, today)
     if streak and today.isoformat() not in days:

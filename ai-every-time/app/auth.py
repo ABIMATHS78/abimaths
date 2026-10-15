@@ -28,6 +28,12 @@ def verify_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(digest.hex(), digest_hex)
 
 
+def hash_token(token: str) -> str:
+    """How emailed one-time links are stored: a leaked database doesn't reveal working links.
+    The tokens are long and random, so a fast hash is enough."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def create_session(user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     expires = datetime.now(timezone.utc) + timedelta(days=settings.session_days)
@@ -81,8 +87,15 @@ CAN = {
 
 
 def role_of(u: dict) -> str:
-    """Emails in AIET_ADMIN_EMAILS are always admins, so a deployment can't lock itself out."""
-    return "admin" if u["email"].lower() in settings.admin_emails else (u.get("role") or "learner")
+    """Emails in AIET_ADMIN_EMAILS are always admins, so a deployment can't lock itself out. While email
+    is set up the address has to be confirmed first, so someone who signs up with it before its owner
+    doesn't become an admin. (The owner can take the account back with a password reset.)"""
+    if u["email"].lower() in settings.admin_emails:
+        from app import digest  # imported here: digest needs this module
+
+        if u.get("email_confirmed_at") or not digest.email_available():
+            return "admin"
+    return u.get("role") or "learner"
 
 
 def require(permission: str):

@@ -2,52 +2,12 @@
 other devices, limits on password guessing, downloading your data and deleting your account."""
 
 import json
-import re
 import time
-
-import pytest
 
 from tests.test_app import persona, signup
 from tests.test_community import as_user
+from tests.test_email import mailbox  # noqa: F401  (fixture)
 from tests.test_push import Device, subscribe
-
-
-class Mailbox:
-    """Stands in for an SMTP server and keeps what was sent."""
-
-    def __init__(self):
-        self.sent = []
-
-    def __call__(self, *args, **kwargs):
-        return self
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-    def starttls(self):
-        pass
-
-    def send_message(self, msg):
-        self.sent.append(msg)
-
-    def reset_link(self, i=-1) -> str:
-        return re.search(r"#/reset/([\w-]+)", self.sent[i].get_body(("plain",)).get_content()).group(1)
-
-
-@pytest.fixture()
-def mailbox(client, monkeypatch):
-    from app import digest
-    from app.config import settings
-
-    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
-    monkeypatch.setattr(settings, "mail_from", "AI Every Time <hello@aieverytime.example>")
-    monkeypatch.setattr(settings, "public_url", "https://aieverytime.example")
-    box = Mailbox()
-    monkeypatch.setattr(digest.smtplib, "SMTP", box)
-    return box
 
 
 def login(client, email="ada@example.com", password="correct horse"):
@@ -71,6 +31,7 @@ def test_forgotten_password_reset_by_email(client, mailbox, monkeypatch):
     from app.config import settings
 
     signup(client)
+    mailbox.sent.clear()  # the link that confirms the address
     old_session = other_device(client)
     monkeypatch.setattr(settings, "push_contact", "mailto:team@aieverytime.example")
     subscribe(client, Device())
@@ -104,6 +65,7 @@ def test_reset_links_expire_and_are_limited(client, mailbox):
     from app import account, db
 
     signup(client)
+    mailbox.sent.clear()  # the link that confirms the address
     client.post("/api/auth/logout")
     for _ in range(account.RESETS_PER_HOUR + 2):
         assert client.post("/api/auth/forgot", json={"email": "ada@example.com"}).status_code == 202
@@ -112,10 +74,12 @@ def test_reset_links_expire_and_are_limited(client, mailbox):
     assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(0), "password": "a new password"}).status_code == 204
     assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(1), "password": "a new password"}).status_code == 400
 
-    with db.connect() as conn:
+    with db.connect() as conn:  # an hour later
         conn.execute("DELETE FROM password_resets")
+        conn.execute("UPDATE email_sends SET created_at = '2000-01-01T00:00:00+00:00'")
     client.post("/api/auth/logout")
     client.post("/api/auth/forgot", json={"email": "ada@example.com"})
+    assert len(mailbox.sent) == account.RESETS_PER_HOUR + 1
     with db.connect() as conn:
         conn.execute("UPDATE password_resets SET expires_at = '2000-01-01T00:00:00+00:00'")
     assert client.post("/api/auth/reset", json={"token": mailbox.reset_link(), "password": "a new password"}).status_code == 400

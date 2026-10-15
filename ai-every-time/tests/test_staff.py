@@ -6,6 +6,7 @@ import pytest
 
 from tests.test_app import persona, signup
 from tests.test_community import as_user
+from tests.test_email import mailbox  # noqa: F401  (fixture)
 
 
 @pytest.fixture()
@@ -193,12 +194,18 @@ def test_email_reminders_opt_in_digest_and_unsubscribe(client, monkeypatch):
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
     monkeypatch.setattr(settings, "mail_from", "AI Every Time <hello@example.com>")
     monkeypatch.setattr(settings, "public_url", "https://aieverytime.example")
+    from tests.test_email import Mailbox
+
+    box = Mailbox()
+    monkeypatch.setattr(digest.smtplib, "SMTP", box)
     me = client.patch("/api/me", json={"email_reminders": True}).json()
-    assert me["email_reminders"] and me["email_available"]
+    assert me["email_reminders"] and me["email_available"] and not me["email_confirmed"]
 
     client.get("/api/lessons/tokens")  # something to remind about
     # Ada hasn't picked a reminder time and has no known time zone, so it's the default hour in UTC.
     monkeypatch.setattr(settings, "reminder_hour", 7)
+    assert digest.due_digests(datetime(2026, 1, 1, 7, 5, tzinfo=timezone.utc)) == []  # not until it's confirmed
+    assert client.post("/api/email/confirm", content=f"token={box.link_token('confirm')}").status_code == 200
     assert digest.due_digests(datetime(2026, 1, 1, 6, 59, tzinfo=timezone.utc)) == []
     due = digest.due_digests(datetime(2026, 1, 1, 7, 5, tzinfo=timezone.utc))
     assert len(due) == 1
@@ -239,3 +246,12 @@ class FakeSMTP:
 
     def send_message(self, msg):
         self.sent.append("send")
+
+
+def test_admin_emails_need_a_confirmed_address_while_email_is_on(client, admin_email, mailbox):
+    """Otherwise whoever signs up with the address before its owner would be an admin."""
+    assert signup(client, email=admin_email, name="Boss")["role"] == "learner"
+    assert client.get("/api/staff/insights").status_code == 403
+    assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200
+    assert client.get("/api/me").json()["role"] == "admin"
+    assert client.get("/api/staff/insights").status_code == 200

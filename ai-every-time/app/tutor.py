@@ -14,7 +14,7 @@ from typing import TypeVar
 import anthropic
 from pydantic import BaseModel, Field
 
-from app import llm
+from app import llm, usage
 from app.config import settings
 from app.curriculum import PATHS, LearningPath, Lesson, lesson_brief
 from app.persona import Persona
@@ -69,24 +69,16 @@ class StudyPlan(BaseModel):
 
 async def _parse(persona: Persona, prompt: str, schema: type[T], effort: str, max_tokens: int = 16000) -> T | None:
     try:
-        resp = await llm.client().beta.messages.parse(
-            model=settings.model,
-            max_tokens=max_tokens,
+        return await llm.ask(
+            schema, effort, max_tokens=max_tokens,
             system=[{"type": "text", "text": llm.PLATFORM_RULES + "\n\n" + llm.persona_prompt(persona),
                      "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
-            output_format=schema,
-            output_config={"effort": effort},
-            betas=[llm.FALLBACK_BETA],
-            fallbacks="default",
         )
     except anthropic.APIError:
+        usage.failed()
         log.exception("%s generation failed", schema.__name__)
         return None
-    if resp.stop_reason in ("refusal", "max_tokens"):
-        log.warning("%s generation stopped: %s", schema.__name__, resp.stop_reason)
-        return None
-    return resp.parsed_output
 
 
 def _learner_line(learner: dict) -> str:
