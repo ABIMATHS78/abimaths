@@ -12,9 +12,13 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "database_path", str(tmp_path / "test.db"))
     monkeypatch.setattr(settings, "offline", True)
-    from app import llm
+    from app import content, llm, photos
 
-    monkeypatch.setattr(llm, "account_problem", None)  # remembered by the process, so not from another test
+    # Remembered by the process, so not from another test.
+    monkeypatch.setattr(llm, "account_problem", None)
+    monkeypatch.setattr(content, "_first_post_tries", {})
+    monkeypatch.setattr(photos, "_tried", {})
+    monkeypatch.setattr(photos, "_fetching", set())
     from fastapi.testclient import TestClient
 
     from app.main import app

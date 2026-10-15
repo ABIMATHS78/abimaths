@@ -128,7 +128,8 @@ def signup(body: Signup, response: Response, background: BackgroundTasks):
             # Start every learner following the featured starter companions, one from each region, so their
             # feed isn't empty.
             conn.execute("INSERT INTO follows (user_id, companion_id, created_at) "
-                         "SELECT ?, id, ? FROM companions WHERE is_starter = 1 AND featured = 1", (cur.lastrowid, db.now()))
+                         "SELECT ?, id, ? FROM companions WHERE is_starter = 1 AND featured = 1 AND retired = 0",
+                         (cur.lastrowid, db.now()))
             # Posts published before sign-up are part of the welcome feed, not "new".
             reminders.mark_feed_seen(conn, cur.lastrowid)
     except sqlite3.IntegrityError:
@@ -245,7 +246,7 @@ def starter_faces():
     the most followed."""
     with db.connect() as conn:
         rows = conn.execute("SELECT id, json_extract(persona, '$.name') AS name, updated_at FROM companions "
-                            "WHERE is_starter = 1 ORDER BY featured DESC, base_followers DESC, id LIMIT 8").fetchall()
+                            "WHERE is_starter = 1 AND retired = 0 ORDER BY featured DESC, base_followers DESC, id LIMIT 8").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -385,15 +386,16 @@ def companion_avatar(companion_id: int, background: BackgroundTasks, v: str = ""
                      user: dict | None = Depends(auth.optional_user)):
     """The companion's photo, or its drawn face. A starter's photo that isn't stored here yet is loaded by the
     browser from its own address meanwhile; if that fails, the page asks again with face=1 for the drawn face.
-    With v (the companion's updated_at, which changes with its face) the browser can keep the image for a day;
-    only the browser, since a learner's photo is private to the people who can see their companion."""
+    A starter's face, asked for with v (its updated_at, which changes with its face), can be kept by the browser
+    for a day. Learners' photos are asked for each time, so one that's unpublished stops showing at once."""
     # Starter faces are public (they appear on the welcome page); others follow companion visibility.
     c = companions.get(companion_id)
     # Moderators also need to see hidden companions' faces to review them.
     moderator = user is not None and auth.role_of(user) in auth.CAN["moderate"]
     if not companions.visible_to(c, user["id"] if user else None) and not moderator:
         raise HTTPException(404, "Companion not found")
-    headers = IMAGE_HEADERS | ({"Cache-Control": "private, max-age=86400"} if v and v == c["updated_at"] else {})
+    keep = c["is_starter"] and v == c["updated_at"]
+    headers = IMAGE_HEADERS | ({"Cache-Control": "private, max-age=86400"} if keep else {})
     with db.connect() as conn:
         photo = None if face else conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?",
                                                (companion_id,)).fetchone()

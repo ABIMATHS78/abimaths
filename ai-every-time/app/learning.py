@@ -61,7 +61,7 @@ def teacher_for(user: dict, companion_id: int | None) -> dict:
         except HTTPException:
             pass  # e.g. a community companion its designer has since unpublished
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM companions WHERE is_starter = 1 "
+        row = conn.execute("SELECT * FROM companions WHERE is_starter = 1 AND retired = 0 "
                            "ORDER BY featured DESC, base_followers DESC, id LIMIT 1").fetchone()
     return db.row_to_companion(row)
 

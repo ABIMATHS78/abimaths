@@ -24,9 +24,12 @@ log = logging.getLogger(__name__)
 SIZE = 320  # pixels square: sharp at the largest size pages show a face, on high-density screens too
 MAX_BYTES = 25 * 1024 * 1024  # originals larger than this are skipped
 RETRY_SECONDS = 600  # after a failed fetch, wait this long before trying that photo again
+AT_ONCE = 4  # photos fetched at the same time, across the server
 # Tests point this at an httpx.MockTransport; None means the network.
 transport: httpx.AsyncBaseTransport | None = None
-_tried: dict[int, float] = {}
+_tried: dict[int, float] = {}  # when each starter's photo was last asked for
+_fetching: set[int] = set()  # starters whose photo is on its way
+_gate: tuple[asyncio.AbstractEventLoop, asyncio.Semaphore] | None = None
 _DRIVE = re.compile(r"^https://drive\.google\.com/(?:file/d/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{10,})")
 
 
@@ -101,15 +104,32 @@ def _missing(companion_id: int | None = None) -> list:
             {"id": companion_id}).fetchall()
 
 
+def _limit() -> asyncio.Semaphore:
+    """The one limit on photo fetches at a time, for whichever event loop is running (tests start several)."""
+    global _gate
+    loop = asyncio.get_running_loop()
+    if _gate is None or _gate[0] is not loop:
+        _gate = (loop, asyncio.Semaphore(AT_ONCE))
+    return _gate[1]
+
+
 async def _get(client: httpx.AsyncClient, row) -> str | None:
-    """Fetch and keep one starter's photo. Returns why it couldn't be, or None once it's stored."""
+    """Fetch and keep one starter's photo, unless it's already on its way or here. Returns why it couldn't be
+    fetched, or None."""
+    if row["id"] in _fetching:
+        return None
+    _fetching.add(row["id"])
     _tried[row["id"]] = time.monotonic()
     try:
-        _store(row["id"], row["photo_url"], await fetch(client, row["photo_url"]))
+        async with _limit():
+            if _missing(row["id"]):
+                _store(row["id"], row["photo_url"], await fetch(client, row["photo_url"]))
     except httpx.HTTPStatusError as e:
         return f"the address answered {e.response.status_code}"
     except Exception as e:  # noqa: BLE001 - any failure leaves the browser fetching the original instead
         return f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+    finally:
+        _fetching.discard(row["id"])
     return None
 
 
@@ -120,14 +140,8 @@ async def ensure_starter_photos() -> int:
     rows = _missing()
     if not rows:
         return 0
-    gate = asyncio.Semaphore(4)
-
-    async def one(row) -> str | None:
-        async with gate:
-            return await _get(client, row)
-
     async with _client() as client:
-        problems = await asyncio.gather(*(one(r) for r in rows))
+        problems = await asyncio.gather(*(_get(client, r) for r in rows))
     failed = [(r["name"], p) for r, p in zip(rows, problems) if p]
     if failed:
         log.warning("Couldn't fetch %d of %d starter companion photos (%s: %s). Browsers load those from their original "
@@ -139,7 +153,7 @@ async def ensure_starter_photos() -> int:
 
 async def fetch_later(companion_id: int) -> None:
     """Fetch one starter's photo that isn't here yet, after a page asked for it, unless that was tried recently."""
-    if time.monotonic() - _tried.get(companion_id, -RETRY_SECONDS) < RETRY_SECONDS:
+    if companion_id in _fetching or time.monotonic() - _tried.get(companion_id, -RETRY_SECONDS) < RETRY_SECONDS:
         return
     for row in _missing(companion_id):
         async with _client() as client:

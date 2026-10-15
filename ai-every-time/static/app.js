@@ -254,6 +254,11 @@ function wireReactions(log, ctx) {
   });
 }
 
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".react-picker, .react-btn")) return;
+  for (const picker of $$(".react-picker")) closePicker(picker.parentElement);
+});
+
 /* After a reply: the ids of the two new messages, and the companion's reaction to the learner's, if it made one. */
 async function savedExchange(companionId, sentId, userEl, replyEl, ctx) {
   if (!sentId) return;
@@ -266,7 +271,7 @@ async function savedExchange(companionId, sentId, userEl, replyEl, ctx) {
   } catch {}  // without them the chat still works; reactions come back with the page
 }
 /* The server takes the companion's reaction off the start of its reply; one anywhere else isn't shown either. */
-const withoutReactionTags = (text) => text.replace(/<reaction>[^<]{0,16}<\/reaction>\s*/g, "");
+const withoutReactionTags = (text) => text.replace(/<reaction>[^<]{0,16}<\/reaction>\s*/gu, "");
 
 /* ----------------------------------------------------------- notifications */
 
@@ -551,6 +556,7 @@ async function viewReset(m) {
 /* --------------------------------------------------------------- onboarding */
 
 const REAL_NOTE = "AI companion modelled on a real person";
+const RETIRED_NOTE = "No longer listed for new learners. Your chats with them are kept, and you can carry on.";
 
 function companionCard(c, { onboarding = false } = {}) {
   const p = c.persona;
@@ -665,7 +671,7 @@ function wireStarterBrowser(root, starters, opts, rerender) {
 
 async function viewOnboarding() {
   const list = await api("/api/companions");
-  const starters = list.filter((c) => c.is_starter);
+  const starters = list.filter((c) => c.is_starter && !c.retired);
   app.innerHTML = `
     <section class="main" style="margin:0 auto">
       <div class="logo" style="margin:0 0 20px">AI <span>Every</span> Time</div>
@@ -777,8 +783,9 @@ async function viewFeed() {
 async function viewCompanions() {
   const list = await api("/api/companions");
   // The server lists other learners' companions most followed first.
-  const mine = list.filter((c) => c.owner_id === state.me.id), starters = list.filter((c) => c.is_starter);
+  const mine = list.filter((c) => c.owner_id === state.me.id), starters = list.filter((c) => c.is_starter && !c.retired);
   const community = list.filter((c) => !c.is_starter && c.owner_id !== state.me.id);
+  const retired = list.filter((c) => c.retired);
   const main = shell("companions", `
     <h1>Companions</h1>
     <p class="muted">Each companion represents a country and brings their own expertise, perspective and voice.</p>
@@ -788,8 +795,12 @@ async function viewCompanions() {
     <h2>Community</h2>
     <p class="muted">Companions designed and shared by other learners.</p>
     ${community.length ? `<div class="grid" id="communityGrid">${community.map((c) => companionCard(c)).join("")}</div>`
-      : `<div class="card empty">No community companions yet. Design one and publish it to be the first.</div>`}`);
+      : `<div class="card empty">No community companions yet. Design one and publish it to be the first.</div>`}
+    ${retired.length ? `<h2 style="margin-top:28px">Earlier companions</h2>
+      <p class="muted">${RETIRED_NOTE}</p>
+      <div class="grid" id="retiredGrid">${retired.map((c) => companionCard(c)).join("")}</div>` : ""}`);
   if (mine.length) wireCompanionCards($("#mineGrid", main), mine, viewCompanions);
+  if (retired.length) wireCompanionCards($("#retiredGrid", main), retired, viewCompanions);
   wireStarterBrowser($("#starters", main), starters, {}, viewCompanions);
   if (community.length) wireCompanionCards($("#communityGrid", main), community, viewCompanions);
 }
@@ -812,6 +823,7 @@ async function viewCompanion(m) {
         <h1 style="margin:0">${esc(p.name)} ${esc(p.flag)}</h1>
         <div class="muted">${esc(p.tagline || p.country)}</div>
         ${c.real_person ? `<div class="muted small" style="margin-top:2px">${REAL_NOTE}. It doesn't speak for them.</div>` : ""}
+        ${c.retired ? `<div class="muted small" style="margin-top:2px">${RETIRED_NOTE}</div>` : ""}
         <div class="row small" style="margin-top:6px">${p.expertise.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}${c.followers != null ? `<span class="muted" id="followers">${fmtCount(c.followers)} follower${c.followers === 1 ? "" : "s"}</span>` : ""}</div>
         ${!c.is_starter && !c.is_mine ? `<div class="muted small" style="margin-top:4px">Community companion designed by ${esc(c.designer || "a learner")}</div>` : ""}
       </div>
@@ -978,9 +990,9 @@ async function viewCompanion(m) {
         bubble.innerHTML = `<div class="prose">${md(withoutReactionTags(acc))}</div>`;
         log.scrollTop = log.scrollHeight;
       });
-      speakBtn(bubble, reply);
+      if (!reply.trim()) bubble.remove();  // the companion only reacted
+      else { speakBtn(bubble, reply); if (readAloud) speak(reply, p.voice); }
       savedExchange(id, sentId, sentEl, reply.trim() ? bubble : null, chatCtx);
-      if (readAloud) speak(reply, p.voice);
       contextPost = null;
       renderCtx();
       setTimeout(async () => renderMem(await api(`/api/companions/${id}/memories`)), 2500);
@@ -1806,6 +1818,7 @@ async function viewLesson(m) {
     log.scrollTop = log.scrollHeight;
     try {
       const { reply, sentId } = await streamChat(t.id, { message: text, lesson_id: lessonId }, (acc) => { a.innerHTML = `<div class="prose">${md(withoutReactionTags(acc))}</div>`; log.scrollTop = log.scrollHeight; });
+      if (!reply.trim()) a.remove();  // the companion only reacted
       savedExchange(t.id, sentId, u, reply.trim() ? a : null, tutorCtx);
     } catch (err) {
       a.innerHTML = `<span class="error">${esc(err.message)}</span>`;

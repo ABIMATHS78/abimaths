@@ -105,12 +105,21 @@ def test_followers_show_on_starters_only(client):
 
 
 def test_starters_are_listed_most_followed_first(client):
-    signup(client)
-    mine = client.post("/api/companions", json={"persona": persona()}).json()
+    from app import db
+
+    signup(client, email="bo@example.com", name="Bo")
+    bobby = client.post("/api/companions", json={"persona": persona(name="Bobby")}).json()
+    client.post(f"/api/companions/{bobby['id']}/publish")
+    as_user(client, "ada@example.com", "Ada")
+    client.post(f"/api/companions/{bobby['id']}/follow")
+    mine = [client.post("/api/companions", json={"persona": persona(name=n), "make_primary": False}).json() for n in ("A", "B")]
     listed = client.get("/api/companions").json()
-    assert listed[0]["id"] == mine["id"]  # the learner's own come first
+    # The learner's own first, in the order they made them, though Bobby has more followers; then others'.
+    assert [c["id"] for c in listed[:3]] == [mine[0]["id"], mine[1]["id"], bobby["id"]]
     counts = [c["followers"] for c in listed if c["is_starter"]]
-    assert counts == sorted(counts, reverse=True) and counts[0] == 111171
+    assert counts == sorted(counts, reverse=True) and counts[0] == 111172
+    with db.connect() as conn:  # follower counts are looked up by companion for every page that lists them
+        assert "idx_follows_companion" in {r["name"] for r in conn.execute("PRAGMA index_list(follows)")}
 
 
 def test_welcome_faces_are_public(client):
@@ -119,20 +128,29 @@ def test_welcome_faces_are_public(client):
     assert {f["name"] for f in faces[:7]} >= {"Agnieszka Kowalskà", "Arohà Ngàta", "Aleksandrà Sorokinà"}
 
 
-def test_upgrading_replaces_the_old_starters(client):
-    """A site that had the eight earlier starters: they go, with their chats, and their learners are looked after."""
-    from app import companions, db
+def test_upgrading_retires_the_old_starters(client, monkeypatch):
+    """A site that had the eight earlier starters: they leave the catalogue, but learners who talked to one keep
+    it, with their chats, and nobody is sent back to choose a companion."""
+    from dataclasses import replace
 
-    me = signup(client)
+    from app import companions, db
+    from app.starter_companions import STARTERS
+
+    ada = signup(client)  # Adaeze was Ada's companion, and they talked
+    as_user(client, "bob@example.com", "Bob")  # Bob never talked to the old starters
+    bob = client.get("/api/me").json()
     with db.connect() as conn:
-        cid = conn.execute("INSERT INTO companions (slug, owner_id, is_starter, persona, created_at, updated_at) "
-                           "SELECT 'adaeze-nigeria', NULL, 1, persona, created_at, updated_at FROM companions "
-                           "WHERE slug = 'amahle-ndlovu'").lastrowid
-        conn.execute("DELETE FROM follows WHERE user_id = ?", (me["id"],))
-        conn.execute("INSERT INTO follows (user_id, companion_id, created_at) VALUES (?, ?, ?)", (me["id"], cid, db.now()))
-        conn.execute("UPDATE users SET primary_companion_id = ?, onboarded = 1 WHERE id = ?", (cid, me["id"]))
+        adaeze, haruto = (conn.execute(
+            "INSERT INTO companions (slug, owner_id, is_starter, persona, created_at, updated_at) "
+            "SELECT ?, NULL, 1, persona, created_at, updated_at FROM companions WHERE slug = 'amahle-ndlovu'", (slug,)).lastrowid
+            for slug in ("adaeze-nigeria", "haruto-japan"))
+        for uid in (ada["id"], bob["id"]):  # everyone followed every starter at sign-up back then
+            conn.execute("DELETE FROM follows WHERE user_id = ?", (uid,))
+            for cid in (adaeze, haruto):
+                conn.execute("INSERT INTO follows (user_id, companion_id, created_at) VALUES (?, ?, ?)", (uid, cid, db.now()))
+        conn.execute("UPDATE users SET primary_companion_id = ?, onboarded = 1 WHERE id = ?", (adaeze, ada["id"]))
         conn.execute("INSERT INTO messages (user_id, companion_id, role, content, created_at) VALUES (?, ?, 'user', 'hi', ?)",
-                     (me["id"], cid, db.now()))
+                     (ada["id"], adaeze, db.now()))
         # And a starter whose follower count and photo address have changed in the CSV since.
         conn.execute("UPDATE companions SET base_followers = 5, photo_url = 'https://old.example/x.png' WHERE slug = 'kwame-asante'")
         kwame = conn.execute("SELECT id FROM companions WHERE slug = 'kwame-asante'").fetchone()["id"]
@@ -141,17 +159,42 @@ def test_upgrading_replaces_the_old_starters(client):
 
     companions.seed_starters()
     with db.connect() as conn:
-        assert conn.execute("SELECT COUNT(*) FROM companions WHERE is_starter = 1").fetchone()[0] == 103
-        assert not conn.execute("SELECT 1 FROM companions WHERE slug = 'adaeze-nigeria'").fetchone()
-        assert not conn.execute("SELECT 1 FROM messages WHERE companion_id = ?", (cid,)).fetchone()
-        user = conn.execute("SELECT * FROM users WHERE id = ?", (me["id"],)).fetchone()
-        assert user["primary_companion_id"] is None and not user["onboarded"]  # they choose another next visit
-        assert conn.execute("SELECT COUNT(*) FROM follows f JOIN companions c ON c.id = f.companion_id "
-                            "WHERE f.user_id = ? AND c.featured = 1", (me["id"],)).fetchone()[0] == 7
+        assert conn.execute("SELECT COUNT(*) FROM companions WHERE is_starter = 1 AND retired = 0").fetchone()[0] == 103
+        assert [tuple(r) for r in conn.execute("SELECT slug, retired, featured FROM companions WHERE id IN (?, ?) ORDER BY id",
+                                               (adaeze, haruto))] == [("adaeze-nigeria", 1, 0), ("haruto-japan", 1, 0)]
+        assert conn.execute("SELECT COUNT(*) FROM messages WHERE companion_id = ?", (adaeze,)).fetchone()[0] == 1  # kept
+        user = conn.execute("SELECT * FROM users WHERE id = ?", (ada["id"],)).fetchone()
+        assert user["primary_companion_id"] == adaeze and user["onboarded"]  # nobody sent back to onboarding
+
+        def follows(uid):
+            return {r[0] for r in conn.execute("SELECT c.slug FROM follows f JOIN companions c ON c.id = f.companion_id "
+                                               "WHERE f.user_id = ? AND c.featured = 0", (uid,))}, \
+                conn.execute("SELECT COUNT(*) FROM follows f JOIN companions c ON c.id = f.companion_id "
+                             "WHERE f.user_id = ? AND c.featured = 1", (uid,)).fetchone()[0]
+        # Ada keeps the one she talked to; follows from sign-up end; both now follow the featured starters.
+        assert follows(ada["id"]) == ({"adaeze-nigeria"}, 7) and follows(bob["id"]) == (set(), 7)
         row = conn.execute("SELECT base_followers, photo_url FROM companions WHERE id = ?", (kwame,)).fetchone()
         assert row["base_followers"] == 29701 and "Kwam" in row["photo_url"]
         assert not conn.execute("SELECT 1 FROM companion_photos WHERE companion_id = ?", (kwame,)).fetchone()  # fetched anew
-    assert client.get("/api/me").json()["onboarded"] is False
+
+    # Bob doesn't see the old ones anywhere; Ada still has Adaeze, marked retired.
+    assert not [c for c in client.get("/api/companions").json() if c["retired"]]
+    assert all(f["id"] not in (adaeze, haruto) for f in client.get("/api/starters/faces").json())
+    as_user(client, "ada@example.com", "Ada")
+    assert [c["slug"] for c in client.get("/api/companions").json() if c["retired"]] == ["adaeze-nigeria"]
+    assert client.get(f"/api/companions/{adaeze}/messages").json()[0]["content"] == "hi"
+    assert client.get("/api/me").json()["onboarded"]
+
+    # Starting again changes nothing; listing a retired one in the CSV again brings it back.
+    with db.connect() as conn:
+        before = conn.execute("SELECT updated_at FROM companions WHERE id = ?", (adaeze,)).fetchone()[0]
+    companions.seed_starters()
+    with db.connect() as conn:
+        assert conn.execute("SELECT updated_at FROM companions WHERE id = ?", (adaeze,)).fetchone()[0] == before
+    monkeypatch.setattr(companions, "STARTERS", STARTERS | {"adaeze-nigeria": replace(STARTERS["amahle-ndlovu"], slug="adaeze-nigeria")})
+    companions.seed_starters()
+    with db.connect() as conn:
+        assert conn.execute("SELECT retired FROM companions WHERE id = ?", (adaeze,)).fetchone()[0] == 0
 
 
 def test_real_people_cant_be_remixed_and_show_initials(client):
@@ -234,6 +277,47 @@ def test_starter_photos_are_fetched_once_and_kept_small(client, monkeypatch):
     assert asyncio.run(photos.ensure_starter_photos()) == 0
 
 
+def test_a_photo_is_fetched_once_at_a_time(client, monkeypatch):
+    """Faces asked for while the start-up fetch runs, or by many pages at once, don't fetch a photo twice, and no
+    more than four photos are fetched at the same time."""
+    from app import photos
+    from app.config import settings
+
+    asked, now, most = [], [0], [0]
+    original = picture(60, 60)
+
+    async def handler(request):
+        asked.append(str(request.url))
+        now[0] += 1
+        most[0] = max(most[0], now[0])
+        await asyncio.sleep(0.01)
+        now[0] -= 1
+        return httpx.Response(200, content=original)
+
+    monkeypatch.setattr(settings, "fetch_photos", True)
+    monkeypatch.setattr(photos, "transport", httpx.MockTransport(handler))
+
+    async def everything_at_once():
+        ids = [r["id"] for r in photos._missing()]
+        await asyncio.gather(photos.ensure_starter_photos(), *(photos.fetch_later(i) for i in ids),
+                             *(photos.fetch_later(i) for i in ids))
+
+    asyncio.run(everything_at_once())
+    assert len(asked) == len(set(asked)) == 103 and most[0] <= photos.AT_ONCE
+    assert not photos._missing()
+
+
+def test_learners_photos_arent_kept_by_browsers(client):
+    from tests.test_community import PNG
+
+    signup(client)
+    zara = client.post("/api/companions", json={"persona": persona()}).json()
+    client.put(f"/api/companions/{zara['id']}/photo", content=PNG)
+    zara = client.get(f"/api/companions/{zara['id']}").json()
+    r = client.get(f"/api/companions/{zara['id']}/avatar", params={"v": zara["updated_at"]})
+    assert r.headers["cache-control"] == "no-cache"  # unpublishing it hides it at once
+
+
 def test_photos_are_never_fetched_when_turned_off(client, monkeypatch):
     from app import photos
 
@@ -275,6 +359,41 @@ def test_a_starter_writes_its_first_post_when_first_followed(client):
     client.post(f"/api/companions/{amahle['id']}/primary")
     time.sleep(0.2)
     assert len(client.get(f"/api/companions/{amahle['id']}/posts").json()) == 1  # only the first time
+
+
+def test_first_posts_are_capped(client, monkeypatch):
+    """The platform pays for starters' first posts, so one that didn't work out isn't tried again for an hour,
+    there are at most 20 an hour, and retired starters don't post."""
+    from app import content, db, llm
+    from app.config import settings
+
+    signup(client)
+    wait_for(lambda: len(content._first_post_tries) >= 7)  # the featured starters' first posts at start-up
+    asked = []
+
+    async def unusable(persona, topics, recent):
+        asked.append(persona.name)
+        return None  # e.g. cut short or refused
+
+    monkeypatch.setattr(llm, "generate_post", unusable)
+    amahle = by_slug(client, "amahle-ndlovu")
+    for _ in range(3):
+        client.delete(f"/api/companions/{amahle['id']}/follow")
+        client.post(f"/api/companions/{amahle['id']}/follow")
+    time.sleep(0.2)
+    assert asked == ["Amahlé Ndlovù"]  # once, not once per follow
+
+    others = [c for c in starters(client) if not c["following"] and c["id"] != amahle["id"]][:30]
+    for c in others:
+        client.post(f"/api/companions/{c['id']}/follow")
+    time.sleep(0.3)
+    assert len(asked) + 7 == content.FIRST_POSTS_PER_HOUR  # 7 featured, then 13 more this hour
+
+    content._first_post_tries.clear()
+    with db.connect() as conn:
+        conn.execute("UPDATE companions SET retired = 1 WHERE id = ?", (amahle["id"],))
+    assert asyncio.run(content.first_post(content.companions.get(amahle["id"]))) is None
+    assert asked.count("Amahlé Ndlovù") == 1
 
 
 def test_scheduled_posts_go_to_followed_starters_a_few_at_a_time(client):

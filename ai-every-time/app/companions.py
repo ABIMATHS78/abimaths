@@ -17,36 +17,44 @@ log = logging.getLogger(__name__)
 MAX_VERSIONS = 50
 # A published companion is hidden for review once this many learners report it.
 REPORTS_TO_HIDE = 3
-STARTER_FIELDS = ("persona", "base_followers", "region", "photo_url", "real_person", "featured")
+STARTER_FIELDS = ("persona", "base_followers", "region", "photo_url", "real_person", "featured", "retired")
 
 
 def seed_starters() -> None:
     """Make the starter companions match app/starter_companions.csv: add new ones, update the ones that changed,
-    and remove the ones it no longer lists, with their chats and posts. Learners whose own companion was removed
-    choose another on their next visit, and learners who followed one start following the featured starters."""
+    and retire the ones it no longer lists. A retired starter is kept, with its chats, memories and posts, for the
+    learners who talked to it or have it as their companion; nobody else sees it, and it stops posting. Learners
+    who followed it start following the featured starters. Listing it again in the CSV brings it back."""
     ts = db.now()
     with db.connect() as conn:
         existing = {r["slug"]: r for r in conn.execute(
             f"SELECT id, slug, {', '.join(STARTER_FIELDS)} FROM companions WHERE is_starter = 1")}
         for slug, s in STARTERS.items():
-            values = (s.persona.model_dump_json(), s.followers, s.region, s.photo_url, int(s.real_person), int(s.featured))
+            values = (s.persona.model_dump_json(), s.followers, s.region, s.photo_url, int(s.real_person),
+                      int(s.featured), 0)
             row = existing.pop(slug, None)
             if row is None:
                 conn.execute(
                     f"INSERT INTO companions (slug, owner_id, is_starter, {', '.join(STARTER_FIELDS)}, created_at, updated_at) "
-                    "VALUES (?, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?)", (slug, *values, ts, ts))
+                    "VALUES (?, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (slug, *values, ts, ts))
             elif tuple(row[k] for k in STARTER_FIELDS) != values:
                 if row["photo_url"] != s.photo_url:  # fetched again from the new address
                     conn.execute("DELETE FROM companion_photos WHERE companion_id = ?", (row["id"],))
                 conn.execute(f"UPDATE companions SET {', '.join(f'{k} = ?' for k in STARTER_FIELDS)}, updated_at = ? "
                              "WHERE id = ?", (*values, ts, row["id"]))
         for slug, row in existing.items():
-            log.info("Removing the starter companion %s: it's no longer in starter_companions.csv", slug)
-            conn.execute("UPDATE users SET onboarded = 0 WHERE primary_companion_id = ?", (row["id"],))
+            if row["retired"]:
+                continue
+            log.info("Retiring the starter companion %s: it's no longer in starter_companions.csv. Learners who "
+                     "talked to it keep it and their chats; nobody else sees it.", slug)
             conn.execute("INSERT OR IGNORE INTO follows (user_id, companion_id, created_at) "
                          "SELECT f.user_id, c.id, ? FROM follows f JOIN companions c ON c.is_starter = 1 AND c.featured = 1 "
                          "WHERE f.companion_id = ?", (ts, row["id"]))
-            conn.execute("DELETE FROM companions WHERE id = ?", (row["id"],))
+            # Following it ends for learners who never talked to it (everyone followed the starters at sign-up).
+            conn.execute("DELETE FROM follows WHERE companion_id = :id "
+                         "AND user_id NOT IN (SELECT user_id FROM messages WHERE companion_id = :id) "
+                         "AND user_id NOT IN (SELECT id FROM users WHERE primary_companion_id = :id)", {"id": row["id"]})
+            conn.execute("UPDATE companions SET retired = 1, featured = 0, updated_at = ? WHERE id = ?", (ts, row["id"]))
 
 
 def followers(row) -> int | None:
@@ -114,7 +122,7 @@ def persona_for(companion: dict, user_id: int | None) -> Persona:
 
 def list_for(user_id: int) -> list[dict]:
     """Every companion the learner can see: their own in the order they made them, then other learners' most
-    followed first, then the starters most followed first."""
+    followed first, then the starters most followed first. Retired starters only for learners who still have them."""
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT c.*, (f.user_id IS NOT NULL) AS following, u.display_name AS designer, "
@@ -122,7 +130,9 @@ def list_for(user_id: int) -> list[dict]:
             "FROM companions c "
             "LEFT JOIN follows f ON f.companion_id = c.id AND f.user_id = :uid "
             "LEFT JOIN users u ON u.id = c.owner_id "
-            f"WHERE {VISIBLE_SQL} ORDER BY c.is_starter ASC, "
+            f"WHERE {VISIBLE_SQL} AND (c.retired = 0 OR f.user_id IS NOT NULL "
+            "OR c.id = (SELECT primary_companion_id FROM users WHERE id = :uid)) "
+            "ORDER BY c.is_starter ASC, (c.owner_id = :uid) DESC, "
             "CASE WHEN c.is_starter = 1 THEN c.base_followers + follows WHEN c.owner_id = :uid THEN 0 ELSE follows END DESC, "
             "c.id ASC",
             {"uid": user_id},

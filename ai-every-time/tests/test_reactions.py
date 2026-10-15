@@ -137,6 +137,11 @@ def test_splitting_the_reaction_off_the_start():
     assert go(["<reaction>👍</reaction>"]) == ("", ["👍"])
     assert go(["Answer first <reaction>👍</reaction>"]) == ("Answer first <reaction>👍</reaction>", [])  # only at the start
     assert go([]) == ("", [])
+    assert go(["  ", "Hi"]) == ("  Hi", [])  # a plain reply comes through exactly as written
+    # A "tag" with a sentence in it isn't a reaction: it's left as written, whatever the chunks.
+    long = "<reaction>🎉 Congratulations on passing, that is huge news</reaction> Well done!"
+    assert go([long]) == go([long[i:i + 4] for i in range(0, len(long), 4)]) == (long, [])
+    assert go(["<reaction>🎉</reaction>"[i:i + 3] for i in range(0, 23, 3)] + ["Yes!"]) == ("Yes!", ["🎉"])
 
 
 def test_tags_elsewhere_are_kept_out_of_the_saved_reply():

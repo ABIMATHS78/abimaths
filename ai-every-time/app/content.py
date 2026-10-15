@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from app import companions, db, llm
@@ -65,14 +66,18 @@ async def generate_for(companion: dict) -> dict | None:
 
 # Starter companions posting on each automatic run, at most: with a hundred of them, a run stays cheap.
 POSTS_PER_RUN = 8
+# Starters' first posts are on the platform, not on a learner's allowance, so they're capped: this many an hour
+# across the site, and a starter whose first post didn't work out waits an hour before trying again.
+FIRST_POSTS_PER_HOUR = 20
 _first_posts: set[int] = set()  # starters writing their first post right now
+_first_post_tries: dict[int, float] = {}  # when each starter last tried
 
 
 async def generate_for_starters(limit: int = POSTS_PER_RUN) -> int:
     """New posts from the starter companions learners follow, those that posted longest ago first."""
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT c.* FROM companions c WHERE c.is_starter = 1 "
+            "SELECT c.* FROM companions c WHERE c.is_starter = 1 AND c.retired = 0 "
             "AND EXISTS (SELECT 1 FROM follows f WHERE f.companion_id = c.id) "
             "ORDER BY (SELECT MAX(p.id) FROM posts p WHERE p.companion_id = c.id), c.id LIMIT ?", (limit,)).fetchall()
     made = 0
@@ -89,7 +94,7 @@ async def ensure_initial_posts() -> None:
     and any other starter someone follows, if it has none yet. The rest write theirs when first followed."""
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT c.* FROM companions c WHERE c.is_starter = 1 "
+            "SELECT c.* FROM companions c WHERE c.is_starter = 1 AND c.retired = 0 "
             "AND (c.featured = 1 OR EXISTS (SELECT 1 FROM follows f WHERE f.companion_id = c.id)) "
             "AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.companion_id = c.id) ORDER BY c.featured DESC, c.id"
         ).fetchall()
@@ -99,13 +104,17 @@ async def ensure_initial_posts() -> None:
 
 
 async def first_post(companion: dict) -> dict | None:
-    """A starter companion's first post, unless it has one or is writing it already. The platform pays for it,
-    not the learner whose follow prompted it."""
-    if companion["id"] in _first_posts or llm.account_problem:
+    """A starter companion's first post, unless it has one or is writing it already, within the hourly caps
+    above. The platform pays for it, not the learner whose follow prompted it."""
+    cid, now = companion["id"], time.monotonic()
+    if cid in _first_posts or companion["retired"] or llm.account_problem:
+        return None
+    if now - _first_post_tries.get(cid, -3600) < 3600 or sum(now - t < 3600 for t in _first_post_tries.values()) >= FIRST_POSTS_PER_HOUR:
         return None
     with db.connect() as conn:
-        if conn.execute("SELECT 1 FROM posts WHERE companion_id = ?", (companion["id"],)).fetchone():
+        if conn.execute("SELECT 1 FROM posts WHERE companion_id = ?", (cid,)).fetchone():
             return None
+    _first_post_tries[cid] = now
     _first_posts.add(companion["id"])
     try:
         return await generate_for(companion)

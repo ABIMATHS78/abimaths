@@ -12,9 +12,10 @@ from typing import AsyncIterator, Callable
 
 REACTIONS = ("👍", "❤️", "😂", "😮", "😢", "🙏", "🎉", "💡")
 OPEN, CLOSE = "<reaction>", "</reaction>"
+MAX_INSIDE = 16  # characters between the two: room for one emoji however it's written, not for a sentence
 _BY_BASE = {r.replace("️", ""): r for r in REACTIONS}
 _SKIN_TONES = {chr(c) for c in range(0x1F3FB, 0x1F400)}
-_TAGS = re.compile(r"<reaction>[^<]{0,16}</reaction>\s*")
+_TAGS = re.compile(rf"<reaction>[^<]{{0,{MAX_INSIDE}}}</reaction>\s*")
 
 RULES = (
     "# Reacting to messages\n"
@@ -38,40 +39,49 @@ def strip(text: str) -> str:
     return _TAGS.sub("", text)
 
 
+def _tag(start: str) -> tuple[str | None, str] | None:
+    """For text that starts with a reaction tag: the reaction it holds (None if it isn't one of REACTIONS) and the
+    text after it. None if the text doesn't start with a whole tag of at most MAX_INSIDE characters."""
+    end = start.find(CLOSE, len(OPEN))
+    if not start.startswith(OPEN) or end == -1 or end - len(OPEN) > MAX_INSIDE:
+        return None
+    return canonical(start[len(OPEN):end]), start[end + len(CLOSE):].lstrip()
+
+
 async def split(chunks: AsyncIterator[str], react: Callable[[str], None]) -> AsyncIterator[str]:
     """Pass the reply through, taking a reaction tag off its very start and handing the reaction to `react`.
-    The first few characters are held back only until it's clear whether the reply starts with a tag."""
-    head = ""
+    The first few characters are held back only until it's clear whether the reply starts with a tag. Whatever
+    the chunks, the outcome is the same: a tag that's too long, or isn't closed, is left in the reply."""
+    head: str | None = ""
     async for chunk in chunks:
         if head is None:  # past the start: just pass it on
             yield chunk
             continue
         head += chunk
         start = head.lstrip()
-        if start.startswith(OPEN):
-            end = start.find(CLOSE)
-            if end == -1 and len(start) < len(OPEN) + 16 + len(CLOSE):
-                continue  # the tag is still arriving
-            if end != -1 and (emoji := canonical(start[len(OPEN):end])):
-                react(emoji)
-            rest = start[end + len(CLOSE):].lstrip() if end != -1 else head
-            head = None
-            if rest:
-                yield rest
-        elif start and not OPEN.startswith(start):
-            yield head
-            head = None
-        # else: only whitespace, or what may be the beginning of a tag ("<rea"), so far
+        if OPEN.startswith(start):  # only whitespace so far, or what may be the start of a tag ("<rea")
+            continue
+        if start.startswith(OPEN) and CLOSE not in start and len(start) < len(OPEN) + MAX_INSIDE + len(CLOSE):
+            continue  # the tag may still be arriving
+        held, head = head, None
+        tag = _tag(start)
+        if tag is None:  # not a reaction tag after all
+            yield held
+            continue
+        emoji, rest = tag
+        if emoji:
+            react(emoji)
+        if rest:
+            yield rest
     if head:  # the reply ended while its start was held back
-        start = head.lstrip()
-        end = start.find(CLOSE)
-        if start.startswith(OPEN) and end != -1:
-            if emoji := canonical(start[len(OPEN):end]):
-                react(emoji)
-            if rest := start[end + len(CLOSE):].lstrip():
-                yield rest
-        else:
+        tag = _tag(head.lstrip())
+        if tag is None:
             yield head
+        else:
+            if tag[0]:
+                react(tag[0])
+            if tag[1]:
+                yield tag[1]
 
 
 _OFFLINE = [

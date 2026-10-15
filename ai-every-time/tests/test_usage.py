@@ -586,6 +586,7 @@ def test_starter_posts_stop_at_the_first_rejected_key(client, claude):
     claude.create = create
     with db.connect() as conn:
         conn.execute("DELETE FROM posts")
+    content._first_post_tries.clear()  # as after a restart
     asyncio.run(content.ensure_initial_posts())
     assert len(calls) == 1  # not once for each of the 7 featured starter companions
 
