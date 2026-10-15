@@ -82,3 +82,38 @@ def test_insights_count_tokens_failures_and_old_requests_apart(client, monkeypat
     assert (kinds["plan"]["failed"], kinds["plan"]["units"]) == (1, 0)
     # The chart counts learners' requests that went through: not the failed one or the scheduled post.
     assert ai["days"][-1] == {"day": ai["days"][-1]["day"], "requests": 1, "tokens": 1800}
+
+
+def test_insights_estimate_the_cost_at_list_prices(client, monkeypatch):
+    from app import insights, main, usage
+    from app.config import settings
+    from tests.test_usage import message, tokens
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    user = main._load_user(signup(client, email="boss@example.com", name="Boss")["id"])
+    # $4 per million input tokens, $20 output, $0.20 cache reads, and writes at 1.25 times input.
+    with usage.recording(usage.reserve(user, "summary")):
+        usage.record_tokens(message("{}", usage=tokens(1000, 200, cache_read=500, cache_write=100)))
+    # A dated model name has its model's prices; a model without a price is left out and named.
+    usage.record_tokens(message("{}", usage=tokens(300, 400), model="claude-opus-4-8-20260101"))
+    usage.record_tokens(message("{}", usage=tokens(1_000_000, 0), model="someone-elses-model"))
+
+    ai = client.get("/api/staff/insights").json()["ai"]
+    costs = {k["kind"]: k["cost"] for k in ai["kinds"]}
+    assert costs == {"summary": 0.0086, "automatic": 0.0115}
+    assert ai["cost"] == 0.0201 and ai["unpriced_models"] == ["someone-elses-model"]
+
+    monkeypatch.setattr(settings, "prices", {"someone-elses-model": (1.0, 2.0, 0.1)})
+    ai = client.get("/api/staff/insights").json()["ai"]
+    assert ai["cost"] == 1.0201 and ai["unpriced_models"] == []
+    assert insights.price("claude-opus-5-5") == (4.0, 20.0, 0.2)
+    assert insights.price("claude-opus-5-50") is None  # only a date after the name, not another model
+
+
+def test_prices_can_be_set_in_the_environment(monkeypatch):
+    from app import config
+
+    monkeypatch.setenv("AIET_PRICES", '{"my-model": [1, 2, 0.1], "bad": [1]}')
+    assert config._prices() == {"my-model": (1.0, 2.0, 0.1)}
+    monkeypatch.setenv("AIET_PRICES", "not json")
+    assert config._prices() == {}

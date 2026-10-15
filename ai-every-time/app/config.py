@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass, field
 
@@ -7,6 +8,15 @@ def _int(name: str, default: int) -> int:
         return int(os.environ.get(name, default))
     except ValueError:
         return default
+
+
+def _prices() -> dict:
+    """AIET_PRICES: {"model": [input, output, cache read], ...} in US dollars per million tokens."""
+    try:
+        raw = json.loads(os.environ.get("AIET_PRICES") or "{}")
+        return {str(m): tuple(float(x) for x in p) for m, p in raw.items() if len(p) == 3}
+    except (ValueError, TypeError, AttributeError):
+        return {}
 
 
 @dataclass
@@ -47,6 +57,8 @@ class Settings:
     ai_allowance_unconfirmed: int = field(default_factory=lambda: _int("AIET_AI_ALLOWANCE_UNCONFIRMED", 30))
     # A ceiling on everyone's AI requests together in any 24 hours, against floods of new accounts. 0: none.
     ai_site_limit: int = field(default_factory=lambda: _int("AIET_AI_SITE_LIMIT", 0))
+    # Prices for the cost estimate on the Insights page, for models not in app/insights.py or when they change.
+    prices: dict = field(default_factory=_prices)
 
 
 settings = Settings()

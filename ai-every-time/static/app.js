@@ -1853,6 +1853,7 @@ const fmt = (n) => (n == null ? "–" : n >= 10000 ? new Intl.NumberFormat(undef
 const plural = (n, one, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;
 const utcDate = (day, opts) => new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, { timeZone: "UTC", ...opts });
 const longDay = (day) => utcDate(day, { weekday: "short", day: "numeric", month: "short" });
+const money = (v) => (v >= 100 ? `$${Math.round(v).toLocaleString()}` : v >= 1 ? `$${v.toFixed(2)}` : v > 0 ? `$${v.toPrecision(2)}` : "$0");
 
 async function staffInsights(body) {
   const { learners: l, learning: s, community: c, ai } = await api("/api/staff/insights");
@@ -1883,7 +1884,7 @@ async function staffInsights(body) {
     <div class="tiles">
       ${tile(fmt(sum(ai.days, "requests")), "AI requests from learners", `${fmt(ai.units_last_24h)} counted in the last 24 hours${lim.site > 0 ? ` of ${fmt(lim.site)}` : ""}`
         + (lim.site > 0 ? bar(Math.min(ai.units_last_24h, lim.site), lim.site) : ""))}
-      ${tile(fmt(sum(ai.kinds, "input_tokens") + sum(ai.kinds, "output_tokens") + sum(ai.kinds, "cache_read_tokens") + sum(ai.kinds, "cache_write_tokens")), "tokens", "input, output and cache, scheduled posts included")}
+      ${tile(money(ai.cost), "estimated cost", `${fmt(sum(ai.kinds, "input_tokens") + sum(ai.kinds, "output_tokens") + sum(ai.kinds, "cache_read_tokens") + sum(ai.kinds, "cache_write_tokens"))} tokens at list prices, scheduled posts included`)}
       ${tile(fmt(away.allowance.requests + away.site.requests), "requests turned away",
         `${plural(away.allowance.learners, "learner")} reached their limit${away.site.requests ? `; ${fmt(away.site.requests)} paused by the site ceiling` : ""}`)}
       ${tile(fmt(sum(ai.kinds, "failed")), "failed calls to Claude", "not counted against anyone")}
@@ -1901,9 +1902,10 @@ async function staffInsights(body) {
       <div><h3 style="margin:0">What the AI was asked for</h3>
         <div class="muted small">Last 14 days. Tokens are what Claude reported, counting every attempt.${fallbacks ? ` ${plural(fallbacks, "answer")} came from a fallback model after the first one declined.` : ""}</div></div>
       ${ai.kinds.length ? `<div class="table-wrap"><table class="table num">
-        <thead><tr><th>Request</th><th>Requests</th><th>Failed</th><th>Input tokens</th><th>Output tokens</th><th>Cache reads</th><th>Cache writes</th></tr></thead>
-        <tbody>${ai.kinds.map((k) => `<tr><td>${esc(KIND_LABEL[k.kind] || k.kind)}</td>${["requests", "failed", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map((f) => `<td>${(k[f] || 0).toLocaleString()}</td>`).join("")}</tr>`).join("")}</tbody>
+        <thead><tr><th>Request</th><th>Requests</th><th>Failed</th><th>Input tokens</th><th>Output tokens</th><th>Cache reads</th><th>Cache writes</th><th>Est. cost</th></tr></thead>
+        <tbody>${ai.kinds.map((k) => `<tr><td>${esc(KIND_LABEL[k.kind] || k.kind)}</td>${["requests", "failed", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map((f) => `<td>${(k[f] || 0).toLocaleString()}</td>`).join("")}<td>${money(k.cost)}</td></tr>`).join("")}</tbody>
       </table></div>` : `<div class="empty">Nothing yet.</div>`}
+      <p class="muted small" style="margin:0">Costs are estimates from the token counts at list prices in US dollars, with cache writes at 1.25 times input; the bill can differ. Change the prices with AIET_PRICES.${ai.unpriced_models.length ? ` No price is set for ${esc(ai.unpriced_models.join(", "))}, so its tokens aren't in the estimate.` : ""}</p>
       <p class="small" style="margin:0">${limits} <span class="muted">Set on the server with AIET_AI_ALLOWANCE, AIET_AI_ALLOWANCE_UNCONFIRMED and AIET_AI_SITE_LIMIT.</span></p>
     </div>
     <div class="two-col">

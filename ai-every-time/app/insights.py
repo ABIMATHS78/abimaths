@@ -3,6 +3,7 @@ site uses against its allowances, so whoever runs it can see costs coming and tu
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
@@ -13,6 +14,31 @@ from app.config import settings
 router = APIRouter(prefix="/api/staff")
 DAYS = 14
 TOKENS = "input_tokens + output_tokens + cache_read_tokens + cache_write_tokens"
+# List prices in US dollars per million tokens: input, output and cache reads. Writing to the cache
+# costs 1.25 times input (the 5-minute cache the app uses). AIET_PRICES changes them or adds models.
+PRICES = {
+    "claude-opus-5-5": (4.00, 20.00, 0.20),
+    "claude-opus-5": (5.00, 25.00, 0.50),
+    "claude-opus-4-8": (5.00, 25.00, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00, 0.20),
+    "claude-haiku-5-5": (0.10, 0.50, 0.01),
+    "claude-fable-5-1": (10.00, 50.00, 0.25),
+}
+CACHE_WRITE = 1.25
+
+
+def price(model: str) -> tuple[float, float, float] | None:
+    """A model's prices, also under a dated name such as claude-opus-5-5-20261001."""
+    prices = PRICES | settings.prices
+    return prices.get(model) or prices.get(re.sub(r"-\d{8}$", "", model))
+
+
+def cost(model: str, input_tokens: int, output_tokens: int, cache_read: int, cache_write: int) -> float | None:
+    """Estimated US dollars for these tokens at list prices; None for a model without a price."""
+    p = price(model)
+    if p is None:
+        return None
+    return (input_tokens * p[0] + output_tokens * p[1] + cache_read * p[2] + cache_write * p[0] * CACHE_WRITE) / 1e6
 
 
 @router.get("/insights")
@@ -64,10 +90,23 @@ def insights(user: dict = Depends(auth.require("admin"))):
             "SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens, "
             "SUM(fallback) AS fallbacks FROM ai_usage WHERE created_at >= ? GROUP BY kind "
             "ORDER BY requests DESC, kind", (since,))]
+        # Each answer at the prices of the model that gave it.
+        by_model = conn.execute(
+            "SELECT kind, model, SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens) "
+            "FROM ai_usage WHERE created_at >= ? AND " + TOKENS + " > 0 GROUP BY kind, model", (since,)).fetchall()
         refused = {r["reason"]: {"requests": r["requests"], "learners": r["learners"]} for r in conn.execute(
             "SELECT reason, SUM(count) AS requests, COUNT(DISTINCT user_id) AS learners FROM ai_refusals "
             "WHERE hour >= ? GROUP BY reason", (since[:13],))}
         last_24h = one("SELECT COALESCE(SUM(units), 0) FROM ai_usage WHERE created_at > ?", day_ago)
+    unpriced, kind_cost = set(), {}
+    for kind, model, *tokens in by_model:
+        dollars = cost(model, *tokens)
+        if dollars is None:
+            unpriced.add(model or "unknown")
+        else:
+            kind_cost[kind] = kind_cost.get(kind, 0) + dollars
+    for k in kinds:
+        k["cost"] = round(kind_cost.get(k["kind"], 0), 6)
     topics = [kv for kv in sorted(content.topic_scores().items(), key=lambda kv: kv[1], reverse=True) if kv[1] > 0][:6]
     none = {"requests": 0, "learners": 0}
     return {
@@ -77,6 +116,7 @@ def insights(user: dict = Depends(auth.require("admin"))):
         "ai": {
             "days": [{"day": d, "requests": per_day.get(d, (0, 0))[0], "tokens": per_day.get(d, (0, 0))[1]} for d in days],
             "kinds": kinds,
+            "cost": round(sum(kind_cost.values()), 6), "unpriced_models": sorted(unpriced),
             "turned_away": {"allowance": refused.get("allowance", none), "site": refused.get("site", none)},
             "units_last_24h": last_24h,
             "limits": {"allowance": settings.ai_allowance, "unconfirmed": usage.unconfirmed_allowance(),
