@@ -3,6 +3,7 @@ import os
 import pytest
 
 os.environ["AIET_OFFLINE"] = "1"
+os.environ["AIET_FETCH_PHOTOS"] = "0"  # tests never reach for starter photos on the internet; see test_starters
 
 
 @pytest.fixture()

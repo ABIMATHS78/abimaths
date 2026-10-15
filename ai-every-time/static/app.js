@@ -74,7 +74,17 @@ function md(src) {
 }
 
 const avatarUrl = (c) => `/api/companions/${c.id}/avatar?v=${encodeURIComponent(c.updated_at || "")}`;
-const avatarImg = (c, size = 48) => `<img class="avatar" src="${avatarUrl(c)}" width="${size}" height="${size}" alt="${esc(c.persona.name)}">`;
+const avatarImg = (c, size = 48) => `<img class="avatar" src="${avatarUrl(c)}" width="${size}" height="${size}" alt="${esc(c.persona.name)}" loading="lazy" decoding="async">`;
+/* A starter's photo the browser can't load (its host unreachable from here) gives way to the drawn face. */
+document.addEventListener("error", (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains("avatar")) return;
+  const url = new URL(img.src, location.origin);
+  if (url.origin !== location.origin || !/^\/api\/companions\/\d+\/avatar/.test(url.pathname) || url.searchParams.has("face")) return;
+  url.searchParams.set("face", "1");
+  img.src = url.pathname + url.search;
+}, true);
+const fmtCount = (n) => n.toLocaleString();
 const label = (s) => s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const timeAgo = (iso) => {
   const s = (Date.now() - new Date(iso)) / 1000;
@@ -132,6 +142,7 @@ function wireMic(button, textarea) {
 }
 
 /* Stream a companion's reply; calls onText with the text so far. */
+/* Sends a chat message and streams the reply into onText. Returns the reply and the id of the learner's message. */
 async function streamChat(companionId, body, onText) {
   const res = await fetch(`/api/companions/${companionId}/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
@@ -147,8 +158,115 @@ async function streamChat(companionId, body, onText) {
     acc += dec.decode(value, { stream: true });
     onText(acc);
   }
-  return acc;
+  return { reply: acc, sentId: +res.headers.get("X-Message-Id") || null };
 }
+
+/* ---------------------------------------------------------------- reactions */
+
+// The same emoji the server accepts (app/reactions.py).
+const REACTIONS = [["👍", "Thumbs up"], ["❤️", "Love"], ["😂", "Haha"], ["😮", "Wow"], ["😢", "Sad"], ["🙏", "Thank you"], ["🎉", "Celebrate"], ["💡", "Insightful"]];
+const reactionName = (emoji) => (REACTIONS.find(([e]) => e === emoji) || [, emoji])[1];
+
+/* A chat bubble. Saved messages carry their id; the learner can react to the companion's, and the companion's
+   reaction to the learner's shows on theirs. */
+function chatBubble(role, text, { id = null, reaction = null } = {}, ctx) {
+  const el = document.createElement("div");
+  el.className = `msg ${role}`;
+  el.innerHTML = role === "assistant" ? `<div class="prose">${md(text)}</div>` : esc(text).replace(/\n/g, "<br>");
+  if (id) bubbleSaved(el, { id, reaction }, ctx);
+  return el;
+}
+
+/* Once a bubble's message is saved: its id, any reaction, and on the companion's messages a React button. */
+function bubbleSaved(el, { id, reaction }, ctx) {
+  el.dataset.id = id;
+  if (el.classList.contains("assistant") && !$(".react-btn", el)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "react-btn";
+    b.title = "React";
+    b.setAttribute("aria-label", "React to this message");
+    b.setAttribute("aria-expanded", "false");
+    b.textContent = "🙂";
+    el.appendChild(b);
+  }
+  showReaction(el, reaction, ctx);
+}
+
+function showReaction(el, emoji, ctx) {
+  el.dataset.reaction = emoji || "";
+  let pill = $(":scope > .reaction", el);
+  el.classList.toggle("reacted", Boolean(emoji));
+  if (!emoji) { pill?.remove(); return; }
+  if (!pill) { pill = document.createElement("span"); pill.className = "reaction"; pill.setAttribute("role", "img"); el.appendChild(pill); }
+  pill.textContent = emoji;
+  const who = el.classList.contains("user") ? ctx.name : "You";
+  pill.title = `${who} reacted: ${reactionName(emoji)}`;
+  pill.setAttribute("aria-label", pill.title);
+}
+
+function closePicker(log) {
+  const open = $(".react-picker", log);
+  if (!open) return;
+  $(".react-btn[aria-expanded=true]", log)?.setAttribute("aria-expanded", "false");
+  open.remove();
+}
+
+/* Clicks on React buttons and the emoji they offer, for every bubble in a chat log. */
+function wireReactions(log, ctx) {
+  log.addEventListener("click", async (e) => {
+    const btn = e.target.closest(".react-btn");
+    if (btn) {
+      const bubble = btn.closest(".msg"), wasOpen = btn.getAttribute("aria-expanded") === "true";
+      closePicker(log);
+      if (wasOpen) return;
+      const picker = document.createElement("div");
+      picker.className = "react-picker";
+      picker.setAttribute("role", "group");
+      picker.setAttribute("aria-label", "Reactions");
+      picker.innerHTML = REACTIONS.map(([emoji, name]) => `<button type="button" data-react="${emoji}" title="${name}" aria-label="${name}" aria-pressed="${bubble.dataset.reaction === emoji}">${emoji}</button>`).join("");
+      bubble.after(picker);
+      btn.setAttribute("aria-expanded", "true");
+      $("button", picker).focus();
+      if (!bubble.nextElementSibling?.nextElementSibling) log.scrollTop = log.scrollHeight;  // the last message: keep its picker in view
+      return;
+    }
+    const pick = e.target.closest("[data-react]");
+    if (!pick) return;
+    const bubble = pick.closest(".react-picker").previousElementSibling, before = bubble.dataset.reaction || null;
+    const emoji = before === pick.dataset.react ? null : pick.dataset.react;  // the same one again takes it back
+    closePicker(log);
+    $(".react-btn", bubble)?.focus();
+    showReaction(bubble, emoji, ctx);
+    try {
+      await api(`/api/messages/${bubble.dataset.id}/reaction`, emoji ? { method: "PUT", body: { emoji } } : { method: "DELETE" });
+    } catch (err) {
+      showReaction(bubble, before, ctx);
+      toast(err.message);
+    }
+  });
+  log.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $(".react-picker", log)) {
+      const btn = $(".react-btn[aria-expanded=true]", log);
+      closePicker(log);
+      btn?.focus();
+    }
+  });
+}
+
+/* After a reply: the ids of the two new messages, and the companion's reaction to the learner's, if it made one. */
+async function savedExchange(companionId, sentId, userEl, replyEl, ctx) {
+  if (!sentId) return;
+  try {
+    const res = await fetch(`/api/companions/${companionId}/messages?since=${sentId}`, { credentials: "same-origin" });
+    if (!res.ok) return;
+    const [mine, reply] = await res.json();
+    if (mine?.role === "user") bubbleSaved(userEl, mine, ctx);
+    if (reply?.role === "assistant" && replyEl) bubbleSaved(replyEl, reply, ctx);
+  } catch {}  // without them the chat still works; reactions come back with the page
+}
+/* The server takes the companion's reaction off the start of its reply; one anywhere else isn't shown either. */
+const withoutReactionTags = (text) => text.replace(/<reaction>[^<]{0,16}<\/reaction>\s*/g, "");
 
 /* ----------------------------------------------------------- notifications */
 
@@ -323,7 +441,7 @@ async function viewWelcome() {
         <div class="logo" style="margin:0 0 24px">AI <span>Every</span> Time</div>
         <h1>Every piece of AI content is the <em>start</em> of a learning relationship.</h1>
         <p class="muted" style="font-size:18px">Follow, chat with and learn from always-available AI Learning Companions from around the world, each with their own face, voice and expertise. Or design your own companion, exactly the way you want it.</p>
-        <div class="faces">${[1, 2, 3, 4, 5, 6, 7, 8].map((i) => `<img class="avatar" src="/api/companions/${i}/avatar" width="56" height="56" alt="">`).join("")}</div>
+        <div class="faces" id="faces"></div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
       </div>
       <div class="card">
@@ -347,6 +465,10 @@ async function viewWelcome() {
         </form>
       </div>
     </section>`;
+  fetch("/api/starters/faces").then((r) => (r.ok ? r.json() : [])).then((faces) => {
+    if (!$("#faces")) return;
+    $("#faces").innerHTML = faces.map((f) => `<img class="avatar" src="/api/companions/${f.id}/avatar?v=${encodeURIComponent(f.updated_at)}" width="56" height="56" alt="" title="${esc(f.name)}">`).join("");
+  }).catch(() => {});
   let tab = "signup";
   const setTab = (t) => {
     tab = t;
@@ -428,6 +550,8 @@ async function viewReset(m) {
 
 /* --------------------------------------------------------------- onboarding */
 
+const REAL_NOTE = "AI companion modelled on a real person";
+
 function companionCard(c, { onboarding = false } = {}) {
   const p = c.persona;
   const mine = c.owner_id === state.me.id;
@@ -439,6 +563,8 @@ function companionCard(c, { onboarding = false } = {}) {
         <div>
           <h3>${esc(p.name)} ${esc(p.flag)} ${mine ? '<span class="mine-badge">Yours</span>' : ""}</h3>
           <div class="muted small">${esc(p.country)}${isPrimary ? " · Your primary companion" : ""}</div>
+          ${c.followers != null ? `<div class="muted small followers">${fmtCount(c.followers)} follower${c.followers === 1 ? "" : "s"}</div>` : ""}
+          ${c.real_person ? `<div class="muted small">${REAL_NOTE}</div>` : ""}
           ${!c.is_starter && !mine ? `<div class="muted small">Community · designed by ${esc(c.designer || "a learner")}</div>` : ""}
           ${mine && c.removed ? `<div class="small error">Removed from the community by a moderator</div>`
             : mine && c.hidden ? `<div class="small error">Hidden after reports from other learners</div>`
@@ -451,10 +577,10 @@ function companionCard(c, { onboarding = false } = {}) {
       <div class="actions">
         ${onboarding
           ? `<button class="btn primary" data-act="choose">Choose ${esc(p.name)}</button>
-             <a class="btn" href="#/studio/remix/${c.id}">Customise</a>`
+             ${c.real_person ? "" : `<a class="btn" href="#/studio/remix/${c.id}">Customise</a>`}`
           : `<a class="btn primary" href="#/c/${c.id}">Chat</a>
              ${mine ? "" : `<button class="btn ${c.following ? "on" : ""}" data-act="follow">${c.following ? "Following" : "Follow"}</button>`}
-             ${mine ? `<a class="btn" href="#/studio/${c.id}">Edit</a>` : `<a class="btn" href="#/studio/remix/${c.id}">Remix</a>`}
+             ${mine ? `<a class="btn" href="#/studio/${c.id}">Edit</a>` : c.real_person ? "" : `<a class="btn" href="#/studio/remix/${c.id}">Remix</a>`}
              ${mine && !c.hidden ? `<button class="btn ghost" data-act="publish">${c.is_public ? "Unpublish" : "Publish"}</button>` : ""}
              ${isPrimary ? "" : `<button class="btn ghost" data-act="primary">Make primary</button>`}`}
       </div>
@@ -497,6 +623,46 @@ async function togglePublish(c) {
   return true;
 }
 
+/* The starter companions, a hundred or so: by region, or searched by name, country or topic. */
+const REGION_ORDER = ["Africa", "Asia", "Europe", "North America", "South America", "Oceania", "Antarctica"];
+const browse = { region: "", q: "" };
+const fold = (t) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+function starterBrowser(starters) {
+  const counts = {};
+  for (const c of starters) counts[c.region] = (counts[c.region] || 0) + 1;
+  const regions = [...REGION_ORDER.filter((r) => counts[r]), ...Object.keys(counts).filter((r) => r && !REGION_ORDER.includes(r))];
+  if (browse.region && !counts[browse.region]) browse.region = "";
+  const tab = (r, label, n) => `<button type="button" class="btn ${browse.region === r ? "on" : ""}" data-region="${esc(r)}" aria-pressed="${browse.region === r}">${esc(label)} <span class="count">${n}</span></button>`;
+  return `
+    <div class="browse">
+      <div class="choice regions" role="group" aria-label="Region">${tab("", "All", starters.length)}${regions.map((r) => tab(r, r, counts[r])).join("")}</div>
+      <input type="search" id="starterSearch" placeholder="Search by name, country or topic" aria-label="Search companions" value="${esc(browse.q)}" maxlength="80">
+    </div>
+    <div class="grid" id="starterGrid"></div>`;
+}
+
+function wireStarterBrowser(root, starters, opts, rerender) {
+  const grid = $("#starterGrid", root);
+  const show = () => {
+    const q = fold(browse.q.trim());
+    const shown = starters.filter((c) => (!browse.region || c.region === browse.region)
+      && (!q || fold([c.persona.name, c.persona.country, c.region, c.persona.tagline, ...c.persona.expertise].join(" ")).includes(q)));
+    grid.innerHTML = shown.length ? shown.map((c) => companionCard(c, opts)).join("")
+      : `<div class="card empty">No companions match "${esc(browse.q.trim())}". Try a name, a country or a topic like "robotics".</div>`;
+    wireCompanionCards(grid, shown, rerender);
+  };
+  $(".regions", root).addEventListener("click", (e) => {
+    const b = e.target.closest("[data-region]");
+    if (!b) return;
+    browse.region = b.dataset.region;
+    $$("[data-region]", root).forEach((x) => { x.classList.toggle("on", x === b); x.setAttribute("aria-pressed", String(x === b)); });
+    show();
+  });
+  $("#starterSearch", root).addEventListener("input", (e) => { browse.q = e.target.value; show(); });
+  show();
+}
+
 async function viewOnboarding() {
   const list = await api("/api/companions");
   const starters = list.filter((c) => c.is_starter);
@@ -510,10 +676,10 @@ async function viewOnboarding() {
         <div><h3 style="margin:0">✨ Design your own companion</h3><div class="muted small">Choose their face, country, personality, teaching style and writing voice.</div></div>
         <a class="btn primary" href="#/studio/new">Start designing</a>
       </div>
-      <h2>Or choose a companion</h2>
-      <div class="grid" id="starters">${starters.map((c) => companionCard(c, { onboarding: true })).join("")}</div>
+      <h2>Or choose one of our ${starters.length} companions</h2>
+      <div id="starters">${starterBrowser(starters)}</div>
     </section>`;
-  wireCompanionCards($("#starters"), starters, viewOnboarding);
+  wireStarterBrowser($("#starters"), starters, { onboarding: true }, viewOnboarding);
 }
 
 /* --------------------------------------------------------------------- feed */
@@ -610,19 +776,22 @@ async function viewFeed() {
 
 async function viewCompanions() {
   const list = await api("/api/companions");
+  // The server lists other learners' companions most followed first.
   const mine = list.filter((c) => c.owner_id === state.me.id), starters = list.filter((c) => c.is_starter);
-  const community = list.filter((c) => !c.is_starter && c.owner_id !== state.me.id).sort((a, b) => b.followers - a.followers);
+  const community = list.filter((c) => !c.is_starter && c.owner_id !== state.me.id);
   const main = shell("companions", `
     <h1>Companions</h1>
     <p class="muted">Each companion represents a country and brings their own expertise, perspective and voice.</p>
-    ${mine.length ? `<h2>Your companions</h2><div class="grid" style="margin-bottom:28px">${mine.map((c) => companionCard(c)).join("")}</div>` : ""}
+    ${mine.length ? `<h2>Your companions</h2><div class="grid" id="mineGrid" style="margin-bottom:28px">${mine.map((c) => companionCard(c)).join("")}</div>` : ""}
     <h2>Around the world</h2>
-    <div class="grid" style="margin-bottom:28px">${starters.map((c) => companionCard(c)).join("")}</div>
+    <div id="starters" style="margin-bottom:28px">${starterBrowser(starters)}</div>
     <h2>Community</h2>
     <p class="muted">Companions designed and shared by other learners.</p>
-    ${community.length ? `<div class="grid">${community.map((c) => companionCard(c)).join("")}</div>`
+    ${community.length ? `<div class="grid" id="communityGrid">${community.map((c) => companionCard(c)).join("")}</div>`
       : `<div class="card empty">No community companions yet. Design one and publish it to be the first.</div>`}`);
-  wireCompanionCards(main, list, viewCompanions);
+  if (mine.length) wireCompanionCards($("#mineGrid", main), mine, viewCompanions);
+  wireStarterBrowser($("#starters", main), starters, {}, viewCompanions);
+  if (community.length) wireCompanionCards($("#communityGrid", main), community, viewCompanions);
 }
 
 /* --------------------------------------------------------- companion + chat */
@@ -642,12 +811,13 @@ async function viewCompanion(m) {
       <div style="flex:1;min-width:200px">
         <h1 style="margin:0">${esc(p.name)} ${esc(p.flag)}</h1>
         <div class="muted">${esc(p.tagline || p.country)}</div>
-        <div class="row small" style="margin-top:6px">${p.expertise.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}<span class="muted">${c.followers} follower${c.followers === 1 ? "" : "s"}</span></div>
+        ${c.real_person ? `<div class="muted small" style="margin-top:2px">${REAL_NOTE}. It doesn't speak for them.</div>` : ""}
+        <div class="row small" style="margin-top:6px">${p.expertise.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}${c.followers != null ? `<span class="muted" id="followers">${fmtCount(c.followers)} follower${c.followers === 1 ? "" : "s"}</span>` : ""}</div>
         ${!c.is_starter && !c.is_mine ? `<div class="muted small" style="margin-top:4px">Community companion designed by ${esc(c.designer || "a learner")}</div>` : ""}
       </div>
       <div class="row">
         ${canSpeak && p.voice.enabled ? `<button class="btn ghost" id="readAloud" aria-pressed="false">🔈 Read aloud</button>` : ""}
-        ${c.is_mine ? `<a class="btn" href="#/studio/${id}">Edit companion</a>${c.hidden ? "" : `<button class="btn ghost" id="pubBtn">${c.is_public ? "Unpublish" : "Publish"}</button>`}` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button><a class="btn" href="#/studio/remix/${id}">Remix</a>`}
+        ${c.is_mine ? `<a class="btn" href="#/studio/${id}">Edit companion</a>${c.hidden ? "" : `<button class="btn ghost" id="pubBtn">${c.is_public ? "Unpublish" : "Publish"}</button>`}` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>${c.real_person ? "" : `<a class="btn" href="#/studio/remix/${id}">Remix</a>`}`}
         ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button>` : ""}
       </div>
     </div>
@@ -698,10 +868,10 @@ async function viewCompanion(m) {
     b.addEventListener("click", () => speak(text, p.voice));
     el.appendChild(b);
   };
-  const addMsg = (role, text) => {
-    const el = document.createElement("div");
-    el.className = `msg ${role}`;
-    el.innerHTML = role === "assistant" ? `<div class="prose">${md(text)}</div>` : esc(text).replace(/\n/g, "<br>");
+  const chatCtx = { name: p.name };
+  wireReactions(log, chatCtx);
+  const addMsg = (role, text, saved = {}) => {
+    const el = chatBubble(role, text, saved, chatCtx);
     if (role === "assistant") speakBtn(el, text);
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
@@ -722,9 +892,10 @@ async function viewCompanion(m) {
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
   $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
   if (!messages.length) {
-    addMsg("assistant", `Hi ${state.me.display_name}! I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}\n\nWhat would you like to learn today?`);
+    const intro = c.real_person ? `I'm an AI learning companion modelled on ${p.name}.` : `I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}`;
+    addMsg("assistant", `Hi ${state.me.display_name}! ${intro}\n\nWhat would you like to learn today?`);
   }
-  messages.forEach((x) => addMsg(x.role, x.content));
+  messages.forEach((x) => addMsg(x.role, x.content, x));
 
   const renderCtx = () => {
     $("#ctx").innerHTML = contextPost ? `<div class="context-pill"><span>Asking about: <b>${esc(contextPost.title)}</b></span><button class="linkbtn" id="clearCtx">✕</button></div>` : "";
@@ -766,8 +937,15 @@ async function viewCompanion(m) {
     if (b) studyAction(b.dataset.study, "conversation", String(id), { companionId: id, button: b });
   });
   $("#followBtn")?.addEventListener("click", async () => {
-    await api(`/api/companions/${id}/follow`, { method: c.following ? "DELETE" : "POST" });
-    viewCompanion(m);
+    try {
+      await api(`/api/companions/${id}/follow`, { method: c.following ? "DELETE" : "POST" });
+    } catch (err) { toast(err.message); return; }
+    // Just the button and the count: redrawing the page would lose the chat's place.
+    c.following = !c.following;
+    if (c.followers != null) c.followers += c.following ? 1 : -1;
+    $("#followBtn").classList.toggle("on", c.following);
+    $("#followBtn").textContent = c.following ? "Following" : "Follow";
+    if ($("#followers")) $("#followers").textContent = `${fmtCount(c.followers)} follower${c.followers === 1 ? "" : "s"}`;
   });
   $("#genBtn")?.addEventListener("click", async (e) => {
     e.target.disabled = true;
@@ -792,14 +970,16 @@ async function viewCompanion(m) {
     if (!text) return;
     input.value = "";
     $("#send").disabled = true;
-    addMsg("user", text);
+    closePicker(log);
+    const sentEl = addMsg("user", text);
     const bubble = addMsg("assistant", "…");
     try {
-      const reply = await streamChat(id, { message: text, post_id: contextPost?.id ?? null }, (acc) => {
-        bubble.innerHTML = `<div class="prose">${md(acc)}</div>`;
+      const { reply, sentId } = await streamChat(id, { message: text, post_id: contextPost?.id ?? null }, (acc) => {
+        bubble.innerHTML = `<div class="prose">${md(withoutReactionTags(acc))}</div>`;
         log.scrollTop = log.scrollHeight;
       });
       speakBtn(bubble, reply);
+      savedExchange(id, sentId, sentEl, reply.trim() ? bubble : null, chatCtx);
       if (readAloud) speak(reply, p.voice);
       contextPost = null;
       renderCtx();
@@ -1005,11 +1185,8 @@ async function viewStudio({ mode, id }) {
     { ...persona.voice, enabled: true }));
 
   /* Photo: kept in the page until saved, then uploaded (or removed) after the companion is stored. */
-  const photo = { file: null, url: null, remove: false, existing: false };
-  if (mode === "edit") {
-    const r = await fetch(`/api/companions/${id}/avatar`, { method: "GET", credentials: "same-origin" });
-    photo.existing = r.ok && !r.headers.get("content-type").startsWith("image/svg");
-  }
+  // A remix of a starter companion keeps its photo, unless the learner removes it; other photos stay their owner's.
+  const photo = { file: null, url: null, remove: false, existing: Boolean(source?.has_photo && (mode === "edit" || source.is_starter)) };
   const syncPhoto = () => {
     const has = photo.file || (photo.existing && !photo.remove);
     $("#photoRemove").hidden = !has;
@@ -1120,12 +1297,12 @@ async function viewStudio({ mode, id }) {
     try {
       let saved;
       if (mode === "edit") saved = await api(`/api/companions/${id}`, { method: "PUT", body: persona });
-      else if (mode === "remix") saved = await api(`/api/companions/${id}/remix`, { method: "POST", body: { overrides: persona, make_primary: true } });
+      else if (mode === "remix") saved = await api(`/api/companions/${id}/remix`, { method: "POST", body: { overrides: persona, make_primary: true, keep_photo: photo.existing && !photo.remove && !photo.file } });
       else saved = await api("/api/companions", { method: "POST", body: { persona, make_primary: true } });
       if (photo.file) {
         const r = await fetch(`/api/companions/${saved.id}/photo`, { method: "PUT", body: photo.file, credentials: "same-origin" });
         if (!r.ok) toast((await r.json().catch(() => ({}))).detail || "The photo couldn't be uploaded");
-      } else if (photo.remove) {
+      } else if (photo.remove && mode === "edit") {
         await api(`/api/companions/${saved.id}/photo`, { method: "DELETE" });
       }
       state.me = await api("/api/me");
@@ -1614,7 +1791,8 @@ async function viewLesson(m) {
   });
   $$("[data-study]", main).forEach((b) => b.addEventListener("click", () => studyAction(b.dataset.study, "lesson", lessonId, { companionId: t.id, button: b })));
 
-  const log = $("#tlog"), input = $("#tinput");
+  const log = $("#tlog"), input = $("#tinput"), tutorCtx = { name: t.name };
+  wireReactions(log, tutorCtx);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#tform").requestSubmit(); } });
   $("#tform").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1622,10 +1800,13 @@ async function viewLesson(m) {
     if (!text) return;
     input.value = "";
     $("#tsend").disabled = true;
-    const u = document.createElement("div"); u.className = "msg user"; u.textContent = text; log.appendChild(u);
-    const a = document.createElement("div"); a.className = "msg assistant"; a.textContent = "…"; log.appendChild(a);
+    closePicker(log);
+    const u = chatBubble("user", text, {}, tutorCtx); log.appendChild(u);
+    const a = chatBubble("assistant", "…", {}, tutorCtx); log.appendChild(a);
+    log.scrollTop = log.scrollHeight;
     try {
-      await streamChat(t.id, { message: text, lesson_id: lessonId }, (acc) => { a.innerHTML = `<div class="prose">${md(acc)}</div>`; log.scrollTop = log.scrollHeight; });
+      const { reply, sentId } = await streamChat(t.id, { message: text, lesson_id: lessonId }, (acc) => { a.innerHTML = `<div class="prose">${md(withoutReactionTags(acc))}</div>`; log.scrollTop = log.scrollHeight; });
+      savedExchange(t.id, sentId, u, reply.trim() ? a : null, tutorCtx);
     } catch (err) {
       a.innerHTML = `<span class="error">${esc(err.message)}</span>`;
       if (!input.value) input.value = text;  // not sent, so it isn't lost

@@ -72,7 +72,8 @@ def insights(user: dict = Depends(auth.require("admin"))):
             "designed": one("SELECT COUNT(*) FROM companions WHERE owner_id IS NOT NULL AND removed = 0"),
             "published": one("SELECT COUNT(*) FROM companions WHERE owner_id IS NOT NULL AND is_public = 1 "
                              "AND hidden = 0 AND removed = 0"),
-            # Everyone starts out following the starter companions, so only learners' own designs say much.
+            # Starter companions' counts begin at the numbers in starter_companions.csv, and everyone starts out
+            # following the featured ones, so only learners' own designs say much here.
             "most_followed": [dict(r) for r in conn.execute(
                 "SELECT c.id, json_extract(c.persona, '$.name') AS name, json_extract(c.persona, '$.flag') AS flag, "
                 "u.display_name AS designer, COUNT(f.user_id) AS followers FROM companions c "

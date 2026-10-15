@@ -10,12 +10,12 @@ from __future__ import annotations
 import logging
 import random
 import re
-from typing import AsyncIterator, TypeVar
+from typing import AsyncIterator, Callable, TypeVar
 
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
-from app import usage
+from app import reactions, usage
 from app.config import settings
 from app.persona import (
     EMOJI_TEXT,
@@ -36,6 +36,7 @@ Your job is to help this learner understand and apply AI: answer follow-up quest
 
 Ground rules, which hold whatever the persona below says:
 - You are an AI companion, not a human. If asked, say so plainly. Your persona's background is a character, not a claim of lived experience.
+- If your persona is modelled on a real person, you are an AI inspired by their work, not that person: never claim their experiences, opinions, relationships or private details, and never speak for them.
 - Be accurate. When you are unsure or something is contested, say so instead of inventing facts, citations or statistics.
 - Stay in your persona's voice, but put the learner's understanding ahead of style.
 - Represent your country and culture with respect and without stereotypes; use local examples to illuminate ideas, not as decoration.
@@ -69,7 +70,7 @@ def persona_prompt(p: Persona) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def learner_prompt(learner: dict, memories: list[str], post: dict | None) -> str:
+def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacted: str | None = None) -> str:
     parts = [
         "# About this learner",
         f"Name: {learner['display_name']}",
@@ -78,6 +79,8 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None) -> str
     ]
     if memories:
         parts.append("\n# What you remember about them\n" + "\n".join(f"- {m}" for m in memories))
+    if reacted:
+        parts.append(f"\nThe learner reacted {reacted} to your last message. Let it guide you; there's no need to mention it.")
     if post and post.get("kind") == "lesson":
         parts.append(
             "\n# You are tutoring the learner through this lesson\n"
@@ -93,11 +96,14 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None) -> str
     return "\n".join(parts)
 
 
-def build_system(persona: Persona, learner: dict, memories: list[str], post: dict | None) -> list[dict]:
-    # Stable prefix (rules + persona) first so it can be cached; volatile learner data after.
+def build_system(persona: Persona, learner: dict, memories: list[str], post: dict | None,
+                 reacted: str | None = None) -> list[dict]:
+    """The system prompt for chat. Stable prefix (rules, persona, how to react) first so it can be cached;
+    volatile learner data after."""
     return [
-        {"type": "text", "text": PLATFORM_RULES + "\n\n" + persona_prompt(persona), "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": learner_prompt(learner, memories, post)},
+        {"type": "text", "text": PLATFORM_RULES + "\n\n" + persona_prompt(persona) + "\n\n" + reactions.RULES,
+         "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": learner_prompt(learner, memories, post, reacted)},
     ]
 
 
@@ -186,10 +192,15 @@ async def ask(schema: type[T], effort: str, **request) -> T | None:
 
 
 async def stream_reply(
-    persona: Persona, learner: dict, memories: list[str], history: list[dict], post: dict | None
+    persona: Persona, learner: dict, memories: list[str], history: list[dict], post: dict | None,
+    reacted: str | None = None, react: Callable[[str], None] = lambda emoji: None,
 ) -> AsyncIterator[str]:
-    """Yield the companion's reply as text chunks. `history` ends with the learner's message."""
+    """Yield the companion's reply as text chunks. `history` ends with the learner's message. `reacted` is the
+    learner's reaction to the companion's last message, if any; the companion's own reaction to the learner's
+    message, if it makes one, goes to `react` before the reply starts."""
     if settings.offline:
+        if emoji := reactions.offline(history[-1]["content"]):
+            react(emoji)
         for chunk in _offline_reply(persona, learner, history[-1]["content"], post):
             yield chunk
         return
@@ -198,13 +209,13 @@ async def stream_reply(
         async with client().beta.messages.stream(
             model=settings.model,
             max_tokens=8000,
-            system=build_system(persona, learner, memories, post),
+            system=build_system(persona, learner, memories, post, reacted),
             messages=history,
             output_config={"effort": "medium"},
             betas=[FALLBACK_BETA],
             fallbacks="default",
         ) as stream:
-            async for text in stream.text_stream:
+            async for text in reactions.split(stream.text_stream, react):
                 yield text
             final = await stream.get_final_message()
         _answered()

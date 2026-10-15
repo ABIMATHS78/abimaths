@@ -137,10 +137,10 @@ def claude(client, monkeypatch):
 
     def starters_have_posts():
         with db.connect() as conn:
-            return not conn.execute("SELECT 1 FROM companions c WHERE is_starter = 1 AND NOT EXISTS "
+            return not conn.execute("SELECT 1 FROM companions c WHERE is_starter = 1 AND featured = 1 AND NOT EXISTS "
                                     "(SELECT 1 FROM posts p WHERE p.companion_id = c.id)").fetchone()
 
-    wait_for(starters_have_posts)  # starter companions write their first posts in demo mode at start-up
+    wait_for(starters_have_posts)  # the featured starters write their first posts in demo mode at start-up
     fake = FakeClaude()
     monkeypatch.setattr(settings, "offline", False)
     monkeypatch.setattr(llm, "client", lambda: fake)
@@ -587,7 +587,7 @@ def test_starter_posts_stop_at_the_first_rejected_key(client, claude):
     with db.connect() as conn:
         conn.execute("DELETE FROM posts")
     asyncio.run(content.ensure_initial_posts())
-    assert len(calls) == 1  # not once for each of the 8 starter companions
+    assert len(calls) == 1  # not once for each of the 7 featured starter companions
 
 
 def test_the_account_is_checked_at_start(client, claude, caplog):

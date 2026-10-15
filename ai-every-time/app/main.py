@@ -12,12 +12,13 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import account, auth, companions, content, db, digest, insights, learning, llm, push, reminders, staff, usage
-from app.avatar import render_svg
+from app import (account, auth, companions, content, db, digest, insights, learning, llm, photos, push, reactions,
+                 reminders, staff, usage)
+from app.avatar import render_initials, render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
 
@@ -37,6 +38,7 @@ async def lifespan(_: FastAPI):
     db.init_db()
     companions.seed_starters()
     _spawn(content.ensure_initial_posts())
+    _spawn(photos.ensure_starter_photos())
     if settings.autogen_interval_minutes > 0:
         _spawn(content.autogen_loop())
     if digest.email_available():
@@ -123,9 +125,10 @@ def signup(body: Signup, response: Response, background: BackgroundTasks):
                 (body.email.lower(), body.display_name.strip(), auth.hash_password(body.password), body.level,
                  body.goals.strip(), body.timezone, db.now()),
             )
-            # Start every learner following the starter companions so their feed isn't empty.
+            # Start every learner following the featured starter companions, one from each region, so their
+            # feed isn't empty.
             conn.execute("INSERT INTO follows (user_id, companion_id, created_at) "
-                         "SELECT ?, id, ? FROM companions WHERE is_starter = 1", (cur.lastrowid, db.now()))
+                         "SELECT ?, id, ? FROM companions WHERE is_starter = 1 AND featured = 1", (cur.lastrowid, db.now()))
             # Posts published before sign-up are part of the welcome feed, not "new".
             reminders.mark_feed_seen(conn, cur.lastrowid)
     except sqlite3.IntegrityError:
@@ -213,6 +216,7 @@ class CreateCompanion(BaseModel):
 class RemixCompanion(BaseModel):
     overrides: dict | None = None
     make_primary: bool = True
+    keep_photo: bool = True  # a starter companion's photo comes along, unless they'd rather draw a face
 
 
 @app.get("/api/options")
@@ -235,18 +239,30 @@ def list_companions(user: dict = User):
     return companions.list_for(user["id"])
 
 
+@app.get("/api/starters/faces")
+def starter_faces():
+    """A few starter companions' faces for the welcome page, which is open to everyone: the featured ones, then
+    the most followed."""
+    with db.connect() as conn:
+        rows = conn.execute("SELECT id, json_extract(persona, '$.name') AS name, updated_at FROM companions "
+                            "WHERE is_starter = 1 ORDER BY featured DESC, base_followers DESC, id LIMIT 8").fetchall()
+    return [dict(r) for r in rows]
+
+
 @app.get("/api/companions/{companion_id}")
 def get_companion(companion_id: int, user: dict = User):
     c = companions.get_visible(companion_id, user["id"])
     with db.connect() as conn:
         following = conn.execute("SELECT 1 FROM follows WHERE user_id = ? AND companion_id = ?",
                                  (user["id"], companion_id)).fetchone()
-        followers = conn.execute("SELECT COUNT(*) FROM follows WHERE companion_id = ?", (companion_id,)).fetchone()[0]
+        counts = conn.execute("SELECT is_starter, base_followers, (SELECT COUNT(*) FROM follows WHERE companion_id = c.id) "
+                              "AS follows FROM companions c WHERE id = ?", (companion_id,)).fetchone()
         designer = conn.execute("SELECT display_name FROM users WHERE id = ?", (c["owner_id"],)).fetchone() if c["owner_id"] else None
+        has_photo = conn.execute("SELECT 1 FROM companion_photos WHERE companion_id = ?", (companion_id,)).fetchone()
     mine = c["owner_id"] == user["id"]
     return companions.for_viewer(c, user["id"]) | {
-        "following": bool(following), "followers": followers, "is_mine": mine,
-        "designer": designer["display_name"] if designer else None,
+        "following": bool(following), "followers": companions.followers(counts), "is_mine": mine,
+        "designer": designer["display_name"] if designer else None, "has_photo": has_photo is not None,
         # Only the designer sees why a companion was removed and where their appeal stands.
         "moderation": staff.moderation_for_owner(c) if mine else None,
     }
@@ -301,7 +317,7 @@ async def create_companion(body: CreateCompanion, user: dict = User):
 @app.post("/api/companions/{companion_id}/remix", status_code=201)
 async def remix_companion(companion_id: int, body: RemixCompanion, user: dict = User):
     try:
-        c = companions.remix(user["id"], companion_id, body.overrides)
+        c = companions.remix(user["id"], companion_id, body.overrides, body.keep_photo)
     except ValueError as e:
         raise HTTPException(422, str(e))
     if body.make_primary:
@@ -330,9 +346,17 @@ def restore_version(companion_id: int, version_id: int, user: dict = User):
     return companions.restore(user["id"], companion_id, version_id)
 
 
+def _starter_first_post(companion_id: int) -> None:
+    """A starter companion that hasn't posted yet writes its first post when a learner starts following it."""
+    c = companions.get(companion_id)
+    if c["is_starter"]:
+        _spawn(content.first_post(c))
+
+
 @app.post("/api/companions/{companion_id}/follow", status_code=204)
-def follow(companion_id: int, user: dict = User):
+async def follow(companion_id: int, user: dict = User):
     companions.set_follow(user["id"], companion_id, True)
+    _starter_first_post(companion_id)
 
 
 @app.delete("/api/companions/{companion_id}/follow", status_code=204)
@@ -341,8 +365,9 @@ def unfollow(companion_id: int, user: dict = User):
 
 
 @app.post("/api/companions/{companion_id}/primary", status_code=204)
-def make_primary(companion_id: int, user: dict = User):
+async def make_primary(companion_id: int, user: dict = User):
     companions.set_primary(user["id"], companion_id)
+    _starter_first_post(companion_id)
 
 
 # --------------------------------------------------------------------- avatars
@@ -354,31 +379,35 @@ IMAGE_HEADERS = {"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff
                  "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"}
 
 
-def _image_type(data: bytes) -> str | None:
-    """Identify an upload by its bytes, never by the name or header the client sent."""
-    if data.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if data.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return "image/webp"
-    return None
-
-
 @app.get("/api/companions/{companion_id}/avatar")
 @app.get("/api/companions/{companion_id}/avatar.svg", include_in_schema=False)
-def companion_avatar(companion_id: int, user: dict | None = Depends(auth.optional_user)):
+def companion_avatar(companion_id: int, background: BackgroundTasks, v: str = "", face: bool = False,
+                     user: dict | None = Depends(auth.optional_user)):
+    """The companion's photo, or its drawn face. A starter's photo that isn't stored here yet is loaded by the
+    browser from its own address meanwhile; if that fails, the page asks again with face=1 for the drawn face.
+    With v (the companion's updated_at, which changes with its face) the browser can keep the image for a day;
+    only the browser, since a learner's photo is private to the people who can see their companion."""
     # Starter faces are public (they appear on the welcome page); others follow companion visibility.
     c = companions.get(companion_id)
     # Moderators also need to see hidden companions' faces to review them.
     moderator = user is not None and auth.role_of(user) in auth.CAN["moderate"]
     if not companions.visible_to(c, user["id"] if user else None) and not moderator:
         raise HTTPException(404, "Companion not found")
+    headers = IMAGE_HEADERS | ({"Cache-Control": "private, max-age=86400"} if v and v == c["updated_at"] else {})
     with db.connect() as conn:
-        photo = conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?", (companion_id,)).fetchone()
+        photo = None if face else conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?",
+                                               (companion_id,)).fetchone()
+        source = conn.execute("SELECT photo_url FROM companions WHERE id = ?", (companion_id,)).fetchone()["photo_url"]
     if photo:
-        return Response(photo["data"], media_type=photo["mime"], headers=IMAGE_HEADERS)
-    return Response(render_svg(Avatar.model_validate(c["persona"]["avatar"])), media_type=SVG, headers=IMAGE_HEADERS)
+        return Response(photo["data"], media_type=photo["mime"], headers=headers)
+    if source and not face:
+        if settings.fetch_photos:
+            background.add_task(photos.fetch_later, companion_id)
+        return RedirectResponse(photos.direct_url(source), status_code=307, headers={"Cache-Control": "no-cache"})
+    avatar = Avatar.model_validate(c["persona"]["avatar"])
+    # No guessing at what a real person looks like: their initials stand in for their photo.
+    svg = render_initials(c["persona"]["name"], avatar.background) if c["real_person"] else render_svg(avatar)
+    return Response(svg, media_type=SVG, headers=headers)
 
 
 @app.put("/api/companions/{companion_id}/photo", status_code=204)
@@ -392,7 +421,7 @@ async def upload_photo(companion_id: int, request: Request, user: dict = User):
         data += chunk
         if len(data) > MAX_PHOTO_BYTES:
             raise HTTPException(413, "Photos can be up to 2 MB")
-    mime = _image_type(bytes(data))
+    mime = photos.image_type(bytes(data))
     if mime is None:
         raise HTTPException(415, "Upload a PNG, JPEG or WebP image")
     ts = db.now()
@@ -485,13 +514,50 @@ def _memories(user_id: int, companion_id: int) -> list[dict]:
 
 
 @app.get("/api/companions/{companion_id}/messages")
-def get_messages(companion_id: int, user: dict = User):
+def get_messages(companion_id: int, since: int | None = None, user: dict = User):
+    """The conversation's last 200 messages, oldest first, with their reactions. With since (the id the chat
+    endpoint's X-Message-Id header gives), that message and the ones after it."""
     companions.get_visible(companion_id, user["id"])
+    cols = "SELECT id, role, content, post_id, reaction, created_at FROM messages WHERE user_id = ? AND companion_id = ?"
     with db.connect() as conn:
-        rows = conn.execute(
-            "SELECT id, role, content, post_id, created_at FROM messages WHERE user_id = ? AND companion_id = ? "
-            "ORDER BY id DESC LIMIT 200", (user["id"], companion_id)).fetchall()
-    return [dict(r) for r in reversed(rows)]
+        if since is None:
+            rows = conn.execute(f"{cols} ORDER BY id DESC LIMIT 200", (user["id"], companion_id)).fetchall()[::-1]
+        else:
+            rows = conn.execute(f"{cols} AND id >= ? ORDER BY id LIMIT 200", (user["id"], companion_id, since)).fetchall()
+    return [dict(r) for r in rows]
+
+
+class ReactionIn(BaseModel):
+    emoji: str = Field(max_length=16)
+
+
+def _own_message(message_id: int, user: dict) -> dict:
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM messages WHERE id = ? AND user_id = ?", (message_id, user["id"])).fetchone()
+    if row is None:
+        raise HTTPException(404, "Message not found")
+    companions.get_visible(row["companion_id"], user["id"])
+    return dict(row)
+
+
+@app.put("/api/messages/{message_id}/reaction", status_code=204)
+def react(message_id: int, body: ReactionIn, user: dict = User):
+    """The learner's reaction to one of the companion's messages, in place of any they gave it before."""
+    emoji = reactions.canonical(body.emoji)
+    if emoji is None:
+        raise HTTPException(422, f"React with one of {' '.join(reactions.REACTIONS)}")
+    if _own_message(message_id, user)["role"] != "assistant":
+        raise HTTPException(400, "You can react to your companion's messages; it reacts to yours.")
+    with db.connect() as conn:
+        conn.execute("UPDATE messages SET reaction = ? WHERE id = ?", (emoji, message_id))
+
+
+@app.delete("/api/messages/{message_id}/reaction", status_code=204)
+def unreact(message_id: int, user: dict = User):
+    if _own_message(message_id, user)["role"] != "assistant":
+        raise HTTPException(400, "You can react to your companion's messages; it reacts to yours.")
+    with db.connect() as conn:
+        conn.execute("UPDATE messages SET reaction = NULL WHERE id = ?", (message_id,))
 
 
 @app.post("/api/companions/{companion_id}/chat")
@@ -508,32 +574,42 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
     learning.record_activity(user)
 
     with db.connect() as conn:
-        conn.execute("INSERT INTO messages (user_id, companion_id, role, content, post_id, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
-                     (user["id"], companion_id, body.message, body.post_id, db.now()))
-        rows = conn.execute(
-            "SELECT role, content FROM messages WHERE user_id = ? AND companion_id = ? ORDER BY id DESC LIMIT ?",
-            (user["id"], companion_id, settings.history_turns * 2)).fetchall()
-    history = _normalise_history([dict(r) for r in reversed(rows)])
+        sent = conn.execute("INSERT INTO messages (user_id, companion_id, role, content, post_id, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
+                            (user["id"], companion_id, body.message, body.post_id, db.now())).lastrowid
+        rows = [dict(r) for r in conn.execute(
+            "SELECT role, content, reaction FROM messages WHERE user_id = ? AND companion_id = ? ORDER BY id DESC LIMIT ?",
+            (user["id"], companion_id, settings.history_turns * 2)).fetchall()[::-1]]
+    history = _normalise_history(rows)
+    # The learner's reaction to the companion's last reply, which the companion can take into account.
+    reacted = next((r["reaction"] for r in reversed(rows) if r["role"] == "assistant"), None)
     memories = [m["fact"] for m in _memories(user["id"], companion_id)]
+
+    def react(emoji: str) -> None:  # the companion's reaction to the learner's message
+        with db.connect() as conn:
+            conn.execute("UPDATE messages SET reaction = ? WHERE id = ?", (emoji, sent))
 
     async def stream():
         # Tokens for the reply, and for the memories taken from it, go on this message's record.
         with usage.recording(row):
             parts: list[str] = []
-            async for chunk in llm.stream_reply(persona, user, memories, history, post):
+            async for chunk in llm.stream_reply(persona, user, memories, history, post, reacted, react):
                 parts.append(chunk)
                 yield chunk
-            reply = "".join(parts).strip()
+            reply = reactions.strip("".join(parts)).strip()
+            if not reply:  # nothing to keep: an empty message would break the conversation's history
+                return
             with db.connect() as conn:
                 conn.execute("INSERT INTO messages (user_id, companion_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)",
                              (user["id"], companion_id, reply, db.now()))
             _spawn(_remember(user["id"], companion_id, persona, memories, body.message, reply))
 
-    return StreamingResponse(stream(), media_type="text/plain; charset=utf-8")
+    # The learner's message id, so the page can show the companion's reaction to it and let them react to the reply.
+    return StreamingResponse(stream(), media_type="text/plain; charset=utf-8", headers={"X-Message-Id": str(sent)})
 
 
 def _normalise_history(rows: list[dict]) -> list[dict]:
     """The API needs a user-first, alternating history; merge any consecutive same-role rows."""
+    rows = [r for r in rows if r["content"].strip()]
     while rows and rows[0]["role"] != "user":
         rows.pop(0)
     out: list[dict] = []
