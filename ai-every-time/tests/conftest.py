@@ -4,6 +4,7 @@ import pytest
 
 os.environ["AIET_OFFLINE"] = "1"
 os.environ["AIET_FETCH_PHOTOS"] = "0"  # tests never reach for starter photos on the internet; see test_starters
+os.environ["AIET_GUIDES"] = "0"  # nor load the site's 1,162 guides; test_guides gives them a few of their own
 
 
 @pytest.fixture()

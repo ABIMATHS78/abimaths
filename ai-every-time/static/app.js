@@ -47,29 +47,64 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove("show"), Math.max(2400, msg.length * 60));  // time to read longer ones
 }
 
-/* Minimal, safe markdown: escape first, then a few inline/block rules. */
+/* Safe markdown: escape everything first, then turn a few rules into HTML. Enough for companions' replies and
+   posts, and for the guides: headings, lists and checklists, code, tables, quotes and links. */
 function md(src) {
   const lines = esc(src).split(/\n/);
-  let html = "", list = null;
-  const inline = (s) => s
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
+  let html = "", list = null, para = [], quote = [];
+  const inline = (s) => s.split(/(`[^`\n]+`)/).map((part, k) => k % 2 ? `<code>${part.slice(1, -1)}</code>` : part
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
-  const close = () => { if (list) { html += `</${list}>`; list = null; } };
-  let para = [];
-  const flush = () => { if (para.length) { html += `<p>${inline(para.join("<br>"))}</p>`; para = []; } };
-  for (const line of lines) {
-    const ul = line.match(/^\s*[-*•]\s+(.*)/), ol = line.match(/^\s*\d+[.)]\s+(.*)/), h = line.match(/^#{1,6}\s+(.*)/);
-    if (ul || ol) {
+    .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")).join("");
+  const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
+  const flushPara = () => { if (para.length) { html += `<p>${inline(para.join("<br>"))}</p>`; para = []; } };
+  const flushQuote = () => { if (quote.length) { html += `<blockquote>${inline(quote.join("<br>"))}</blockquote>`; quote = []; } };
+  const flush = () => { flushPara(); closeList(); flushQuote(); };
+  const isRow = (line) => /^\s*\|.*\|\s*$/.test(line || "");
+  const cells = (line) => line.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = line.match(/^\s*(```|~~~)\s*([\w+#.-]*)/);
+    if (fence) {
       flush();
-      const kind = ul ? "ul" : "ol";
-      if (list !== kind) { close(); html += `<${kind}>`; list = kind; }
-      html += `<li>${inline((ul || ol)[1])}</li>`;
-    } else if (h) { flush(); close(); html += `<h4>${inline(h[1])}</h4>`; }
-    else if (!line.trim()) { flush(); close(); }
-    else { close(); para.push(line); }
+      const code = [];
+      while (++i < lines.length && !lines[i].trim().startsWith(fence[1])) code.push(lines[i]);
+      const lang = fence[2].toLowerCase();
+      html += lang === "math" ? `<pre class="math">${code.join("\n")}</pre>`
+        : `<pre class="code"${lang ? ` data-lang="${lang}"` : ""}><code>${code.join("\n")}</code></pre>`;
+      continue;
+    }
+    if (isRow(line) && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1] || "")) {  // a table: a header row, then dashes
+      flush();
+      const head = cells(line), rows = [];
+      i++;
+      while (isRow(lines[i + 1])) rows.push(cells(lines[++i]));
+      html += `<div class="table"><table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>`
+        + rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("") + "</tbody></table></div>";
+      continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)/);
+    const task = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)/);
+    const ul = !task && line.match(/^\s*[-*•]\s+(.*)/);
+    const ol = line.match(/^\s*(\d+)[.)]\s+(.*)/);
+    const q = line.match(/^&gt;\s?(.*)/);
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flush(); html += "<hr>"; }
+    else if (h) { flush(); const n = Math.min(4, Math.max(2, h[1].length)); html += `<h${n}>${inline(h[2])}</h${n}>`; }
+    else if (task || ul || ol) {
+      flushPara(); flushQuote();
+      const kind = ol ? "ol" : "ul";
+      if (list !== kind) {
+        closeList();
+        html += ol ? `<ol${ol[1] !== "1" ? ` start="${+ol[1]}"` : ""}>` : `<ul${task ? ' class="tasks"' : ""}>`;
+        list = kind;
+      }
+      html += task ? `<li class="task${task[1] === " " ? "" : " done"}"><span class="box" aria-hidden="true"></span>${inline(task[2])}</li>`
+        : `<li>${inline(ul ? ul[1] : ol[2])}</li>`;
+    } else if (q) { flushPara(); closeList(); quote.push(q[1]); }
+    else if (!line.trim()) flush();
+    else { closeList(); flushQuote(); para.push(line); }
   }
-  flush(); close();
+  flush();
   return html;
 }
 
@@ -89,12 +124,15 @@ document.addEventListener("error", (e) => {
 const fmtCount = (n) => n.toLocaleString();
 const label = (s) => s.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 const timeAgo = (iso) => {
-  const s = (Date.now() - new Date(iso)) / 1000;
+  const t = new Date(iso), s = (Date.now() - t) / 1000;
   if (s < 60) return "just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+  if (s < 7 * 86400) return `${Math.floor(s / 86400)}d ago`;
+  const year = t.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {};
+  return t.toLocaleDateString(undefined, { day: "numeric", month: "short", ...year });
 };
+const FEED_PAGE = 20;  // posts the server sends at a time (app/content.py)
 
 /* ------------------------------------------------------------------- voice */
 
@@ -344,6 +382,8 @@ const routes = [
   [/^#\/reset\/([\w-]+)$/, viewReset, null],
   [/^#\/onboarding$/, viewOnboarding],
   [/^#\/feed$/, viewFeed],
+  [/^#\/guides(?:\?(.*))?$/, viewGuides],
+  [/^#\/p\/(\d+)$/, viewPost],
   [/^#\/companions$/, viewCompanions],
   [/^#\/c\/(\d+)(?:\?post=(\d+))?$/, viewCompanion],
   [/^#\/studio\/new$/, (m) => viewStudio({ mode: "new" })],
@@ -397,7 +437,7 @@ async function router() {
 window.addEventListener("hashchange", router);
 
 function shell(active, inner) {
-  const nav = [["feed", "🏠", "Feed"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
+  const nav = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
     ["companions", "🌍", "Companions"], ["profile", "👤", "Profile"]];
   if (state.me?.role && state.me.role !== "learner") nav.push(["staff", "🛡️", "Staff"]);
   const primary = state.me?.primary_companion_id;
@@ -692,7 +732,21 @@ async function viewOnboarding() {
 
 /* --------------------------------------------------------------------- feed */
 
+const KIND_LABELS = { tutorial: "Tutorial", cheat_sheet: "Cheat sheet" };
+const guideBadges = (p, topic = true) => `<div class="badges">${[KIND_LABELS[p.kind], p.level && label(p.level),
+  p.minutes && `${p.minutes} min read`, topic && p.topic].filter(Boolean).map((b) => `<span class="badge">${esc(b)}</span>`).join("")}</div>`;
+const byline = (c, when) => `<div class="by">
+  <a href="#/c/${c.id}">${avatarImg(c, 36)}</a>
+  <div><a href="#/c/${c.id}" class="plain"><b>${esc(c.persona.name)}</b> ${esc(c.persona.flag)}</a>
+  <div class="muted small">${esc(c.persona.country || c.region || "")}${when ? ` · ${timeAgo(when)}` : ""}</div></div>
+</div>`;
+const engageButtons = (post) => `
+  <button class="btn ${post.liked ? "on" : ""}" data-eng="like" aria-pressed="${post.liked}">♥ <span>${post.likes || ""}</span></button>
+  <button class="btn ${post.marked_helpful ? "on" : ""}" data-eng="helpful" aria-pressed="${post.marked_helpful}">💡 Helpful <span>${post.helpful || ""}</span></button>
+  <button class="btn ghost" data-eng="share">↗ Share</button>`;
+
 function postCard(post, c) {
+  if (post.kind) return guideCard(post, c);
   return `
     <article class="card post" data-post="${post.id}">
       <div class="by">
@@ -704,9 +758,7 @@ function postCard(post, c) {
       <div class="prose">${md(post.body)}</div>
       <div class="row">
         <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${esc(c.persona.name)} about this</a>
-        <button class="btn ${post.liked ? "on" : ""}" data-eng="like">♥ ${post.likes || ""}</button>
-        <button class="btn ${post.marked_helpful ? "on" : ""}" data-eng="helpful">💡 Helpful ${post.helpful || ""}</button>
-        <button class="btn ghost" data-eng="share">↗ Share</button>
+        ${engageButtons(post)}
       </div>
       <div class="row small">
         <span class="muted">Study this:</span>
@@ -717,37 +769,94 @@ function postCard(post, c) {
     </article>`;
 }
 
-function wirePosts(root, posts, rerender) {
-  const seen = new Set();
-  const io = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
+/* A guide in the feed, as the site shows them: its infographic, then what it is, its title, summary and author. */
+function guideCard(post, c) {
+  return `
+    <article class="card post guide-card" data-post="${post.id}">
+      <a class="guide-graphic" href="#/p/${post.id}" tabindex="-1" aria-hidden="true">${infographic(post.graphic, post)}</a>
+      ${guideBadges(post)}
+      <h3><a href="#/p/${post.id}" class="plain">${esc(post.title)}</a></h3>
+      <p class="muted" style="margin:0">${esc(post.summary)}</p>
+      ${byline(c, post.created_at)}
+      <div class="row">
+        <a class="btn primary" href="#/p/${post.id}">📖 Read the guide</a>
+        <a class="btn" href="#/c/${c.id}?post=${post.id}">💬 Ask ${esc(c.persona.name)}</a>
+        ${engageButtons(post)}
+      </div>
+    </article>`;
+}
+
+/* A guide in a grid: the top of its infographic as a cover, and what it is. */
+function guideTile(post, c) {
+  return `
+    <a class="card guide-tile plain" href="#/p/${post.id}">
+      <div class="cover">${infographic(post.graphic, post)}</div>
+      ${guideBadges(post, false)}
+      <b class="title">${esc(post.title)}</b>
+      <span class="muted small summary">${esc(post.summary)}</span>
+      ${c ? `<span class="muted small">${esc(c.persona.name)} ${esc(c.persona.flag)} · ${timeAgo(post.created_at)}</span>` : ""}
+    </a>`;
+}
+
+/* Views, likes, "helpful", shares and study for the posts in root; posts added later are wired when it's called
+   again. A like changes its button where it is, so the page doesn't jump back to the top. */
+function wirePosts(root, posts) {
+  const seen = wirePosts.seen || (wirePosts.seen = new Set());
+  const io = wirePosts.io || (wirePosts.io = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
     for (const en of entries) {
       const id = +en.target.dataset.post;
       if (en.isIntersecting && !seen.has(id)) { seen.add(id); api(`/api/posts/${id}/engage`, { method: "POST", body: { kind: "view" } }).catch(() => {}); }
     }
-  }, { threshold: 0.6 }) : null;
+  }, { threshold: 0.6 }) : null);
   $$("[data-post]", root).forEach((el) => {
+    if (el.dataset.wired) return;
+    el.dataset.wired = "1";
     io?.observe(el);
     const post = posts.find((p) => p.id === +el.dataset.post);
     el.addEventListener("click", async (e) => {
       const study = e.target.closest("[data-study]")?.dataset.study;
       if (study) return studyAction(study, "post", String(post.id), { companionId: post.companion_id, button: e.target.closest("button") });
-      const kind = e.target.closest("[data-eng]")?.dataset.eng;
-      if (!kind) return;
+      const btn = e.target.closest("[data-eng]");
+      if (!btn) return;
+      const kind = btn.dataset.eng;
       try {
         if (kind === "share") {
-          const url = `${location.origin}/#/c/${post.companion_id}?post=${post.id}`;
+          const url = `${location.origin}/#/${post.kind ? `p/${post.id}` : `c/${post.companion_id}?post=${post.id}`}`;
           await navigator.clipboard?.writeText(url).catch(() => {});
           await api(`/api/posts/${post.id}/engage`, { method: "POST", body: { kind } });
           toast("Link copied");
           return;
         }
-        const on = kind === "like" ? post.liked : post.marked_helpful;
-        if (on) await api(`/api/posts/${post.id}/engage/${kind}`, { method: "DELETE" });
+        const flag = kind === "like" ? "liked" : "marked_helpful", count = kind === "like" ? "likes" : "helpful";
+        if (post[flag]) await api(`/api/posts/${post.id}/engage/${kind}`, { method: "DELETE" });
         else await api(`/api/posts/${post.id}/engage`, { method: "POST", body: { kind } });
-        rerender();
+        post[flag] = !post[flag];
+        post[count] = Math.max(0, (post[count] || 0) + (post[flag] ? 1 : -1));
+        btn.classList.toggle("on", post[flag]);
+        btn.setAttribute("aria-pressed", String(post[flag]));
+        $("span", btn).textContent = post[count] || "";
       } catch (err) { toast(err.message); }
     });
   });
+}
+
+const after = (post) => encodeURIComponent(`${post.created_at}|${post.id}`);
+
+/* A "Load more" button under a list that comes a page at a time. */
+function moreButton(box, fetchPage, render, pageSize) {
+  const btn = document.createElement("button");
+  btn.className = "btn more";
+  btn.textContent = "Load more";
+  btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    try {
+      const page = await fetchPage();
+      render(page);
+      if (page.length < pageSize) btn.remove();
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); } finally { btn.disabled = false; }
+  });
+  box.after(btn);
+  return btn;
 }
 
 async function viewFeed() {
@@ -755,14 +864,21 @@ async function viewFeed() {
   const byId = Object.fromEntries(list.map((c) => [c.id, c]));
   const main = shell("feed", `
     <div class="row spread" style="margin-bottom:16px">
-      <div><h1 style="margin:0">Your feed</h1><div class="muted">Fresh lessons from the companions you follow. Every post is a conversation starter.</div></div>
-      <a class="btn" href="#/companions">Find more companions</a>
+      <div><h1 style="margin:0">Your feed</h1><div class="muted">Fresh lessons and guides from the companions you follow. Every post is a conversation starter.</div></div>
+      <div class="row"><a class="btn" href="#/guides">All guides</a><a class="btn" href="#/companions">Find more companions</a></div>
     </div>
     <div id="today"></div>
-    <div class="stack" id="posts">
+    <div class="stack feed" id="posts">
       ${posts.length ? posts.map((p) => postCard(p, byId[p.companion_id])).join("") : `<div class="card empty">Follow a few companions to fill your feed. <a href="#/companions">Browse companions</a></div>`}
     </div>`);
-  wirePosts(main, posts, viewFeed);
+  wirePosts(main, posts);
+  if (posts.length >= FEED_PAGE) {
+    moreButton($("#posts"), () => api(`/api/feed?before=${after(posts[posts.length - 1])}`), (page) => {
+      posts.push(...page);
+      $("#posts").insertAdjacentHTML("beforeend", page.map((p) => postCard(p, byId[p.companion_id])).join(""));
+      wirePosts(main, posts);
+    }, FEED_PAGE);
+  }
   const rem = (await api("/api/reminders")).filter((r) => r.kind !== "new_posts");
   if (rem.length) {
     $("#today").innerHTML = `<div class="card today"><h3>Today</h3><ul>${rem.map((r) => r.kind === "notice"
@@ -778,6 +894,112 @@ async function viewFeed() {
   }
   await api("/api/reminders/feed-seen", { method: "POST" });
   refreshBell();
+}
+
+/* ------------------------------------------------------------------- guides */
+
+const GUIDES_PAGE = 24;  // guides the server sends at a time (app/main.py)
+
+/* One post on a page of its own: a guide with its infographic, or a companion's post. */
+async function viewPost(m) {
+  const id = +m[1];
+  const post = await api(`/api/posts/${id}`);
+  const [c, more] = await Promise.all([
+    api(`/api/companions/${post.companion_id}`),
+    post.kind ? api(`/api/guides?companion=${post.companion_id}`) : Promise.resolve([]),
+  ]);
+  const name = esc(c.persona.name);
+  const others = more.filter((x) => x.id !== id).slice(0, 3);
+  const main = shell(post.kind ? "guides" : "feed", `
+    <article class="guide">
+      <div class="muted small crumbs">${post.kind ? `<a href="#/guides">Guides</a> › <a href="#/guides?topic=${encodeURIComponent(post.topic)}">${esc(post.topic)}</a>`
+        : `<a href="#/feed">Feed</a>`}</div>
+      ${post.kind ? guideBadges(post, false) : ""}
+      <h1>${esc(post.title)}</h1>
+      ${post.summary ? `<p class="lead">${esc(post.summary)}</p>` : ""}
+      <div class="row spread">${byline(c, post.created_at)}
+        ${c.is_mine ? "" : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>`}</div>
+      ${post.graphic ? infographic(post.graphic, post) : ""}
+      <div class="row actions" data-post="${post.id}">
+        <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${name} about this</a>
+        ${engageButtons(post)}
+      </div>
+      <div class="prose guide-body">${md(post.body)}</div>
+      <div class="card study" data-post="${post.id}">
+        <h3 style="margin:0">Study this ${post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post"}</h3>
+        <div class="row">
+          <button class="btn" data-study="quiz">📝 Quiz me</button>
+          <button class="btn" data-study="cards">🃏 Flashcards</button>
+          <button class="btn" data-study="summary">📄 Summary</button>
+          <a class="btn ghost" href="#/c/${c.id}?post=${post.id}">💬 Talk it through with ${name}</a>
+        </div>
+      </div>
+    </article>
+    ${others.length ? `<section class="more-guides"><div class="row spread"><h2 style="margin:0">More from ${name}</h2>
+      <a class="btn ghost" href="#/guides?companion=${c.id}">All guides by ${name}</a></div>
+      <div class="guide-grid">${others.map((x) => guideTile(x, c)).join("")}</div></section>` : ""}`);
+  wirePosts(main, [post]);
+  $("#followBtn")?.addEventListener("click", async (e) => {
+    try {
+      await api(`/api/companions/${c.id}/follow`, { method: c.following ? "DELETE" : "POST" });
+      c.following = !c.following;
+      e.target.classList.toggle("on", c.following);
+      e.target.textContent = c.following ? "Following" : "Follow";
+    } catch (err) { toast(err.message); }
+  });
+}
+
+/* The guides library: every companion's tutorials and cheat sheets, by region like aieverytime.org's education
+   page, and by kind, level, topic or a search. The filters live in the address, so Back and links keep them. */
+async function viewGuides(m) {
+  const params = new URLSearchParams(m[1] || "");
+  for (const [k, v] of [...params]) if (!v) params.delete(k);
+  const [list, topics, companions] = await Promise.all([api(`/api/guides?${params}`), api("/api/guides/topics"), api("/api/companions")]);
+  const byId = Object.fromEntries(companions.map((c) => [c.id, c]));
+  const only = params.get("companion") ? byId[+params.get("companion")] : null;
+  const link = (changes) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(changes)) v ? p.set(k, v) : p.delete(k);
+    const s = p.toString();
+    return `#/guides${s ? `?${s}` : ""}`;
+  };
+  const tab = (key, value, text) => `<a href="${link({ [key]: value })}" class="${(params.get(key) || "") === (value || "") ? "active" : ""}">${text}</a>`;
+  const main = shell("guides", `
+    <div class="row spread" style="margin-bottom:6px">
+      <div><h1 style="margin:0">Guides</h1>
+      <div class="muted">Tutorials and cheat sheets by the AI Learning Companions: read one, then ask its author anything.</div></div>
+    </div>
+    <nav class="region-tabs" aria-label="Region">${tab("region", "", "All regions")}${REGION_ORDER.map((r) => tab("region", r, esc(r))).join("")}</nav>
+    <form class="row filters" id="filters">
+      <div class="seg" role="group" aria-label="Kind">${tab("kind", "", "All")}${tab("kind", "tutorial", "Tutorials")}${tab("kind", "cheat_sheet", "Cheat sheets")}</div>
+      <select name="level" aria-label="Level"><option value="">All levels</option>${["beginner", "intermediate", "advanced"].map((l) =>
+        `<option value="${l}" ${params.get("level") === l ? "selected" : ""}>${label(l)}</option>`).join("")}</select>
+      <select name="topic" aria-label="Topic"><option value="">All topics</option>${topics.map((t) =>
+        `<option value="${esc(t.topic)}" ${params.get("topic") === t.topic ? "selected" : ""}>${esc(t.topic)} (${t.guides})</option>`).join("")}</select>
+      <input type="search" name="q" value="${esc(params.get("q") || "")}" placeholder="Search guides or companions" aria-label="Search guides">
+      <button class="btn">Search</button>
+    </form>
+    ${only ? `<div class="row small" style="margin:4px 0 12px"><span class="chip">By ${esc(only.persona.name)} ${esc(only.persona.flag)}</span>
+      <a href="${link({ companion: "" })}">Show every companion's guides</a></div>` : ""}
+    <div class="guide-grid" id="guides">${list.length ? list.map((p) => guideTile(p, byId[p.companion_id])).join("")
+      : `<div class="card empty">No guides match. <a href="#/guides">See them all</a></div>`}</div>`);
+  const form = $("#filters");
+  const go = () => {
+    const data = new FormData(form);
+    location.hash = link({ level: data.get("level"), topic: data.get("topic"), q: String(data.get("q") || "").trim() });
+  };
+  form.addEventListener("submit", (e) => { e.preventDefault(); go(); });
+  $$("select", form).forEach((s) => s.addEventListener("change", go));
+  if (list.length >= GUIDES_PAGE) {
+    moreButton($("#guides"), () => {
+      const p = new URLSearchParams(params);
+      p.set("before", `${list[list.length - 1].created_at}|${list[list.length - 1].id}`);
+      return api(`/api/guides?${p}`);
+    }, (page) => {
+      list.push(...page);
+      $("#guides").insertAdjacentHTML("beforeend", page.map((p) => guideTile(p, byId[p.companion_id])).join(""));
+    }, GUIDES_PAGE);
+  }
 }
 
 /* --------------------------------------------------------------- companions */
@@ -818,6 +1040,8 @@ async function viewCompanion(m) {
   ]);
   const p = c.persona;
   let contextPost = postId ? posts.find((x) => x.id === postId) : null;
+  // A post further back than the first page of them, like an older guide.
+  if (postId && !contextPost) contextPost = await api(`/api/posts/${postId}`).catch((e) => { if (e instanceof StaleView) throw e; return null; });
   const main = shell(state.me.primary_companion_id === id ? "mine" : "companions", `
     <div class="row" style="margin-bottom:18px">
       ${avatarImg(c, 72)}
@@ -932,7 +1156,9 @@ async function viewCompanion(m) {
 
   const renderRecent = (list) => {
     $("#recent").innerHTML = list.length
-      ? list.slice(0, 6).map((x) => `<a href="#/c/${id}?post=${x.id}" data-ctx="${x.id}">${esc(x.title)}</a>`).join("")
+      ? list.slice(0, 6).map((x) => x.kind ? `<a href="#/p/${x.id}">📘 ${esc(x.title)}</a>`
+        : `<a href="#/c/${id}?post=${x.id}" data-ctx="${x.id}">${esc(x.title)}</a>`).join("")
+        + (list.some((x) => x.kind) ? `<a class="muted" href="#/guides?companion=${id}">All guides by ${esc(p.name)} →</a>` : "")
       : `<span class="muted">No posts yet.</span>`;
   };
   renderRecent(posts);

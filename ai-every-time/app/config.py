@@ -90,6 +90,9 @@ class Settings:
     # Fetch starter companions' photos from their addresses in app/starter_companions.csv and keep small copies
     # here (see app/photos.py). With 0, browsers load them from those addresses every time.
     fetch_photos: bool = field(default_factory=lambda: os.environ.get("AIET_FETCH_PHOTOS", "1") != "0")
+    # The education guides loaded at start-up (see app/guides.py): a file made by scripts/import_guides.py, by
+    # default app/guides.json.gz. 0 loads none.
+    guides: str = field(default_factory=lambda: os.environ.get("AIET_GUIDES", "").strip())
 
 
 settings = Settings()
