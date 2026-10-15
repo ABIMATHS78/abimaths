@@ -1,6 +1,10 @@
 import json
+import logging
+import math
 import os
 from dataclasses import dataclass, field
+
+log = logging.getLogger(__name__)
 
 
 def _int(name: str, default: int) -> int:
@@ -10,13 +14,34 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _price(p) -> tuple[float, float, float] | None:
+    """Three finite, non-negative numbers, or None."""
+    if not (isinstance(p, list) and len(p) == 3 and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in p)):
+        return None
+    try:
+        prices = tuple(float(x) for x in p)
+    except OverflowError:  # an integer too big for a float
+        return None
+    return prices if all(math.isfinite(x) and x >= 0 for x in prices) else None
+
+
 def _prices() -> dict:
-    """AIET_PRICES: {"model": [input, output, cache read], ...} in US dollars per million tokens."""
+    """AIET_PRICES: {"model": [input, output, cache read], ...} in US dollars per million tokens. An entry
+    that isn't three prices is skipped, with a warning, and the others still count."""
     try:
         raw = json.loads(os.environ.get("AIET_PRICES") or "{}")
-        return {str(m): tuple(float(x) for x in p) for m, p in raw.items() if len(p) == 3}
-    except (ValueError, TypeError, AttributeError):
+    except ValueError:
+        raw = None
+    if not isinstance(raw, dict):
+        log.warning("AIET_PRICES isn't a JSON object of prices, so the built-in prices are used")
         return {}
+    out = {}
+    for model, p in raw.items():
+        if (prices := _price(p)) is None:
+            log.warning("AIET_PRICES: skipping %r, which isn't [input, output, cache read] in dollars", model)
+        else:
+            out[str(model)] = prices
+    return out
 
 
 @dataclass

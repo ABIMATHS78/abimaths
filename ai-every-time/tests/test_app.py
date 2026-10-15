@@ -171,3 +171,14 @@ def test_system_prompt_reflects_persona():
 
 def test_health_check(client):
     assert client.get("/healthz").json() == {"ok": True}  # no sign-in needed
+
+
+def test_health_check_notices_a_missing_database(client):
+    import os
+
+    from app.config import settings
+
+    os.remove(settings.database_path)
+    r = client.get("/healthz")
+    assert r.status_code == 503 and r.json() == {"ok": False}
+    assert not os.path.exists(settings.database_path)  # not quietly made again, empty

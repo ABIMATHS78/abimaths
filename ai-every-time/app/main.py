@@ -8,10 +8,11 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
@@ -565,9 +566,17 @@ def index():
 
 @app.get("/healthz", include_in_schema=False)
 def healthz():
-    """For hosting platforms and the container's health check: the app is up and its database answers."""
-    with db.connect() as conn:
-        conn.execute("SELECT 1").fetchone()
+    """For hosting platforms and the container's health check: the app is up and its database answers.
+    Opened read-write but never created, so a missing or replaced database file shows up here."""
+    try:
+        conn = sqlite3.connect(f"file:{quote(settings.database_path)}?mode=rw", uri=True, timeout=5)
+        try:
+            conn.execute("SELECT 1 FROM users LIMIT 1").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        log.exception("health check failed")
+        return JSONResponse({"ok": False}, status_code=503)
     return {"ok": True}
 
 

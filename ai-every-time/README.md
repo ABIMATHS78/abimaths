@@ -40,7 +40,7 @@ It includes the companion core (starter companions, the companion designer, chat
 
 ## Try it in your browser
 
-Open **[AI Every Time in GitHub Codespaces](https://codespaces.new/ABIMATHS78/abimaths)** and create the codespace. It installs everything, starts the app and opens it in a new tab, with nothing to install on your computer. When you create it you can give two optional values: `ANTHROPIC_API_KEY` for real AI replies (without it the app runs in demo mode), and `AIET_ADMIN_EMAILS` set to your email address, so that signing up with that address shows the Staff pages, including Insights. If the tab doesn't open, find port 8000 in the **Ports** panel and open its address. That address is private to your GitHub account; to try it on your phone, right-click the port and set its visibility to public.
+Open **[AI Every Time in GitHub Codespaces](https://codespaces.new/ABIMATHS78/abimaths)** and create the codespace. It installs everything, starts the app and opens it in a new tab, with nothing to install on your computer. When you create it you can give two optional values: `ANTHROPIC_API_KEY` for real AI replies (without it the app runs in demo mode), and `AIET_ADMIN_EMAILS` set to your email address, so that signing up with that address shows the Staff pages, including Insights. If the tab doesn't open, find port 8000 in the **Ports** panel and open its address. That address is private to your GitHub account. To try it on your phone, right-click the port and set its visibility to public, but sign up with your admin address first: anyone with a public address can use the app, and the AI on your key. The codespace caps everyone's AI requests together at 200 a day (admins aren't held to it), and email isn't set up there, so there's no smaller allowance for new accounts. Set the port back to private when you're done.
 
 ## Run it
 
@@ -90,7 +90,7 @@ The app is one process with a SQLite database, so it runs as a single instance w
 ```bash
 cd ai-every-time
 docker build -t ai-every-time .
-docker run -d --name ai-every-time --restart unless-stopped -p 8000:8000 -v aiet-data:/data \
+docker run -d --name ai-every-time --restart unless-stopped -p 127.0.0.1:8000:8000 -v aiet-data:/data \
   -e ANTHROPIC_API_KEY=sk-ant-... \
   -e AIET_PUBLIC_URL=https://learn.example.com -e AIET_SECURE_COOKIES=1 \
   -e AIET_ADMIN_EMAILS=you@example.com \
@@ -99,11 +99,12 @@ docker run -d --name ai-every-time --restart unless-stopped -p 8000:8000 -v aiet
   ai-every-time
 ```
 
-- Serve it over HTTPS (your host's, or a reverse proxy such as Caddy or nginx in front of port 8000), with `AIET_SECURE_COOKIES=1` and `AIET_PUBLIC_URL` set to the public address. Notifications need HTTPS.
+- Serve it over HTTPS (your host's, or a reverse proxy such as Caddy or nginx in front of port 8000), with `AIET_SECURE_COOKIES=1` and `AIET_PUBLIC_URL` set to the public address. Notifications need HTTPS. The example publishes port 8000 only on the machine itself, for a proxy running there; publishing it more widely would also offer the site without HTTPS.
+- The app runs as an ordinary user (uid 10001). When the container starts as root, it first gives `/data` to that user, so a disk the host attached as root's works too. It always runs one process, whatever `WEB_CONCURRENCY` says.
 - With email set up, sign up with the admin address and confirm it from the email; then the Staff pages appear.
 - Learners' data is in the `/data` volume (`/data/ai_every_time.db`). Back it up while the app runs with `docker exec ai-every-time python -c "import sqlite3; sqlite3.connect('/data/ai_every_time.db').backup(sqlite3.connect('/data/backup.db'))"`, then copy `backup.db` somewhere safe.
-- `/healthz` answers when the app and its database are up, for your host's health checks; the image checks itself with it too. The app runs as an ordinary user, not root.
-- Set `AIET_AI_ALLOWANCE` (and `AIET_AI_SITE_LIMIT`) to keep costs predictable, and watch the estimated cost on Insights.
+- `/healthz` answers when the app and its database are up, and with 503 when the database file is missing or unreadable, for your host's health checks; the image checks itself with it too.
+- Set `AIET_AI_ALLOWANCE` (and `AIET_AI_SITE_LIMIT`) to keep costs predictable, and watch the estimated cost on Insights. It's an estimate: when a fallback model answers after the first one declined, the whole request is priced at the fallback model's rates.
 
 ## Tests
 

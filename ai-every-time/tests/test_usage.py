@@ -473,3 +473,50 @@ def test_admins_can_give_a_learner_an_allowance_of_their_own(client, mailbox, mo
     client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": None})  # the usual again
     as_user(client, "ada@example.com", "Ada")
     assert client.get("/api/me").json()["ai_allowance"] == {"limit": 2, "used": 11, "remaining": 0, "confirm_raises_to": 4}
+
+
+def test_an_allowance_of_their_own_isnt_raised_by_confirming(client, mailbox, monkeypatch):
+    """Below the site's allowance too, confirmed or not: nothing promises that confirming raises it."""
+    from app import digest, main
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    monkeypatch.setattr(settings, "ai_allowance", 4)
+    monkeypatch.setattr(settings, "ai_allowance_unconfirmed", 3)
+    ada, bo = signup(client), signup(client, email="bo@example.com", name="Bo")
+    assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200  # Bo's
+    as_user(client, "boss@example.com", "Boss")
+    client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}")
+    for learner in (ada, bo):
+        assert client.post(f"/api/staff/users/{learner['id']}/allowance", json={"ai_allowance": 1}).status_code == 200
+
+    for email, name in (("ada@example.com", "Ada"), ("bo@example.com", "Bo")):  # unconfirmed, then confirmed
+        as_user(client, email, name)
+        assert client.get("/api/me").json()["ai_allowance"] == {"limit": 1, "used": 0, "remaining": 1, "confirm_raises_to": None}
+        chat(client, starter(client))
+        assert chat(client, starter(client)).json()["detail"] == (
+            "You've reached your limit of 1 AI request in 24 hours. You can ask again in about 24 hours.")
+
+    # Nor does the confirmation email, while a learner on the usual allowance is told what it does.
+    ada_row = main._load_user(ada["id"])
+    assert "raises your AI requests" not in digest.confirmation_message(ada_row, "t").get_body(("plain",)).get_content()
+    as_user(client, "cy@example.com", "Cy")
+    assert "raises your AI requests from 3 to 4 a day" in mailbox.sent[-1].get_body(("plain",)).get_content()
+    # The page a link opens doesn't know whose it is, so it promises nothing about AI requests.
+    assert "AI requests" not in client.get("/api/email/confirm?token=x").text
+
+
+def test_allowance_changes_are_exact(client, monkeypatch):
+    """No resetting by a missing or misspelt field, no true/false for numbers, and nothing for admins."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    ada = signup(client)
+    boss = signup(client, email="boss@example.com", name="Boss")
+    url = f"/api/staff/users/{ada['id']}/allowance"
+    client.post(url, json={"ai_allowance": 50})
+    for bad in ({}, {"allowance": 70}, {"ai_allowance": True}, {"ai_allowance": False}, {"ai_allowance": "60"}, {"ai_allowance": 1.5}):
+        assert client.post(url, json=bad).status_code == 422, bad
+    assert [u["ai_allowance"] for u in client.get("/api/staff/users?q=ada").json()] == [50]
+    r = client.post(f"/api/staff/users/{boss['id']}/allowance", json={"ai_allowance": 3})
+    assert r.status_code == 409 and "no limit" in r.json()["detail"]
