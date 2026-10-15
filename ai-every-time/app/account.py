@@ -214,7 +214,7 @@ def export(user: dict = User):
                 "JOIN companions c ON c.id = f.companion_id WHERE f.user_id = ? ORDER BY f.created_at"),
             "conversations": rows(
                 "SELECT m.companion_id, json_extract(c.persona, '$.name') AS companion, m.role, m.content, m.post_id, "
-                "m.created_at FROM messages m JOIN companions c ON c.id = m.companion_id WHERE m.user_id = ? ORDER BY m.id"),
+                "m.reaction, m.created_at FROM messages m JOIN companions c ON c.id = m.companion_id WHERE m.user_id = ? ORDER BY m.id"),
             "memories": rows("SELECT companion_id, fact, created_at FROM memories WHERE user_id = ? ORDER BY id"),
             "post_reactions": rows("SELECT post_id, kind, created_at FROM engagements WHERE user_id = ? ORDER BY created_at"),
             "lessons": rows("SELECT lesson_id, status, updated_at FROM lesson_progress WHERE user_id = ? ORDER BY updated_at"),

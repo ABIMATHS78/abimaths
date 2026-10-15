@@ -112,7 +112,8 @@ def test_photo_avatar_upload_validation_and_privacy(client):
     # Private companion photos are not visible to others or to anonymous visitors.
     client.post("/api/auth/logout")
     assert client.get(f"/api/companions/{mine['id']}/avatar").status_code == 404
-    assert client.get("/api/companions/1/avatar").status_code == 200  # starters stay public
+    assert client.get("/api/companions/1/avatar", follow_redirects=False).status_code == 307  # starters stay public
+    assert client.get("/api/companions/1/avatar?face=1").status_code == 200
     signup(client, email="eve@example.com", name="Eve")
     assert client.get(f"/api/companions/{mine['id']}/avatar").status_code == 404
     assert client.put(url, content=PNG).status_code == 403

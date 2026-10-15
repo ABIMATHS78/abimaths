@@ -26,22 +26,26 @@ def test_starters_seeded_with_content(client):
     signup(client)
     companions = client.get("/api/companions").json()
     starters = [c for c in companions if c["is_starter"]]
-    assert len(starters) == 8
-    assert {c["persona"]["country"] for c in starters} >= {"Nigeria", "Japan", "Brazil", "India"}
-    for c in starters:
-        assert client.get(f"/api/companions/{c['id']}/avatar.svg").text.startswith("<svg")
-    # Initial posts are generated in the background on startup.
+    assert len(starters) == 103
+    assert {c["persona"]["country"] for c in starters} >= {"Nigeria", "Japan", "Brazil", "India", "Fiji"}
+    for c in starters:  # the drawn face behind each photo
+        assert client.get(f"/api/companions/{c['id']}/avatar.svg?face=1").text.startswith("<svg")
+    # The featured starters, one per region, write their first posts in the background at start-up.
+    featured = [c for c in starters if c["following"]]
+    assert sorted(c["region"] for c in featured) == sorted(
+        ["Africa", "Asia", "Europe", "North America", "South America", "Oceania", "Antarctica"])
     for _ in range(50):
-        if all(client.get(f"/api/companions/{c['id']}/posts").json() for c in starters):
+        if all(client.get(f"/api/companions/{c['id']}/posts").json() for c in featured):
             break
         time.sleep(0.05)
-    assert all(client.get(f"/api/companions/{c['id']}/posts").json() for c in starters)
+    assert all(client.get(f"/api/companions/{c['id']}/posts").json() for c in featured)
 
 
 def test_signup_requires_onboarding_then_choose_starter(client):
     me = signup(client)
     assert me["onboarded"] is False and me["primary_companion_id"] is None
-    assert all(c["following"] for c in client.get("/api/companions").json() if c["is_starter"])
+    # New learners start out following the most followed starter of each region.
+    assert sum(c["following"] for c in client.get("/api/companions").json() if c["is_starter"]) == 7
     starter = client.get("/api/companions").json()[0]
     assert client.post(f"/api/companions/{starter['id']}/primary").status_code == 204
     me = client.get("/api/me").json()
@@ -68,7 +72,7 @@ def test_design_own_companion_edit_and_restore(client):
 
 def test_remix_starter_keeps_original(client):
     signup(client)
-    starter = client.get("/api/companions").json()[0]
+    starter = next(c for c in client.get("/api/companions").json() if c["is_starter"] and not c["real_person"])
     r = client.post(f"/api/companions/{starter['id']}/remix", json={"overrides": {"teaching_style": "socratic"}})
     assert r.status_code == 201
     remix = r.json()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import secrets
 
@@ -10,25 +11,56 @@ from fastapi import HTTPException
 
 from app import db
 from app.persona import Persona
-from app.starter_companions import STARTER_COMPANIONS
+from app.starter_companions import STARTERS
 
+log = logging.getLogger(__name__)
 MAX_VERSIONS = 50
 # A published companion is hidden for review once this many learners report it.
 REPORTS_TO_HIDE = 3
+STARTER_FIELDS = ("persona", "base_followers", "region", "photo_url", "real_person", "featured", "retired")
 
 
 def seed_starters() -> None:
-    """Insert starter companions that don't exist yet. Existing ones are left untouched."""
+    """Make the starter companions match app/starter_companions.csv: add new ones, update the ones that changed,
+    and retire the ones it no longer lists. A retired starter is kept, with its chats, memories and posts, for the
+    learners who talked to it or have it as their companion; nobody else sees it, and it stops posting. Learners
+    who followed it start following the featured starters. Listing it again in the CSV brings it back."""
+    ts = db.now()
     with db.connect() as conn:
-        for slug, persona in STARTER_COMPANIONS.items():
-            exists = conn.execute("SELECT 1 FROM companions WHERE slug = ?", (slug,)).fetchone()
-            if not exists:
-                ts = db.now()
+        existing = {r["slug"]: r for r in conn.execute(
+            f"SELECT id, slug, {', '.join(STARTER_FIELDS)} FROM companions WHERE is_starter = 1")}
+        for slug, s in STARTERS.items():
+            values = (s.persona.model_dump_json(), s.followers, s.region, s.photo_url, int(s.real_person),
+                      int(s.featured), 0)
+            row = existing.pop(slug, None)
+            if row is None:
                 conn.execute(
-                    "INSERT INTO companions (slug, owner_id, is_starter, persona, created_at, updated_at) "
-                    "VALUES (?, NULL, 1, ?, ?, ?)",
-                    (slug, persona.model_dump_json(), ts, ts),
-                )
+                    f"INSERT INTO companions (slug, owner_id, is_starter, {', '.join(STARTER_FIELDS)}, created_at, updated_at) "
+                    "VALUES (?, NULL, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (slug, *values, ts, ts))
+            elif tuple(row[k] for k in STARTER_FIELDS) != values:
+                if row["photo_url"] != s.photo_url:  # fetched again from the new address
+                    conn.execute("DELETE FROM companion_photos WHERE companion_id = ?", (row["id"],))
+                conn.execute(f"UPDATE companions SET {', '.join(f'{k} = ?' for k in STARTER_FIELDS)}, updated_at = ? "
+                             "WHERE id = ?", (*values, ts, row["id"]))
+        for slug, row in existing.items():
+            if row["retired"]:
+                continue
+            log.info("Retiring the starter companion %s: it's no longer in starter_companions.csv. Learners who "
+                     "talked to it keep it and their chats; nobody else sees it.", slug)
+            conn.execute("INSERT OR IGNORE INTO follows (user_id, companion_id, created_at) "
+                         "SELECT f.user_id, c.id, ? FROM follows f JOIN companions c ON c.is_starter = 1 AND c.featured = 1 "
+                         "WHERE f.companion_id = ?", (ts, row["id"]))
+            # Following it ends for learners who never talked to it (everyone followed the starters at sign-up).
+            conn.execute("DELETE FROM follows WHERE companion_id = :id "
+                         "AND user_id NOT IN (SELECT user_id FROM messages WHERE companion_id = :id) "
+                         "AND user_id NOT IN (SELECT id FROM users WHERE primary_companion_id = :id)", {"id": row["id"]})
+            conn.execute("UPDATE companions SET retired = 1, featured = 0, updated_at = ? WHERE id = ?", (ts, row["id"]))
+
+
+def followers(row) -> int | None:
+    """The follower count learners see: for a starter companion, the count it started with plus everyone who
+    follows it here. Companions learners design don't show one. `row` has the companion's columns and `follows`."""
+    return row["base_followers"] + row["follows"] if row["is_starter"] else None
 
 
 def _slugify(name: str) -> str:
@@ -89,19 +121,25 @@ def persona_for(companion: dict, user_id: int | None) -> Persona:
 
 
 def list_for(user_id: int) -> list[dict]:
+    """Every companion the learner can see: their own in the order they made them, then other learners' most
+    followed first, then the starters most followed first. Retired starters only for learners who still have them."""
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT c.*, (f.user_id IS NOT NULL) AS following, u.display_name AS designer, "
-            "(SELECT COUNT(*) FROM follows f2 WHERE f2.companion_id = c.id) AS followers "
+            "(SELECT COUNT(*) FROM follows f2 WHERE f2.companion_id = c.id) AS follows "
             "FROM companions c "
             "LEFT JOIN follows f ON f.companion_id = c.id AND f.user_id = :uid "
             "LEFT JOIN users u ON u.id = c.owner_id "
-            f"WHERE {VISIBLE_SQL} ORDER BY c.is_starter ASC, c.id ASC",
+            f"WHERE {VISIBLE_SQL} AND (c.retired = 0 OR f.user_id IS NOT NULL "
+            "OR c.id = (SELECT primary_companion_id FROM users WHERE id = :uid)) "
+            "ORDER BY c.is_starter ASC, (c.owner_id = :uid) DESC, "
+            "CASE WHEN c.is_starter = 1 THEN c.base_followers + follows WHEN c.owner_id = :uid THEN 0 ELSE follows END DESC, "
+            "c.id ASC",
             {"uid": user_id},
         ).fetchall()
     return [
         for_viewer(db.row_to_companion(r), user_id)
-        | {"following": bool(r["following"]), "designer": r["designer"], "followers": r["followers"]}
+        | {"following": bool(r["following"]), "designer": r["designer"], "followers": followers(r)}
         for r in rows
     ]
 
@@ -146,8 +184,12 @@ def create(user_id: int, persona: Persona, remixed_from: int | None = None) -> d
     return get(cid)
 
 
-def remix(user_id: int, source_id: int, overrides: dict | None = None) -> dict:
+def remix(user_id: int, source_id: int, overrides: dict | None = None, keep_photo: bool = True) -> dict:
+    """A new companion of the learner's own, starting from another. A starter companion's photo comes along
+    unless they'd rather draw a face; other learners' photos stay theirs."""
     source = get_visible(source_id, user_id)
+    if source["real_person"]:
+        raise HTTPException(403, "Companions modelled on real people can't be remixed. Design your own instead.")
     overrides = overrides or {}
     data = source["persona"] | overrides
     if source["owner_id"] != user_id:
@@ -155,7 +197,12 @@ def remix(user_id: int, source_id: int, overrides: dict | None = None) -> dict:
         data["custom_instructions"] = overrides.get("custom_instructions", "")
     if "name" not in overrides:
         data["name"] = f"My {source['persona']['name']}"[:40]
-    return create(user_id, Persona.model_validate(data), remixed_from=source_id)
+    c = create(user_id, Persona.model_validate(data), remixed_from=source_id)
+    if keep_photo and source["is_starter"]:
+        with db.connect() as conn:
+            conn.execute("INSERT INTO companion_photos (companion_id, mime, data, updated_at) "
+                         "SELECT ?, mime, data, ? FROM companion_photos WHERE companion_id = ?", (c["id"], db.now(), source_id))
+    return c
 
 
 def update(user_id: int, companion_id: int, persona: Persona) -> dict:

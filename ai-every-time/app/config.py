@@ -84,6 +84,9 @@ class Settings:
     ai_site_limit: int = field(default_factory=lambda: _int("AIET_AI_SITE_LIMIT", 0))
     # Prices for the cost estimate on the Insights page, for models not in app/insights.py or when they change.
     prices: dict = field(default_factory=_prices)
+    # Fetch starter companions' photos from their addresses in app/starter_companions.csv and keep small copies
+    # here (see app/photos.py). With 0, browsers load them from those addresses every time.
+    fetch_photos: bool = field(default_factory=lambda: os.environ.get("AIET_FETCH_PHOTOS", "1") != "0")
 
 
 settings = Settings()

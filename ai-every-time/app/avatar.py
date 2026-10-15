@@ -1,8 +1,11 @@
 """Render a companion's face as an SVG from its Avatar parameters.
 
 All values reaching the SVG are validated by the Avatar model (hex colours and
-fixed enums), so no user text is ever interpolated into markup.
+fixed enums), so no user text is ever interpolated into markup, except the
+escaped initials of render_initials.
 """
+
+from html import escape
 
 from app.persona import Avatar
 
@@ -108,5 +111,19 @@ def render_svg(a: Avatar, size: int = 200) -> str:
         f'<path d="M100 104 Q96 114 100 116" fill="none" stroke="#00000033" stroke-width="2.5" stroke-linecap="round"/>'
         f"{_mouth(a)}"
         f"{_accessory(a)}"
+        f"</svg>"
+    )
+
+
+def render_initials(name: str, background: str, size: int = 200) -> str:
+    """Initials on a circle: the stand-in for a companion modelled on a real person when their photo can't be
+    shown, rather than a drawn face guessing at what they look like."""
+    letters = escape("".join(w[0] for w in name.split()[:2]).upper())
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="{size}" height="{size}" '
+        f'role="img" aria-label="Companion avatar">'
+        f'<rect width="200" height="200" rx="100" fill="{background}"/>'
+        f'<text x="100" y="100" dy=".35em" text-anchor="middle" fill="#FFFFFF" font-size="76" font-weight="700" '
+        f'font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">{letters}</text>'
         f"</svg>"
     )

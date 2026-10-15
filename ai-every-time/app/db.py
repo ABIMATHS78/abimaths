@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS follows (
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, companion_id)
 );
+-- Follower counts are worked out for every companion a page lists.
+CREATE INDEX IF NOT EXISTS idx_follows_companion ON follows(companion_id);
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -339,6 +341,20 @@ MIGRATIONS = [
     ("users", "email_confirmed_at", "TEXT", _confirm_existing),
     # A learner's own daily AI allowance, set by an admin: NULL for the site's, 0 for no limit.
     ("users", "ai_allowance", "INTEGER"),
+    # Starter companions, from app/starter_companions.csv: the follower count each starts with (learners who
+    # follow it add to it), its region, where its photo comes from, whether it's modelled on a real person,
+    # and whether it's featured (the most followed in its region, which new learners start out following).
+    ("companions", "base_followers", "INTEGER NOT NULL DEFAULT 0"),
+    ("companions", "region", "TEXT NOT NULL DEFAULT ''"),
+    ("companions", "photo_url", "TEXT NOT NULL DEFAULT ''"),
+    ("companions", "real_person", "INTEGER NOT NULL DEFAULT 0"),
+    ("companions", "featured", "INTEGER NOT NULL DEFAULT 0"),
+    # A starter no longer in the CSV. It's kept, with its chats, for the learners who talked to it, but no one
+    # else sees it, and it stops posting.
+    ("companions", "retired", "INTEGER NOT NULL DEFAULT 0"),
+    # An emoji reaction to a message from the other side of the chat: the companion's to the learner's
+    # messages, the learner's to the companion's. NULL for none.
+    ("messages", "reaction", "TEXT"),
 ]
 
 
@@ -375,6 +391,9 @@ def row_to_companion(row: sqlite3.Row) -> dict:
         "hidden": bool(row["hidden"]),
         "removed": bool(row["removed"]),
         "published_at": row["published_at"],
+        "region": row["region"],
+        "real_person": bool(row["real_person"]),
+        "retired": bool(row["retired"]),
         "persona": _with_defaults(json.loads(row["persona"])),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
