@@ -182,8 +182,8 @@ def _ai_problem(user: dict) -> str | None:
         return None
     if auth.role_of(user) != "admin":
         return llm.AI_UNAVAILABLE
-    return (f"AI isn't working: {llm.account_problem}. Check ANTHROPIC_API_KEY (and AIET_MODEL) on the server, "
-            "then restart it.")
+    return (f"AI isn't working: {llm.account_problem}. Check ANTHROPIC_API_KEY (and ANTHROPIC_WORKSPACE_ID and "
+            "AIET_MODEL, if set) on the server, then restart it.")
 
 
 @app.patch("/api/me")

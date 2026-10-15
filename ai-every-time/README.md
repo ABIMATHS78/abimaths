@@ -61,7 +61,7 @@ uvicorn app.main:app --reload
 
 Open http://127.0.0.1:8000.
 
-**If AI isn't working.** When Claude rejects the API key, the Claude account has a billing problem, or it can't use the model, the server says so in one line of its log, admins see a banner with the fix, and learners are told AI isn't available. Check a key with `python -c "import anthropic; print(anthropic.Anthropic().models.retrieve('claude-opus-5-5').id)"` (it prints the model's name when the key works), set a working one and restart the app. In a codespace, update the `ANTHROPIC_API_KEY` secret at github.com/settings/codespaces, then stop and reopen the codespace.
+**If AI isn't working.** When Claude rejects the API key, the Claude account has a billing problem, it can't use the model, or the key works across workspaces and `ANTHROPIC_WORKSPACE_ID` doesn't name one, the server says so in one line of its log, admins see a banner with the fix, and learners are told AI isn't available. Check a key with `python -c "import anthropic, os; w = os.environ.get('ANTHROPIC_WORKSPACE_ID'); print(anthropic.Anthropic(default_headers={'anthropic-workspace-id': w} if w else None).models.retrieve('claude-opus-5-5').id)"` (it prints the model's name when the key works), set a working one and restart the app. In a codespace, update the `ANTHROPIC_API_KEY` secret (and `ANTHROPIC_WORKSPACE_ID`, if your key needs one) at github.com/settings/codespaces, then stop and reopen the codespace. Keep keys in those secrets, never in the code or a chat.
 
 Without an API key, the app runs in **demo mode**: it works end to end, but companions give templated replies and posts. A banner says so.
 
@@ -72,6 +72,7 @@ Notifications need two things. First, a contact address that browsers' push serv
 | Variable | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | Turns on real AI chat, memory and content |
+| `ANTHROPIC_WORKSPACE_ID` | — | Only for an API key that works across Claude workspaces (one made without choosing a workspace): the workspace to use, an ID starting `wrkspc_` from the [Workspaces](https://platform.claude.com/settings/workspaces) page of the Claude Console. A key made for one workspace doesn't need it |
 | `AIET_MODEL` | `claude-opus-5-5` | Claude model used for everything |
 | `AIET_AUTOGEN_MINUTES` | `0` (off) | Minutes between automatic posts from starter companions: each run, up to 8 that learners follow, those that posted longest ago first |
 | `AIET_FETCH_PHOTOS` | `1` (on) | Fetch starter companions' photos and keep small copies. With `0`, browsers load them from their addresses in the CSV every time |

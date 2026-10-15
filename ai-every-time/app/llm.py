@@ -120,19 +120,31 @@ AI_UNAVAILABLE = "AI replies aren't available on AI Every Time right now. Please
 account_problem: str | None = None
 
 
+# An API key that works across workspaces has to name one with every request.
+NEEDS_WORKSPACE = ("the API key works across Claude workspaces, so ANTHROPIC_WORKSPACE_ID has to say which one to use "
+                   "(its ID starts with wrkspc_, on the Workspaces page of the Claude Console)")
+WRONG_WORKSPACE = "the API key can't use the workspace in ANTHROPIC_WORKSPACE_ID"
+
+
 def note_account_problem(e: anthropic.APIError) -> bool:
     """Whether the error is a problem with the site's Claude account (a rejected key, billing, a model it
-    can't use) rather than with this request. Logged once, in a line, not a traceback per request."""
+    can't use, a missing or wrong workspace) rather than with this request. Logged once, in a line, not a
+    traceback per request."""
     global account_problem
     kind = getattr(e, "type", None)
-    if kind not in ACCOUNT_PROBLEMS:
-        return False
     body = getattr(e, "body", None)
     detail = ((body.get("error") or {}).get("message") or "") if isinstance(body, dict) else ""
-    problem = ACCOUNT_PROBLEMS[kind] + (f" ({detail})" if detail else "")
+    if kind == "invalid_request_error" and "anthropic-workspace-id" in detail:
+        problem = NEEDS_WORKSPACE if not settings.workspace_id else f"{WRONG_WORKSPACE} ({detail})"
+    elif kind == "not_found_error" and detail.startswith("Workspace"):
+        problem = f"{WRONG_WORKSPACE} ({detail})"
+    elif kind in ACCOUNT_PROBLEMS:
+        problem = ACCOUNT_PROBLEMS[kind] + (f" ({detail})" if detail else "")
+    else:
+        return False
     if problem != account_problem:
-        log.error("Claude can't be used: %s. Check ANTHROPIC_API_KEY (and AIET_MODEL, now %s), then restart.",
-                  problem, settings.model)
+        log.error("Claude can't be used: %s. Check ANTHROPIC_API_KEY, ANTHROPIC_WORKSPACE_ID and AIET_MODEL (now %s), "
+                  "then restart.", problem, settings.model)
     account_problem = problem
     return True
 
@@ -148,7 +160,8 @@ _async_client: anthropic.AsyncAnthropic | None = None
 def client() -> anthropic.AsyncAnthropic:
     global _async_client
     if _async_client is None:
-        _async_client = anthropic.AsyncAnthropic()
+        workspace = {"anthropic-workspace-id": settings.workspace_id} if settings.workspace_id else None
+        _async_client = anthropic.AsyncAnthropic(default_headers=workspace)
     return _async_client
 
 
