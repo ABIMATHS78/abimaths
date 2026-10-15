@@ -75,9 +75,10 @@ async def _parse(persona: Persona, prompt: str, schema: type[T], effort: str, ma
                      "cache_control": {"type": "ephemeral"}}],
             messages=[{"role": "user", "content": prompt}],
         )
-    except anthropic.APIError:
+    except anthropic.APIError as e:
         usage.failed()
-        log.exception("%s generation failed", schema.__name__)
+        if not llm.note_account_problem(e):
+            log.exception("%s generation failed", schema.__name__)
         return None
 
 

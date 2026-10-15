@@ -45,6 +45,8 @@ async def lifespan(_: FastAPI):
         _spawn(push.push_loop())
     if settings.offline:
         log.warning("No Anthropic credentials found: running in offline demo mode.")
+    else:
+        _spawn(llm.check_account())
     yield
     for task in list(_background):
         task.cancel()
@@ -166,7 +168,18 @@ def me(user: dict = User):
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
         "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
+        "ai_problem": _ai_problem(user),
     }
+
+
+def _ai_problem(user: dict) -> str | None:
+    """For a banner while Claude can't be used: what's wrong and the fix for admins, plainly for everyone else."""
+    if not llm.account_problem:
+        return None
+    if auth.role_of(user) != "admin":
+        return llm.AI_UNAVAILABLE
+    return (f"AI isn't working: {llm.account_problem}. Check ANTHROPIC_API_KEY (and AIET_MODEL) on the server, "
+            "then restart it.")
 
 
 @app.patch("/api/me")

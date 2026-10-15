@@ -101,6 +101,41 @@ def build_system(persona: Persona, learner: dict, memories: list[str], post: dic
     ]
 
 
+# Problems with the site's Claude account that only whoever runs it can fix, by the API's error type.
+ACCOUNT_PROBLEMS = {
+    "authentication_error": "Claude rejected the API key",
+    "permission_error": "the API key isn't allowed to do this",
+    "billing_error": "the Claude account has a billing problem",
+    "not_found_error": "the model isn't available to this Claude account",
+}
+AI_UNAVAILABLE = "AI replies aren't available on AI Every Time right now. Please try again later."
+# The problem every request hits until it's fixed, in the API's own words, for the log and the admin
+# banner. Cleared when an answer comes back.
+account_problem: str | None = None
+
+
+def note_account_problem(e: anthropic.APIError) -> bool:
+    """Whether the error is a problem with the site's Claude account (a rejected key, billing, a model it
+    can't use) rather than with this request. Logged once, in a line, not a traceback per request."""
+    global account_problem
+    kind = getattr(e, "type", None)
+    if kind not in ACCOUNT_PROBLEMS:
+        return False
+    body = getattr(e, "body", None)
+    detail = ((body.get("error") or {}).get("message") or "") if isinstance(body, dict) else ""
+    problem = ACCOUNT_PROBLEMS[kind] + (f" ({detail})" if detail else "")
+    if problem != account_problem:
+        log.error("Claude can't be used: %s. Check ANTHROPIC_API_KEY (and AIET_MODEL, now %s), then restart.",
+                  problem, settings.model)
+    account_problem = problem
+    return True
+
+
+def _answered() -> None:
+    global account_problem
+    account_problem = None
+
+
 _async_client: anthropic.AsyncAnthropic | None = None
 
 
@@ -109,6 +144,16 @@ def client() -> anthropic.AsyncAnthropic:
     if _async_client is None:
         _async_client = anthropic.AsyncAnthropic()
     return _async_client
+
+
+async def check_account() -> None:
+    """Look up the model in use once at start, so a rejected key or a model the account can't use shows
+    up (in the log, and on a banner for admins) before anyone asks for anything."""
+    try:
+        await client().models.retrieve(settings.model)
+    except anthropic.APIError as e:
+        if not note_account_problem(e):
+            log.warning("couldn't check the Claude account at start: %s", e)
 
 
 async def ask(schema: type[T], effort: str, **request) -> T | None:
@@ -124,6 +169,7 @@ async def ask(schema: type[T], effort: str, **request) -> T | None:
         fallbacks="default",
         **request,
     )
+    _answered()
     usage.record_tokens(resp)
     if resp.stop_reason in ("refusal", "max_tokens"):
         log.warning("%s answer stopped: %s", schema.__name__, resp.stop_reason)
@@ -161,6 +207,7 @@ async def stream_reply(
             async for text in stream.text_stream:
                 yield text
             final = await stream.get_final_message()
+        _answered()
         usage.record_tokens(final)
         if final.stop_reason == "refusal":
             yield "\n\nI can't help with that one, but I'm happy to keep exploring AI with you. What else is on your mind?"
@@ -171,6 +218,9 @@ async def stream_reply(
         yield "I'm getting a lot of questions right now. Give me a moment and try again."
     except anthropic.APIStatusError as e:
         usage.failed()
+        if note_account_problem(e):
+            yield AI_UNAVAILABLE
+            return
         log.error("Claude API error %s: %s", e.status_code, e.message)
         yield "Something went wrong on my side. Please try again."
     except anthropic.APIConnectionError:
@@ -216,8 +266,9 @@ async def extract_memories(persona: Persona, existing: list[str], user_msg: str,
     )
     try:
         update = await ask(MemoryUpdate, "low", max_tokens=2000, messages=[{"role": "user", "content": prompt}])
-    except anthropic.APIError:
-        log.exception("memory extraction failed")
+    except anthropic.APIError as e:
+        if not note_account_problem(e):
+            log.exception("memory extraction failed")
         return []
     return [f.strip()[:200] for f in update.new_facts if f.strip()][:5] if update else []
 
@@ -266,9 +317,10 @@ async def generate_post(persona: Persona, top_topics: list[str], recent_titles: 
         return await ask(GeneratedPost, "high", max_tokens=8000,
                          system=[{"type": "text", "text": PLATFORM_RULES + "\n\n" + persona_prompt(persona)}],
                          messages=[{"role": "user", "content": prompt}])
-    except anthropic.APIError:
+    except anthropic.APIError as e:
         usage.failed()
-        log.exception("content generation failed for %s", persona.name)
+        if not note_account_problem(e):
+            log.exception("content generation failed for %s", persona.name)
         return None
 
 

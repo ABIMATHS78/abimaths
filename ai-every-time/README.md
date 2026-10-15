@@ -57,6 +57,8 @@ uvicorn app.main:app --reload
 
 Open http://127.0.0.1:8000.
 
+**If AI isn't working.** When Claude rejects the API key, the Claude account has a billing problem, or it can't use the model, the server says so in one line of its log, admins see a banner with the fix, and learners are told AI isn't available. Check a key with `python -c "import anthropic; print(anthropic.Anthropic().models.retrieve('claude-opus-5-5').id)"` (it prints the model's name when the key works), set a working one and restart the app. In a codespace, update the `ANTHROPIC_API_KEY` secret at github.com/settings/codespaces, then stop and reopen the codespace.
+
 Without an API key, the app runs in **demo mode**: it works end to end, but companions give templated replies and posts. A banner says so.
 
 Notifications need two things. First, a contact address that browsers' push services can reach you at: `AIET_PUSH_CONTACT`, or else the `AIET_MAIL_FROM` address or an https `AIET_PUBLIC_URL`. Second, HTTPS in production (browsers allow notifications on `localhost` for testing). The server makes its own push (VAPID) key the first time it's needed and keeps it in the database.
@@ -159,6 +161,7 @@ The tests run in offline mode and cover:
 - allowances that admins give a learner (including no limit, and back to the usual), logged and told to the learner
 - the cost estimate: list prices, dated model names, models without a price, and `AIET_PRICES`
 - the health check
+- a rejected API key: checked at start, one line in the log, a banner for admins, a plain message for learners, start-up posts stopped after the first refusal, and nothing counted against anyone
 - link limits that follow the address, so deleting and remaking an account doesn't reset them, and that hold for requests made at the same moment; no sign-up name in mail to an unconfirmed address
 - tokens recorded for answers that were refused or cut short, with the real SDK's request and response shapes in the tests' stand-in for Claude
 - lessons that other sites can't have written, the ceiling not pausing learners who confirmed, refusal counts outliving a deleted account, `AIET_AI_ALLOWANCE_UNCONFIRMED=0`, admin emails that need confirming, and no daily notification nagging to confirm

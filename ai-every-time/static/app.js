@@ -252,8 +252,10 @@ async function router() {
     state.zoneSentFor = state.me.id;
     api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }).then((me) => { state.me = me; }).catch(() => {});
   }
-  $("#banner").hidden = !state.me?.offline_mode;
-  $("#banner").textContent = "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
+  // A problem with the site's Claude account comes first; then demo mode.
+  $("#banner").hidden = !(state.me?.ai_problem || state.me?.offline_mode);
+  $("#banner").textContent = state.me?.ai_problem
+    || "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
   // needsAuth: true = signed in, false = signed out, null = either.
   for (const [re, view, needsAuth = true] of routes) {
     const m = hash.match(re);

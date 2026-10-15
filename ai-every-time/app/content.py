@@ -70,6 +70,8 @@ async def generate_for_starters() -> int:
     for row in rows:
         if await generate_for(db.row_to_companion(row)):
             made += 1
+        elif llm.account_problem:
+            break  # every other post would fail the same way
     return made
 
 
@@ -81,7 +83,8 @@ async def ensure_initial_posts() -> None:
             "AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.companion_id = c.id)"
         ).fetchall()
     for row in rows:
-        await generate_for(db.row_to_companion(row))
+        if await generate_for(db.row_to_companion(row)) is None and llm.account_problem:
+            break  # every other post would fail the same way
 
 
 async def autogen_loop() -> None:
