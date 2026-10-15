@@ -48,6 +48,9 @@ def _prices() -> dict:
 class Settings:
     database_path: str = field(default_factory=lambda: os.environ.get("AIET_DATABASE", "ai_every_time.db"))
     model: str = field(default_factory=lambda: os.environ.get("AIET_MODEL", "claude-opus-5-5"))
+    # The Claude workspace requests run in, for an API key that works across workspaces (one made without choosing
+    # a workspace). An ID like wrkspc_01..., on the Workspaces page of the Claude Console. Leave it unset otherwise.
+    workspace_id: str = field(default_factory=lambda: os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip())
     # Without an API key the app runs in offline demo mode with templated replies.
     offline: bool = field(
         default_factory=lambda: os.environ.get("AIET_OFFLINE") == "1"

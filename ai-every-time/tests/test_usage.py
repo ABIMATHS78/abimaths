@@ -572,6 +572,49 @@ def test_a_rejected_api_key_is_explained_once(client, claude, caplog, monkeypatc
     assert client.get("/api/me").json()["ai_problem"] is None
 
 
+def test_a_key_for_several_workspaces_needs_one_named(client, claude, monkeypatch):
+    """A personal key made without choosing a workspace has to name one with every request. Without
+    ANTHROPIC_WORKSPACE_ID, the admin banner says exactly what to set, and nothing counts against anyone."""
+    from app import llm
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    claude.answers["stream"] = api_error(
+        anthropic.BadRequestError, 400, "invalid_request_error",
+        "This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header "
+        "with the ID of the workspace to use. Add the header, or use an API key that is scoped to a workspace.")
+    signup(client, email="boss@example.com", name="Boss")
+    assert chat(client, starter(client)).text == llm.AI_UNAVAILABLE
+    assert used(client) == 0
+    problem = client.get("/api/me").json()["ai_problem"]
+    assert "ANTHROPIC_WORKSPACE_ID has to say which one to use" in problem and "wrkspc_" in problem
+
+    # A workspace the key can't use, or one that isn't a workspace ID, says so.
+    monkeypatch.setattr(settings, "workspace_id", "wrkspc_01Nope")
+    claude.answers["stream"] = api_error(anthropic.NotFoundError, 404, "not_found_error", "Workspace `wrkspc_01Nope` not found.")
+    chat(client, starter(client))
+    assert llm.account_problem == "the API key can't use the workspace in ANTHROPIC_WORKSPACE_ID (Workspace `wrkspc_01Nope` not found.)"
+    claude.answers["stream"] = api_error(anthropic.BadRequestError, 400, "invalid_request_error",
+                                         "anthropic-workspace-id header must be a valid workspace ID.")
+    chat(client, starter(client))
+    assert llm.account_problem.startswith("the API key can't use the workspace in ANTHROPIC_WORKSPACE_ID")
+    # Other bad requests are about the request, not the account.
+    assert not llm.note_account_problem(api_error(anthropic.BadRequestError, 400, "invalid_request_error", "prompt is too long"))
+
+
+def test_the_workspace_goes_with_every_request(monkeypatch):
+    from app import llm
+    from app.config import settings
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(settings, "workspace_id", "wrkspc_01Abc")
+    monkeypatch.setattr(llm, "_async_client", None)
+    assert llm.client().default_headers["anthropic-workspace-id"] == "wrkspc_01Abc"
+    monkeypatch.setattr(settings, "workspace_id", "")
+    monkeypatch.setattr(llm, "_async_client", None)
+    assert "anthropic-workspace-id" not in llm.client().default_headers
+
+
 def test_starter_posts_stop_at_the_first_rejected_key(client, claude):
     import asyncio
 

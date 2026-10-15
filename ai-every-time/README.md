@@ -1,5 +1,7 @@
 # AI Every Time
 
+<img src="static/icons/logo-256.webp" width="112" height="112" alt="AI Every Time logo">
+
 The 24/7 AI learning hub. Learners follow, chat with and learn from always-available **AI Learning Companions**. Each companion represents a country and has its own face, personality, expertise and writing voice. Learners can also **design their own companion** when they create an account, and change it whenever they like.
 
 It includes the companion core (starter companions, the companion designer, chat with memory, self-publishing content) and structured learning taught by those companions: learning paths, lessons, quizzes, mock exams, flashcards, summaries, study plans and progress tracking. It installs on phones and computers like an app, reminds learners at the time they choose in their own time zone, keeps AI costs predictable with a daily allowance per learner, and gives learners control of their account and data. Admins get an Insights page.
@@ -59,7 +61,7 @@ uvicorn app.main:app --reload
 
 Open http://127.0.0.1:8000.
 
-**If AI isn't working.** When Claude rejects the API key, the Claude account has a billing problem, or it can't use the model, the server says so in one line of its log, admins see a banner with the fix, and learners are told AI isn't available. Check a key with `python -c "import anthropic; print(anthropic.Anthropic().models.retrieve('claude-opus-5-5').id)"` (it prints the model's name when the key works), set a working one and restart the app. In a codespace, update the `ANTHROPIC_API_KEY` secret at github.com/settings/codespaces, then stop and reopen the codespace.
+**If AI isn't working.** When Claude rejects the API key, the Claude account has a billing problem, it can't use the model, or the key works across workspaces and `ANTHROPIC_WORKSPACE_ID` doesn't name one, the server says so in one line of its log, admins see a banner with the fix, and learners are told AI isn't available. Check a key with `python -c "import anthropic, os; w = os.environ.get('ANTHROPIC_WORKSPACE_ID'); print(anthropic.Anthropic(default_headers={'anthropic-workspace-id': w} if w else None).models.retrieve('claude-opus-5-5').id)"` (it prints the model's name when the key works), set a working one and restart the app. In a codespace, update the `ANTHROPIC_API_KEY` secret (and `ANTHROPIC_WORKSPACE_ID`, if your key needs one) at github.com/settings/codespaces, then stop and reopen the codespace. Keep keys in those secrets, never in the code or a chat.
 
 Without an API key, the app runs in **demo mode**: it works end to end, but companions give templated replies and posts. A banner says so.
 
@@ -70,6 +72,7 @@ Notifications need two things. First, a contact address that browsers' push serv
 | Variable | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | Turns on real AI chat, memory and content |
+| `ANTHROPIC_WORKSPACE_ID` | — | Only for an API key that works across Claude workspaces (one made without choosing a workspace): the workspace to use, an ID starting `wrkspc_` from the [Workspaces](https://platform.claude.com/settings/workspaces) page of the Claude Console. A key made for one workspace doesn't need it |
 | `AIET_MODEL` | `claude-opus-5-5` | Claude model used for everything |
 | `AIET_AUTOGEN_MINUTES` | `0` (off) | Minutes between automatic posts from starter companions: each run, up to 8 that learners follow, those that posted longest ago first |
 | `AIET_FETCH_PHOTOS` | `1` (on) | Fetch starter companions' photos and keep small copies. With `0`, browsers load them from their addresses in the CSV every time |
@@ -209,7 +212,7 @@ app/
   auth.py, db.py        Password logins (scrypt) with cookie sessions; SQLite storage
   main.py               HTTP API + static app
 static/                 Single-page web app (no build step), service worker (sw.js), manifest and icons
-scripts/make_icons.py   Draws the app icons
+scripts/make_icons.py   Makes the logo image and the app icons from the logo (scripts/logo.webp); run it if the logo changes
 Dockerfile              The image for deploying it (see Deploy it)
 ```
 

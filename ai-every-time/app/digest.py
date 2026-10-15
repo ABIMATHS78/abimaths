@@ -236,7 +236,8 @@ def _unsubscribe(token: str) -> bool:
 
 PAGE = """<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title><link rel="icon" href="/static/icons/favicon-32.png" sizes="32x32" type="image/png">
-<body style="font:16px system-ui;max-width:480px;margin:48px auto;padding:0 16px">{body}</body></html>"""
+<body style="font:16px system-ui;max-width:480px;margin:48px auto;padding:0 16px">
+<p><img src="/static/icons/logo-256.webp" width="56" height="56" alt="AI Every Time"></p>{body}</body></html>"""
 
 
 def _page(body: str, title: str = "Email reminders", status: int = 200) -> HTMLResponse:
