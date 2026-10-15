@@ -38,13 +38,20 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Insights** | Admins see how the site is doing on the Staff page: learners (new, studying this week, confirmed, with notifications), learning this week, AI requests per day over the last 14 days, requests and tokens by kind, requests turned away and failed calls, the limits in force, the topics learners value most and the most followed community companions. |
 | **Account and privacy** | Forgotten passwords are reset with an emailed link: it works once, for an hour, and only a hash of it is stored. Learners can change their password and sign out other devices; both also stop notifications on the other devices. After 10 wrong passwords for an email in 15 minutes, sign-in pauses for that email. **Download my data** gives one JSON file with everything the account holds, including its AI requests (answers to unfinished quizzes stay hidden). **Delete my account** (password required) removes it all, including the companions the learner designed and any paths they shared with the community. |
 
+## Try it in your browser
+
+Open **[AI Every Time in GitHub Codespaces](https://codespaces.new/ABIMATHS78/abimaths)** and create the codespace. It installs everything, starts the app and opens it in a new tab, with nothing to install on your computer. When you create it you can give two optional values: `ANTHROPIC_API_KEY` for real AI replies (without it the app runs in demo mode), and `AIET_ADMIN_EMAILS` set to your email address, so that signing up with that address shows the Staff pages, including Insights. If the tab doesn't open, find port 8000 in the **Ports** panel and open its address. That address is private to your GitHub account; to try it on your phone, right-click the port and set its visibility to public.
+
 ## Run it
+
+You need Python 3.11 or newer.
 
 ```bash
 cd ai-every-time
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...      # leave unset to run in offline demo mode
+export AIET_ADMIN_EMAILS=you@example.com # optional: sign up with this address to see the Staff pages
 uvicorn app.main:app --reload
 ```
 
