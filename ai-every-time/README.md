@@ -1,5 +1,7 @@
 # AI Every Time
 
+<img src="static/icons/logo-256.webp" width="112" height="112" alt="AI Every Time logo">
+
 The 24/7 AI learning hub. Learners follow, chat with and learn from always-available **AI Learning Companions**. Each companion represents a country and has its own face, personality, expertise and writing voice. Learners can also **design their own companion** when they create an account, and change it whenever they like.
 
 It includes the companion core (starter companions, the companion designer, chat with memory, self-publishing content) and structured learning taught by those companions: learning paths, lessons, quizzes, mock exams, flashcards, summaries, study plans and progress tracking. It installs on phones and computers like an app, reminds learners at the time they choose in their own time zone, keeps AI costs predictable with a daily allowance per learner, and gives learners control of their account and data. Admins get an Insights page.
@@ -209,7 +211,7 @@ app/
   auth.py, db.py        Password logins (scrypt) with cookie sessions; SQLite storage
   main.py               HTTP API + static app
 static/                 Single-page web app (no build step), service worker (sw.js), manifest and icons
-scripts/make_icons.py   Draws the app icons
+scripts/make_icons.py   Makes the logo image and the app icons from the logo (scripts/logo.webp); run it if the logo changes
 Dockerfile              The image for deploying it (see Deploy it)
 ```
 

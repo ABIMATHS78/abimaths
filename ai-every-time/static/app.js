@@ -73,6 +73,8 @@ function md(src) {
   return html;
 }
 
+/* The logo: the clock beside the name. The clock is decorative here; the name says what it is. */
+const logo = (size = 36, style = "") => `<div class="logo"${style ? ` style="${style}"` : ""}><img src="/static/icons/logo-256.webp" width="${size}" height="${size}" alt=""><span>AI <span class="every">Every</span> Time</span></div>`;
 const avatarUrl = (c) => `/api/companions/${c.id}/avatar?v=${encodeURIComponent(c.updated_at || "")}`;
 const avatarImg = (c, size = 48) => `<img class="avatar" src="${avatarUrl(c)}" width="${size}" height="${size}" alt="${esc(c.persona.name)}" loading="lazy" decoding="async">`;
 /* A starter's photo the browser can't load (its host unreachable from here) gives way to the drawn face. */
@@ -402,7 +404,7 @@ function shell(active, inner) {
   app.innerHTML = `
     <div class="shell">
       <aside class="side">
-        <div class="logo">AI <span>Every</span> Time</div>
+        ${logo()}
         <nav class="nav">
           ${nav.map(([k, i, t]) => `<a href="#/${k}" class="${active === k ? "active" : ""}">${i} ${t}</a>`).join("")}
           ${primary ? `<a href="#/c/${primary}" class="${active === "mine" ? "active" : ""}">💬 My companion</a>` : ""}
@@ -443,7 +445,7 @@ async function viewWelcome() {
   app.innerHTML = `
     <section class="landing">
       <div>
-        <div class="logo" style="margin:0 0 24px">AI <span>Every</span> Time</div>
+        ${logo(64, "margin:0 0 24px;font-size:26px;gap:14px")}
         <h1>Every piece of AI content is the <em>start</em> of a learning relationship.</h1>
         <p class="muted" style="font-size:18px">Follow, chat with and learn from always-available AI Learning Companions from around the world, each with their own face, voice and expertise. Or design your own companion, exactly the way you want it.</p>
         <div class="faces" id="faces"></div>
@@ -528,7 +530,7 @@ function showForgot(email) {
 async function viewReset(m) {
   app.innerHTML = `
     <section class="card stack narrow-card">
-      <div class="logo" style="margin:0">AI <span>Every</span> Time</div>
+      ${logo(40, "margin:0")}
       <h1 style="margin:0">Choose a new password</h1>
       <form id="resetForm" class="stack" novalidate>
         <label>New password <span class="hint">At least 8 characters</span><input type="password" name="password" autocomplete="new-password" required minlength="8"></label>
@@ -674,7 +676,7 @@ async function viewOnboarding() {
   const starters = list.filter((c) => c.is_starter && !c.retired);
   app.innerHTML = `
     <section class="main" style="margin:0 auto">
-      <div class="logo" style="margin:0 0 20px">AI <span>Every</span> Time</div>
+      ${logo(40, "margin:0 0 20px")}
       <div class="steps"><span>1. Account ✓</span><span>›</span><b>2. Your companion</b><span>›</span><span>3. Start learning</span></div>
       <h1>Welcome, ${esc(state.me.display_name)}! Who do you want to learn with?</h1>
       <p class="muted">Pick one of our companions as-is, customise one, or design your own from scratch. You can change your companion's look, personality and style whenever you like.</p>
