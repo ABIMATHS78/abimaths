@@ -117,3 +117,17 @@ def test_prices_can_be_set_in_the_environment(monkeypatch):
     assert config._prices() == {"my-model": (1.0, 2.0, 0.1)}
     monkeypatch.setenv("AIET_PRICES", "not json")
     assert config._prices() == {}
+
+
+def test_bad_prices_are_skipped_one_by_one(monkeypatch):
+    import json
+
+    from app import config
+
+    monkeypatch.setenv("AIET_PRICES", json.dumps({"good": [1, 2, 0.1], "typo": 5, "short": [1, 2], "null": [1, 2, None],
+                                                  "word": "123", "yes": [True, 1, 1], "negative": [-1, 2, 0.1]}))
+    assert config._prices() == {"good": (1.0, 2.0, 0.1)}
+    monkeypatch.setenv("AIET_PRICES", '{"nan": [NaN, 1, 1], "inf": [Infinity, 1, 1], "huge": [1e999, 1, 1], "big": [%s, 1, 1]}' % ("9" * 400))
+    assert config._prices() == {}  # and nothing crashes on the way
+    monkeypatch.setenv("AIET_PRICES", "[1, 2, 3]")
+    assert config._prices() == {}

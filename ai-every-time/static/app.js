@@ -252,8 +252,10 @@ async function router() {
     state.zoneSentFor = state.me.id;
     api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }).then((me) => { state.me = me; }).catch(() => {});
   }
-  $("#banner").hidden = !state.me?.offline_mode;
-  $("#banner").textContent = "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
+  // A problem with the site's Claude account comes first; then demo mode.
+  $("#banner").hidden = !(state.me?.ai_problem || state.me?.offline_mode);
+  $("#banner").textContent = state.me?.ai_problem
+    || "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
   // needsAuth: true = signed in, false = signed out, null = either.
   for (const [re, view, needsAuth = true] of routes) {
     const m = hash.match(re);
@@ -2101,34 +2103,48 @@ async function staffRoles(body, m) {
     <form class="card row" id="userSearch"><input type="text" name="q" placeholder="Search by name or email" aria-label="Search people" style="flex:1"><button class="btn">Search</button></form>
     <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Daily AI requests</th></tr></thead><tbody id="userRows"></tbody></table></div>
     <p class="muted small">Moderators review reported companions. Reviewers check learner-made paths before they're shared. Admins can do both and assign roles.</p>
-    <p class="muted small">Give a learner an AI allowance of their own, for a class or a paid plan: the number of AI requests they can make in any 24 hours. Leave it empty for the usual allowance, or enter 0 for no limit.</p></div>`;
-  let lastQuery = "";
-  const load = async (q = lastQuery) => {
-    lastQuery = q;
+    <p class="muted small">Give a learner an AI allowance of their own, for a class or a paid plan: the number of AI requests they can make in any 24 hours, or no limit. Leave the number empty for the usual allowance, then save.</p></div>`;
+  const used = (ai) => `${ai.used.toLocaleString()} used${ai.limit === null ? "" : ` of ${ai.limit.toLocaleString()}`}`;
+  const load = async (q = "") => {
     const users = await api(`/api/staff/users?q=${encodeURIComponent(q)}`);
     $("#userRows", body).innerHTML = users.map((u) => `<tr data-id="${u.id}"><td>${esc(u.display_name)}</td><td>${esc(u.email)}</td><td>
       ${u.fixed || u.id === state.me.id ? `${label(u.role)} <span class="muted small">(${u.fixed ? "set in server config" : "you"})</span>`
         : `<select data-role aria-label="Role for ${esc(u.display_name)}">${["learner", "reviewer", "moderator", "admin"].map((r) => `<option value="${r}" ${r === u.role ? "selected" : ""}>${label(r)}</option>`).join("")}</select>`}
-    </td><td>${u.role === "admin" ? `<span class="muted small">No limit (admin)</span>`
-      : `<div class="row" style="gap:8px;flex-wrap:nowrap"><input type="number" data-allowance min="0" max="100000" inputmode="numeric" style="width:96px"
-          value="${u.ai_allowance ?? ""}" placeholder="Usual" aria-label="Daily AI requests for ${esc(u.display_name)}">
-        <span class="muted small" style="white-space:nowrap">${u.ai.used.toLocaleString()} used${u.ai.limit === null ? "" : ` of ${u.ai.limit.toLocaleString()}`}</span></div>`}
+    </td><td>${u.role === "admin" ? `<span class="muted small">No limit (admin)</span>` : `
+      <form class="row" data-allowance style="gap:8px;flex-wrap:nowrap">
+        <input type="number" name="n" min="1" max="100000" step="1" inputmode="numeric" style="width:96px" placeholder="Usual"
+          value="${u.ai_allowance || ""}" ${u.ai_allowance === 0 ? "disabled" : ""} aria-label="Daily AI requests for ${esc(u.display_name)}">
+        <label class="check small" style="white-space:nowrap"><input type="checkbox" name="unlimited" ${u.ai_allowance === 0 ? "checked" : ""}> No limit</label>
+        <button class="btn">Save</button>
+        <span class="muted small" data-used style="white-space:nowrap">${used(u.ai)}</span>
+      </form>`}
     </td></tr>`).join("");
   };
   $("#userSearch", body).addEventListener("submit", (e) => { e.preventDefault(); load(e.target.q.value); });
   $("#userRows", body).addEventListener("change", async (e) => {
+    if (e.target.name === "unlimited") { e.target.form.n.disabled = e.target.checked; return; }
+    if (!e.target.matches("[data-role]")) return;  // allowances are saved with their button, not on every change
     const id = e.target.closest("tr").dataset.id;
+    try { await api(`/api/staff/users/${id}/role`, { method: "POST", body: { role: e.target.value } }); toast("Role updated"); }
+    catch (err) { toast(err.message); load($("#userSearch", body).q.value); }
+  });
+  $("#userRows", body).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, n = f.n;
+    // A typo leaves the box's value empty, which would otherwise mean "the usual allowance".
+    if (!f.unlimited.checked && (n.validity.badInput || !n.checkValidity())) {
+      toast("Enter a whole number from 1 to 100,000, or leave it empty for the usual allowance.");
+      n.focus();
+      return;
+    }
+    const value = f.unlimited.checked ? 0 : n.value === "" ? null : Number(n.value);
+    f.querySelector("button").disabled = true;
     try {
-      if (e.target.matches("[data-role]")) {
-        await api(`/api/staff/users/${id}/role`, { method: "POST", body: { role: e.target.value } });
-        toast("Role updated");
-      } else if (e.target.matches("[data-allowance]")) {
-        const v = e.target.value.trim();
-        await api(`/api/staff/users/${id}/allowance`, { method: "POST", body: { ai_allowance: v === "" ? null : Number(v) } });
-        toast(v === "" ? "Back to the usual allowance" : v === "0" ? "No daily limit" : `Allowance set to ${Number(v).toLocaleString()} a day`);
-      }
+      const ai = await api(`/api/staff/users/${f.closest("tr").dataset.id}/allowance`, { method: "POST", body: { ai_allowance: value } });
+      f.querySelector("[data-used]").textContent = used(ai);  // just this row, so typing in another isn't cut short
+      toast(value === null ? "Back to the usual allowance" : value === 0 ? "No daily limit" : `Allowance set to ${value.toLocaleString()} a day`);
     } catch (err) { toast(err.message); }
-    load();
+    f.querySelector("button").disabled = false;
   });
   await load();
 }

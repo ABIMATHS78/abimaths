@@ -106,17 +106,18 @@ def claim_send(conn, address: str, kind: str, per_hour: int) -> bool:
     return True
 
 
-def _what_confirming_does() -> str:
+def _what_confirming_does(user: dict | None = None) -> str:
+    """Said only to someone confirming would actually help: not, say, a learner with an allowance of their own."""
     text = "It lets AI Every Time send the reminder emails you choose to get."
-    lower = usage.unconfirmed_allowance()
-    if lower is not None:
-        text += f" It also raises your AI requests from {lower} to {settings.ai_allowance} a day."
+    raise_to = usage.confirm_would_raise(user) if user else None
+    if raise_to:
+        text += f" It also raises your AI requests from {usage.allowance(user)} to {raise_to} a day."
     return text
 
 
 def confirmation_message(user: dict, token: str) -> EmailMessage:
     link = f"{settings.public_url}/api/email/confirm?token={token}"
-    why = _what_confirming_does()
+    why = _what_confirming_does(user)
     msg = EmailMessage()
     msg["Subject"] = "Confirm your email for AI Every Time"
     msg["From"] = settings.mail_from

@@ -103,6 +103,29 @@ class FakeClaude:
     def stream(self, **kwargs):
         return FakeStream(self.answers["stream"])
 
+    @property
+    def models(self):
+        async def retrieve(model_id, **kwargs):
+            outcome = self.answers.get("model", SimpleNamespace(id=model_id))
+            if isinstance(outcome, BaseException):
+                raise outcome
+            return outcome
+
+        return SimpleNamespace(retrieve=retrieve)
+
+
+def api_error(cls, status: int, kind: str, message: str):
+    """An error from the API, as the SDK raises it."""
+    import httpx2
+
+    body = {"type": "error", "error": {"type": kind, "message": message}, "request_id": "req_test"}
+    response = httpx2.Response(status, json=body, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+    return cls(f"Error code: {status} - {body}", response=response, body=body)
+
+
+def rejected_key():
+    return api_error(anthropic.AuthenticationError, 401, "authentication_error", "invalid x-api-key")
+
 
 @pytest.fixture()
 def claude(client, monkeypatch):
@@ -473,3 +496,111 @@ def test_admins_can_give_a_learner_an_allowance_of_their_own(client, mailbox, mo
     client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": None})  # the usual again
     as_user(client, "ada@example.com", "Ada")
     assert client.get("/api/me").json()["ai_allowance"] == {"limit": 2, "used": 11, "remaining": 0, "confirm_raises_to": 4}
+
+
+def test_an_allowance_of_their_own_isnt_raised_by_confirming(client, mailbox, monkeypatch):
+    """Below the site's allowance too, confirmed or not: nothing promises that confirming raises it."""
+    from app import digest, main
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    monkeypatch.setattr(settings, "ai_allowance", 4)
+    monkeypatch.setattr(settings, "ai_allowance_unconfirmed", 3)
+    ada, bo = signup(client), signup(client, email="bo@example.com", name="Bo")
+    assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200  # Bo's
+    as_user(client, "boss@example.com", "Boss")
+    client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}")
+    for learner in (ada, bo):
+        assert client.post(f"/api/staff/users/{learner['id']}/allowance", json={"ai_allowance": 1}).status_code == 200
+
+    for email, name in (("ada@example.com", "Ada"), ("bo@example.com", "Bo")):  # unconfirmed, then confirmed
+        as_user(client, email, name)
+        assert client.get("/api/me").json()["ai_allowance"] == {"limit": 1, "used": 0, "remaining": 1, "confirm_raises_to": None}
+        chat(client, starter(client))
+        assert chat(client, starter(client)).json()["detail"] == (
+            "You've reached your limit of 1 AI request in 24 hours. You can ask again in about 24 hours.")
+
+    # Nor does the confirmation email, while a learner on the usual allowance is told what it does.
+    ada_row = main._load_user(ada["id"])
+    assert "raises your AI requests" not in digest.confirmation_message(ada_row, "t").get_body(("plain",)).get_content()
+    as_user(client, "cy@example.com", "Cy")
+    assert "raises your AI requests from 3 to 4 a day" in mailbox.sent[-1].get_body(("plain",)).get_content()
+    # The page a link opens doesn't know whose it is, so it promises nothing about AI requests.
+    assert "AI requests" not in client.get("/api/email/confirm?token=x").text
+
+
+def test_allowance_changes_are_exact(client, monkeypatch):
+    """No resetting by a missing or misspelt field, no true/false for numbers, and nothing for admins."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    ada = signup(client)
+    boss = signup(client, email="boss@example.com", name="Boss")
+    url = f"/api/staff/users/{ada['id']}/allowance"
+    client.post(url, json={"ai_allowance": 50})
+    for bad in ({}, {"allowance": 70}, {"ai_allowance": True}, {"ai_allowance": False}, {"ai_allowance": "60"}, {"ai_allowance": 1.5}):
+        assert client.post(url, json=bad).status_code == 422, bad
+    assert [u["ai_allowance"] for u in client.get("/api/staff/users?q=ada").json()] == [50]
+    r = client.post(f"/api/staff/users/{boss['id']}/allowance", json={"ai_allowance": 3})
+    assert r.status_code == 409 and "no limit" in r.json()["detail"]
+
+
+def test_a_rejected_api_key_is_explained_once(client, claude, caplog, monkeypatch):
+    """Every request would fail the same way, so: one line in the log, no traceback per request, a plain
+    message for learners, the problem and the fix for admins, and nothing counted against anyone."""
+    from app import llm
+    from app.config import settings
+    from app.tutor import Summary
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    claude.answers |= {"stream": rejected_key(), "MemoryUpdate": rejected_key(), "Summary": rejected_key()}
+    signup(client)
+    assert chat(client, starter(client)).text == llm.AI_UNAVAILABLE
+    assert client.post("/api/summaries", json={"source_type": "lesson", "source_ref": "tokens"}).status_code == 502
+    wait_for(lambda: len(records()) == 2 and all(r["failed"] for r in records()))
+    assert used(client) == 0
+    assert client.get("/api/me").json()["ai_problem"] == llm.AI_UNAVAILABLE
+    as_user(client, "boss@example.com", "Boss")
+    problem = client.get("/api/me").json()["ai_problem"]
+    assert "Claude rejected the API key (invalid x-api-key)" in problem and "ANTHROPIC_API_KEY" in problem
+    logged = [r for r in caplog.records if r.name == "app.llm" and r.levelname == "ERROR"]
+    assert len(logged) == 1 and "Claude can't be used" in logged[0].getMessage() and not logged[0].exc_info
+
+    # Once Claude answers again, the banner goes.
+    claude.answers["Summary"] = answer(Summary(summary="Short.", key_takeaways=["a"], next_step="Quiz."))
+    assert client.post("/api/summaries", json={"source_type": "lesson", "source_ref": "tokens"}).status_code == 200
+    assert client.get("/api/me").json()["ai_problem"] is None
+
+
+def test_starter_posts_stop_at_the_first_rejected_key(client, claude):
+    import asyncio
+
+    from app import content, db
+
+    calls = []
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        raise rejected_key()
+
+    claude.create = create
+    with db.connect() as conn:
+        conn.execute("DELETE FROM posts")
+    asyncio.run(content.ensure_initial_posts())
+    assert len(calls) == 1  # not once for each of the 8 starter companions
+
+
+def test_the_account_is_checked_at_start(client, claude, caplog):
+    import asyncio
+
+    from app import llm
+
+    asyncio.run(llm.check_account())
+    assert llm.account_problem is None
+    claude.answers["model"] = api_error(anthropic.NotFoundError, 404, "not_found_error", "model: claude-opus-5-5")
+    asyncio.run(llm.check_account())
+    assert llm.account_problem == "the model isn't available to this Claude account (model: claude-opus-5-5)"
+    llm.account_problem = None
+    claude.answers["model"] = anthropic.APIConnectionError(request=None)  # no network yet: real requests will tell
+    asyncio.run(llm.check_account())
+    assert llm.account_problem is None and "couldn't check the Claude account" in caplog.text

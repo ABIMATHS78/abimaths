@@ -8,10 +8,11 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
@@ -44,6 +45,8 @@ async def lifespan(_: FastAPI):
         _spawn(push.push_loop())
     if settings.offline:
         log.warning("No Anthropic credentials found: running in offline demo mode.")
+    else:
+        _spawn(llm.check_account())
     yield
     for task in list(_background):
         task.cancel()
@@ -165,7 +168,18 @@ def me(user: dict = User):
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
         "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
+        "ai_problem": _ai_problem(user),
     }
+
+
+def _ai_problem(user: dict) -> str | None:
+    """For a banner while Claude can't be used: what's wrong and the fix for admins, plainly for everyone else."""
+    if not llm.account_problem:
+        return None
+    if auth.role_of(user) != "admin":
+        return llm.AI_UNAVAILABLE
+    return (f"AI isn't working: {llm.account_problem}. Check ANTHROPIC_API_KEY (and AIET_MODEL) on the server, "
+            "then restart it.")
 
 
 @app.patch("/api/me")
@@ -565,9 +579,17 @@ def index():
 
 @app.get("/healthz", include_in_schema=False)
 def healthz():
-    """For hosting platforms and the container's health check: the app is up and its database answers."""
-    with db.connect() as conn:
-        conn.execute("SELECT 1").fetchone()
+    """For hosting platforms and the container's health check: the app is up and its database answers.
+    Opened read-write but never created, so a missing or replaced database file shows up here."""
+    try:
+        conn = sqlite3.connect(f"file:{quote(settings.database_path)}?mode=rw", uri=True, timeout=5)
+        try:
+            conn.execute("SELECT 1 FROM users LIMIT 1").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        log.exception("health check failed")
+        return JSONResponse({"ok": False}, status_code=503)
     return {"ok": True}
 
 

@@ -10,7 +10,7 @@ import sqlite3
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
 from app import auth, db, usage
 from app.config import settings
@@ -298,8 +298,9 @@ def set_role(user_id: int, body: RoleChange, user: dict = Admin):
 
 
 class AllowanceChange(BaseModel):
-    # None: the site's usual allowance. 0: no limit.
-    ai_allowance: int | None = Field(None, ge=0, le=100_000)
+    # Required, so a misspelt field can't reset anyone: null for the site's usual allowance, 0 for no
+    # limit. Strict, so true and false aren't taken for numbers.
+    ai_allowance: StrictInt | None = Field(..., ge=0, le=100_000)
 
 
 @router.post("/users/{user_id}/allowance")
@@ -310,6 +311,8 @@ def set_allowance(user_id: int, body: AllowanceChange, user: dict = Admin):
         target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if target is None:
             raise HTTPException(404, "User not found")
+        if auth.role_of(dict(target)) == "admin":
+            raise HTTPException(409, "Admins have no limit on AI requests")
         if target["ai_allowance"] == value:
             return usage.status(dict(target))
         conn.execute("UPDATE users SET ai_allowance = ? WHERE id = ?", (value, user_id))
