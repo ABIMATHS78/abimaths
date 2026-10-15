@@ -66,11 +66,24 @@ def unconfirmed_allowance() -> int | None:
 
 
 def allowance(user: dict) -> int | None:
-    """Units the learner may use in any 24 hours; None means no limit."""
-    if auth.role_of(user) == "admin" or settings.ai_allowance <= 0:
+    """Units the learner may use in any 24 hours; None means no limit. An admin can give a learner an
+    allowance of their own (0 for no limit), which takes the place of the site's."""
+    if auth.role_of(user) == "admin":
+        return None
+    if user.get("ai_allowance") is not None:
+        return user["ai_allowance"] or None
+    if settings.ai_allowance <= 0:
         return None
     lower = unconfirmed_allowance()
     return lower if lower is not None and not user.get("email_confirmed_at") else settings.ai_allowance
+
+
+def confirm_would_raise(user: dict) -> int | None:
+    """The allowance the learner would have after confirming their email address, if that's more."""
+    if (auth.role_of(user) == "admin" or user.get("ai_allowance") is not None or user.get("email_confirmed_at")
+            or settings.ai_allowance <= 0 or unconfirmed_allowance() is None):
+        return None
+    return settings.ai_allowance
 
 
 def _spent(conn, user_id: int) -> list:
@@ -85,7 +98,7 @@ def status(user: dict) -> dict:
     with db.connect() as conn:
         used = sum(r["units"] for r in _spent(conn, user["id"]))
     return {"limit": limit, "used": used, "remaining": None if limit is None else max(0, limit - used),
-            "confirm_raises_to": settings.ai_allowance if limit is not None and limit < settings.ai_allowance else None}
+            "confirm_raises_to": confirm_would_raise(user)}
 
 
 def _in_words(wait: timedelta) -> str:
@@ -100,7 +113,7 @@ def _requests(n: int) -> str:
     return f"{n} AI request{'' if n == 1 else 's'}"
 
 
-def _refusal(kind: str, limit: int, rows: list) -> tuple[str, timedelta]:
+def _refusal(kind: str, limit: int, rows: list, raise_to: int | None) -> tuple[str, timedelta]:
     """What to tell a learner whose allowance doesn't cover this request, and how long until it will."""
     cost, used = COSTS[kind], sum(r["units"] for r in rows)
     freed, wait = 0, None
@@ -115,8 +128,8 @@ def _refusal(kind: str, limit: int, rows: list) -> tuple[str, timedelta]:
         text = (f"You've reached your limit of {_requests(limit)} in 24 hours." if used >= limit else
                 f"{NAMES.get(kind, 'This request')} counts as {_requests(cost)}, and you have {limit - used} left.")
         text += f" You can ask again in {_in_words(wait)}."
-    if limit < settings.ai_allowance:
-        text += (f" Confirm your email address to raise your limit to {settings.ai_allowance}: you can send yourself "
+    if raise_to:
+        text += (f" Confirm your email address to raise your limit to {raise_to}: you can send yourself "
                  "a link from your profile.")
     return text, wait
 
@@ -130,7 +143,7 @@ def reserve(user: dict, kind: str) -> int:
         if limit is not None:
             rows = _spent(conn, user["id"])
             if sum(r["units"] for r in rows) + cost > limit:
-                refusal = ("allowance", *_refusal(kind, limit, rows))
+                refusal = ("allowance", *_refusal(kind, limit, rows, confirm_would_raise(user)))
         busy = _ceiling_message(user) if settings.ai_site_limit > 0 else None
         if refusal is None and busy:
             total = conn.execute("SELECT COALESCE(SUM(units), 0) FROM ai_usage WHERE created_at > ?", (_since(),)).fetchone()[0]

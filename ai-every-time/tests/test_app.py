@@ -167,3 +167,7 @@ def test_system_prompt_reflects_persona():
     assert "guiding questions" in stable and "Quiz me" in stable
     assert "very warm" in stable and "very casual" in stable
     assert "Works in finance" in learner and "Ada" in learner
+
+
+def test_health_check(client):
+    assert client.get("/healthz").json() == {"ok": True}  # no sign-in needed

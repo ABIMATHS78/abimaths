@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app import auth, db
+from app import auth, db, usage
 from app.config import settings
 
 router = APIRouter(prefix="/api/staff")
@@ -270,10 +270,12 @@ def decide_path(path_id: str, body: PathDecision, user: dict = Reviewer):
 def find_users(q: str = "", user: dict = Admin):
     like = f"%{q.strip().lower()}%"
     with db.connect() as conn:
-        rows = conn.execute("SELECT * FROM users WHERE lower(email) LIKE ? OR lower(display_name) LIKE ? "
-                            "ORDER BY (role != 'learner') DESC, id LIMIT 50", (like, like)).fetchall()
-    return [{"id": r["id"], "email": r["email"], "display_name": r["display_name"], "role": auth.role_of(dict(r)),
-             "fixed": r["email"].lower() in settings.admin_emails} for r in rows]
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM users WHERE lower(email) LIKE ? OR lower(display_name) LIKE ? "
+            "ORDER BY (role != 'learner') DESC, id LIMIT 50", (like, like))]
+    return [{"id": r["id"], "email": r["email"], "display_name": r["display_name"], "role": auth.role_of(r),
+             "fixed": r["email"].lower() in settings.admin_emails, "ai_allowance": r["ai_allowance"],
+             "ai": usage.status(r)} for r in rows]
 
 
 class RoleChange(BaseModel):
@@ -293,6 +295,30 @@ def set_role(user_id: int, body: RoleChange, user: dict = Admin):
         conn.execute("UPDATE users SET role = ? WHERE id = ?", (body.role, user_id))
         log(conn, user["id"], "user", user_id, f"role:{body.role}")
     return {"id": user_id, "role": body.role}
+
+
+class AllowanceChange(BaseModel):
+    # None: the site's usual allowance. 0: no limit.
+    ai_allowance: int | None = Field(None, ge=0, le=100_000)
+
+
+@router.post("/users/{user_id}/allowance")
+def set_allowance(user_id: int, body: AllowanceChange, user: dict = Admin):
+    """Give a learner a daily AI allowance of their own, for a class or a paid plan, or take it away."""
+    value = body.ai_allowance
+    with db.connect() as conn:
+        target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if target is None:
+            raise HTTPException(404, "User not found")
+        if target["ai_allowance"] == value:
+            return usage.status(dict(target))
+        conn.execute("UPDATE users SET ai_allowance = ? WHERE id = ?", (value, user_id))
+        log(conn, user["id"], "user", user_id, f"allowance:{'usual' if value is None else value or 'no limit'}")
+        notify(conn, user_id, "Your daily AI requests have changed: " + (
+            "you're back to the usual allowance." if value is None else "you have no daily limit." if value == 0
+            else f"you can now make {value} in any 24 hours."), "#/profile")
+        changed = dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
+    return usage.status(changed)
 
 
 @router.get("/log")
