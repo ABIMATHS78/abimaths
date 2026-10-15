@@ -206,7 +206,7 @@ def export(user: dict = User):
         data = {
             "exported_at": db.now(),
             "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "timezone", "reminder_hour",
-                                             "email_confirmed_at", "created_at")}
+                                             "email_confirmed_at", "ai_allowance", "created_at")}
                        | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
             "companions_you_designed": designed,
             "companions_you_follow": rows(

@@ -1835,7 +1835,7 @@ async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
-  const names = { insights: "Insights", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "Roles", log: "Decision log" };
+  const names = { insights: "Insights", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "People", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
@@ -2096,21 +2096,37 @@ async function staffPaths(body, m) {
 
 async function staffRoles(body, m) {
   body.innerHTML = `
-    <form class="card row" id="userSearch"><input type="text" name="q" placeholder="Search by name or email" aria-label="Search users" style="flex:1"><button class="btn">Search</button></form>
-    <div class="card"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th></tr></thead><tbody id="userRows"></tbody></table>
-    <p class="muted small">Moderators review reported companions. Reviewers check learner-made paths before they're shared. Admins can do both and assign roles.</p></div>`;
-  const load = async (q = "") => {
+    <form class="card row" id="userSearch"><input type="text" name="q" placeholder="Search by name or email" aria-label="Search people" style="flex:1"><button class="btn">Search</button></form>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Daily AI requests</th></tr></thead><tbody id="userRows"></tbody></table></div>
+    <p class="muted small">Moderators review reported companions. Reviewers check learner-made paths before they're shared. Admins can do both and assign roles.</p>
+    <p class="muted small">Give a learner an AI allowance of their own, for a class or a paid plan: the number of AI requests they can make in any 24 hours. Leave it empty for the usual allowance, or enter 0 for no limit.</p></div>`;
+  let lastQuery = "";
+  const load = async (q = lastQuery) => {
+    lastQuery = q;
     const users = await api(`/api/staff/users?q=${encodeURIComponent(q)}`);
     $("#userRows", body).innerHTML = users.map((u) => `<tr data-id="${u.id}"><td>${esc(u.display_name)}</td><td>${esc(u.email)}</td><td>
       ${u.fixed || u.id === state.me.id ? `${label(u.role)} <span class="muted small">(${u.fixed ? "set in server config" : "you"})</span>`
-        : `<select aria-label="Role for ${esc(u.display_name)}">${["learner", "reviewer", "moderator", "admin"].map((r) => `<option value="${r}" ${r === u.role ? "selected" : ""}>${label(r)}</option>`).join("")}</select>`}
+        : `<select data-role aria-label="Role for ${esc(u.display_name)}">${["learner", "reviewer", "moderator", "admin"].map((r) => `<option value="${r}" ${r === u.role ? "selected" : ""}>${label(r)}</option>`).join("")}</select>`}
+    </td><td>${u.role === "admin" ? `<span class="muted small">No limit (admin)</span>`
+      : `<div class="row" style="gap:8px;flex-wrap:nowrap"><input type="number" data-allowance min="0" max="100000" inputmode="numeric" style="width:96px"
+          value="${u.ai_allowance ?? ""}" placeholder="Usual" aria-label="Daily AI requests for ${esc(u.display_name)}">
+        <span class="muted small" style="white-space:nowrap">${u.ai.used.toLocaleString()} used${u.ai.limit === null ? "" : ` of ${u.ai.limit.toLocaleString()}`}</span></div>`}
     </td></tr>`).join("");
   };
   $("#userSearch", body).addEventListener("submit", (e) => { e.preventDefault(); load(e.target.q.value); });
   $("#userRows", body).addEventListener("change", async (e) => {
     const id = e.target.closest("tr").dataset.id;
-    try { await api(`/api/staff/users/${id}/role`, { method: "POST", body: { role: e.target.value } }); toast("Role updated"); }
-    catch (err) { toast(err.message); load(); }
+    try {
+      if (e.target.matches("[data-role]")) {
+        await api(`/api/staff/users/${id}/role`, { method: "POST", body: { role: e.target.value } });
+        toast("Role updated");
+      } else if (e.target.matches("[data-allowance]")) {
+        const v = e.target.value.trim();
+        await api(`/api/staff/users/${id}/allowance`, { method: "POST", body: { ai_allowance: v === "" ? null : Number(v) } });
+        toast(v === "" ? "Back to the usual allowance" : v === "0" ? "No daily limit" : `Allowance set to ${Number(v).toLocaleString()} a day`);
+      }
+    } catch (err) { toast(err.message); }
+    load();
   });
   await load();
 }

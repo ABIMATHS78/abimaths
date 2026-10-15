@@ -337,6 +337,8 @@ MIGRATIONS = [
     ("users", "last_push_on", "TEXT"),
     ("notices", "pushed_at", "TEXT"),
     ("users", "email_confirmed_at", "TEXT", _confirm_existing),
+    # A learner's own daily AI allowance, set by an admin: NULL for the site's, 0 for no limit.
+    ("users", "ai_allowance", "INTEGER"),
 ]
 
 

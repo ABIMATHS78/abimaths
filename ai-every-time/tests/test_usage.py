@@ -428,3 +428,48 @@ def test_the_site_ceiling_holds_only_unconfirmed_learners_while_email_is_on(clie
     assert r.status_code == 429 and r.json()["detail"] == usage.BUSY_UNCONFIRMED
     as_user(client, "ada@example.com", "Ada")
     assert chat(client, starter(client)).status_code == 200
+
+
+def test_admins_can_give_a_learner_an_allowance_of_their_own(client, mailbox, monkeypatch):
+    """For a class or a paid plan: it takes the place of the site's allowance, confirmed or not."""
+    from app import db
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
+    monkeypatch.setattr(settings, "ai_allowance", 4)
+    monkeypatch.setattr(settings, "ai_allowance_unconfirmed", 2)
+    ada = signup(client)
+    for _ in range(2):
+        chat(client, starter(client))
+    assert chat(client, starter(client)).status_code == 429  # the smaller allowance until she confirms
+    assert client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": 10}).status_code == 403
+
+    as_user(client, "boss@example.com", "Boss")
+    assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200
+    [row] = [u for u in client.get("/api/staff/users?q=ada").json()]
+    assert row["ai_allowance"] is None and row["ai"] == {"limit": 2, "used": 2, "remaining": 0, "confirm_raises_to": 4}
+    r = client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": 10})
+    assert r.json() == {"limit": 10, "used": 2, "remaining": 8, "confirm_raises_to": None}
+    assert client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": -1}).status_code == 422
+
+    as_user(client, "ada@example.com", "Ada")
+    assert client.get("/api/me").json()["ai_allowance"]["limit"] == 10
+    assert any("you can now make 10 in any 24 hours" in r["text"] for r in client.get("/api/reminders").json())
+    assert client.get("/api/me/export").json()["account"]["ai_allowance"] == 10
+    for _ in range(8):
+        assert chat(client, starter(client)).status_code == 200
+    assert chat(client, starter(client)).json()["detail"].startswith("You've reached your limit of 10 AI requests")
+
+    as_user(client, "boss@example.com", "Boss")
+    client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": 0})  # no limit
+    with db.connect() as conn:
+        actions = [r[0] for r in conn.execute("SELECT action FROM moderation_log WHERE target_type = 'user' ORDER BY id")]
+    assert actions == ["allowance:10", "allowance:no limit"]
+    as_user(client, "ada@example.com", "Ada")
+    assert chat(client, starter(client)).status_code == 200
+    assert client.get("/api/me").json()["ai_allowance"]["limit"] is None
+
+    as_user(client, "boss@example.com", "Boss")
+    client.post(f"/api/staff/users/{ada['id']}/allowance", json={"ai_allowance": None})  # the usual again
+    as_user(client, "ada@example.com", "Ada")
+    assert client.get("/api/me").json()["ai_allowance"] == {"limit": 2, "used": 11, "remaining": 0, "confirm_raises_to": 4}
