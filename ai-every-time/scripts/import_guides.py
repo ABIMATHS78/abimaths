@@ -557,6 +557,7 @@ def fix_line(text: str) -> str:
 
 # Not "up", which belongs to the verb before it ("Setting Up", "Scale Up").
 _SMALL = frozenset("a an and as at but by for from in into nor of on onto or over per the to via vs vs. with".split())
+_LIST_NUMBER = re.compile(r"\(?(?:\d+[a-z]?|[ivxIVX]+|[a-zA-Z])[.)]")
 
 
 def title_case(text: str) -> str:
@@ -568,7 +569,8 @@ def title_case(text: str) -> str:
         return text  # not a title-case heading
     out = []
     for i, w in enumerate(words):
-        start = i == 0 or out[-1].endswith((":", "–", "—", "?", "!"))
+        # The first word, also after a colon or dash, or after the number of a numbered heading ("1. The Basics").
+        start = i == 0 or out[-1].endswith((":", "–", "—", "?", "!")) or i == 1 and _LIST_NUMBER.fullmatch(out[0])
         out.append(w.lower() if not start and w.lower() in _SMALL and w[:1].isupper() and not w.isupper() else w)
     return " ".join(out)
 

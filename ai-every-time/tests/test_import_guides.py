@@ -99,6 +99,16 @@ def test_a_guide_body_is_repaired_whole():
     assert "## Key Takeaways with Details" in fixed  # headings: small words in lower case
 
 
+@pytest.mark.parametrize("raw, cased", [
+    ("Key Takeaways With Details", "Key Takeaways with Details"),
+    ("Step 2: The Setup And The Rest", "Step 2: The Setup and the Rest"),
+    ("1. The SaaS Dashboard Template", "1. The SaaS Dashboard Template"),
+    ("IV. The Fourth Way Forward", "IV. The Fourth Way Forward"),
+])
+def test_headings_keep_small_words_small_except_first(raw, cased):
+    assert ig.title_case(raw) == cased
+
+
 @pytest.mark.parametrize("raw, shown", [
     ("Step 3: Configuring Statistical Drift Metrics", "Configuring Statistical Drift Metrics"),
     ("Minute 0 To 5: Setting Up Your Workspace", "Setting Up Your Workspace"),
