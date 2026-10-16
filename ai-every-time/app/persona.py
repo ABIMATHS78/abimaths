@@ -48,6 +48,9 @@ class Avatar(BaseModel):
     accessory_color: str = "#222222"
     expression: Expression = "smile"
     shirt: str = "#1E272E"
+    # Whether a companion with a photo shows it, or this drawn face instead. The photo is kept either way, so
+    # the designer can switch back.
+    use_photo: bool = True
 
     @field_validator("skin", "hair_color", "background", "accessory_color", "shirt")
     @classmethod

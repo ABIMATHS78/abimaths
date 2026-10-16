@@ -21,6 +21,7 @@ from app import (account, auth, companions, content, db, digest, guides, insight
 from app.avatar import render_initials, render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
+from app.starter_companions import COUNTRY_CODES, flag
 
 log = logging.getLogger(__name__)
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -233,6 +234,8 @@ def options():
         "hair_styles": ["short", "long", "curly", "bun", "braids", "afro", "waves", "bald"],
         "accessories": ["none", "glasses", "round_glasses", "headphones", "earrings", "headwrap", "cap"],
         "expressions": ["smile", "grin", "calm", "curious"],
+        # The starter companions' countries, as they spell them, with their flags.
+        "countries": {name: flag(name) for name in COUNTRY_CODES},
     }
 
 
@@ -385,10 +388,11 @@ IMAGE_HEADERS = {"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff
 @app.get("/api/companions/{companion_id}/avatar.svg", include_in_schema=False)
 def companion_avatar(companion_id: int, background: BackgroundTasks, v: str = "", face: bool = False,
                      user: dict | None = Depends(auth.optional_user)):
-    """The companion's photo, or its drawn face. A starter's photo that isn't stored here yet is loaded by the
-    browser from its own address meanwhile; if that fails, the page asks again with face=1 for the drawn face.
-    A starter's face, asked for with v (its updated_at, which changes with its face), can be kept by the browser
-    for a day. Learners' photos are asked for each time, so one that's unpublished stops showing at once."""
+    """The companion's photo, or its drawn face if it has none or its designer chose the drawn face. A starter's
+    photo that isn't stored here yet is loaded by the browser from its own address meanwhile; if that fails, the
+    page asks again with face=1 for the drawn face. A starter's face, asked for with v (its updated_at, which
+    changes with its face), can be kept by the browser for a day. Learners' photos are asked for each time, so
+    one that's unpublished stops showing at once."""
     # Starter faces are public (they appear on the welcome page); others follow companion visibility.
     c = companions.get(companion_id)
     # Moderators also need to see hidden companions' faces to review them.
@@ -397,13 +401,14 @@ def companion_avatar(companion_id: int, background: BackgroundTasks, v: str = ""
         raise HTTPException(404, "Companion not found")
     keep = c["is_starter"] and v == c["updated_at"]
     headers = IMAGE_HEADERS | ({"Cache-Control": "private, max-age=86400"} if keep else {})
+    drawn = face or c["persona"]["avatar"].get("use_photo") is False
     with db.connect() as conn:
-        photo = None if face else conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?",
-                                               (companion_id,)).fetchone()
+        photo = None if drawn else conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?",
+                                                (companion_id,)).fetchone()
         source = conn.execute("SELECT photo_url FROM companions WHERE id = ?", (companion_id,)).fetchone()["photo_url"]
     if photo:
         return Response(photo["data"], media_type=photo["mime"], headers=headers)
-    if source and not face:
+    if source and not drawn:
         if settings.fetch_photos:
             background.add_task(photos.fetch_later, companion_id)
         return RedirectResponse(photos.direct_url(source), status_code=307, headers={"Cache-Control": "no-cache"})
@@ -411,6 +416,18 @@ def companion_avatar(companion_id: int, background: BackgroundTasks, v: str = ""
     # No guessing at what a real person looks like: their initials stand in for their photo.
     svg = render_initials(c["persona"]["name"], avatar.background) if c["real_person"] else render_svg(avatar)
     return Response(svg, media_type=SVG, headers=headers)
+
+
+@app.get("/api/companions/{companion_id}/photo")
+def companion_photo(companion_id: int, user: dict = User):
+    """The photo itself, even while the drawn face is shown instead, for choosing between them in the designer:
+    a learner's own companion's, or a starter's they're customising."""
+    c = companions.get_visible(companion_id, user["id"])
+    with db.connect() as conn:
+        photo = conn.execute("SELECT mime, data FROM companion_photos WHERE companion_id = ?", (companion_id,)).fetchone()
+    if photo is None or not (c["is_starter"] or c["owner_id"] == user["id"]):
+        raise HTTPException(404, "No photo")
+    return Response(photo["data"], media_type=photo["mime"], headers=IMAGE_HEADERS)
 
 
 @app.put("/api/companions/{companion_id}/photo", status_code=204)

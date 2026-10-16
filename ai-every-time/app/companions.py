@@ -18,6 +18,24 @@ MAX_VERSIONS = 50
 # A published companion is hidden for review once this many learners report it.
 REPORTS_TO_HIDE = 3
 STARTER_FIELDS = ("persona", "base_followers", "region", "photo_url", "real_person", "featured", "retired")
+# What a companion's lessons don't depend on: its face, its read-aloud voice and its designer's private
+# instructions (lessons are shared by everyone it teaches).
+NOT_TAUGHT = {"avatar", "voice", "flag", "custom_instructions"}
+
+
+def _teaching(persona: dict | Persona) -> dict | None:
+    """The parts of a persona its lessons are written from (None for one saved in a shape that's no longer valid)."""
+    try:
+        if not isinstance(persona, Persona):
+            persona = Persona.model_validate(persona)
+    except ValueError:
+        return None
+    return persona.model_dump(exclude=NOT_TAUGHT)
+
+
+def _forget_lessons(conn, companion_id: int) -> None:
+    """Its lessons were written in its old voice: each is written again, in the new one, when next opened."""
+    conn.execute("DELETE FROM lesson_content WHERE companion_id = ?", (companion_id,))
 
 
 def seed_starters() -> None:
@@ -40,6 +58,8 @@ def seed_starters() -> None:
             elif tuple(row[k] for k in STARTER_FIELDS) != values:
                 if row["photo_url"] != s.photo_url:  # fetched again from the new address
                     conn.execute("DELETE FROM companion_photos WHERE companion_id = ?", (row["id"],))
+                if _teaching(json.loads(row["persona"])) != _teaching(s.persona):
+                    _forget_lessons(conn, row["id"])
                 conn.execute(f"UPDATE companions SET {', '.join(f'{k} = ?' for k in STARTER_FIELDS)}, updated_at = ? "
                              "WHERE id = ?", (*values, ts, row["id"]))
         for slug, row in existing.items():
@@ -206,11 +226,13 @@ def remix(user_id: int, source_id: int, overrides: dict | None = None, keep_phot
 
 
 def update(user_id: int, companion_id: int, persona: Persona) -> dict:
-    get_owned(companion_id, user_id)
+    before = get_owned(companion_id, user_id)
     ts = db.now()
     with db.connect() as conn:
         conn.execute("UPDATE companions SET persona = ?, updated_at = ? WHERE id = ?",
                      (persona.model_dump_json(), ts, companion_id))
+        if _teaching(before["persona"]) != _teaching(persona):
+            _forget_lessons(conn, companion_id)
         conn.execute("INSERT INTO companion_versions (companion_id, persona, created_at) VALUES (?, ?, ?)",
                      (companion_id, persona.model_dump_json(), ts))
         conn.execute(
