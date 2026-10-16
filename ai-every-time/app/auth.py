@@ -112,4 +112,5 @@ def require(permission: str):
 def public_user(u: dict) -> dict:
     return {k: u[k] for k in ("id", "email", "display_name", "level", "goals", "primary_companion_id", "onboarded")} | {
         "onboarded": bool(u["onboarded"]), "role": role_of(u), "email_reminders": bool(u.get("email_reminders")),
+        "interests": u.get("interests") or "",
     }

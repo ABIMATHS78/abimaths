@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Literal
@@ -98,6 +99,7 @@ class Signup(BaseModel):
     display_name: str = Field(min_length=1, max_length=60)
     level: Literal["beginner", "intermediate", "advanced"] = "beginner"
     goals: str = Field("", max_length=500)
+    interests: str = Field("", max_length=300)
     # Reported by the browser. One the server doesn't know is ignored rather than blocking sign-up.
     timezone: Annotated[str, AfterValidator(_zone_or_unknown)] = ""
 
@@ -111,6 +113,7 @@ class ProfileUpdate(BaseModel):
     display_name: str | None = Field(None, min_length=1, max_length=60)
     level: Literal["beginner", "intermediate", "advanced"] | None = None
     goals: str | None = Field(None, max_length=500)
+    interests: str | None = Field(None, max_length=300)
     email_reminders: bool | None = None
     timezone: TimeZone | None = None
     # The hour of their own day for the daily reminder, by email and notification.
@@ -122,10 +125,10 @@ def signup(body: Signup, response: Response, background: BackgroundTasks):
     try:
         with db.connect() as conn:
             cur = conn.execute(
-                "INSERT INTO users (email, display_name, password_hash, level, goals, timezone, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (email, display_name, password_hash, level, goals, interests, timezone, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (body.email.lower(), body.display_name.strip(), auth.hash_password(body.password), body.level,
-                 body.goals.strip(), body.timezone, db.now()),
+                 body.goals.strip(), body.interests.strip(), body.timezone, db.now()),
             )
             # Start every learner following the featured starter companions, one from each region, so their
             # feed isn't empty.
@@ -191,6 +194,9 @@ def _ai_problem(user: dict) -> str | None:
 @app.patch("/api/me")
 def update_me(body: ProfileUpdate, background: BackgroundTasks, user: dict = User):
     changes = body.model_dump(exclude_none=True)
+    for k in ("goals", "interests"):
+        if k in changes:
+            changes[k] = changes[k].strip()
     if changes.get("email_reminders") and not digest.email_available():
         raise HTTPException(409, "Email reminders aren't set up on this server yet")
     if "email_reminders" in changes:
@@ -635,8 +641,13 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
         sent = conn.execute("INSERT INTO messages (user_id, companion_id, role, content, post_id, created_at) VALUES (?, ?, 'user', ?, ?, ?)",
                             (user["id"], companion_id, body.message, body.post_id, db.now())).lastrowid
         rows = [dict(r) for r in conn.execute(
-            "SELECT role, content, reaction FROM messages WHERE user_id = ? AND companion_id = ? ORDER BY id DESC LIMIT ?",
+            "SELECT id, role, content, reaction FROM messages WHERE user_id = ? AND companion_id = ? ORDER BY id DESC LIMIT ?",
             (user["id"], companion_id, settings.history_turns * 2)).fetchall()[::-1]]
+        first = conn.execute("SELECT MIN(id) FROM messages WHERE user_id = ? AND companion_id = ?",
+                             (user["id"], companion_id)).fetchone()[0]
+    # A chat the companion started: the learner opening it comes first, so its opening message stays in view.
+    if rows[0]["id"] == first and rows[0]["role"] == "assistant":
+        rows.insert(0, {"role": "user", "content": llm.opened(user), "reaction": None})
     history = _normalise_history(rows)
     # The learner's reaction to the companion's last reply, which the companion can take into account.
     reacted = next((r["reaction"] for r in reversed(rows) if r["role"] == "assistant"), None)
@@ -663,6 +674,59 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
 
     # The learner's message id, so the page can show the companion's reaction to it and let them react to the reply.
     return StreamingResponse(stream(), media_type="text/plain; charset=utf-8", headers={"X-Message-Id": str(sent)})
+
+
+class OpeningIn(BaseModel):
+    post_id: int | None = None  # the post the learner came from, if any
+
+
+# When each (learner, companion) chat's first message started being written, while it is. One older than
+# OPENING_SECONDS was given up on (a stream that never started has nothing to clear it).
+_opening: dict[tuple[int, int], float] = {}
+OPENING_SECONDS = 120
+
+
+@app.post("/api/companions/{companion_id}/opening")
+async def opening(companion_id: int, body: OpeningIn, user: dict = User):
+    """The companion's first message in a chat the learner hasn't started: a conversation from their interests,
+    written by Claude in the companion's voice (from a template in demo mode, or if Claude can't be reached),
+    streamed as text and kept as the chat's first message. It costs the learner nothing. Nothing (204) for a chat
+    that has begun, or whose first message is already being written."""
+    c = companions.get_visible(companion_id, user["id"])
+    key = (user["id"], companion_id)
+    with db.connect() as conn:
+        begun = conn.execute("SELECT 1 FROM messages WHERE user_id = ? AND companion_id = ? LIMIT 1", key).fetchone()
+    if begun or time.monotonic() - _opening.get(key, -OPENING_SECONDS) < OPENING_SECONDS:
+        return Response(status_code=204)
+    _opening[key] = time.monotonic()
+    try:
+        persona = companions.persona_for(c, user["id"])
+        post = _visible_post(body.post_id, user["id"]) if body.post_id else None
+        memories = [m["fact"] for m in _memories(user["id"], companion_id)]
+        row = None if settings.offline else usage.try_reserve(user, "opening")
+    except BaseException:
+        _opening.pop(key, None)
+        raise
+
+    async def stream():
+        try:
+            with usage.recording(row):
+                parts: list[str] = []
+                async for chunk in llm.stream_opening(persona, user, memories, post, c["real_person"], row is not None):
+                    parts.append(chunk)
+                    yield chunk
+            text = "".join(parts).strip()
+            if text:
+                with db.connect() as conn:
+                    # Only as the chat's first message: had the learner written first, theirs would start it.
+                    conn.execute("INSERT INTO messages (user_id, companion_id, role, content, created_at) "
+                                 "SELECT ?, ?, 'assistant', ?, ? WHERE NOT EXISTS "
+                                 "(SELECT 1 FROM messages WHERE user_id = ? AND companion_id = ?)",
+                                 (*key, text, db.now(), *key))
+        finally:
+            _opening.pop(key, None)
+
+    return StreamingResponse(stream(), media_type="text/plain; charset=utf-8")
 
 
 def _normalise_history(rows: list[dict]) -> list[dict]:

@@ -506,6 +506,9 @@ async function viewWelcome() {
           <label data-only="signup">What do you want to learn? <span class="hint">Optional, your companion will use this</span>
             <textarea name="goals" maxlength="500" placeholder="e.g. Understand how ChatGPT-style models work and build my first AI app"></textarea>
           </label>
+          <label data-only="signup">What are you into? <span class="hint">Optional: hobbies, work, anything you love. Companions start your chats from it</span>
+            <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
+          </label>
           <div class="error" id="authErr"></div>
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
           <button type="button" class="linkbtn" id="forgotBtn" data-only="login" hidden>Forgot your password?</button>
@@ -1134,11 +1137,41 @@ async function viewCompanion(m) {
   $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
   $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
-  if (!messages.length) {
-    const intro = c.real_person ? `I'm an AI learning companion modelled on ${p.name}.` : `I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}`;
-    addMsg("assistant", `Hi ${state.me.display_name}! ${intro}\n\nWhat would you like to learn today?`);
-  }
   messages.forEach((x) => addMsg(x.role, x.content, x));
+  if (!messages.length) openChat();
+
+  /* A chat the learner hasn't started: the companion starts it, from what it knows of their interests. */
+  async function openChat() {
+    const bubble = addMsg("assistant", "…"), send = $("#send");
+    let text = "";
+    send.disabled = true;
+    try {
+      const res = await fetch(`/api/companions/${id}/opening`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+        body: JSON.stringify({ post_id: contextPost?.id ?? null }),
+      });
+      if (res.ok && res.status !== 204) {  // 204: begun meanwhile, or being written in another tab
+        const reader = res.body.getReader(), dec = new TextDecoder();
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done || !bubble.isConnected) break;
+          text += dec.decode(value, { stream: true });
+          bubble.innerHTML = `<div class="prose">${md(text)}</div>`;
+          log.scrollTop = log.scrollHeight;
+        }
+      }
+      if (!text.trim() || !bubble.isConnected) { bubble.remove(); return; }
+      speakBtn(bubble, text);
+      if (readAloud) speak(text, p.voice);
+      // Kept as the chat's first message: with its id, the learner can react to it.
+      const [first] = await api(`/api/companions/${id}/messages`);
+      if (first?.role === "assistant") bubbleSaved(bubble, first, chatCtx);
+    } catch {
+      if (!text.trim()) bubble.remove();  // the learner can still start the chat themselves
+    } finally {
+      send.disabled = false;
+    }
+  }
 
   const renderCtx = () => {
     $("#ctx").innerHTML = contextPost ? `<div class="context-pill"><span>Asking about: <b>${esc(contextPost.title)}</b></span><button class="linkbtn" id="clearCtx">✕</button></div>` : "";
@@ -1214,7 +1247,7 @@ async function viewCompanion(m) {
   $("#composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || $("#send").disabled) return;  // Enter while the companion is still writing: it waits in the box
     input.value = "";
     $("#send").disabled = true;
     closePicker(log);
@@ -1645,6 +1678,8 @@ async function viewProfile() {
         <label>Name <input type="text" name="display_name" maxlength="60" required></label>
         <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
         <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
+        <label>Interests <span class="hint">Hobbies, work, anything you love: your companions start conversations from them and use them in examples</span>
+          <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking"></label>
         <div class="error" id="profErr"></div>
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
       </form>
@@ -1676,7 +1711,7 @@ async function viewProfile() {
       </div>
     </div>`);
   const f = $("#prof", main);
-  f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals;
+  f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals; f.interests.value = me.interests || "";
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
@@ -2333,6 +2368,7 @@ async function viewStaff(m) {
 const KIND_LABEL = {
   chat: "Chat replies", lesson: "Lessons, the first time taught", quiz: "Quizzes", exam: "Mock exams", flashcards: "Flashcard decks",
   summary: "Summaries", plan: "Study plans", path: "Custom paths", post: "Companion posts", automatic: "Scheduled posts (no learner)",
+  opening: "Companions starting chats (free to learners)",
 };
 const fmt = (n) => (n == null ? "–" : n >= 10000 ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n) : n.toLocaleString());
 const plural = (n, one, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;

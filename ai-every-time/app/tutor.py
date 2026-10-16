@@ -83,7 +83,8 @@ async def _parse(persona: Persona, prompt: str, schema: type[T], effort: str, ma
 
 
 def _learner_line(learner: dict) -> str:
-    return f"The learner is {learner['display_name']} ({learner['level']} level). Goals: {learner['goals'] or 'not shared'}."
+    return (f"The learner is {learner['display_name']} ({learner['level']} level). Goals: {learner['goals'] or 'not shared'}."
+            + (f" Interests, for examples: {learner['interests']}." if learner.get("interests") else ""))
 
 
 # ------------------------------------------------------------------- lessons

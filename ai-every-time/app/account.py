@@ -205,7 +205,7 @@ def export(user: dict = User):
             for d in rows("SELECT id, title, source_type, source_ref, created_at FROM decks WHERE user_id = ? ORDER BY id")]
         data = {
             "exported_at": db.now(),
-            "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "timezone", "reminder_hour",
+            "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "interests", "timezone", "reminder_hour",
                                              "email_confirmed_at", "ai_allowance", "created_at")}
                        | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
             "companions_you_designed": designed,

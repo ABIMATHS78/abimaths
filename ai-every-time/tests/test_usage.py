@@ -101,6 +101,7 @@ class FakeClaude:
         return outcome
 
     def stream(self, **kwargs):
+        self.streamed = kwargs  # the last request, for tests that check what was asked
         return FakeStream(self.answers["stream"])
 
     @property
