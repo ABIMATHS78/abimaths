@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import unicodedata
 from datetime import datetime, timedelta, timezone
 
 from app import companions, db, llm
@@ -146,27 +147,102 @@ def unrecord(user_id: int, post_id: int, kind: str) -> None:
         conn.execute("DELETE FROM engagements WHERE user_id = ? AND post_id = ? AND kind = ?", (user_id, post_id, kind))
 
 
-def feed(user_id: int, companion_id: int | None = None, limit: int = 30) -> list[dict]:
+# What lists of posts show of each. A guide's body runs to thousands of words, so lists carry its summary and
+# graphic instead, and its own page fetches the rest; a post a companion wrote is short and comes whole.
+_LISTED = ("p.id, p.companion_id, p.title, p.topic, p.created_at, p.summary, p.kind, p.level, p.minutes, p.graphic, "
+           "CASE WHEN p.summary IS NULL THEN p.body ELSE '' END AS body")
+_COUNTS = """
+  (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'like') AS likes,
+  (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'helpful') AS helpful,
+  EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = :uid AND e.kind = 'like') AS liked,
+  EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = :uid AND e.kind = 'helpful') AS marked_helpful"""
+# Newest first, a page at a time: each page after the first starts after the last post of the one before.
+_PAGE = "AND (:bt IS NULL OR (p.created_at, p.id) < (:bt, :bid)) ORDER BY p.created_at DESC, p.id DESC LIMIT :limit"
+
+
+def cursor(before: str | None) -> dict:
+    """The query parameters for a page that starts after `before`, a post's "<created_at>|<id>". ValueError if
+    it isn't one."""
+    if not before:
+        return {"bt": None, "bid": None}
+    when, _, pid = before.rpartition("|")
+    if not when or not pid.isdigit():
+        raise ValueError("before: a post's created_at and id, as created_at|id")
+    return {"bt": when, "bid": int(pid)}
+
+
+def _post(row) -> dict:
+    post = dict(row)
+    # The address of the guide's graphic. (Before graphics were pictures, this held a description of one.)
+    graphic = post.get("graphic") or ""
+    post["graphic"] = graphic if graphic.startswith(("/static/", "https://")) else None
+    if "liked" in post:
+        post["liked"], post["marked_helpful"] = bool(post["liked"]), bool(post["marked_helpful"])
+    return post
+
+
+def feed(user_id: int, companion_id: int | None = None, limit: int = 20, before: str | None = None) -> list[dict]:
     """Posts from followed companions (or one visible companion), newest first."""
     # Following a companion that was later unpublished or hidden must not keep its posts in the feed.
     where = "p.companion_id = :cid" if companion_id else "p.companion_id IN (SELECT companion_id FROM follows WHERE user_id = :uid)"
     with db.connect() as conn:
         rows = conn.execute(
-            f"""
-            SELECT p.*,
-              (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'like') AS likes,
-              (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'helpful') AS helpful,
-              EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = :uid AND e.kind = 'like') AS liked,
-              EXISTS (SELECT 1 FROM engagements e WHERE e.post_id = p.id AND e.user_id = :uid AND e.kind = 'helpful') AS marked_helpful
-            FROM posts p JOIN companions c ON c.id = p.companion_id
-            WHERE {where} AND {companions.VISIBLE_SQL} ORDER BY p.id DESC LIMIT :limit
-            """,
-            {"uid": user_id, "cid": companion_id, "limit": limit},
+            f"SELECT {_LISTED}, {_COUNTS} FROM posts p JOIN companions c ON c.id = p.companion_id "
+            f"WHERE {where} AND {companions.VISIBLE_SQL} {_PAGE}",
+            {"uid": user_id, "cid": companion_id, "limit": limit, **cursor(before)},
         ).fetchall()
-    return [dict(r) | {"liked": bool(r["liked"]), "marked_helpful": bool(r["marked_helpful"])} for r in rows]
+    return [_post(r) for r in rows]
+
+
+def guides(user_id: int, *, region: str | None = None, kind: str | None = None, level: str | None = None,
+           topic: str | None = None, q: str | None = None, companion_id: int | None = None,
+           before: str | None = None, limit: int = 24) -> list[dict]:
+    """The guides learners can browse, newest first: by their companion's region, kind, level, topic,
+    companion, or words in the title, summary, topic or companion's name, accents aside."""
+    where = ["p.kind IS NOT NULL", companions.VISIBLE_SQL,
+             "(c.retired = 0 OR EXISTS (SELECT 1 FROM follows f WHERE f.companion_id = c.id AND f.user_id = :uid))"]
+    params: dict = {"uid": user_id, "limit": limit, **cursor(before)}
+    for column, value in (("c.region", region), ("p.kind", kind), ("p.level", level), ("p.topic", topic),
+                          ("p.companion_id", companion_id)):
+        if value:
+            name = column.split(".")[1]
+            where.append(f"{column} = :{name}")
+            params[name] = value
+    for i, word in enumerate((q or "").split()[:6]):
+        params[f"w{i}"] = "%" + _fold(word).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        where.append(f"fold(p.title || ' ' || p.summary || ' ' || p.topic || ' ' || json_extract(c.persona, '$.name')) "
+                     f"LIKE :w{i} ESCAPE '\\'")
+    with db.connect() as conn:
+        conn.create_function("fold", 1, _fold, deterministic=True)
+        rows = conn.execute(
+            f"SELECT {_LISTED}, {_COUNTS} FROM posts p JOIN companions c ON c.id = p.companion_id "
+            f"WHERE {' AND '.join(where)} {_PAGE}", params).fetchall()
+    return [_post(r) for r in rows]
+
+
+def guide_topics(user_id: int) -> list[dict]:
+    """The topics the guides cover, with how many there are of each, most first."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT p.topic, COUNT(*) AS guides FROM posts p JOIN companions c ON c.id = p.companion_id "
+            f"WHERE p.kind IS NOT NULL AND c.retired = 0 AND {companions.VISIBLE_SQL} "
+            "GROUP BY p.topic ORDER BY guides DESC, p.topic", {"uid": user_id}).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _fold(text: str | None) -> str:
+    """Text without accents, in lower case: "Aoifè Murphŷ" is found by "aoife murphy"."""
+    return "".join(ch for ch in unicodedata.normalize("NFKD", text or "") if not unicodedata.combining(ch)).lower()
+
+
+def post_view(user_id: int, post_id: int) -> dict | None:
+    """A post whole, with its likes and the learner's own engagement."""
+    with db.connect() as conn:
+        row = conn.execute(f"SELECT p.*, {_COUNTS} FROM posts p WHERE p.id = :pid", {"uid": user_id, "pid": post_id}).fetchone()
+    return _post(row) if row else None
 
 
 def get_post(post_id: int) -> dict | None:
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
-    return dict(row) if row else None
+    return _post(row) if row else None

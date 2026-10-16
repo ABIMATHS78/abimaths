@@ -285,6 +285,11 @@ CREATE TABLE IF NOT EXISTS server_keys (
     value TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
+-- Things the app remembers about itself, like which guides file it last loaded.
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -355,7 +360,23 @@ MIGRATIONS = [
     # An emoji reaction to a message from the other side of the chat: the companion's to the learner's
     # messages, the learner's to the companion's. NULL for none.
     ("messages", "reaction", "TEXT"),
+    # Guides (app/guides.py) are posts with more to them: a summary, their kind (tutorial or cheat sheet), level,
+    # reading time in minutes, the address of their graphic, and where they came from ("aieverytime:<id>"). Posts
+    # companions write themselves have none of these.
+    ("posts", "summary", "TEXT"),
+    ("posts", "kind", "TEXT"),
+    ("posts", "level", "TEXT"),
+    ("posts", "minutes", "INTEGER"),
+    ("posts", "graphic", "TEXT"),
+    ("posts", "source", "TEXT"),
 ]
+
+# Indexes on columns added above, so made after them.
+INDEXES = """
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_source ON posts(source) WHERE source IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_posts_companion_created ON posts(companion_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_posts_kind_created ON posts(kind, created_at);
+"""
 
 
 def init_db() -> None:
@@ -368,6 +389,7 @@ def init_db() -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
                 for fill in backfill:
                     fill(conn) if callable(fill) else conn.execute(fill)
+        conn.executescript(INDEXES)
 
 
 def _with_defaults(persona: dict) -> dict:

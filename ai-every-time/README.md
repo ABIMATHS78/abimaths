@@ -17,6 +17,7 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Change it later** | Learners can edit their companion at any time. Every save is kept as a version (last 50), and any version can be restored. Starter companions can't be edited, only remixed. |
 | **Chat that remembers** | Replies stream in the companion's voice (built from the persona by `app/llm.py`). After each exchange the companion saves lasting facts about the learner (goals, level, struggles). Learners can see these and remove any of them. |
 | **Reactions** | In chat, on the companion page and in the lesson tutor, the learner and the companion react to each other's messages: 👍 ❤️ 😂 😮 😢 🙏 🎉 💡. Learners react to any reply with the 🙂 button beside it (choosing the same one again takes it back). The companion reacts to the learner's message when a friend naturally would, such as ❤️ for thanks or 🎉 for good news: it decides as it starts its reply, at no extra cost, and the reaction is taken off the reply before anyone sees it (`app/reactions.py`). The companion also sees the learner's reaction to its last reply. Reactions are kept with the conversation and included in the data download. |
+| **Guides** | 1,162 tutorials and cheat sheets that 102 of the starter companions wrote on aieverytime.org between 1 September and 15 October 2026. They're in the feed of anyone who follows their author, each on a page of its own, and in the **Guides** library: by region like the site's education page, by kind, level and topic, or searched by title or companion. Each shows its own graphic from the site, with the image generator's spelling mistakes corrected in the picture itself. Their text was repaired on the way in (see [The guides](#the-guides)). Learners can ask the author about any guide, quiz themselves on it or turn it into flashcards. |
 | **Content → relationship** | Companions publish short lessons on their own. Every post has an *"Ask {name} about this"* button that opens a chat with the post as context. |
 | **Learning paths** | 5 paths of 5 lessons: AI Foundations, Understanding LLMs, Prompting & AI Agents, Responsible AI, and AI for Business. Each lesson has objectives and vetted key points (`app/curriculum.py`). The learner's companion teaches each lesson in its own voice; learners can switch to any companion they follow. A lesson is written once per companion and then cached. |
 | **Interactive tutoring** | Every lesson page has a tutor panel where the learner can ask the companion about that lesson. The companion answers using the lesson's key points. |
@@ -75,6 +76,7 @@ Notifications need two things. First, a contact address that browsers' push serv
 | `ANTHROPIC_WORKSPACE_ID` | — | Only for an API key that works across Claude workspaces (one made without choosing a workspace): the workspace to use, an ID starting `wrkspc_` from the [Workspaces](https://platform.claude.com/settings/workspaces) page of the Claude Console. A key made for one workspace doesn't need it |
 | `AIET_MODEL` | `claude-opus-5-5` | Claude model used for everything |
 | `AIET_AUTOGEN_MINUTES` | `0` (off) | Minutes between automatic posts from starter companions: each run, up to 8 that learners follow, those that posted longest ago first |
+| `AIET_GUIDES` | `app/guides.json.gz` | The guides to load at start-up (see [The guides](#the-guides)); `0` loads none |
 | `AIET_FETCH_PHOTOS` | `1` (on) | Fetch starter companions' photos and keep small copies. With `0`, browsers load them from their addresses in the CSV every time |
 | `AIET_DATABASE` | `ai_every_time.db` | SQLite file |
 | `AIET_SECURE_COOKIES` | off | Set to `1` behind HTTPS |
@@ -100,6 +102,24 @@ Notifications need two things. First, a contact address that browsers' push serv
 - **Removing a row** retires that companion. Learners who talked to it, or have it as their companion, keep it with their chats, under "Earlier companions"; nobody else sees it, and it stops posting. Everyone who followed it starts following the featured companions (the most followed in each region). Putting the row back brings it back.
 - **Photos** can be any address that serves a PNG, JPEG or WebP picture. A Google Drive sharing link works if the file is shared with anyone who has the link; a direct address on the same host as the others is more reliable.
 - A row the app can't read (a duplicate slug, a follower count that isn't a number) stops it from starting, with the line number, rather than removing that companion.
+
+### The guides
+
+The guides come from an export of aieverytime.org's articles table: those in education mode (tutorials and cheat sheets) published since a date you choose. `scripts/import_guides.py` turns the export into `app/guides.json.gz`, which the app loads when it starts:
+
+```bash
+python scripts/import_guides.py articles.csv --since 2026-09-01
+```
+
+It asks the site once which companion each author is (or give it a saved copy of the site's reporters list with `--reporters`). Each guide becomes a post by its companion, dated when the site published it. When the file changes, the app updates guides in place, so their likes, views and chats stay, adds new ones and removes any no longer in it. Guides aren't counted as new posts for learners: they're a library, not news.
+
+On the way in, the script repairs what the site's own pipeline had damaged:
+- **Capitals.** Words in capitals of four letters or more had been put in title case: "Gdpr", "Cuda", and SQL in code examples such as `Create Table … Varchar(100) NOT Null`. Acronyms, SQL and Dockerfile keywords and HTTP methods are back in capitals; ordinary words that look like them ("Select a model") are left alone.
+- **Hyphens** had become spaces: "multi agent", "real time data", "end to end". They're back where words join to describe what follows ("real-time data"), not where they don't ("in real time").
+- **Repeats and leftovers.** Sections repeated word for word (1.6 MB of them, in 385 guides), stray bold markers ("today.**."), headings that repeated the title, formulas written in LaTeX (now plain characters, like O(N²)), and a few spelling slips.
+- **Titles, summaries and topics** were edited for punctuation and spelling ("Asyncio for AI: Building High-Performance Concurrent Applications"), and each guide filed under the topic that fits it. These edits are kept in `scripts/guide_edits.json`, by article id, and applied again whenever the script runs.
+
+Each guide shows the graphic the site made for it, with the misspelled and garbled words the image generator put in it ("Warewarusing", "httx", "PREEQUISITES") corrected in place: everything else in the picture is as the site has it. The corrected graphics are in `static/guides/` (about 55 KB each), and what was corrected in each, and how, in `scripts/graphics/corrections/`; [scripts/graphics/README.md](scripts/graphics/README.md) tells how they're made and how to make them again. A guide whose graphic hasn't been corrected yet shows the site's own copy, and one the site gave no graphic (10 of them) has none.
 
 ## Deploy it
 
@@ -136,6 +156,8 @@ pytest
 The tests run in offline mode and cover:
 - seeding the starter companions
 - the 103 starter companions: every CSV row has a persona and a flag, names and counts from the CSV, featured companions, rows that can't be read, follower counts on starters only, the learner's own companions first then the most followed, the welcome page's faces, retiring the earlier eight on an older site without losing anyone's chats (and bringing one back), real people (no remix, initials), photos fetched once and kept small (Google Drive links, failures, retries, turned off, never twice at once, at most four at a time), browsers keeping starters' faces but not learners' photos, remixes keeping a starter's photo, a first post when first followed (capped, and not retried for an hour), and scheduled posts a few at a time
+- the guides: loaded as posts by their companions (dated when published, authors who aren't starters skipped), updated in place when the file changes (likes kept, removed ones gone), not counted as new posts, the library's filters (region, kind, level, topic, words with or without accents, companion), lists newest first a page at a time, the whole guide on its own page, in chat and in study tools, and each guide's corrected graphic (or the site's, until it's corrected)
+- importing the guides: acronyms, SQL, Dockerfile keywords and HTTP methods back in capitals without touching ordinary words or strings, hyphens back where they belong and not where they don't, formulas, repeated sections, headings' capitals, and reading an export (with each guide's graphic)
 - reactions: the learner's (one per message, written any way, only to the companion's messages in their own chats), the companion's (taken off the start of its reply however it streams in, invalid ones dropped, a sentence in a tag left as written, demo-mode rules), a reply that's only a reaction, the companion seeing the learner's reaction, and the data download
 - onboarding
 - designing, editing and restoring a companion
@@ -195,6 +217,8 @@ app/
   starter_companions.py How each starter teaches and writes, and reading the CSV
   photos.py             Starter companions' photos: fetched once, cut to small squares, kept in the database
   reactions.py          Emoji reactions in chat, and taking the companion's off the start of its reply
+  guides.json.gz        The education guides from aieverytime.org, made by scripts/import_guides.py
+  guides.py             Loading the guides as posts by their companions, and keeping them up to date
   avatar.py             Builds each face as an SVG from its settings (validated colours and options only)
   llm.py                Claude: system prompt from the persona, streamed chat, memory extraction, post writing
   curriculum.py         Learning paths, lessons, objectives and vetted key points
@@ -207,11 +231,15 @@ app/
   insights.py           The admin Insights page
   push.py               Notifications: subscriptions, the VAPID key, encrypted delivery, the daily schedule
   account.py            Password reset and change, signing out other devices, guessing limits, data download, deletion
-  content.py            Topic scores from engagement, post generation, background schedule
+  content.py            Topic scores from engagement, post generation, the feed and the guides library
   companions.py         Create / remix / edit / version / follow
   auth.py, db.py        Password logins (scrypt) with cookie sessions; SQLite storage
   main.py               HTTP API + static app
-static/                 Single-page web app (no build step), service worker (sw.js), manifest and icons
+static/                 Single-page web app (no build step), service worker (sw.js), manifest and icons;
+                        guides/ holds the guides' corrected graphics
+scripts/import_guides.py Turns an export of aieverytime.org's articles into app/guides.json.gz (see The guides);
+                        scripts/guide_edits.json holds the editorial changes it applies
+scripts/graphics/       Correcting the spelling in the guides' graphics, and the corrections (see its README)
 scripts/make_icons.py   Makes the logo image and the app icons from the logo (scripts/logo.webp); run it if the logo changes
 Dockerfile              The image for deploying it (see Deploy it)
 ```

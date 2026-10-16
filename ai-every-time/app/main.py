@@ -11,13 +11,13 @@ from typing import Annotated, Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import (account, auth, companions, content, db, digest, insights, learning, llm, photos, push, reactions,
-                 reminders, staff, usage)
+from app import (account, auth, companions, content, db, digest, guides, insights, learning, llm, photos, push,
+                 reactions, reminders, staff, usage)
 from app.avatar import render_initials, render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -37,6 +37,7 @@ def _spawn(coro) -> None:
 async def lifespan(_: FastAPI):
     db.init_db()
     companions.seed_starters()
+    guides.seed()  # before first posts: a starter with guides has posted already
     _spawn(content.ensure_initial_posts())
     _spawn(photos.ensure_starter_photos())
     if settings.autogen_interval_minutes > 0:
@@ -453,15 +454,53 @@ class Engage(BaseModel):
     kind: Literal["view", "like", "share", "helpful", "ask"]
 
 
+# A page of posts starts after the last one on the previous page: "<its created_at>|<its id>".
+Before = Annotated[str | None, Query(max_length=100)]
+
+
+def _page(read, *args, **kwargs) -> list[dict]:
+    try:
+        return read(*args, **kwargs)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
 @app.get("/api/feed")
-def get_feed(user: dict = User):
-    return content.feed(user["id"])
+def get_feed(user: dict = User, before: Before = None):
+    return _page(content.feed, user["id"], before=before)
 
 
 @app.get("/api/companions/{companion_id}/posts")
-def companion_posts(companion_id: int, user: dict = User):
+def companion_posts(companion_id: int, user: dict = User, before: Before = None):
     companions.get_visible(companion_id, user["id"])
-    return content.feed(user["id"], companion_id=companion_id)
+    return _page(content.feed, user["id"], companion_id=companion_id, before=before)
+
+
+@app.get("/api/posts/{post_id}")
+def get_post(post_id: int, user: dict = User):
+    _visible_post(post_id, user["id"])
+    return content.post_view(user["id"], post_id)
+
+
+@app.get("/api/guides")
+def list_guides(
+    user: dict = User,
+    region: Annotated[str | None, Query(max_length=40)] = None,
+    kind: Literal["tutorial", "cheat_sheet"] | None = None,
+    level: Literal["beginner", "intermediate", "advanced"] | None = None,
+    topic: Annotated[str | None, Query(max_length=80)] = None,
+    q: Annotated[str | None, Query(max_length=120)] = None,
+    companion: int | None = None,
+    before: Before = None,
+):
+    """The education guides, newest first, a page at a time, optionally narrowed down."""
+    return _page(content.guides, user["id"], region=region, kind=kind, level=level, topic=topic, q=q,
+                 companion_id=companion, before=before)
+
+
+@app.get("/api/guides/topics")
+def guide_topics(user: dict = User):
+    return content.guide_topics(user["id"])
 
 
 @app.post("/api/companions/{companion_id}/posts/generate", status_code=201)
