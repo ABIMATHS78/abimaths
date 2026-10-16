@@ -8,7 +8,6 @@ genuinely value.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import unicodedata
@@ -149,7 +148,7 @@ def unrecord(user_id: int, post_id: int, kind: str) -> None:
 
 
 # What lists of posts show of each. A guide's body runs to thousands of words, so lists carry its summary and
-# infographic instead, and its own page fetches the rest; a post a companion wrote is short and comes whole.
+# graphic instead, and its own page fetches the rest; a post a companion wrote is short and comes whole.
 _LISTED = ("p.id, p.companion_id, p.title, p.topic, p.created_at, p.summary, p.kind, p.level, p.minutes, p.graphic, "
            "CASE WHEN p.summary IS NULL THEN p.body ELSE '' END AS body")
 _COUNTS = """
@@ -174,7 +173,9 @@ def cursor(before: str | None) -> dict:
 
 def _post(row) -> dict:
     post = dict(row)
-    post["graphic"] = json.loads(post["graphic"]) if post.get("graphic") else None
+    # The address of the guide's graphic. (Before graphics were pictures, this held a description of one.)
+    graphic = post.get("graphic") or ""
+    post["graphic"] = graphic if graphic.startswith(("/static/", "https://")) else None
     if "liked" in post:
         post["liked"], post["marked_helpful"] = bool(post["liked"]), bool(post["marked_helpful"])
     return post

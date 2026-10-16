@@ -1,4 +1,4 @@
-"""scripts/import_guides.py: how it repairs the guides' text and describes their infographics."""
+"""scripts/import_guides.py: how it repairs the guides' text."""
 
 import csv
 import gzip
@@ -109,19 +109,6 @@ def test_headings_keep_small_words_small_except_first(raw, cased):
     assert ig.title_case(raw) == cased
 
 
-@pytest.mark.parametrize("raw, shown", [
-    ("Step 3: Configuring Statistical Drift Metrics", "Configuring Statistical Drift Metrics"),
-    ("Minute 0 To 5: Setting Up Your Workspace", "Setting Up Your Workspace"),
-    ("Mistake: Writing a recursive CTE without a limit", "Writing a recursive CTE without a limit"),
-    ("Step 1 and 2 parse the handbook", "Step 1 and 2 parse the handbook"),
-    ("3D Rendering Pipelines", "3D Rendering Pipelines"),
-    ("Launch ComfyUI and clear the default workspace by selecting the clear option from the main menu",
-     "Launch ComfyUI and clear the default workspace"),
-])
-def test_infographic_labels(raw, shown):
-    assert ig.label(raw) == shown
-
-
 def guide_body(extra=""):
     return ("## Introduction\n\nWhy it matters.\n\n## Core Concepts\n\n### Event Loop\n\nText.\n\n### Coroutines and Tasks\n\nText.\n\n"
             "## Step-by-Step Setup\n\n### Step 1: Install Python\n\nText.\n\n### Step 2: Write the Client\n\nText.\n\n"
@@ -130,37 +117,22 @@ def guide_body(extra=""):
             "## Key Takeaways\n\n- Asyncio runs many requests at once on a single thread.\n" + extra)
 
 
-def test_the_infographic_is_built_from_the_guide_itself():
-    g = {"id": "1", "kind": "tutorial", "title": "Asyncio for AI", "summary": "Concurrency, simply.", "body": guide_body()}
-    flow = ig.graphic(g, "tool_guide")
-    assert flow["layout"] == "flow" and flow["steps"] == ["Install Python", "Write the Client", "Run It"]
-    assert flow["banner"] == "Asyncio runs many requests at once on a single thread."
-    assert flow["sections"][0] == {"title": "Core Concepts", "items": ["Event Loop", "Coroutines and Tasks"], "icon": "layers"}
-    assert flow["palette"] in ig.PALETTES and (flow["title"], flow["subtitle"]) == ("Asyncio for AI", "Concurrency, simply.")
-    icons = [s["icon"] for s in flow["sections"]]
-    assert len(icons) == len(set(icons))  # no two sections share an icon
-    sheet = ig.graphic(g | {"kind": "cheat_sheet"}, "cheat_sheet")
-    assert sheet["layout"] == "cheatsheet" and len(sheet["sections"]) >= 2
-    no_steps = g | {"body": guide_body().replace("Step 1: ", "").replace("Step 2: ", "").replace("Step 3: ", "")}
-    versus = ig.graphic(no_steps, "tool_guide")
-    assert versus["layout"] == "versus"
-    assert versus["avoid"]["items"] == ["Blocking the loop", "Forgetting await", "Too many tasks"]
-    assert versus["do"] == {"title": "Action checklist", "items": ["Install Python", "Write the client", "Run it"]}
-
-
 def test_the_import_reads_an_export(tmp_path):
     reporters = tmp_path / "reporters.json"
     reporters.write_text(json.dumps([{"result": {"data": {"json": [{"id": 7, "slug": "aoife-murphy"},
                                                                     {"id": 8, "slug": "someone-else"}]}}}]))
     export = tmp_path / "articles.csv"
     cols = ["id", "title", "summary", "content", "category", "authorId", "publishedAt", "contentMode", "format",
-            "difficulty", "articleType"]
+            "difficulty", "articleType", "imageUrl"]
+    art = "https://cdn.example/generated/1.png"
     rows = [
         ["1", "Asyncio for AI Building High Performance Apps", "Learn Cuda.", guide_body(), "Prompt Engineering", "7",
-         "1788224796728", "education", "Tutorial", "advanced", "tool_guide"],
-        ["2", "Too early", "x", guide_body(), "AI", "7", "1756000000000", "education", "Tutorial", "beginner", "x"],
-        ["3", "News, not a guide", "x", guide_body(), "AI", "7", "1788224796728", "news", "", "beginner", "news"],
-        ["4", "Not a starter", "x", guide_body(), "AI", "8", "1788224796728", "education", "Cheat Sheet", "beginner", "x"],
+         "1788224796728", "education", "Tutorial", "advanced", "tool_guide", art],
+        ["2", "Too early", "x", guide_body(), "AI", "7", "1756000000000", "education", "Tutorial", "beginner", "x", art],
+        ["3", "News, not a guide", "x", guide_body(), "AI", "7", "1788224796728", "news", "", "beginner", "news", art],
+        ["4", "Not a starter", "x", guide_body(), "AI", "8", "1788224796728", "education", "Cheat Sheet", "beginner", "x",
+         art],
+        ["5", "No graphic", "x", guide_body(), "AI", "7", "1788224796729", "education", "Cheat Sheet", "beginner", "x", ""],
     ]
     with export.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -169,9 +141,11 @@ def test_the_import_reads_an_export(tmp_path):
     out = tmp_path / "guides.json.gz"
     ig.main([str(export), "--since", "2026-09-01", "--reporters", str(reporters), "--out", str(out)])
     data = json.load(gzip.open(out, "rt", encoding="utf-8"))
-    assert [g["id"] for g in data["guides"]] == ["1"]
+    assert [g["id"] for g in data["guides"]] == ["1", "5"]
     g = data["guides"][0]
     assert (g["companion"], g["kind"], g["level"], g["published"]) == ("aoife-murphy", "tutorial", "advanced",
                                                                        "2026-09-01T01:06:36Z")
     assert g["title"] == "Asyncio for AI Building High-Performance Apps" and g["summary"] == "Learn CUDA."
-    assert g["minutes"] >= 1 and g["graphic"]["layout"] == "flow"
+    assert g["minutes"] >= 1
+    # Where its graphic is on the site; a guide the site gave no graphic has none.
+    assert g["image"] == "https://cdn.example/generated/1.png" and data["guides"][1]["image"] is None

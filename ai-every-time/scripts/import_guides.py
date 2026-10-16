@@ -16,9 +16,8 @@ On the way the text is repaired. The site's pipeline had damaged it in three way
 - A guide's last paragraph could end in a stray bold marker: "today.**."
 
 Spelling slips are corrected from a reviewed list, and scripts/guide_edits.json holds editorial changes to
-titles, summaries and topics, by article id. Each guide also gets an infographic: a description, built from
-its own headings, steps and takeaways, of the kind of graphic the site illustrates guides with. The app draws
-it, so every word on it is spelled as in the guide.
+titles, summaries and topics, by article id. Each guide keeps the address of its graphic on the site; the app
+shows the corrected copy of it in static/guides/ (see scripts/graphics/README.md).
 """
 
 from __future__ import annotations
@@ -26,7 +25,6 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
-import hashlib
 import json
 import re
 import sys
@@ -579,31 +577,6 @@ def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
 
-# --------------------------------------------------------------------------------------------------- outline
-
-_SKIP_SECTION = re.compile(r"\b(introduc|overview|who (?:this|it)|prerequisite|before you (?:begin|start)|"
-                           r"key takeaway|takeaways|next steps?|conclusion|final (?:thoughts|words)|summary|"
-                           r"wrapping up|faq|frequently asked|further (?:reading|resources)|resources|glossary|"
-                           r"about this guide|what you will (?:learn|need)|how to use this|checklist)", re.I)
-_MISTAKES = re.compile(r"\b(mistakes?|pitfalls?|anti-patterns?|troubleshoot\w*|errors?|traps?|fails?|failures?|"
-                       r"wrong|avoid)\b", re.I)
-# "Step 3:", "Phase 2 –", "0 to 5 Minutes:", "Template 4:" and the like, before a heading's words.
-_NUMBER = r"(?:\d+[a-z]?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
-_LABEL_PREFIX = re.compile(
-    r"^(?:(?:minutes?|mins?|hours?|days?|weeks?)\s*\d+\s*(?:to|-|–)\s*\d+(?:\s*(?:minutes?|mins?))?|"
-    r"\d+\s*(?:to|-|–)\s*\d+\s*(?:minutes?|mins?|hours?|days?|weeks?)|"
-    r"(?:step|phase|stage|day|week|month|layer|level|tier|pillar|part|module|template|example|scenario|case|tip|"
-    r"rule|mistake|pitfall|issue|option|pattern|technique|strategy|method|prompt|lesson|chapter|section|principle|"
-    r"component|habit|use case|exercise|project|challenge|question|hour|minutes?|block|move|play|recipe|hack)"
-    rf"\s*#?{_NUMBER}(?=\s*[:.)–—-])|\d+[.)]|(?:mistake|pitfall|best practice|tip|note|warning|example|issue|"
-    r"problem|symptom|fix|solution|rule|pro tip|why it matters|what it is|how to do it|goal|action)(?=\s*:))"
-    r"\s*(?:[:.)–—-]\s*)?",
-    re.I)
-_STEPLIKE = re.compile(r"^(?:(?:step|phase|stage|day|week|hour|minutes?)\s*\d+|\d+\s*(?:to|-|–)\s*\d+\s*(?:minutes?|"
-                       r"mins?|hours?|days?|weeks?))", re.I)
-_LAYERLIKE = re.compile(r"^(?:layer|level|tier)\s*\d+", re.I)
-
-
 def dedupe_sections(body: str) -> str:
     """A guide with a section repeated (some were, word for word) keeps its first copy."""
     sections, current, fence = [], [], None
@@ -626,181 +599,6 @@ def dedupe_sections(body: str) -> str:
             seen.add(key)
         kept.append("\n".join(lines))
     return "\n".join(kept)
-
-
-def outline(body: str) -> list[dict]:
-    """The guide's sections: each second-level heading, with its subheadings, bold lead-ins, list and checklist."""
-    text = _FENCE.sub("", body)
-    sections: list[dict] = []
-    for line in text.split("\n"):
-        s = line.strip()
-        if s.startswith("## "):
-            sections.append({"title": _heading(s[3:]), "subs": [], "leads": [], "bullets": [], "checks": []})
-        elif not sections:
-            continue
-        elif s.startswith("### ") or s.startswith("#### "):
-            sections[-1]["subs"].append(_heading(s.lstrip("#")))
-        elif m := re.match(r"^[-*]\s+\[[ xX]\]\s+(.+)", s):
-            sections[-1]["checks"].append(_plain(m.group(1)))
-        elif m := re.match(r"^(?:[-*•→]|\d+[.)])\s+\*\*(.+?)\*\*", s):
-            sections[-1]["leads"].append(_plain(m.group(1)).rstrip(":.").strip())
-        elif m := re.match(r"^(?:[-*•→]|\d+[.)])\s+(.+)", s):
-            sections[-1]["bullets"].append(_plain(m.group(1)))
-    return sections
-
-
-def _heading(s: str) -> str:
-    return title_case(_plain(s).rstrip(":.").strip())
-
-
-def _plain(s: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"\*\*|__|`", "", s)).strip()
-
-
-def label(text: str, limit: int = 70) -> str:
-    """A label for the graphic: without a leading "Step 3:" or the like, and where it's longer than fits, cut at
-    a strong break or between words, never after a little word like "the"."""
-    text = _plain(text)
-    rest = _LABEL_PREFIX.sub("", text).strip()
-    if len(rest) >= 3:
-        text = rest[0].upper() + rest[1:]
-    if len(text) <= limit:
-        return text
-    for sep in (": ", " → ", " – ", " — ", " - ", "; ", " (", "? ", ". "):
-        head = text.split(sep)[0]
-        if 14 <= len(head) <= limit:
-            return head.rstrip(",;:(")
-    # Else the longest whole clause that fits: up to a comma, or a word like "by" or "to" that starts the next part.
-    for pattern in (r",\s", r" (?:by|so|to|using|via|with|which|that|before|after|until|while|when|for|in order to|"
-                    r"instead of|rather than|such as|including) "):
-        breaks = [m.start() for m in re.finditer(pattern, text) if 24 <= m.start() <= limit]
-        if breaks:
-            return text[:breaks[-1]].rstrip(",;:(")
-    cut = text[:limit + 1].rsplit(" ", 1)[0]
-    cut = re.sub(r"(?:\s+(?:a|an|the|and|or|of|to|for|in|on|with|by|your|our|their|its|from|as|at|into|that|which|"
-                 r"is|are|using|via|across|between|without))+$", "", cut, flags=re.I)
-    return cut.rstrip(",;:(-") + "…"
-
-
-def sentence(text: str, limit: int = 170) -> str:
-    """The guide's first takeaway, for the graphic's closing line: whole, or its first clause if that's long enough."""
-    text = _plain(text).rstrip(".")
-    if len(text) <= limit:
-        return text + "."
-    for sep in ("; ", " – ", " — ", ", which ", ", so ", ", while ", ", because ", ", allowing ", ", ensuring ", ", ",
-                " and ", " to ", " by "):
-        head = text.split(sep)[0]
-        if 60 <= len(head) <= limit:
-            return head.rstrip(",;") + "."
-    return label(text, limit)
-
-
-# ------------------------------------------------------------------------------------------------ infographic
-
-PALETTES = ("cream", "sky", "lime", "violet", "mint", "sunset")
-ICONS = [  # first match wins
-    (r"secur|threat|attack|vulnerab|risk|safe|guard|privacy|complian|govern|polic|ethic|bias|fair\b|trust", "shield"),
-    (r"mistake|pitfall|error|troubleshoot|debug|fail|wrong|avoid|anti-pattern|problem|edge case", "alert"),
-    (r"data|sql|database|query|table|schema|warehouse|storage|index|vector|embedding|etl|pipeline", "database"),
-    (r"perform|speed|fast|latenc|optimi|scal|throughput|efficien|cache|benchmark", "gauge"),
-    (r"cost|price|pricing|roi|budget|revenue|money|business|value|sales|market|financ", "coins"),
-    (r"prompt|chat|convers|messag|writ|copy|language|text|content|email", "chat"),
-    (r"deploy|produc|ship|launch|release|cloud|server|infra|kubernetes|docker|contain", "rocket"),
-    (r"concept|foundation|fundamental|principle|core|basic|understand|anatomy|theory|how .* works", "layers"),
-    (r"step|implement|build|setup|set up|install|configur|workflow|automat|integrat|process|playbook", "wrench"),
-    (r"model|train|fine-tun|neural|learn|agent|llm|\bai\b|inference|reason|intelligen", "brain"),
-    (r"test|evaluat|measur|metric|monitor|observ|track|analy|report|dashboard|insight|drift", "chart"),
-    (r"team|people|user|customer|student|teacher|learner|collaborat|stakeholder|hiring|career|human", "users"),
-    (r"design|creat|image|video|audio|music|visual|art\b|\bui\b|\bux\b|style|brand", "palette"),
-    (r"architect|framework|structur|layer|stack|pattern|system", "layers"),
-    (r"tool|librar|platform|\bapi|sdk|plugin|extension|integration", "toolbox"),
-    (r"course|study|resource|read|book|guide|roadmap|path|plan|curricul|example|template", "book"),
-    (r"code|python|javascript|function|script|program", "code"),
-    (r"time|schedul|minute|hour|day|week|deadline|timeline", "clock"),
-]
-ALL_ICONS = ("layers", "wrench", "rocket", "chart", "book", "brain", "toolbox", "target", "code", "chat", "gauge",
-             "database", "shield", "users", "palette", "coins", "clock", "alert")
-
-
-def icons_for(titles: list[str]) -> list[str]:
-    """An icon for each section, each one different: the first that suits its title and isn't taken."""
-    used, out = set(), []
-    for title in titles:
-        low = title.lower()
-        fits = [name for pattern, name in ICONS if re.search(pattern, low)]
-        name = next((n for n in fits + list(ALL_ICONS) if n not in used), "target")
-        used.add(name)
-        out.append(name)
-    return out
-
-
-def graphic(guide: dict, article_type: str) -> dict:
-    """What the guide's infographic shows. Every word on it is taken from the guide itself."""
-    secs = outline(guide["body"])
-    useful = [s for s in secs if not _SKIP_SECTION.search(s["title"])]
-    seed = int(hashlib.sha256(guide["id"].encode()).hexdigest(), 16)
-    g: dict = {"palette": PALETTES[seed % len(PALETTES)], "title": guide["title"], "subtitle": guide["summary"]}
-    takeaways = next((s for s in secs if re.search(r"takeaway", s["title"], re.I)), None)
-    take = (takeaways["bullets"] or takeaways["leads"]) if takeaways else []
-    if take:
-        g["banner"] = sentence(take[0])
-
-    def items(s: dict, n: int = 4) -> list[str]:
-        src = s["subs"] or s["leads"] or s["bullets"]
-        return _distinct([label(x) for x in src if not _STEPLIKE.match(x) or s["subs"]])[:n]
-
-    steps_from = next((s for s in secs if sum(bool(_STEPLIKE.match(x)) for x in s["subs"]) >= 3), None)
-    steps = _distinct([label(x, 56) for x in steps_from["subs"] if _STEPLIKE.match(x)])[:6] if steps_from else []
-    layers_from = next((s for s in secs if sum(bool(_LAYERLIKE.match(x)) for x in s["subs"]) >= 3), None)
-    layers = _distinct([label(x, 64) for x in layers_from["subs"] if _LAYERLIKE.match(x)])[:6] if layers_from else []
-    mistakes = next((s for s in useful if _MISTAKES.search(s["title"]) and len(items(s)) >= 3), None)
-    checks = _distinct([label(c, 90) for s in secs for c in s["checks"] if len(c) <= 120])
-
-    cards = [{"title": label(s["title"], 72), "items": items(s)} for s in useful
-             if len(items(s)) >= 2 and s is not mistakes and s is not steps_from and s is not layers_from]
-    extra = []  # used when a guide has fewer sections with subheadings
-    if mistakes:
-        extra.append({"title": label(mistakes["title"], 72), "items": items(mistakes)})
-    if len(checks) >= 3:
-        extra.append({"title": "Action checklist", "items": checks[:4]})
-    heads = _distinct([label(s["title"], 50) for s in useful])
-    if len(heads) >= 3:
-        extra.append({"title": "In this guide", "items": heads[:5]})
-
-    if guide["kind"] == "cheat_sheet" or article_type == "cheat_sheet":
-        g["layout"], want = "cheatsheet", 4
-    elif article_type == "knowledge_map" and len(layers) >= 3:
-        g["layout"], g["layers"], want = "layers", layers, 2
-    elif len(steps) >= 3:
-        g["layout"], g["steps"], want = "flow", steps, 2
-    elif mistakes and (len(checks) >= 3 or cards):
-        g["layout"], want = "versus", 3
-        g["avoid"] = {"title": label(mistakes["title"], 60), "items": items(mistakes, 5)}
-        if len(checks) >= 3:
-            g["do"] = {"title": "Action checklist", "items": checks[:5]}
-            extra = [e for e in extra if e["title"] != "Action checklist"]
-        else:
-            g["do"] = {"title": cards[0]["title"], "items": cards[0]["items"]}
-            cards = cards[1:]
-        extra = [e for e in extra if e["items"] != g["avoid"]["items"]]
-    else:
-        g["layout"], want = "columns", 3
-    picks = (cards + extra)[:want]
-    if len(picks) < 2 and g["layout"] in ("columns", "cheatsheet"):
-        picks = (cards + extra)[:max(2, want)]
-    for card, icon in zip(picks, icons_for([c["title"] for c in picks])):
-        card["icon"] = icon
-    g["sections"] = picks
-    return g
-
-
-def _distinct(xs: list[str]) -> list[str]:
-    seen, out = set(), []
-    for x in xs:
-        if x and _norm(x) not in seen:
-            seen.add(_norm(x))
-            out.append(x)
-    return out
 
 
 # ---------------------------------------------------------------------------------------------------- import
@@ -843,7 +641,7 @@ def convert(row: dict, slug: str, edits: dict) -> dict:
     for old, new in edit.get("body", {}).items():
         guide["body"] = guide["body"].replace(old, new)
     guide["minutes"] = minutes(guide["body"])
-    guide["graphic"] = graphic(guide, row["articleType"])
+    guide["image"] = row.get("imageUrl") or None
     return guide
 
 

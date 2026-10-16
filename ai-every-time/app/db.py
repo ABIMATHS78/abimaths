@@ -361,7 +361,7 @@ MIGRATIONS = [
     # messages, the learner's to the companion's. NULL for none.
     ("messages", "reaction", "TEXT"),
     # Guides (app/guides.py) are posts with more to them: a summary, their kind (tutorial or cheat sheet), level,
-    # reading time in minutes, their infographic (JSON), and where they came from ("aieverytime:<id>"). Posts
+    # reading time in minutes, the address of their graphic, and where they came from ("aieverytime:<id>"). Posts
     # companions write themselves have none of these.
     ("posts", "summary", "TEXT"),
     ("posts", "kind", "TEXT"),

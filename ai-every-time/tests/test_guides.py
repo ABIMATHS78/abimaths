@@ -27,8 +27,7 @@ def guide(gid, slug, published, *, kind="tutorial", level="advanced", topic="AI 
         "id": gid, "companion": slug, "published": published, "kind": kind, "level": level, "topic": topic,
         "title": title, "summary": summary, "minutes": 12,
         "body": body or f"## Part One\n\nText of guide {gid}.\n\n## Part Two\n\n- A point\n",
-        "graphic": {"palette": "sky", "title": title, "subtitle": summary, "layout": "columns",
-                    "sections": [{"title": "Part One", "icon": "book", "items": ["A point", "Another"]}]},
+        "image": f"https://cdn.example/generated/{gid}.png",
     }
 
 
@@ -37,11 +36,12 @@ def write(path, guides):
         json.dump({"since": "2026-09-01", "source": "test.csv", "guides": guides}, f)
 
 
-def load(monkeypatch, path):
+def load(monkeypatch, path, images=None):
     from app import guides
     from app.config import settings
 
     monkeypatch.setattr(settings, "guides", str(path))
+    monkeypatch.setattr(guides, "IMAGES", images or path.parent / "no-corrected-graphics")
     return guides.seed()
 
 
@@ -71,7 +71,7 @@ def test_guides_become_posts_by_the_companions_who_wrote_them(client, tmp_path, 
     # Dated when the site published it, written as the app writes times, so it sorts with other posts.
     assert newest["created_at"] == "2026-10-01T09:30:00+00:00"
     assert (newest["kind"], newest["level"], newest["minutes"], newest["summary"]) == ("cheat_sheet", "beginner", 12, "A summary.")
-    assert newest["graphic"]["sections"][0]["items"] == ["A point", "Another"]
+    assert newest["graphic"] == "https://cdn.example/generated/12.png"  # the site's copy: none corrected here
     assert newest["body"] == ""  # lists leave the long text out; the guide's own page has it
     whole = client.get(f"/api/posts/{newest['id']}").json()
     assert whole["body"].startswith("## Part One") and whole["companion_id"] == companion_id(client, b.slug)
@@ -98,6 +98,26 @@ def test_loading_again_updates_guides_in_place(client, tmp_path, monkeypatch):
     revised = next(g for g in listed if g["title"] == "Guide 21, revised")
     assert (revised["id"], revised["likes"], revised["liked"]) == (kept_id, 1, True)  # the same post, likes and all
     assert client.get(f"/api/posts/{gone_id}").status_code == 404  # no longer in the file
+
+
+def test_a_guide_shows_its_corrected_graphic_once_there_is_one(client, tmp_path, monkeypatch):
+    a, b = two_starters()
+    path, images = tmp_path / "guides.json.gz", tmp_path / "graphics"
+    images.mkdir()
+    (images / "61.webp").write_bytes(b"RIFF")
+    write(path, [guide("61", a.slug, "2026-09-02T08:00:00Z"), guide("62", b.slug, "2026-09-03T08:00:00Z"),
+                 guide("63", b.slug, "2026-09-04T08:00:00Z") | {"image": None}])
+    assert load(monkeypatch, path, images) == 3
+    signup(client)
+    graphics = {g["title"]: g["graphic"] for g in client.get("/api/guides").json()}
+    assert graphics == {"Guide 61": "/static/guides/61.webp",  # corrected: served by the app
+                        "Guide 62": "https://cdn.example/generated/62.png",  # not yet: the site's copy
+                        "Guide 63": None}  # the site gave it none
+    # A graphic corrected later is picked up the next time the app starts, though the guides file is the same.
+    (images / "62.webp").write_bytes(b"RIFF")
+    assert load(monkeypatch, path, images) == 3
+    assert client.get("/api/guides").json()[1]["graphic"] == "/static/guides/62.webp"
+    assert load(monkeypatch, path, images) is None  # and nothing to do when nothing changed
 
 
 def test_guides_dont_arrive_as_new_posts(client, tmp_path, monkeypatch):

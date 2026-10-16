@@ -769,11 +769,16 @@ function postCard(post, c) {
     </article>`;
 }
 
-/* A guide in the feed, as the site shows them: its infographic, then what it is, its title, summary and author. */
+/* A guide's graphic: the site's own, its spelling corrected (app/guides.py). Most of its words are the guide's
+   own, which the page shows as text, so where it stands beside them it needs no description of its own. */
+const guideArt = (post, alt = "") => post.graphic
+  ? `<img class="guide-art" src="${esc(post.graphic)}" alt="${esc(alt)}" width="1024" height="1024" loading="lazy" decoding="async">` : "";
+
+/* A guide in the feed, as the site shows them: its graphic, then what it is, its title, summary and author. */
 function guideCard(post, c) {
   return `
     <article class="card post guide-card" data-post="${post.id}">
-      <a class="guide-graphic" href="#/p/${post.id}" tabindex="-1" aria-hidden="true">${infographic(post.graphic, post)}</a>
+      ${post.graphic ? `<a class="guide-graphic" href="#/p/${post.id}" tabindex="-1" aria-hidden="true">${guideArt(post)}</a>` : ""}
       ${guideBadges(post)}
       <h3><a href="#/p/${post.id}" class="plain">${esc(post.title)}</a></h3>
       <p class="muted" style="margin:0">${esc(post.summary)}</p>
@@ -786,11 +791,11 @@ function guideCard(post, c) {
     </article>`;
 }
 
-/* A guide in a grid: the top of its infographic as a cover, and what it is. */
+/* A guide in a grid: the top of its graphic as a cover, and what it is. */
 function guideTile(post, c) {
   return `
     <a class="card guide-tile plain" href="#/p/${post.id}">
-      <div class="cover">${infographic(post.graphic, post)}</div>
+      ${post.graphic ? `<div class="cover">${guideArt(post)}</div>` : ""}
       ${guideBadges(post, false)}
       <b class="title">${esc(post.title)}</b>
       <span class="muted small summary">${esc(post.summary)}</span>
@@ -900,7 +905,7 @@ async function viewFeed() {
 
 const GUIDES_PAGE = 24;  // guides the server sends at a time (app/main.py)
 
-/* One post on a page of its own: a guide with its infographic, or a companion's post. */
+/* One post on a page of its own: a guide with its graphic, or a companion's post. */
 async function viewPost(m) {
   const id = +m[1];
   const post = await api(`/api/posts/${id}`);
@@ -919,7 +924,7 @@ async function viewPost(m) {
       ${post.summary ? `<p class="lead">${esc(post.summary)}</p>` : ""}
       <div class="row spread">${byline(c, post.created_at)}
         ${c.is_mine ? "" : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>`}</div>
-      ${post.graphic ? infographic(post.graphic, post) : ""}
+      ${post.graphic ? `<figure class="guide-figure">${guideArt(post, `The graphic for “${post.title}”`)}</figure>` : ""}
       <div class="row actions" data-post="${post.id}">
         <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${name} about this</a>
         ${engageButtons(post)}

@@ -3,7 +3,9 @@
 scripts/import_guides.py turns an export of the site's articles into guides.json.gz, beside this file, and the
 app loads it when it starts. Each guide becomes a post by the companion who wrote it, dated when the site
 published it, with more than a post has: a summary, its kind (tutorial or cheat sheet), level, reading time and
-the description of its infographic, which static/infographic.js draws.
+its graphic. The graphic is the site's own, with the image generator's spelling mistakes corrected, in
+static/guides/<article id>.webp (scripts/graphics/README.md tells how); a guide whose graphic hasn't been
+corrected yet shows the site's copy.
 
 Loading the file again after it changes updates the guides in place, so their likes, views and the chats that
 started from them stay; guides new to the file are added and any no longer in it are removed. A file that
@@ -24,6 +26,7 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 GUIDES_PATH = Path(__file__).with_name("guides.json.gz")
+IMAGES = Path(__file__).resolve().parent.parent / "static" / "guides"  # the corrected graphics, <article id>.webp
 SOURCE = "aieverytime:"  # posts.source of a guide: this, then the article's id on the site
 KINDS = ("tutorial", "cheat_sheet")
 LEVELS = ("beginner", "intermediate", "advanced")
@@ -45,11 +48,14 @@ def seed() -> int | None:
     with db.connect() as conn:
         companion = {r["slug"]: r["id"] for r in conn.execute("SELECT id, slug FROM companions WHERE is_starter = 1")}
         row = conn.execute("SELECT value FROM meta WHERE key = 'guides'").fetchone()
-    # The file and the starters it was loaded for: a starter added later gets its guides even if the file is the same.
-    digest = hashlib.sha256(raw + "\n".join(sorted(companion)).encode()).hexdigest()
+    # The file, the starters it was loaded for and the corrected graphics there are: a starter or a graphic added later
+    # is taken up even if the file is the same.
+    corrected = sorted(p.stem for p in IMAGES.glob("*.webp")) if IMAGES.is_dir() else []
+    digest = hashlib.sha256(raw + "\n".join(sorted(companion) + ["--"] + corrected).encode()).hexdigest()
     if row and row["value"] == digest:
         return None
     guides = json.loads(gzip.decompress(raw))["guides"]
+    corrected = set(corrected)
     with db.connect() as conn:
         existing = {r["source"]: r["id"] for r in conn.execute(
             "SELECT id, source FROM posts WHERE source LIKE ? ESCAPE '\\'", (SOURCE + "%",))}
@@ -60,8 +66,9 @@ def seed() -> int | None:
                 unknown.add(g["companion"])
                 continue
             source = SOURCE + str(g["id"])
-            values = (cid, g["title"], g["body"], g["topic"], g["summary"], g["kind"], g["level"], g["minutes"],
-                      json.dumps(g["graphic"], ensure_ascii=False, separators=(",", ":")), _when(g["published"]))
+            graphic = f"/static/guides/{g['id']}.webp" if str(g["id"]) in corrected else g.get("image")
+            values = (cid, g["title"], g["body"], g["topic"], g["summary"], g["kind"], g["level"], g["minutes"], graphic,
+                      _when(g["published"]))
             if source in existing:
                 conn.execute("UPDATE posts SET companion_id = ?, title = ?, body = ?, topic = ?, summary = ?, kind = ?, "
                              "level = ?, minutes = ?, graphic = ?, created_at = ? WHERE id = ?", (*values, existing[source]))
