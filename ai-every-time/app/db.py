@@ -369,6 +369,9 @@ MIGRATIONS = [
     ("posts", "minutes", "INTEGER"),
     ("posts", "graphic", "TEXT"),
     ("posts", "source", "TEXT"),
+    # What the learner is into (hobbies, work, anything they love), in their words: companions start
+    # conversations from it and draw examples from it.
+    ("users", "interests", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 # Indexes on columns added above, so made after them.

@@ -227,6 +227,49 @@ def test_remixing_a_starter_keeps_its_photo(client):
     assert client.get(f"/api/companions/{again['id']}/avatar").headers["content-type"] == "image/svg+xml"
 
 
+def test_a_companion_shows_its_photo_or_its_drawn_face_as_its_designer_chooses(client):
+    """Changing a companion's face shows the drawn face (a photo can't change with it), and the photo is kept, so
+    the designer can switch back. A photo it doesn't show is seen by its designer only."""
+    from app import db
+
+    signup(client)
+    amahle = by_slug(client, "amahle-ndlovu")
+    with db.connect() as conn:
+        conn.execute("INSERT INTO companion_photos (companion_id, mime, data, updated_at) VALUES (?, 'image/webp', ?, ?)",
+                     (amahle["id"], b"RIFF....WEBPVP8 ", db.now()))
+    curly = amahle["persona"] | {"avatar": amahle["persona"]["avatar"] | {"hair_style": "curly", "use_photo": False}}
+    mine = client.post(f"/api/companions/{amahle['id']}/remix", json={"overrides": curly, "make_primary": False}).json()
+    face = client.get(f"/api/companions/{mine['id']}/avatar")
+    assert face.headers["content-type"] == "image/svg+xml" and face.text.count('r="15"') == 7  # the curls
+    assert client.get(f"/api/companions/{mine['id']}").json()["has_photo"]
+    assert client.get(f"/api/companions/{mine['id']}/photo").content == b"RIFF....WEBPVP8 "  # to choose it again
+
+    # Others see the drawn face, never the photo it doesn't show. A starter's photo is there for anyone customising it.
+    client.post(f"/api/companions/{mine['id']}/publish")
+    as_user(client, "bob@example.com", "Bob")
+    assert client.get(f"/api/companions/{mine['id']}/avatar").text == face.text
+    assert client.get(f"/api/companions/{mine['id']}/photo").status_code == 404
+    assert client.get(f"/api/companions/{amahle['id']}/photo").content == b"RIFF....WEBPVP8 "
+    client.post("/api/auth/logout")
+    assert client.get(f"/api/companions/{amahle['id']}/photo").status_code == 401
+
+    # Choosing the photo again shows it to everyone; without a photo there's only the drawn face.
+    as_user(client, "ada@example.com", "Ada")
+    p = client.get(f"/api/companions/{mine['id']}").json()["persona"]
+    client.put(f"/api/companions/{mine['id']}", json=p | {"avatar": p["avatar"] | {"use_photo": True}})
+    assert client.get(f"/api/companions/{mine['id']}/avatar").content == b"RIFF....WEBPVP8 "
+    client.delete(f"/api/companions/{mine['id']}/photo")
+    assert client.get(f"/api/companions/{mine['id']}/avatar").headers["content-type"] == "image/svg+xml"
+    assert client.get(f"/api/companions/{mine['id']}/photo").status_code == 404
+
+
+def test_the_designer_knows_every_starter_country_and_its_flag(client):
+    signup(client)
+    countries = client.get("/api/options").json()["countries"]
+    assert countries["Norway"] == "🇳🇴" and countries["UAE"] == "🇦🇪" and countries["Côte d'Ivoire"] == "🇨🇮"
+    assert {c["persona"]["country"] for c in starters(client)} <= set(countries)
+
+
 def test_starter_photos_are_fetched_once_and_kept_small(client, monkeypatch):
     from app import db, photos
     from app.config import settings

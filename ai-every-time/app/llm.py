@@ -76,6 +76,8 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacte
         f"Name: {learner['display_name']}",
         f"Self-reported level: {learner['level']}",
         f"Learning goals: {learner['goals'] or 'not shared yet; ask about them when it fits'}",
+        f"Interests (draw examples from them when it helps): {learner['interests']}" if learner.get("interests")
+        else "Interests: not shared yet; ask about them when it fits",
     ]
     if memories:
         parts.append("\n# What you remember about them\n" + "\n".join(f"- {m}" for m in memories))
@@ -265,6 +267,81 @@ def _offline_reply(persona: Persona, learner: dict, message: str, post: dict | N
     if ws.signature_phrase:
         text += ws.signature_phrase
     return [w + " " for w in text.split(" ")]
+
+
+# ---------------------------------------------------------------- opening a chat
+
+
+def opened(learner: dict) -> str:
+    """The turn that stands for the learner opening a chat, ahead of the companion's first message in it:
+    a conversation sent to Claude starts with the learner."""
+    return f"({learner['display_name']} has opened a chat with you.)"
+
+
+def opening_prompt(learner: dict, post: dict | None) -> str:
+    """What the companion is asked to do when it speaks first."""
+    start = (f"They've come from your post \"{post['title']}\": start from it, and link it to their interests where "
+             "that fits." if post else
+             "Start from their interests: pick one and connect it to an idea from your expertise in a way that makes "
+             "them curious. If they haven't shared any, start from their learning goals; if those aren't shared "
+             "either, ask what they're into outside AI, so you can use it in your examples.")
+    return (f"# Start the conversation\n{learner['display_name']} has just opened a chat with you for the first time, "
+            f"so you speak first. Greet them by name. {start} End with one question that invites them to reply. "
+            "Keep it to two to four short sentences in your own voice, with no lists or headings.")
+
+
+def opening_template(persona: Persona, learner: dict, real_person: bool = False, post: dict | None = None) -> str:
+    """The companion's first message without Claude (demo mode, or Claude can't be reached): from the learner's
+    interests as well, or their goals, or asking what they're into."""
+    who = (f"I'm an AI learning companion modelled on {persona.name}." if real_person else
+           f"I'm {persona.name} from {persona.country}. {persona.writing_style.signature_phrase}".strip())
+    interests = [i.strip() for i in re.split(r"[,;\n]", learner.get("interests") or "") if i.strip()]
+    if post:
+        ask = f"You've been reading \"{post['title']}\". What would you like to know about it?"
+    elif interests:
+        ask = f"I hear you're into {interests[0]}. Shall we start there and see where AI comes into it?"
+    elif (learner.get("goals") or "").strip():
+        ask = f"You told me what you'd like to learn: \"{learner['goals'].strip()}\". Shall we start there?"
+    else:
+        ask = ("Before we dive in, what are you into outside AI? Sport, music, cooking, your work? "
+               "I'll use it to make every idea click.")
+    return f"Hi {learner['display_name']}! {who}\n\n{ask}"
+
+
+async def stream_opening(persona: Persona, learner: dict, memories: list[str], post: dict | None,
+                         real_person: bool = False, use_ai: bool = True) -> AsyncIterator[str]:
+    """Yield the companion's first message in a chat the learner hasn't started, as text chunks: written by Claude
+    from the learner's interests, or from the template when Claude isn't to be used or can't be reached."""
+    if settings.offline or not use_ai:
+        yield opening_template(persona, learner, real_person, post)
+        return
+    system = build_system(persona, learner, memories, None)
+    # After the cached part of the system prompt, which chat shares.
+    system[-1] = system[-1] | {"text": system[-1]["text"] + "\n\n" + opening_prompt(learner, post)}
+    said = False
+    try:
+        async with client().beta.messages.stream(
+            model=settings.model,
+            max_tokens=8000,
+            system=system,
+            messages=[{"role": "user", "content": opened(learner)}],
+            output_config={"effort": "medium"},
+            betas=[FALLBACK_BETA],
+            fallbacks="default",
+        ) as stream:
+            # No reaction: there's no message of the learner's to react to.
+            async for text in reactions.split(stream.text_stream, lambda emoji: None):
+                said = said or bool(text.strip())
+                yield text
+            final = await stream.get_final_message()
+        _answered()
+        usage.record_tokens(final)
+    except anthropic.APIError as e:
+        usage.failed()
+        if not note_account_problem(e):
+            log.warning("couldn't write the opening message for %s: %s", persona.name, e)
+    if not said:
+        yield opening_template(persona, learner, real_person, post)
 
 
 # ------------------------------------------------------------------------ memory

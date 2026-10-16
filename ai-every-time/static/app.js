@@ -506,6 +506,9 @@ async function viewWelcome() {
           <label data-only="signup">What do you want to learn? <span class="hint">Optional, your companion will use this</span>
             <textarea name="goals" maxlength="500" placeholder="e.g. Understand how ChatGPT-style models work and build my first AI app"></textarea>
           </label>
+          <label data-only="signup">What are you into? <span class="hint">Optional: hobbies, work, anything you love. Companions start your chats from it</span>
+            <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
+          </label>
           <div class="error" id="authErr"></div>
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
           <button type="button" class="linkbtn" id="forgotBtn" data-only="login" hidden>Forgot your password?</button>
@@ -1134,11 +1137,41 @@ async function viewCompanion(m) {
   $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
   $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
-  if (!messages.length) {
-    const intro = c.real_person ? `I'm an AI learning companion modelled on ${p.name}.` : `I'm ${p.name} from ${p.country}. ${p.writing_style.signature_phrase || ""}`;
-    addMsg("assistant", `Hi ${state.me.display_name}! ${intro}\n\nWhat would you like to learn today?`);
-  }
   messages.forEach((x) => addMsg(x.role, x.content, x));
+  if (!messages.length) openChat();
+
+  /* A chat the learner hasn't started: the companion starts it, from what it knows of their interests. */
+  async function openChat() {
+    const bubble = addMsg("assistant", "…"), send = $("#send");
+    let text = "";
+    send.disabled = true;
+    try {
+      const res = await fetch(`/api/companions/${id}/opening`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
+        body: JSON.stringify({ post_id: contextPost?.id ?? null }),
+      });
+      if (res.ok && res.status !== 204) {  // 204: begun meanwhile, or being written in another tab
+        const reader = res.body.getReader(), dec = new TextDecoder();
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done || !bubble.isConnected) break;
+          text += dec.decode(value, { stream: true });
+          bubble.innerHTML = `<div class="prose">${md(text)}</div>`;
+          log.scrollTop = log.scrollHeight;
+        }
+      }
+      if (!text.trim() || !bubble.isConnected) { bubble.remove(); return; }
+      speakBtn(bubble, text);
+      if (readAloud) speak(text, p.voice);
+      // Kept as the chat's first message: with its id, the learner can react to it.
+      const [first] = await api(`/api/companions/${id}/messages`);
+      if (first?.role === "assistant") bubbleSaved(bubble, first, chatCtx);
+    } catch {
+      if (!text.trim()) bubble.remove();  // the learner can still start the chat themselves
+    } finally {
+      send.disabled = false;
+    }
+  }
 
   const renderCtx = () => {
     $("#ctx").innerHTML = contextPost ? `<div class="context-pill"><span>Asking about: <b>${esc(contextPost.title)}</b></span><button class="linkbtn" id="clearCtx">✕</button></div>` : "";
@@ -1146,13 +1179,15 @@ async function viewCompanion(m) {
   };
   renderCtx();
 
+  const memBox = $("#mem");
   const renderMem = (mems) => {
-    $("#mem").innerHTML = mems.length
+    if (!memBox.isConnected) return;  // memories asked for after a reply, when the learner has moved on
+    memBox.innerHTML = mems.length
       ? `<ul>${mems.map((x) => `<li><span>${esc(x.fact)}</span><button class="linkbtn" data-forget="${x.id}" title="Forget this">Forget</button></li>`).join("")}</ul>`
       : `<p class="muted small" style="margin:0">Nothing yet. ${esc(p.name)} picks up your goals and progress as you chat, and you can remove anything here.</p>`;
   };
   renderMem(memories);
-  $("#mem").addEventListener("click", async (e) => {
+  memBox.addEventListener("click", async (e) => {
     const fid = e.target.dataset.forget;
     if (!fid) return;
     await api(`/api/memories/${fid}`, { method: "DELETE" });
@@ -1212,7 +1247,7 @@ async function viewCompanion(m) {
   $("#composer").addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = input.value.trim();
-    if (!text) return;
+    if (!text || $("#send").disabled) return;  // Enter while the companion is still writing: it waits in the box
     input.value = "";
     $("#send").disabled = true;
     closePicker(log);
@@ -1252,6 +1287,26 @@ const COUNTRIES = [
   ["Indonesia", "🇮🇩"], ["Philippines", "🇵🇭"], ["Vietnam", "🇻🇳"], ["Australia", "🇦🇺"], ["Spain", "🇪🇸"], ["Italy", "🇮🇹"],
   ["Turkey", "🇹🇷"], ["Pakistan", "🇵🇰"], ["Bangladesh", "🇧🇩"], ["Argentina", "🇦🇷"], ["Colombia", "🇨🇴"], ["Poland", "🇵🇱"],
 ];
+/* Every country the designer knows, with its flag: the common ones above first, then the starter companions'
+   own (as the server spells them, e.g. "UAE"), then every other the browser can name. */
+let countryList;
+function countries() {
+  if (countryList) return countryList;
+  const known = new Map();
+  const add = (name, flag) => { if (!known.has(name.toLowerCase())) known.set(name.toLowerCase(), [name, flag]); };
+  COUNTRIES.forEach(([n, f]) => add(n, f));
+  Object.entries(state.options?.countries || {}).forEach(([n, f]) => add(n, f));
+  try {
+    const names = new Intl.DisplayNames(["en"], { type: "region" });
+    for (let a = 65; a <= 90; a++) for (let b = 65; b <= 90; b++) {
+      const code = String.fromCharCode(a, b), name = names.of(code);
+      if (name && name !== code && !/^(Unknown|Pseudo)/.test(name)) add(name, String.fromCodePoint(0x1F1A5 + a, 0x1F1A5 + b));
+    }
+  } catch { /* a browser without region names: the lists above will do */ }
+  return (countryList = [...known.values()].sort((x, y) => x[0].localeCompare(y[0])));
+}
+const flagFor = (country) => (countries().find(([n]) => n.toLowerCase() === country.trim().toLowerCase()) || [, ""])[1];
+
 const SLIDERS = [
   ["warmth", "Reserved", "Warm"], ["humor", "Serious", "Playful"], ["formality", "Casual", "Formal"],
   ["directness", "Gentle", "Direct"], ["enthusiasm", "Calm", "Energetic"], ["patience", "Brisk", "Patient"],
@@ -1266,7 +1321,7 @@ function blankPersona() {
     name: "", tagline: "", country: "", flag: "", language: "English", bio: "", expertise: [], teaching_style: "step_by_step",
     personality: { warmth: 70, humor: 40, formality: 40, directness: 60, enthusiasm: 60, patience: 80 },
     writing_style: { length: "balanced", level: state.me.level, emoji: "light", uses_analogies: true, uses_local_examples: true, signature_phrase: "", sample_line: "" },
-    avatar: { skin: "#C68642", hair_style: "short", hair_color: "#2C1B10", background: "#6C5CE7", accessory: "none", accessory_color: "#222222", expression: "smile", shirt: "#1E272E" },
+    avatar: { skin: "#C68642", hair_style: "short", hair_color: "#2C1B10", background: "#6C5CE7", accessory: "none", accessory_color: "#222222", expression: "smile", shirt: "#1E272E", use_photo: true },
     voice: { enabled: true, lang: "en-US", rate: 1, pitch: 1 },
     interests: [], custom_instructions: "",
   };
@@ -1313,7 +1368,7 @@ async function viewStudio({ mode, id }) {
             <label>Name <input type="text" name="name" maxlength="40" required placeholder="e.g. Zara"></label>
             <label>Country and cultural voice
               <input type="text" name="country" list="countries" maxlength="60" required placeholder="e.g. Ghana">
-              <datalist id="countries">${COUNTRIES.map(([n]) => `<option value="${n}">`).join("")}</datalist>
+              <datalist id="countries">${countries().map(([n]) => `<option value="${esc(n)}">`).join("")}</datalist>
             </label>
           </div>
           <label>Tagline <span class="hint">One line that sums them up</span><input type="text" name="tagline" maxlength="120"></label>
@@ -1325,6 +1380,12 @@ async function viewStudio({ mode, id }) {
         </fieldset>
 
         <fieldset><legend>Face</legend>
+          <div class="row pic-row" id="picChoice" hidden>
+            <span>Show</span>
+            <div class="choice" role="group" aria-label="Which picture to show">
+              <button type="button" class="btn" data-pic="photo">The photo</button><button type="button" class="btn" data-pic="face">The drawn face</button>
+            </div>
+          </div>
           <div class="row photo-row">
             <label class="btn" for="photoInput">📷 Upload a photo</label>
             <input type="file" id="photoInput" accept="image/png,image/jpeg,image/webp" hidden>
@@ -1429,15 +1490,39 @@ async function viewStudio({ mode, id }) {
     persona.writing_style.sample_line || `Hi! I'm ${persona.name || "your companion"}. ${persona.writing_style.signature_phrase || "Let's learn together."}`,
     { ...persona.voice, enabled: true }));
 
-  /* Photo: kept in the page until saved, then uploaded (or removed) after the companion is stored. */
+  /* Photo: kept in the page until saved, then uploaded (or removed) after the companion is stored. A companion
+     with a photo shows it or its drawn face, as the learner chooses (avatar.use_photo); the photo is kept either way. */
   // A remix of a starter companion keeps its photo, unless the learner removes it; other photos stay their owner's.
   const photo = { file: null, url: null, remove: false, existing: Boolean(source?.has_photo && (mode === "edit" || source.is_starter)) };
+  const hasPhoto = () => Boolean(photo.file || (photo.existing && !photo.remove));
+  const showsPhoto = () => hasPhoto() && persona.avatar.use_photo !== false;
   const syncPhoto = () => {
-    const has = photo.file || (photo.existing && !photo.remove);
+    const has = hasPhoto(), shown = showsPhoto();
     $("#photoRemove").hidden = !has;
-    $("#faceHint").textContent = has ? "The photo is shown instead of the drawn face. The face below is kept as a backup." : "Or draw a face:";
+    $("#picChoice").hidden = !has;
+    $$("#picChoice [data-pic]").forEach((b) => {
+      const on = (b.dataset.pic === "photo") === shown;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on);
+    });
+    $("#faceHint").textContent = !has ? "Or draw a face:" : shown
+      ? "Your companion shows the photo. Change the face below to show a drawn one instead."
+      : "Your companion shows the drawn face below. The photo is kept if you want it back.";
     preview();
   };
+  // A photo can't change with the controls below, so changing them shows the drawn face.
+  const drawFace = () => {
+    if (!showsPhoto()) return;
+    persona.avatar.use_photo = false;
+    syncPhoto();
+    toast("Showing the drawn face with your changes");
+  };
+  $("#picChoice").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pic]");
+    if (!b) return;
+    persona.avatar.use_photo = b.dataset.pic === "photo";
+    syncPhoto();
+  });
   $("#photoInput").addEventListener("change", (e) => {
     const f = e.target.files[0];
     e.target.value = "";
@@ -1446,6 +1531,7 @@ async function viewStudio({ mode, id }) {
     if (f.size > 2 * 1024 * 1024) return toast("Photos can be up to 2 MB");
     if (photo.url) URL.revokeObjectURL(photo.url);
     photo.file = f; photo.url = URL.createObjectURL(f); photo.remove = false;
+    persona.avatar.use_photo = true;
     syncPhoto();
   });
   $("#photoRemove").addEventListener("click", () => {
@@ -1466,9 +1552,9 @@ async function viewStudio({ mode, id }) {
     else if (t.name?.startsWith("ws.")) set(`writing_style.${t.name.slice(3)}`, t.type === "checkbox" ? t.checked : t.value);
     else if (t.name === "country") {
       persona.country = t.value;
-      persona.flag = (COUNTRIES.find(([n]) => n.toLowerCase() === t.value.trim().toLowerCase()) || [, ""])[1];
+      persona.flag = flagFor(t.value);
     } else if (t.name) persona[t.name] = t.value;
-    else if (t.type === "color") { persona.avatar[t.closest("[data-key]").dataset.key] = t.value.toUpperCase(); syncSwatches(); }
+    else if (t.type === "color") { persona.avatar[t.closest("[data-key]").dataset.key] = t.value.toUpperCase(); syncSwatches(); drawFace(); }
     preview();
   });
   $$("[data-trait]", form).forEach((r) => (r.value = persona.personality[r.dataset.trait]));
@@ -1482,7 +1568,7 @@ async function viewStudio({ mode, id }) {
     const s = e.target.closest(".swatch");
     if (!s) return;
     persona.avatar[g.dataset.key] = s.dataset.color;
-    syncSwatches(); preview();
+    syncSwatches(); drawFace(); preview();
   }));
   syncSwatches();
 
@@ -1499,7 +1585,7 @@ async function viewStudio({ mode, id }) {
     const b = e.target.closest("[data-v]");
     if (!b) return;
     if (g.dataset.choice === "teaching_style") persona.teaching_style = b.dataset.v;
-    else persona.avatar[g.dataset.choice] = b.dataset.v;
+    else { persona.avatar[g.dataset.choice] = b.dataset.v; drawFace(); }
     syncChoices(); preview();
   }));
   $("#expertise").addEventListener("click", (e) => {
@@ -1513,7 +1599,7 @@ async function viewStudio({ mode, id }) {
   });
   syncChoices();
 
-  let pvTimer, pvUrl;
+  let pvTimer, pvUrl, pvSeq = 0;
   function preview() {
     $("#pvName").textContent = persona.name || "Your companion";
     $("#pvCountry").textContent = `${persona.flag} ${persona.country || "Choose a country"}`;
@@ -1521,15 +1607,18 @@ async function viewStudio({ mode, id }) {
     const traits = SLIDERS.map(([k, lo, hi]) => (persona.personality[k] >= 60 ? hi : persona.personality[k] <= 40 ? lo : null)).filter(Boolean);
     $("#pvVoice").innerHTML = `<b>Personality:</b> ${esc(traits.join(", ") || "Balanced")}<br><b>Teaches:</b> ${esc(TEACH_DESC[persona.teaching_style])}<br><b>Writes:</b> ${esc(label(persona.writing_style.length))}, ${esc(persona.writing_style.level)} level${persona.writing_style.sample_line ? `<br><i>“${esc(persona.writing_style.sample_line)}”</i>` : ""}`;
     clearTimeout(pvTimer);
-    if (photo.file) { $("#pv").src = photo.url; return; }
-    if (photo.existing && !photo.remove) { $("#pv").src = `/api/companions/${id}/avatar?v=${encodeURIComponent(source.updated_at)}`; return; }
+    // A drawn face still on its way doesn't replace what was chosen since, or land on a page opened since.
+    const seq = ++pvSeq, img = $("#pv"), current = () => seq === pvSeq && img.isConnected;
+    if (showsPhoto()) { img.src = photo.file ? photo.url : `/api/companions/${id}/photo?v=${encodeURIComponent(source.updated_at)}`; return; }
     pvTimer = setTimeout(async () => {
+      if (!current()) return;
       const res = await fetch("/api/avatar/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(persona.avatar) });
-      if (!res.ok) return;
+      if (!res.ok || !current()) return;
       const blob = await res.blob();
+      if (!current()) return;
       if (pvUrl) URL.revokeObjectURL(pvUrl);
       pvUrl = URL.createObjectURL(blob);
-      $("#pv").src = pvUrl;
+      img.src = pvUrl;
     }, 120);
   }
   syncPhoto();
@@ -1589,6 +1678,8 @@ async function viewProfile() {
         <label>Name <input type="text" name="display_name" maxlength="60" required></label>
         <label>AI level <select name="level"><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option></select></label>
         <label>Learning goals <span class="hint">Your companions read this to personalise lessons</span><textarea name="goals" maxlength="500"></textarea></label>
+        <label>Interests <span class="hint">Hobbies, work, anything you love: your companions start conversations from them and use them in examples</span>
+          <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking"></label>
         <div class="error" id="profErr"></div>
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
       </form>
@@ -1620,7 +1711,7 @@ async function viewProfile() {
       </div>
     </div>`);
   const f = $("#prof", main);
-  f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals;
+  f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals; f.interests.value = me.interests || "";
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
@@ -2277,6 +2368,7 @@ async function viewStaff(m) {
 const KIND_LABEL = {
   chat: "Chat replies", lesson: "Lessons, the first time taught", quiz: "Quizzes", exam: "Mock exams", flashcards: "Flashcard decks",
   summary: "Summaries", plan: "Study plans", path: "Custom paths", post: "Companion posts", automatic: "Scheduled posts (no learner)",
+  opening: "Companions starting chats (free to learners)",
 };
 const fmt = (n) => (n == null ? "–" : n >= 10000 ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n) : n.toLocaleString());
 const plural = (n, one, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;

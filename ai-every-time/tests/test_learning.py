@@ -39,6 +39,47 @@ def test_lesson_cached_per_companion_and_custom_teacher(client):
         assert conn.execute("SELECT COUNT(*) FROM lesson_content WHERE lesson_id = 'tokens'").fetchone()[0] == 2
 
 
+def test_lessons_are_written_again_when_a_companion_s_voice_changes(client, monkeypatch):
+    """A lesson is written once per companion, in its voice. A new voice (here, a new signature phrase) has it
+    written again the next time it's opened; a new face, read-aloud voice or private instructions don't."""
+    from dataclasses import replace
+
+    from app import companions, db
+    from app.starter_companions import STARTERS
+
+    onboard(client)
+    mine = client.post("/api/companions", json={"persona": persona(), "make_primary": False}).json()
+    url, p = f"/api/lessons/tokens?companion_id={mine['id']}", mine["persona"]
+    assert client.get(url).json()["body"].endswith("Ayekoo!")
+
+    def cached(companion_id):
+        with db.connect() as conn:
+            return conn.execute("SELECT COUNT(*) FROM lesson_content WHERE companion_id = ?", (companion_id,)).fetchone()[0]
+
+    client.put(f"/api/companions/{mine['id']}", json=p | {"avatar": p["avatar"] | {"hair_style": "bun", "use_photo": False},
+                                                          "voice": p["voice"] | {"rate": 1.5}, "custom_instructions": "Be brief."})
+    assert cached(mine["id"]) == 1
+    client.put(f"/api/companions/{mine['id']}", json=p | {"writing_style": p["writing_style"] | {"signature_phrase": "Onward!"}})
+    assert cached(mine["id"]) == 0
+    assert client.get(url).json()["body"].endswith("Onward!")
+    first = client.get(f"/api/companions/{mine['id']}/versions").json()[-1]
+    client.post(f"/api/companions/{mine['id']}/versions/{first['id']}/restore")  # back to its first voice
+    assert client.get(url).json()["body"].endswith("Ayekoo!")
+
+    # The same for a starter whose persona changes in app/starter_companions.py.
+    amahle = next(c for c in client.get("/api/companions").json() if c["slug"] == "amahle-ndlovu")
+    client.get(f"/api/lessons/tokens?companion_id={amahle['id']}")
+    s = STARTERS["amahle-ndlovu"]
+    new_face = s.persona.model_copy(update={"avatar": s.persona.avatar.model_copy(update={"skin": "#FFDBAC"})})
+    monkeypatch.setattr(companions, "STARTERS", STARTERS | {"amahle-ndlovu": replace(s, persona=new_face)})
+    companions.seed_starters()
+    assert cached(amahle["id"]) == 1
+    new_voice = s.persona.model_copy(update={"tagline": "Fairness, one story at a time."})
+    monkeypatch.setattr(companions, "STARTERS", STARTERS | {"amahle-ndlovu": replace(s, persona=new_voice)})
+    companions.seed_starters()
+    assert cached(amahle["id"]) == 0
+
+
 def test_quiz_hides_answers_until_submitted_and_grades(client):
     onboard(client)
     quiz = client.post("/api/assessments", json={"source_type": "lesson", "source_ref": "tokens"}).json()

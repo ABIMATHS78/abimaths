@@ -173,6 +173,24 @@ def test_system_prompt_reflects_persona():
     assert "Works in finance" in learner and "Ada" in learner
 
 
+def test_every_setting_reaches_the_system_prompt():
+    from app.llm import persona_prompt
+    from app.persona import Persona
+
+    text = persona_prompt(Persona.model_validate(persona(
+        bio="Builds agents for market traders.", language="French",
+        writing_style={"length": "detailed", "level": "advanced", "emoji": "none", "uses_analogies": False,
+                       "uses_local_examples": False, "signature_phrase": "Ayekoo!", "sample_line": "Picture Makola market."})))
+    for want in ["Name: Zara", "Ghana", "Agents, the Accra way", "market traders", "Expertise: AI Agents, Prompt Engineering",
+                 "highlife, football", "very warm", "playful and funny", "very casual", "guiding questions",
+                 "thorough replies", "advanced level", "Never use emoji", "precise, literal explanations", "Ayekoo!",
+                 "Picture Makola market.", "Reply in French", "Quiz me at the end"]:
+        assert want in text, want
+    assert "everyday life in Ghana" not in text
+    defaults = persona_prompt(Persona.model_validate(persona()))
+    assert "Use vivid analogies." in defaults and "everyday life in Ghana" in defaults and "Reply in" not in defaults
+
+
 def test_health_check(client):
     assert client.get("/healthz").json() == {"ok": True}  # no sign-in needed
 
