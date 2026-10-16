@@ -12,15 +12,18 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import auth, companions, content, db, tutor, usage
+from app import auth, catalog, companions, content, db, tutor, usage
 from app.curriculum import PATHS, PATHS_BY_ID, LearningPath, Lesson, find_lesson, lesson_brief, path_from_dict
 
 router = APIRouter(prefix="/api")
 User = Depends(auth.current_user)
 
 QUIZ_QUESTIONS = 5
+MODULE_QUIZ_QUESTIONS = 8  # a quiz on a whole path: a course module's quiz
 EXAM_QUESTIONS = 12
 EXAM_MINUTES = 20
+COURSE_EXAM_QUESTIONS = 15  # a mock exam on a whole course
+COURSE_EXAM_MINUTES = 25
 PASS_MARK = 70
 # Leitner boxes: days until the next review after a correct answer.
 BOX_INTERVAL_DAYS = {1: 0, 2: 1, 3: 3, 4: 7, 5: 16}
@@ -51,10 +54,14 @@ def record_activity(user: dict) -> None:
                      (user["id"], local_now(user).date().isoformat()))
 
 
-def teacher_for(user: dict, companion_id: int | None) -> dict:
-    """The companion teaching this learner: the one asked for, else their primary, else a featured starter."""
+def teacher_for(user: dict, companion_id: int | None, item: str | None = None) -> dict:
+    """The companion teaching this learner: the one asked for; for a course's lesson, module, lab or project (item),
+    the course instructor who teaches it; else their primary companion, else a featured starter."""
     if companion_id:
         return companions.get_visible(companion_id, user["id"])
+    instructor = catalog.instructor_for(item) if item else None
+    if instructor and (found := companions.starter(instructor)):
+        return found
     if user.get("primary_companion_id"):
         try:
             return companions.get_visible(user["primary_companion_id"], user["id"])
@@ -100,13 +107,16 @@ def user_paths(user_id: int) -> list[LearningPath]:
 
 
 def path_for(user_id: int, path_id: str) -> LearningPath | None:
+    """A learning path the learner can see: a curated one, a course's module, or a custom one."""
     if path_id in PATHS_BY_ID:
         return PATHS_BY_ID[path_id]
+    if module := catalog.find_module(path_id):
+        return module
     return next((p for p in custom_paths(user_id) if p.id == path_id), None) if path_id.startswith(CUSTOM_PREFIX) else None
 
 
 def find_for(user_id: int, lesson_id: str) -> tuple[LearningPath, Lesson] | None:
-    found = find_lesson(lesson_id)
+    found = find_lesson(lesson_id) or catalog.find_lesson(lesson_id)
     if found or not lesson_id.startswith(CUSTOM_PREFIX):
         return found
     path = path_for(user_id, lesson_id.rsplit("-", 1)[0])
@@ -128,10 +138,18 @@ def _cached_lesson(companion_id: int, lesson_id: str) -> str | None:
     return row["body"] if row else None
 
 
+def brief(lesson: Lesson) -> str:
+    """A lesson's objectives and key points, and for a course's lesson, its course and walkthrough too."""
+    extra = catalog.lesson_extra(lesson.id)
+    return lesson_brief(lesson) + (f"\n{extra}" if extra else "")
+
+
 def lesson_context(user_id: int, companion_id: int, lesson_id: str) -> dict:
-    """What a companion needs to tutor a learner through a lesson (used by chat)."""
+    """What a companion needs to tutor a learner through a lesson, or a course's lab or project (used by chat)."""
+    if item := catalog.item_context(lesson_id):
+        return item
     path, lesson = _lesson_or_404(user_id, lesson_id)
-    body = lesson_brief(lesson)
+    body = brief(lesson)
     taught = _cached_lesson(companion_id, lesson_id)
     if taught:
         body += f"\n\nHow you taught it:\n{taught}"
@@ -142,15 +160,22 @@ def _material(user: dict, teacher: dict, source_type: str, source_ref: str) -> t
     """Return (title, material text, lessons covered) for a study source the learner can see."""
     if source_type == "lesson":
         path, lesson = _lesson_or_404(user["id"], source_ref)
-        text = lesson_brief(lesson)
+        text = brief(lesson)
         taught = _cached_lesson(teacher["id"], lesson.id)
         return lesson.title, f"Lesson id: {lesson.id}\n{text}" + (f"\n\nLesson as taught:\n{taught}" if taught else ""), [lesson]
     if source_type == "path":
         path = path_for(user["id"], source_ref)
         if not path:
             raise HTTPException(404, "Learning path not found")
-        text = "\n\n".join(f"Lesson id: {l.id}\n{lesson_brief(l)}" for l in path.lessons)
+        text = "\n\n".join(f"Lesson id: {l.id}\n{brief(l)}" for l in path.lessons)
         return path.title, text, list(path.lessons)
+    if source_type == "course":
+        course = catalog.course(source_ref)
+        if not course:
+            raise HTTPException(404, "Course not found")
+        lessons = [l for module in catalog.module_paths(course) for l in module.lessons]
+        text = "\n\n".join(f"Lesson id: {l.id}\n{brief(l)}" for l in lessons)
+        return course.title, text, lessons
     if source_type == "post":
         post = content.get_post(int(source_ref)) if source_ref.isdigit() else None
         if not post:
@@ -290,7 +315,7 @@ def delete_custom_path(path_id: str, user: dict = User):
 @router.get("/lessons/{lesson_id}")
 async def get_lesson(request: Request, lesson_id: str, companion_id: int | None = None, user: dict = User):
     path, lesson = _lesson_or_404(user["id"], lesson_id)
-    teacher = teacher_for(user, companion_id)
+    teacher = teacher_for(user, companion_id, lesson_id)
     body = _cached_lesson(teacher["id"], lesson_id)
     # Writing a lesson spends an AI request on a GET, which a page on another site could make the
     # learner's browser send just by opening a link, so only the app itself can ask for one.
@@ -312,7 +337,12 @@ async def get_lesson(request: Request, lesson_id: str, companion_id: int | None 
     record_activity(user)
     idx = path.lessons.index(lesson)
     stats = _lesson_stats(user["id"]).get(lesson_id, {})
-    return {
+    place = catalog.place(lesson_id)
+    course = {"course": {"slug": place.course.slug, "title": place.course.title, "module": place.m, "lesson": place.n,
+                         "module_title": place.module.title},
+              "walkthrough": place.lesson.walkthrough.model_dump() if place.lesson.walkthrough else None,
+              "video": place.lesson.video} if place and place.lesson else {}
+    return course | {
         "id": lesson.id, "title": lesson.title, "minutes": lesson.minutes, "objectives": list(lesson.objectives),
         "body": body, "status": stats.get("status", "started"), "best_score": stats.get("best"),
         "path": {"id": path.id, "title": path.title},
@@ -338,7 +368,7 @@ def complete_lesson(lesson_id: str, user: dict = User):
 
 class NewAssessment(BaseModel):
     kind: Literal["quiz", "exam"] = "quiz"
-    source_type: Literal["lesson", "path", "post", "conversation"]
+    source_type: Literal["lesson", "path", "course", "post", "conversation"]
     source_ref: str = Field(min_length=1, max_length=80)
     companion_id: int | None = None
 
@@ -376,12 +406,16 @@ def _assessment_row(user_id: int, assessment_id: int) -> dict:
 
 @router.post("/assessments", status_code=201)
 async def create_assessment(body: NewAssessment, user: dict = User):
-    if body.kind == "exam" and body.source_type != "path":
-        raise HTTPException(422, "Mock exams cover a whole learning path")
-    teacher = teacher_for(user, body.companion_id)
+    if body.kind == "exam" and body.source_type not in ("path", "course"):
+        raise HTTPException(422, "Mock exams cover a whole learning path or course")
+    teacher = teacher_for(user, body.companion_id, body.source_ref if body.source_type in ("lesson", "path", "course") else None)
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
     exam = body.kind == "exam"
-    n = EXAM_QUESTIONS if exam else QUIZ_QUESTIONS
+    whole_course = body.source_type == "course"
+    if exam:
+        n, minutes = (COURSE_EXAM_QUESTIONS, COURSE_EXAM_MINUTES) if whole_course else (EXAM_QUESTIONS, EXAM_MINUTES)
+    else:
+        n, minutes = (MODULE_QUIZ_QUESTIONS if body.source_type in ("path", "course") else QUIZ_QUESTIONS), None
     with usage.spend(user, body.kind):
         questions = await tutor.make_questions(companions.persona_for(teacher, user["id"]), user, material, n, lessons, exam)
     if not questions:
@@ -391,8 +425,7 @@ async def create_assessment(body: NewAssessment, user: dict = User):
             "INSERT INTO assessments (user_id, companion_id, kind, title, source_type, source_ref, questions, "
             "time_limit_minutes, total, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user["id"], teacher["id"], body.kind, f"{'Mock exam' if exam else 'Quiz'}: {title}", body.source_type,
-             body.source_ref, json.dumps([q.model_dump() for q in questions]), EXAM_MINUTES if exam else None,
-             len(questions), db.now()),
+             body.source_ref, json.dumps([q.model_dump() for q in questions]), minutes, len(questions), db.now()),
         )
     return _public_assessment(_assessment_row(user["id"], cur.lastrowid), reveal=False)
 
@@ -444,7 +477,7 @@ def submit_assessment(assessment_id: int, body: Submission, user: dict = User):
 
 
 class NewDeck(BaseModel):
-    source_type: Literal["lesson", "path", "post", "conversation"]
+    source_type: Literal["lesson", "path", "course", "post", "conversation"]
     source_ref: str = Field(min_length=1, max_length=80)
     companion_id: int | None = None
     count: int = Field(10, ge=3, le=30)
@@ -469,7 +502,7 @@ def _deck_summaries(user_id: int, deck_id: int | None = None) -> list[dict]:
 
 @router.post("/decks", status_code=201)
 async def create_deck(body: NewDeck, user: dict = User):
-    teacher = teacher_for(user, body.companion_id)
+    teacher = teacher_for(user, body.companion_id, body.source_ref if body.source_type in ("lesson", "path", "course") else None)
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
     with usage.spend(user, "flashcards"):
         cards = await tutor.make_cards(companions.persona_for(teacher, user["id"]), user, material, body.count, lessons)
@@ -552,7 +585,7 @@ class NewSummary(BaseModel):
 
 @router.post("/summaries")
 async def make_summary(body: NewSummary, user: dict = User):
-    teacher = teacher_for(user, body.companion_id)
+    teacher = teacher_for(user, body.companion_id, body.source_ref if body.source_type == "lesson" else None)
     title, material, _ = _material(user, teacher, body.source_type, body.source_ref)
     if body.source_type == "lesson":
         taught = _cached_lesson(teacher["id"], body.source_ref)

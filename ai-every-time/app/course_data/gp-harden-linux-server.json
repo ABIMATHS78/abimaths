@@ -1,0 +1,277 @@
+{
+  "slug": "gp-harden-linux-server",
+  "title": "Guided Project: Harden a Linux Server",
+  "subtitle": "Turn a fresh Ubuntu Server virtual machine into a hardened one: automatic security updates, a sudo user, key-only SSH, a default-deny firewall and fail2ban.",
+  "category": "Cybersecurity",
+  "kind": "guided-project",
+  "level": "intermediate",
+  "instructors": [
+    "ismaile-rahimovi"
+  ],
+  "skills": [
+    "Linux server hardening",
+    "Patch management",
+    "Least privilege",
+    "SSH key authentication",
+    "OpenSSH configuration",
+    "Host firewalls with ufw",
+    "fail2ban",
+    "Security verification"
+  ],
+  "tools": [
+    "Linux (Ubuntu Server)",
+    "OpenSSH",
+    "ufw",
+    "fail2ban"
+  ],
+  "outcomes": [
+    "Keep an Ubuntu server patched, with security updates installed automatically",
+    "Administer a server from a named sudo user, with root's password locked",
+    "Set up SSH key login and turn off root and password login, then prove it from outside",
+    "Allow only the traffic you need with a default-deny ufw firewall, and check what's listening with ss",
+    "Configure fail2ban's SSH jail and test its filter against a sample log"
+  ],
+  "prerequisites": "Comfort with the Linux command line: moving between folders, running commands with sudo and editing a file with nano. A computer that can run a virtual machine (VirtualBox, UTM, Hyper-V or VMware) and an SSH client, which macOS, Linux and Windows 10 and 11 all include. Practise only on a virtual machine you own.",
+  "description": "A fresh server does what its defaults allow, and defaults are written for convenience. In this guided project you take an Ubuntu Server 24.04 LTS virtual machine of your own and harden it the way administrators do in production, one verified step at a time. You'll install pending updates and make sure security updates keep arriving on their own, do your admin work as a named sudo user, replace password logins with SSH keys and turn off direct root login, put a default-deny firewall in front of the server with ufw, check every listening port with ss, and set fail2ban to ban addresses that keep failing to log in.\n\nEvery change is tested from outside the server as well as read back from its configuration, because a setting you meant isn't always the setting in force. You'll finish with a hardening report built from real command output, which your instructor reviews.",
+  "modules": [
+    {
+      "title": "Harden an Ubuntu server, step by step",
+      "summary": "Three short lessons on what hardening means and how each control works, then a lab on your own Ubuntu virtual machine that applies and verifies every one of them.",
+      "lessons": [
+        {
+          "title": "Reduce the attack surface: updates, accounts and services",
+          "minutes": 8,
+          "objectives": [
+            "Explain what hardening a server means",
+            "Keep Ubuntu patched with apt and unattended-upgrades",
+            "Explain why administrators work as a named sudo user rather than root"
+          ],
+          "key_points": [
+            "Hardening means shrinking a system's attack surface: removing what isn't needed, closing what doesn't need to be open and tightening what's left, so there are fewer ways in and less harm if one is found.",
+            "sudo apt update refreshes the list of available packages and sudo apt upgrade installs newer versions; Ubuntu ships its security fixes as ordinary package updates.",
+            "The unattended-upgrades package installs security updates automatically; /etc/apt/apt.conf.d/20auto-upgrades turns it on with APT::Periodic::Unattended-Upgrade \"1\", and it logs to /var/log/unattended-upgrades/.",
+            "Some updates, such as a new kernel, only take effect after a reboot; Ubuntu creates the file /var/run/reboot-required when one is needed.",
+            "On Ubuntu the root account's password is locked; administrators log in as a named user in the sudo group, so each privileged command is logged with the name of the person who ran it.",
+            "Every listening service is a possible way in: sudo ss -tulpn lists the TCP and UDP ports that are listening and the process behind each, so anything unneeded can be stopped and disabled."
+          ]
+        },
+        {
+          "title": "Lock down SSH and the network",
+          "minutes": 10,
+          "objectives": [
+            "Explain why SSH keys are safer than passwords",
+            "Configure OpenSSH safely with a drop-in file",
+            "Describe how ufw and fail2ban protect a server"
+          ],
+          "key_points": [
+            "An SSH key pair has a private key that stays on your computer, protected by a passphrase, and a public key that goes in ~/.ssh/authorized_keys on the server; ssh-keygen -t ed25519 makes a modern pair.",
+            "Ubuntu's /etc/ssh/sshd_config reads the files in /etc/ssh/sshd_config.d/ first, and sshd uses the first value it finds for each setting, so 00-hardening.conf takes priority over a file such as 50-cloud-init.conf.",
+            "PermitRootLogin no stops root logging in over SSH; PasswordAuthentication no and KbdInteractiveAuthentication no leave keys as the only way in. sudo sshd -t checks the syntax and sudo sshd -T prints the settings in force.",
+            "Keep your current SSH session open while you change SSH or firewall settings, and test a new login from a second terminal, so a mistake can't lock you out.",
+            "ufw manages the kernel's packet filter: sudo ufw default deny incoming blocks whatever isn't allowed, and sudo ufw limit OpenSSH allows SSH but denies an address that opens 6 or more connections within 30 seconds.",
+            "fail2ban watches logs for repeated failures and bans the source address for a time; on Ubuntu 24.04 its sshd jail is on by default and reads the systemd journal, and local settings go in /etc/fail2ban/jail.local."
+          ]
+        },
+        {
+          "title": "Verify it, and keep it hardened",
+          "minutes": 7,
+          "objectives": [
+            "Check each hardening control from inside and outside the server",
+            "Plan what to harden next"
+          ],
+          "key_points": [
+            "Hardening is checked, not assumed: after each change, read back the setting in force and test it from another machine, because the setting you meant isn't always the one that applies.",
+            "sudo ufw status verbose shows the default policies and every rule; sudo fail2ban-client status sshd shows how many failures the jail has counted and which addresses it has banned.",
+            "journalctl -u ssh shows the SSH service's messages, including accepted and refused logins; adding --since today narrows them to today.",
+            "fail2ban-regex tests a filter against a log file before you rely on it, reporting how many lines it matched.",
+            "Benchmarks such as the CIS Benchmark for Ubuntu Linux list many more settings, and an auditing tool such as Lynis (sudo apt install lynis, then sudo lynis audit system) suggests what to tighten next."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Harden your Ubuntu server",
+        "tool": "Linux terminal",
+        "minutes": 120,
+        "goal": "Apply and verify six hardening controls on your own Ubuntu Server 24.04 LTS virtual machine: updates, a sudo user, key-only SSH without root, a default-deny firewall, a check of listening ports, and fail2ban. Record the evidence in a hardening report.",
+        "setup": [
+          "An Ubuntu Server 24.04 LTS virtual machine of your own, installed with OpenSSH server, with its console open (VirtualBox, UTM, Hyper-V or VMware)",
+          "A VM network your computer can reach, such as VirtualBox's Bridged Adapter or Host-only Adapter. On the VM, hostname -I shows its address; the steps call it VM_ADDRESS",
+          "A terminal on your own computer with the OpenSSH client: ssh -V prints its version",
+          "A snapshot of the VM taken before you start, so you can roll back",
+          "The starter files: 00-hardening.conf, jail.local, sample-auth.log and hardening-report.md"
+        ],
+        "steps": [
+          {
+            "do": "On the VM's console, install every pending update, then reboot if Ubuntu says one is needed.",
+            "code": "sudo apt update\nsudo apt upgrade -y\ncat /var/run/reboot-required 2>/dev/null || echo \"No reboot needed\"",
+            "lang": "bash",
+            "see": "Either No reboot needed, or *** System restart required ***, in which case run sudo reboot and log in again."
+          },
+          {
+            "do": "Make sure security updates keep installing on their own.",
+            "code": "sudo apt install -y unattended-upgrades\ncat /etc/apt/apt.conf.d/20auto-upgrades",
+            "lang": "bash",
+            "see": "APT::Periodic::Update-Package-Lists \"1\"; and APT::Periodic::Unattended-Upgrade \"1\";. If the file is missing, run sudo dpkg-reconfigure -plow unattended-upgrades and answer Yes."
+          },
+          {
+            "do": "Create a named admin user, add it to the sudo group, then check its groups and that root's password is locked.",
+            "code": "sudo adduser opsadmin\nsudo usermod -aG sudo opsadmin\ngroups opsadmin\nsudo passwd -S root",
+            "lang": "bash",
+            "see": "opsadmin : opsadmin sudo users, then a line starting root L: L means root's password is locked."
+          },
+          {
+            "do": "On your own computer, make an SSH key pair. Give it a passphrase when asked.",
+            "code": "ssh-keygen -t ed25519 -C \"laptop to ubuntu-vm\"",
+            "lang": "bash",
+            "see": "Two new files in your .ssh folder: id_ed25519, the private key, which never leaves your computer, and id_ed25519.pub, the public key."
+          },
+          {
+            "do": "Copy the public key to opsadmin on the server, then log in with it. (On Windows, see the hints.)",
+            "code": "ssh-copy-id opsadmin@VM_ADDRESS\nssh opsadmin@VM_ADDRESS",
+            "lang": "bash",
+            "see": "You're asked for your key's passphrase, not opsadmin's password, and you're logged in."
+          },
+          {
+            "do": "Keep that session open from now on. Copy the starter file 00-hardening.conf to the server, from your computer.",
+            "code": "scp 00-hardening.conf sample-auth.log opsadmin@VM_ADDRESS:",
+            "lang": "bash"
+          },
+          {
+            "do": "On the server, put the SSH settings in place, check them and restart SSH only if the check passes.",
+            "code": "sudo cp ~/00-hardening.conf /etc/ssh/sshd_config.d/00-hardening.conf\nsudo sshd -t && sudo systemctl restart ssh",
+            "lang": "bash"
+          },
+          {
+            "do": "Read back the settings sshd is actually using.",
+            "code": "sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication|maxauthtries) '",
+            "lang": "bash",
+            "see": "maxauthtries 3, permitrootlogin no, passwordauthentication no and kbdinteractiveauthentication no."
+          },
+          {
+            "do": "From a second terminal on your computer, prove that the key works, and that a login without a key and a login as root are refused.",
+            "code": "ssh opsadmin@VM_ADDRESS 'echo key login works'\nssh -o PubkeyAuthentication=no opsadmin@VM_ADDRESS\nssh root@VM_ADDRESS",
+            "lang": "bash",
+            "see": "key login works, then Permission denied (publickey) for each of the other two."
+          },
+          {
+            "do": "On the server, set the firewall's defaults, allow SSH with rate limiting, and turn the firewall on. Answer y when ufw warns that it may disrupt SSH: the rule you just added keeps your session.",
+            "code": "sudo ufw default deny incoming\nsudo ufw default allow outgoing\nsudo ufw limit OpenSSH\nsudo ufw enable\nsudo ufw status verbose",
+            "lang": "bash",
+            "see": "Status: active, Default: deny (incoming), allow (outgoing), disabled (routed), and a rule 22/tcp (OpenSSH) LIMIT IN Anywhere, with a matching (v6) rule."
+          },
+          {
+            "do": "List what's listening and account for every line.",
+            "code": "sudo ss -tulpn",
+            "lang": "bash",
+            "see": "SSH on 0.0.0.0:22 and [::]:22 (shown as sshd, or systemd, which holds the socket for it); systemd-resolved on 127.0.0.53 and 127.0.0.54 port 53, reachable only from the server itself; and, if the VM gets its address by DHCP, systemd-networkd on UDP port 68."
+          },
+          {
+            "do": "Install fail2ban, add your local settings from the starter file jail.local (put your computer's address on the ignoreip line), test the configuration and restart it.",
+            "code": "sudo apt install -y fail2ban\nsudo nano /etc/fail2ban/jail.local\nsudo fail2ban-client -t\nsudo systemctl restart fail2ban\nsudo fail2ban-client status sshd",
+            "lang": "bash",
+            "see": "OK: configuration test is successful (a warning about allowipv6 is harmless), then Status for the jail: sshd with its Filter and Actions counts."
+          },
+          {
+            "do": "Test a ban without locking yourself out: ban 203.0.113.50, an address reserved for documentation, look at the jail, then lift the ban.",
+            "code": "sudo fail2ban-client set sshd banip 203.0.113.50\nsudo fail2ban-client status sshd\nsudo fail2ban-client set sshd unbanip 203.0.113.50",
+            "lang": "bash",
+            "see": "Banned IP list: 203.0.113.50 while it's banned."
+          },
+          {
+            "do": "Check the sshd filter against the sample log you copied over. Lines the filter doesn't recognise, such as sudo and cron lines, count as missed; successful logins and closed connections are counted as ignored.",
+            "code": "fail2ban-regex ~/sample-auth.log /etc/fail2ban/filter.d/sshd.conf | grep '^Lines:'",
+            "lang": "bash",
+            "see": "Lines: 17 lines, 4 ignored, 9 matched, 4 missed. The 9 matches are the six Failed password lines and the three Invalid user lines; a copy of the file that ends with a newline counts one more missed line."
+          },
+          {
+            "do": "Fill in hardening-report.md with the output of each command it asks for, then take a new VM snapshot of the hardened server."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Security updates are set to install automatically.",
+            "look_for": [
+              "Unattended-Upgrade \"1\""
+            ]
+          },
+          {
+            "text": "Admin work is done as opsadmin, a member of the sudo group, and root's password is locked.",
+            "look_for": [
+              "opsadmin sudo",
+              "root L"
+            ]
+          },
+          {
+            "text": "The SSH settings in force allow keys only and refuse root.",
+            "look_for": [
+              "permitrootlogin no",
+              "passwordauthentication no",
+              "kbdinteractiveauthentication no"
+            ]
+          },
+          {
+            "text": "Tested from another computer: the key login works, and logins without a key or as root are refused.",
+            "look_for": [
+              "key login works",
+              "Permission denied (publickey)"
+            ]
+          },
+          {
+            "text": "The firewall is active, denies incoming traffic by default and allows SSH with rate limiting.",
+            "look_for": [
+              "Status: active",
+              "Default: deny (incoming)",
+              "LIMIT IN"
+            ]
+          },
+          {
+            "text": "The listening ports are listed and each one is accounted for, with SSH the only service listening on all addresses.",
+            "look_for": [
+              "0.0.0.0:22",
+              "127.0.0.53"
+            ]
+          },
+          {
+            "text": "fail2ban's sshd jail is running and a manual ban of 203.0.113.50 shows in it.",
+            "look_for": [
+              "Status for the jail: sshd",
+              "203.0.113.50"
+            ]
+          },
+          {
+            "text": "fail2ban-regex finds the failures in the sample log: 9 matched.",
+            "look_for": [
+              "9 matched"
+            ]
+          }
+        ],
+        "submit": "Paste your completed hardening-report.md: the output of each command it asks for and your answers. Never paste a private key or a password.",
+        "files": [
+          {
+            "path": "00-hardening.conf",
+            "content": "# /etc/ssh/sshd_config.d/00-hardening.conf\n# Files in sshd_config.d are read before the rest of sshd_config, and the first value\n# sshd finds for a setting wins, so this file's name starts with 00.\n\n# Keys only: no passwords, no keyboard-interactive prompts\nPubkeyAuthentication yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n\n# No direct root login: log in as your sudo user instead\nPermitRootLogin no\n\n# Fewer guesses per connection, and no X11 forwarding on a server\nMaxAuthTries 3\nX11Forwarding no\n"
+          },
+          {
+            "path": "jail.local",
+            "content": "# /etc/fail2ban/jail.local: your settings, kept apart from the packaged jail.conf\n[DEFAULT]\n# Ban for an hour an address with 5 failures within 10 minutes\nbantime = 1h\nfindtime = 10m\nmaxretry = 5\n# Never ban these. Add your own computer's address at the end of the line.\nignoreip = 127.0.0.1/8 ::1\n\n[sshd]\nenabled = true\n"
+          },
+          {
+            "path": "sample-auth.log",
+            "content": "2026-10-14T08:02:11.204511+00:00 ubuntu-vm sshd[1402]: Accepted password for opsadmin from 192.168.56.1 port 50122 ssh2\n2026-10-14T08:03:40.551020+00:00 ubuntu-vm sudo:  opsadmin : TTY=pts/0 ; PWD=/home/opsadmin ; USER=root ; COMMAND=/usr/bin/apt update\n2026-10-14T08:17:01.000312+00:00 ubuntu-vm CRON[1530]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-14T08:17:01.004418+00:00 ubuntu-vm CRON[1530]: pam_unix(cron:session): session closed for user root\n2026-10-14T09:41:12.118204+00:00 ubuntu-vm sshd[1611]: Invalid user admin from 203.0.113.50 port 51122\n2026-10-14T09:41:14.330120+00:00 ubuntu-vm sshd[1611]: Failed password for invalid user admin from 203.0.113.50 port 51122 ssh2\n2026-10-14T09:41:16.120411+00:00 ubuntu-vm sshd[1611]: Connection closed by invalid user admin 203.0.113.50 port 51122 [preauth]\n2026-10-14T09:41:19.551902+00:00 ubuntu-vm sshd[1614]: Failed password for root from 203.0.113.50 port 51130 ssh2\n2026-10-14T09:41:23.771203+00:00 ubuntu-vm sshd[1614]: Failed password for root from 203.0.113.50 port 51130 ssh2\n2026-10-14T09:41:27.003311+00:00 ubuntu-vm sshd[1614]: Failed password for root from 203.0.113.50 port 51130 ssh2\n2026-10-14T09:42:02.660145+00:00 ubuntu-vm sshd[1620]: Invalid user test from 203.0.113.50 port 51188\n2026-10-14T09:42:04.890321+00:00 ubuntu-vm sshd[1620]: Failed password for invalid user test from 203.0.113.50 port 51188 ssh2\n2026-10-14T10:05:33.412907+00:00 ubuntu-vm sshd[1702]: Invalid user oracle from 198.51.100.7 port 40022\n2026-10-14T10:05:35.009213+00:00 ubuntu-vm sshd[1702]: Failed password for invalid user oracle from 198.51.100.7 port 40022 ssh2\n2026-10-14T10:05:37.118842+00:00 ubuntu-vm sshd[1702]: Connection closed by invalid user oracle 198.51.100.7 port 40022 [preauth]\n2026-10-14T11:20:45.300218+00:00 ubuntu-vm sshd[1811]: Accepted publickey for opsadmin from 192.168.56.1 port 50412 ssh2: ED25519 SHA256:3fJb9cQ2vN0kXwYd8rTq1sLm5uPz7aHe4gKiOc6BnVw\n2026-10-14T12:17:01.000944+00:00 ubuntu-vm CRON[1890]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-14T12:17:01.005127+00:00 ubuntu-vm CRON[1890]: pam_unix(cron:session): session closed for user root\n"
+          },
+          {
+            "path": "hardening-report.md",
+            "content": "# Server hardening report\n\nVM name and Ubuntu version (from: lsb_release -d):\n\n## 1. Updates\nOutput of: cat /etc/apt/apt.conf.d/20auto-upgrades\n\n## 2. Admin user\nOutput of: groups opsadmin\nOutput of: sudo passwd -S root\n\n## 3. SSH\nOutput of: sudo sshd -T | grep -E '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication|maxauthtries) '\nOutput of the three login tests from your computer (key login, no-key login, root login):\n\n## 4. Firewall\nOutput of: sudo ufw status verbose\n\n## 5. Listening services\nOutput of: sudo ss -tulpn\nFor each line, what it is and why it's allowed to listen:\n\n## 6. fail2ban\nOutput of: sudo fail2ban-client status sshd (while 203.0.113.50 is banned)\nThe Lines: line from fail2ban-regex on sample-auth.log:\n\n## 7. What you'd harden next, and why (two or three sentences)\n"
+          }
+        ],
+        "hints": [
+          "Windows has no ssh-copy-id. In PowerShell, run: type $env:USERPROFILE\\.ssh\\id_ed25519.pub | ssh opsadmin@VM_ADDRESS \"mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys\"",
+          "Locked out? The VM's own console doesn't use SSH: log in there, fix the file, run sudo sshd -t and restart ssh. Or roll back to your snapshot.",
+          "If sshd -T still says passwordauthentication yes, another file set it first: sudo grep -ri passwordauthentication /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ shows where.",
+          "ssh -v opsadmin@VM_ADDRESS shows which keys your computer offers and how the server answers. sshd ignores authorized_keys if ~/.ssh or the file can be written by other users.",
+          "If fail2ban-client can't reach the server, sudo systemctl status fail2ban and sudo journalctl -u fail2ban -n 20 show why it stopped."
+        ]
+      }
+    }
+  ]
+}

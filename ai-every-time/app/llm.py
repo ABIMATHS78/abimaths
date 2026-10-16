@@ -83,7 +83,16 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacte
         parts.append("\n# What you remember about them\n" + "\n".join(f"- {m}" for m in memories))
     if reacted:
         parts.append(f"\nThe learner reacted {reacted} to your last message. Let it guide you; there's no need to mention it.")
-    if post and post.get("kind") == "lesson":
+    if post and post.get("kind") in ("lab", "project"):
+        what = "hands-on lab" if post["kind"] == "lab" else "capstone project"
+        parts.append(
+            f"\n# You are helping the learner with this {what} from your course\n"
+            f"{post['body']}\n\n"
+            "Help them do it themselves: explain, give hints and help them find what's wrong in their work, rather than "
+            "handing over a whole solution before they've tried. When they submit it, you review it against "
+            + ("these checks." if post["kind"] == "lab" else "this rubric.")
+        )
+    elif post and post.get("kind") == "lesson":
         parts.append(
             "\n# You are tutoring the learner through this lesson\n"
             f"{post['body']}\n\n"

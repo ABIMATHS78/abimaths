@@ -96,6 +96,13 @@ def get(companion_id: int) -> dict:
     return db.row_to_companion(row)
 
 
+def starter(slug: str) -> dict | None:
+    """A starter companion by its slug, or None if there's none (or it has been retired)."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM companions WHERE slug = ? AND is_starter = 1 AND retired = 0", (slug,)).fetchone()
+    return db.row_to_companion(row) if row else None
+
+
 def visible_to(companion: dict, user_id: int | None) -> bool:
     """Starter companions are public. Learner-designed ones are private to their owner
     unless published to the community (and not hidden after reports)."""
