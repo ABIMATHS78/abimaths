@@ -12,6 +12,8 @@ spec.json maps an image id to its edits, or to {"family": ..., "edits": [...]}. 
     "align": left|center|right where the new text sits in the old one's place (default left)
     "style": "name"            lines of one style share a font (chosen from all of them) and, if alike, a size
     "family": sans|condensed|serif|mono   the fonts to choose from (default: the image's, else sans and condensed)
+    "typeface": "Roboto"       choose among this typeface's weights only (also for the whole image)
+    "squeeze": 0.9             draw the new text this much narrower (or wider, above 1); default: as the old text
     "ref": true                a line that's right as it is, only there to show its style's font (it isn't changed)
     "font", "size", "color", "pad", "threshold", "room", "dy"   overrides
 
@@ -332,7 +334,8 @@ def quick(path: str, sample: str, old: dict, letters: np.ndarray) -> float:
     return 3.0 * abs(width) + 3.0 * abs(ink) + 1.5 * abs(xh)
 
 
-def judge(path: str, sample: str, old: dict, letters: np.ndarray, old_words: list | None = None) -> dict:
+def judge(path: str, sample: str, old: dict, letters: np.ndarray, old_words: list | None = None,
+          allow_squeeze: bool = True) -> dict:
     """How well a font matches the old letters: same height, then compare width, stroke, ink and shapes.
 
     Shapes are compared word by word, each word laid on its old one: along a whole line, small differences in the
@@ -348,6 +351,17 @@ def judge(path: str, sample: str, old: dict, letters: np.ndarray, old_words: lis
     xh = math.log(max(1, p["xh"]) / max(1, old["xh"]))
     # The size the line's width asks for: of a long line, a much finer measure than its letters' height in pixels.
     by_width = size / math.exp(width)
+    # A font of the right height and shapes but the wrong width can be drawn a little narrower or wider, as a
+    # condensed or extended cut of it would be (up to 18% narrower, 10% wider); that costs something too.
+    squeeze = 1.0
+    if abs(width) > 0.04 and allow_squeeze:
+        squeeze = float(min(1.10, max(0.82, math.exp(-width))))
+        a, x0, base = draw_mask(sample, path, size, squeeze=squeeze)
+        p = profile(a >= 0.5)
+        if p is None:
+            return {"path": path, "size": size, "by_width": by_width, "score": 99, "squeeze": squeeze}
+        width = math.log(max(1, p["right"] - p["left"]) / max(1, old["right"] - old["left"]))
+        stroke = math.log(max(0.3, p["stroke"]) / max(0.3, old["stroke"]))
     # Shapes are compared as blurred as the old letters are: a sharp bold font would otherwise fit soft letters best.
     target, soft = softness(letters), a
     for sigma in (0.5, 0.8, 1.1, 1.5):
@@ -371,9 +385,9 @@ def judge(path: str, sample: str, old: dict, letters: np.ndarray, old_words: lis
     small = old["height"] < 16
     # Small letters' shapes are a few pixels each: there, how much ink and how wide tell the font better.
     score = (3.0 * abs(width) + (0.5 if small else 2.0) * abs(stroke) + 1.5 * abs(xh) + (0.75 if small else 2.0) * (1 - iou)
-             + (3.0 if small else 2.0) * abs(mass))
+             + (3.0 if small else 2.0) * abs(mass) + 1.5 * abs(math.log(squeeze)))
     return {"path": path, "size": size, "by_width": by_width, "score": score, "width": width, "stroke": stroke, "xh": xh,
-            "iou": iou, "mass": mass}
+            "iou": iou, "mass": mass, "squeeze": squeeze}
 
 
 # --- Rebuilding the background ----------------------------------------------------------------------------------------
@@ -509,83 +523,136 @@ def which_words(e: dict, spans: list, i: int) -> tuple[int, int] | None:
 
 
 CACHE_DIR: str | None = None  # where font choices are kept between runs (set by fix_one.py)
+CACHE_VERSION = 2
+MARGIN = 0.35  # how much worse a style's best font in the graphic's main typeface may score and still be chosen
 
 
-def _cached_choice(key: str, compute):
-    """The font choice for a style, from the cache if the same lines were judged before."""
+def family_of(path: str) -> str:
+    """A font's typeface, from its file name: "Roboto-500.woff" and "Roboto-700.woff" are both Roboto."""
+    name = os.path.basename(path).rsplit(".", 1)[0]
+    name = name.split("-")[0]
+    for suffix in ("BoldOblique", "BoldItalic", "Bold", "Oblique", "Italic"):
+        if name.endswith(suffix) and name != suffix:
+            name = name[: -len(suffix)]
+    return name
+
+
+def _ranking(key: str, compute):
+    """The fonts a style's lines were judged against, best first: [(score, path, verdicts)], from the cache if
+    the same lines were judged before."""
     if not CACHE_DIR:
         return compute()
-    path = os.path.join(CACHE_DIR, key[:2], key + ".json")
+    path = os.path.join(CACHE_DIR, f"v{CACHE_VERSION}", key[:2], key + ".json")
     if os.path.exists(path):
         try:
             data = json.load(open(path))
-            verdicts = [{**v, "path": find_font(v["font"])} for v in data["verdicts"]]
-            return find_font(data["font"]), verdicts, [tuple(r) for r in data["runners_up"]]
+            return [(sc, find_font(f), [{**v, "path": find_font(f)} for v in vs]) for sc, f, vs in data]
         except (OSError, ValueError, KeyError, SystemExit):
             pass
-    best_path, verdicts, runners = compute()
+    ranked = compute()
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    # Fonts by file name, so the cache holds wherever the fonts are kept.
-    clean = [{**{k: (float(v) if isinstance(v, (float, np.floating)) else v) for k, v in d.items() if k != "path"},
-              "font": os.path.basename(d["path"])} for d in verdicts]
+    clean = [[float(sc), os.path.basename(p),
+              [{k: (float(v) if isinstance(v, (float, np.floating)) else v) for k, v in d.items() if k != "path"}
+               for d in vs]] for sc, p, vs in ranked]
     with open(path + ".part", "w") as f:
-        json.dump({"font": os.path.basename(best_path), "verdicts": clean, "runners_up": runners}, f)
+        json.dump(clean, f)
     os.replace(path + ".part", path)
-    return best_path, [{**v, "path": find_font(v["font"])} for v in clean], runners
+    return ranked
 
 
-def choose_fonts(edits: list[dict], lines: list, default_family: str | None, image_key: str = "") -> dict[int, dict]:
+def typeface_fonts(name: str) -> tuple[str, ...]:
+    """Every weight of a typeface ("Roboto": Roboto-300 … Roboto-900), upright."""
+    want = name.replace(" ", "").lower()
+    out = tuple(f for f in all_fonts() if family_of(f).lower() == want and not any(x in os.path.basename(f) for x in ITALIC))
+    if not out:
+        raise SystemExit(f"no typeface {name!r}: use a font file's name before the dash, e.g. Roboto, SourceSans3, "
+                         "RobotoCondensed, PlayfairDisplay, Inter, LiberationSans")
+    return out
+
+
+def choose_fonts(edits: list[dict], lines: list, default_family: str | None, image_key: str = "",
+                 default_typeface: str | None = None) -> dict[int, dict]:
     """The font, size and softness for each edit: one font per style (judged on all of its lines, the correctly
-    spelled reference lines counting most), else one per line."""
+    spelled reference lines counting most), else one per line. A graphic mostly uses one typeface: a style takes
+    the weight of it that fits best unless another typeface fits it clearly better."""
     groups: dict[str, list[int]] = {}
     for i, e in enumerate(edits):
         if lines[i] is not None:
             groups.setdefault(e.get("style") or f"#{i}", []).append(i)
-    chosen: dict[int, dict] = {}
-    for _, idx in groups.items():
-        first = edits[idx[0]]
-        fam = first.get("family") or default_family or "sans+condensed"
+    rankings: dict[str, list] = {}
+    info: dict[str, tuple] = {}
+    for name, idx in groups.items():
+        # A font named on any line of the style is the style's font.
+        forced = next((edits[i]["font"] for i in idx if edits[i].get("font")), None)
+        fam = next((edits[i]["family"] for i in idx if edits[i].get("family")), None) or default_family or "sans+condensed"
+        face = next((edits[i]["typeface"] for i in idx if edits[i].get("typeface")), None) or default_typeface
         texts = [edits[i].get("was") or "" for i in idx] + [edits[i].get("text") or "" for i in idx]
         weights = [3.0 if edits[i].get("ref") else 1.0 for i in idx]
+        squeezable = not any("squeeze" in edits[i] for i in idx)
 
-        def compute():
-            if "font" in first:
-                paths = [find_font(first["font"])]
-            else:
-                paths = family(fam)
+        def compute(idx=idx, forced=forced, fam=fam, face=face, texts=texts, weights=weights, squeezable=squeezable):
+            paths = [find_font(forced)] if forced else typeface_fonts(face) if face else family(fam)
             paths = [p for p in paths if covers(p, *texts)] or paths
             if len(paths) > SHORTLIST:
                 rough = sorted(paths, key=lambda p: sum(quick(p, edits[i].get("was") or edits[i]["text"],
                                                               lines[i]["prof"], lines[i]["letters"]) for i in idx))
                 paths = rough[:SHORTLIST]
-            totals = []
+            ranked = []
             for path in paths:
                 verdicts = [judge(path, edits[i].get("was") or edits[i]["text"], lines[i]["prof"], lines[i]["letters"],
-                                  lines[i]["words"]) for i in idx]
+                                  lines[i]["words"], squeezable) for i in idx]
                 score = sum(w * v["score"] for w, v in zip(weights, verdicts)) / sum(weights)
-                totals.append((score, path, verdicts))
-            totals.sort(key=lambda t: t[0])
-            return totals[0][1], totals[0][2], [(os.path.basename(p), round(sc, 3)) for sc, p, _ in totals[1:4]]
+                ranked.append((score, path, verdicts))
+            ranked.sort(key=lambda t: t[0])
+            return ranked
 
-        # The same lines judged against the same fonts give the same answer: kept, so a rerun that only changes
-        # what the lines should say, or where it sits, is quick.
-        key_data = [image_key, fam, first.get("font"), SHORTLIST, len(all_fonts()), sorted(set("".join(texts))),
+        key_data = [CACHE_VERSION, image_key, fam, face, forced, squeezable, SHORTLIST, len(all_fonts()),
+                    sorted(set("".join(texts))),
                     [[edits[i]["box"], edits[i].get("was"), bool(edits[i].get("ref")), edits[i].get("pad", 3),
                       edits[i].get("threshold", 60), edits[i].get("color")] for i in idx]]
         key = hashlib.sha1(json.dumps(key_data, sort_keys=True).encode()).hexdigest()
-        path, verdicts, runners = _cached_choice(key, compute) if image_key else compute()
+        rankings[name] = _ranking(key, compute) if image_key else compute()
+        info[name] = (idx, forced or face, weights)
+    # The graphic's main typeface: the one that fits its styles best, all told.
+    free = [n for n in groups if not info[n][1] and rankings[n]]
+    main_family = None
+    if len(free) > 1:
+        cost: dict[str, float] = {}
+        families = {family_of(p) for n in free for _, p, _ in rankings[n]}
+        for f in families:
+            total = 0.0
+            for n in free:
+                ranked = rankings[n]
+                mine = [sc for sc, p, _ in ranked if family_of(p) == f]
+                total += sum(info[n][2]) * (min(mine) if mine else ranked[-1][0] + 0.5)
+            cost[f] = total
+        main_family = min(cost, key=cost.get)
+    chosen: dict[int, dict] = {}
+    for name, idx in groups.items():
+        ranked = rankings[name]
+        _, _, weights = info[name]
+        pick = ranked[0]
+        if main_family and not info[name][1]:
+            mine = [r for r in ranked if family_of(r[1]) == main_family]
+            if mine and mine[0][0] <= ranked[0][0] + MARGIN:
+                pick = mine[0]
+        _, path, verdicts = pick
+        runners = [(os.path.basename(p), round(sc, 3)) for sc, p, _ in ranked if p != path][:3]
         # Each line's size: from its width (precise, if its letters were read right) and its letters' height.
         own = {}
         for i, v in zip(idx, verdicts):
             n = len((edits[i].get("was") or edits[i]["text"]).replace(" ", ""))
             trust = 0.75 if n >= 10 else 0.5 if n >= 5 else 0.25
-            own[i] = quarter(math.exp(trust * math.log(v["by_width"]) + (1 - trust) * math.log(v["size"])))
+            by_width = v["by_width"] if v.get("squeeze", 1.0) == 1.0 else v["size"]
+            own[i] = quarter(math.exp(trust * math.log(by_width) + (1 - trust) * math.log(v["size"])))
         # Lines of one style are one size: the size their correctly spelled lines show, else most of them. A word
         # changed within a line keeps that line's own size, which its other words show.
         sizes = list(own.values())
         refs = [own[i] for i in idx if edits[i].get("ref")]
         common = quarter(float(np.median(refs or sizes)))
         alike = max(sizes) <= min(sizes) * 1.25
+        squeezes = [v.get("squeeze", 1.0) for v in verdicts]
+        squeeze = float(np.median(squeezes))
         # How soft the letters are: the least blur that makes the font's rendering of the line about as soft (a
         # little blur at most: more makes small letters look heavier, not softer).
         for i, v in zip(idx, verdicts):
@@ -598,16 +665,18 @@ def choose_fonts(edits: list[dict], lines: list, default_family: str | None, ima
                 blur = sigma
                 if softness(draw_mask(sample, path, size, blur=sigma)[0]) >= target * 0.8:
                     break
-            chosen[i] = {**v, "path": path, "size": size, "blur": blur, "runners_up": runners}
+            chosen[i] = {**v, "path": path, "size": size, "blur": blur, "squeeze": squeeze, "runners_up": runners,
+                         "main_family": main_family}
     return chosen
 
 
-def apply(image: Image.Image, edits: list[dict], default_family: str | None = None, log: list | None = None) -> Image.Image:
+def apply(image: Image.Image, edits: list[dict], default_family: str | None = None, log: list | None = None,
+          typeface: str | None = None) -> Image.Image:
     img = np.array(image.convert("RGB"))
     out = img.copy()
     lines = [read_line(img, e) for e in edits]
     image_key = hashlib.sha1(img.tobytes()).hexdigest() if CACHE_DIR else ""
-    chosen = choose_fonts(edits, lines, default_family, image_key)
+    chosen = choose_fonts(edits, lines, default_family, image_key, typeface)
     # First every old line goes (and the words after a changed one move), then every new line is drawn: drawn
     # first, a line's descenders would be wiped out with the letters of the line below it.
     drawings = []
@@ -622,6 +691,7 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
         X0, Y0, X1, Y1, prof = L["X0"], L["Y0"], L["X1"], L["Y1"], L["prof"]
         c = chosen[i]
         path, size, blur = c["path"], e.get("size", c["size"]), e.get("blur", c["blur"])
+        base = float(e.get("squeeze", c.get("squeeze", 1.0)))
         color = L["color"]
         spans = L["words"]
         words = which_words(e, spans, i)
@@ -643,7 +713,7 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
         cover, p, width, left = None, None, 0, X0 + old_left
         align = e.get("align", "left")
         if text:
-            cover = match_tone(draw_mask(text, path, size, blur=blur)[0], L["letters"])
+            cover = match_tone(draw_mask(text, path, size, squeeze=base, blur=blur)[0], L["letters"])
             p = profile(cover >= 0.5) or profile(cover >= 0.3)
             width = p["right"] - p["left"]
             # Room to grow: into the plain background beside the line, short of any border or box edge (on both
@@ -659,11 +729,12 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
                 grow = max(0, right_free)
             grow = min(grow, max(20, 0.15 * (prof["right"] - prof["left"])))
             room = e.get("room", (old_right - old_left) + grow)
-            squeeze = 1.0
+            squeeze = base
             if width > room:
-                squeeze = max(0.9, room / width)
-                if width * squeeze > room:
-                    size = quarter(size * room / (width * squeeze) - 0.125)
+                fit = max(0.9, room / width)
+                if width * fit > room:
+                    size = quarter(size * room / (width * fit) - 0.125)
+                squeeze = base * fit
                 cover = match_tone(draw_mask(text, path, size, squeeze=squeeze, blur=blur)[0], L["letters"])
                 p = profile(cover >= 0.5) or profile(cover >= 0.3)
                 width = p["right"] - p["left"]
@@ -691,12 +762,19 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
             w = min(c1 - c0, out.shape[1] - d0)
             dst = out[Y0 + r0:Y0 + r1, d0:d0 + w]
             dst[keep[:, :w]] = src[:, :w][keep[:, :w]]
+        drawn = [X0 + old_left, Y0 + prof["top"], X0 + max(old_right, prof["right"] + max(0, shift)), Y0 + prof["bottom"]]
         if text:
             baseline = Y0 + prof["baseline"] + e.get("dy", 0)
-            drawings.append((cover, round(left - p["left"]), round(baseline - p["baseline"]), color))
+            dl, dt = round(left - p["left"]), round(baseline - p["baseline"])
+            drawings.append((cover, dl, dt, color))
+            ys, xs = np.nonzero(cover > 0.1)
+            if len(xs):
+                drawn = [min(drawn[0], dl + int(xs.min())), min(drawn[1], dt + int(ys.min())),
+                         max(drawn[2], dl + int(xs.max()) + 1), max(drawn[3], dt + int(ys.max()) + 1)]
         if log is not None:
             log.append({"edit": i, "text": text, "words": words, "of": len(spans), "font": os.path.basename(path),
-                        "size": size, "planned": c["size"], "blur": blur, "score": round(c["score"], 3), "width": round(c.get("width", 0), 3),
+                        "size": size, "planned": c["size"], "start_size": e.get("size", c["size"]), "blur": blur,
+                        "squeeze": base, "main_family": c.get("main_family"), "drawn": [int(v) for v in drawn], "score": round(c["score"], 3), "width": round(c.get("width", 0), 3),
                         "stroke": round(c.get("stroke", 0), 3), "iou": round(c.get("iou", 0), 3),
                         "mass": round(c.get("mass", 0), 3), "runners_up": c["runners_up"], "color": hexcolor(color),
                         "bg": hexcolor(L["bg"]), "spread": round(L["spread"], 1), "shift": shift})

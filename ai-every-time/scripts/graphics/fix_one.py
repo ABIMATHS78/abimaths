@@ -22,8 +22,8 @@ from PIL import Image  # noqa: E402
 
 from paths import WORK  # noqa: E402
 ft.CACHE_DIR = os.path.join(WORK, "cache")
-KEYS = {"box", "was", "text", "replace", "words", "align", "style", "family", "ref", "font", "size", "pad", "threshold",
-        "room", "dy", "color", "blur", "note"}
+KEYS = {"box", "was", "text", "replace", "words", "align", "style", "family", "typeface", "ref", "font", "size", "pad",
+        "threshold", "room", "dy", "color", "blur", "squeeze", "note"}
 FAMILIES = set(ft.FAMILY_PREFIXES)
 
 
@@ -31,7 +31,7 @@ def check(spec: dict) -> list[str]:
     problems = []
     if not isinstance(spec, dict) or not isinstance(spec.get("edits"), list):
         return ['the file must be {"edits": [...]} (with "family" and "skipped" if wanted)']
-    unknown = set(spec) - {"edits", "family", "skipped", "notes"}
+    unknown = set(spec) - {"edits", "family", "typeface", "skipped", "notes"}
     if unknown:
         problems.append(f"unknown keys at the top: {sorted(unknown)}")
     fam = spec.get("family")
@@ -68,6 +68,14 @@ def check(spec: dict) -> list[str]:
         if e.get("ref") and "text" in e:
             problems.append(f"{where}: a 'ref' line isn't changed, so it has no 'text'")
     return problems
+
+
+def spec_hash(spec: dict) -> str:
+    """What the corrected graphic depends on in the spec: its edits and family (not notes or what was skipped)."""
+    import hashlib
+    parts = [spec.get("family"), spec["edits"]] if not spec.get("typeface") else \
+        [spec.get("family"), spec["typeface"], spec["edits"]]
+    return hashlib.sha1(json.dumps(parts, sort_keys=True).encode()).hexdigest()
 
 
 def groups(boxes: list[list[int]]) -> list[list[int]]:
@@ -158,7 +166,7 @@ def main(gid: str) -> None:
         return
     log: list = []
     try:
-        img = ft.apply(Image.open(src), edits, spec.get("family"), log)
+        img = ft.apply(Image.open(src), edits, spec.get("family"), log, spec.get("typeface"))
     except SystemExit as ex:
         raise SystemExit(f"Couldn't apply the corrections: {ex}\n(For 'replace'/'words', 'was' must have as many "
                          "words as the picture shows; the numbers in brackets are where the tool found words.)")
@@ -166,7 +174,17 @@ def main(gid: str) -> None:
         traceback.print_exc()
         raise SystemExit("The tool failed on this spec (see above).")
     img.save(dst)
+    # What was done, with each correction's font, size and softness: kept so a finished graphic can be made again
+    # exactly, whatever later changes to how fonts are chosen.
+    view = os.path.join(WORK, "view", gid)
+    os.makedirs(view, exist_ok=True)
+    with open(os.path.join(view, "log.json"), "w", encoding="utf-8") as f:
+        json.dump({"spec": spec_hash(spec), "edits": log}, f, ensure_ascii=False, indent=1)
     print(f"Corrected graphic: {dst}")
+    mains = {entry.get("main_family") for entry in log if entry.get("main_family")}
+    if mains:
+        print(f"Main typeface (the one most styles fit): {', '.join(sorted(mains))}. If the new words' letters look "
+              "wrong, try another for the whole graphic, e.g. \"typeface\": \"Roboto\" at the top of the spec.")
     for entry in log:
         i = entry["edit"]
         e = edits[i]
@@ -182,8 +200,18 @@ def main(gid: str) -> None:
             notes.append("no close font: check it looks like its neighbours")
         if entry["shift"]:
             notes.append(f"the rest of the line moved {entry['shift']:+d} px")
-        print(f"  edit {i}: {what}{part}  [{entry['font']} {entry['size']}]" + ("  NOTE: " + "; ".join(notes) if notes else ""))
-    sheet_paths, pair_paths = pairs(gid, [e["box"] for e in edits if not e.get("ref")])
+        squeezed = f" x{entry['squeeze']:.2f} wide" if abs(entry.get("squeeze", 1.0) - 1) > 0.005 else ""
+        print(f"  edit {i}: {what}{part}  [{entry['font']} {entry['size']}{squeezed}]"
+              + ("  NOTE: " + "; ".join(notes) if notes else ""))
+    # Each changed area: the old line's box, and everything the new text and the words moved after it cover.
+    areas = []
+    for entry in log:
+        box = list(edits[entry["edit"]]["box"])
+        d = entry.get("drawn")
+        if d:
+            box = [min(box[0], d[0]), min(box[1], d[1]), max(box[2], d[2]), max(box[3], d[3])]
+        areas.append(box)
+    sheet_paths, pair_paths = pairs(gid, areas)
     print("To check: every changed area, original above corrected (red line between), on "
           + " and ".join(sheet_paths))
     print(f"The same areas one by one, larger, in {os.path.join(WORK, 'view', gid)}/:")

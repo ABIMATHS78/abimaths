@@ -71,11 +71,20 @@ One edit per line of text (box). Keys:
 - `style`: give lines that look alike (font, size, colour) the same name. Add one to three **correctly spelled**
   lines of that style as references (`"ref": true`, no `text`): the font match is much better with them.
 - `family`: `sans` (default with `condensed`), `condensed` (tall narrow), `serif`, `mono` (code), or joined with `+`.
-  At the top for the whole graphic, or on the first edit of a style.
+  At the top for the whole graphic, or on any edit of a style.
+- The tool picks one main typeface for the graphic (it prints it) and the right weight of it for each style. If the
+  new letters' shapes look wrong, name another for the whole graphic at the top: `"typeface": "Roboto"` (or
+  `Inter`, `OpenSans`, `Montserrat`, `Poppins`, `Lato`, `SourceSans3`, `RobotoCondensed`, `Oswald`,
+  `PlayfairDisplay`, `Merriweather`, ...: a font file's name before the dash). Also per style, on any of its edits.
+  It draws a font narrower or wider (`squeeze`) to match a condensed or wide original; set `"squeeze": 0.9` on an
+  edit to choose yourself.
 - `room`: the widest the new text may be, in pixels (lower it if new text would hit an icon or border).
 - `pad` (default 3): use 1 for tightly stacked lines. Rarely: `font`, `size`, `dy` (pixels down; negative is up).
 
 If `fix_one.py` reports a word-count mismatch, count the spaces in the picture again (`crop.py`): "Bolt.new",
-"full-stack" and "2.x" are one word each. If new text looks too bold, too light or the wrong shape, add references
+"full-stack" and "2.x" are one word each. A `replace` keeps the words before it in place and moves those after it:
+in a centred line where the new words are much longer or shorter, redraw the whole line with `"align": "center"`.
+The tool erases whatever touches the old letters: if a letter touches an outline or icon, start the box after that
+letter (redraw the rest of the word) so the outline stays whole. Changing only `"skipped"` or notes needs no rerun. If new text looks too bold, too light or the wrong shape, add references
 or change `family`. A leftover mark beside new text: widen the box on that side. Finished examples:
 `$W/work/spec/19560003.json`, `23160009.json`, `20070002.json`.

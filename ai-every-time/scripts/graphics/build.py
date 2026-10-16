@@ -31,7 +31,7 @@ def build(gid: str) -> str:
     spec = json.load(open(spec_path, encoding="utf-8"))
     img = Image.open(src)
     if [e for e in spec["edits"] if not e.get("ref")]:
-        img = ft.apply(img, spec["edits"], spec.get("family"))
+        img = ft.apply(img, spec["edits"], spec.get("family"), None, spec.get("typeface"))
     img.convert("RGB").save(dest + ".part", "WEBP", quality=QUALITY, method=6)
     os.replace(dest + ".part", dest)
     return "made"
