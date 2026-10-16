@@ -242,6 +242,7 @@ static/                 Single-page web app (no build step), service worker (sw.
 scripts/import_guides.py Turns an export of aieverytime.org's articles into app/guides.json.gz (see The guides);
                         scripts/guide_edits.json holds the editorial changes it applies
 scripts/graphics/       Correcting the spelling in the guides' graphics, and the corrections (see its README)
+scripts/screenshots/    Screenshots of the app as a learner sees it, and slides for social media (see its README)
 scripts/make_icons.py   Makes the logo image and the app icons from the logo (scripts/logo.webp); run it if the logo changes
 Dockerfile              The image for deploying it (see Deploy it)
 ```
