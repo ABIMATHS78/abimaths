@@ -1,0 +1,776 @@
+{
+  "slug": "incident-response",
+  "title": "Incident Response Fundamentals",
+  "subtitle": "Prepare for, investigate, contain and learn from security incidents, using the Linux command line to build timelines and preserve evidence you can prove is unchanged.",
+  "category": "Cybersecurity",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "carlos-ramirez",
+    "catalina-ionescu"
+  ],
+  "skills": [
+    "Incident response lifecycle",
+    "Incident triage and severity",
+    "Log analysis",
+    "Timeline building",
+    "Evidence preservation",
+    "Hashing with SHA-256",
+    "Chain of custody",
+    "Containment and recovery",
+    "Incident communication",
+    "Playbooks and lessons learned"
+  ],
+  "tools": [
+    "Linux command line",
+    "sha256sum",
+    "grep, sort and awk"
+  ],
+  "outcomes": [
+    "Explain the incident response lifecycle and prepare a team, a plan and a response kit for it",
+    "Classify and prioritise incidents by their impact on the business",
+    "Build a UTC timeline of an incident from several logs with grep, sort and date",
+    "Preserve evidence and prove it's unchanged with SHA-256 hashes and a chain of custody",
+    "Plan containment, eradication and recovery, and communicate clearly while an incident runs",
+    "Run a lessons-learned review and turn it into a playbook"
+  ],
+  "prerequisites": "Comfort with the Linux command line: cd, ls, less, pipes and running a script. A Linux environment of your own: a Linux computer, a virtual machine such as Ubuntu in VirtualBox, or WSL on Windows. macOS's own date and sha256 tools differ, so use a Linux virtual machine there. No security background is assumed beyond the basics of accounts, logs and networks.",
+  "description": "Every organisation has security incidents; what differs is how well they respond. This course teaches the work of incident response from preparation to lessons learned, following the lifecycle in NIST's incident handling guide: preparation; detection and analysis; containment, eradication and recovery; and post-incident activity.\n\nYou'll practise on one realistic case that runs through the course: a web server where an account was taken over overnight. You'll prepare a response kit with a script that collects a system's live state and hashes it, build a minute-by-minute UTC timeline from authentication and web server logs written in different time zones, preserve the evidence and prove with sha256sum that a returned copy was altered, then plan the containment, eradication, recovery and communications, and finish with a lessons-learned report and a playbook. The capstone is a fresh case, investigated end to end. Everything runs on your own Linux machine against sample data that comes with the course.",
+  "modules": [
+    {
+      "title": "The incident response lifecycle and preparation",
+      "summary": "What counts as an incident, the four phases of responding to one, and the preparation that decides how well the first hour goes: plans, roles, tools and a way to judge severity.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "Incidents and the response lifecycle",
+          "minutes": 10,
+          "objectives": [
+            "Distinguish an event from an incident",
+            "Describe the four phases of the incident response lifecycle"
+          ],
+          "key_points": [
+            "An event is anything observable on a system or network, such as a login or a blocked connection; an incident is an event, or a series of them, that harms or threatens systems or data, or breaks security policy.",
+            "NIST's incident handling guide, SP 800-61 Revision 2, describes four phases: preparation; detection and analysis; containment, eradication and recovery; and post-incident activity.",
+            "The phases loop rather than running once: analysis often finds more to contain, and the lessons from each incident feed back into preparation.",
+            "Revision 3 of SP 800-61, published in 2025, maps the same work onto the six functions of the NIST Cybersecurity Framework 2.0; many teams also use SANS's six steps: preparation, identification, containment, eradication, recovery and lessons learned.",
+            "Throughout, the aims are to limit harm, restore normal service and learn, while keeping the evidence needed to understand what happened."
+          ]
+        },
+        {
+          "title": "Preparation: plans, roles and tools",
+          "minutes": 12,
+          "objectives": [
+            "List what an incident response plan must cover",
+            "Assemble a response kit"
+          ],
+          "key_points": [
+            "An incident response plan says who does what: who leads, who makes business decisions, who handles the technical work, communications and legal questions, and how to reach each of them.",
+            "Preparation includes the evidence you'll need later: logging turned on, kept long enough and copied somewhere an intruder can't easily erase it, with clocks synchronised by NTP so timestamps line up.",
+            "A response kit, sometimes called a jump bag, holds what responders need ready: contact lists, network diagrams, trusted tools, collection scripts, clean storage and forms for notes and chain of custody.",
+            "Plan a way to talk that doesn't depend on systems that may be compromised, such as phone numbers kept offline or a separate messaging service.",
+            "Playbooks give step-by-step responses to common incidents, such as a compromised account or ransomware, and tabletop exercises, which walk a team through a scenario, find the gaps before a real incident does."
+          ]
+        },
+        {
+          "title": "Classifying and prioritising incidents",
+          "minutes": 10,
+          "objectives": [
+            "Prioritise incidents by business impact",
+            "Write a severity scale a team can apply consistently"
+          ],
+          "key_points": [
+            "Incidents are handled in order of business impact, not in the order the alerts arrived.",
+            "NIST SP 800-61 Revision 2 suggests three factors: functional impact (how much the business is affected), information impact (whether data was exposed or changed) and recoverability (how much effort recovery will take).",
+            "A severity scale, such as 1 (critical) to 4 (low), with an example for each level, lets anyone on the team classify consistently and know who must be called, and how quickly.",
+            "Severity changes as analysis goes on: raise it when the scope grows or sensitive data turns out to be involved, and record why.",
+            "Some incidents bring legal duties, such as the GDPR's requirement to report a personal data breach that puts people at risk to the supervisory authority within 72 hours of becoming aware of it, so involve legal advisers early."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build your incident response kit",
+        "tool": "Linux terminal",
+        "minutes": 40,
+        "goal": "Finish a script that records a Linux system's live state in order of volatility and hashes everything it collects, run it on your own machine, prove the hashes catch a change, and write your team's contact list and severity scale.",
+        "setup": [
+          "Your own Linux environment: a Linux computer, a virtual machine or WSL",
+          "The starter files collect.sh and contacts-and-severity.md, in a folder such as ~/ir-kit"
+        ],
+        "steps": [
+          {
+            "do": "Go to the kit folder and make the script executable.",
+            "code": "cd ~/ir-kit\nchmod +x collect.sh",
+            "lang": "bash"
+          },
+          {
+            "do": "Read collect.sh. It writes each command's output to a file in a new folder named after the case, the host and the UTC time, starting with the things that change fastest: network connections and processes."
+          },
+          {
+            "do": "Do the two TODOs: save the listening TCP ports with ss -tlnp in listening-ports.txt, and every systemd timer with systemctl list-timers --all in timers.txt, in the same style as the lines above them."
+          },
+          {
+            "do": "Run the script with a practice case ID. It runs without sudo too, but then ss can't show the processes behind other users' connections.",
+            "code": "sudo ./collect.sh PRACTICE-001",
+            "lang": "bash",
+            "see": "Hashed 10 files into evidence-PRACTICE-001-<your host>-<UTC time>"
+          },
+          {
+            "do": "Verify the collection against its manifest.",
+            "code": "cd evidence-PRACTICE-001-*\nsha256sum -c SHA256SUMS",
+            "lang": "bash",
+            "see": "Ten lines ending in : OK, one for each file."
+          },
+          {
+            "do": "Change one file on purpose and verify again.",
+            "code": "echo tampered | sudo tee -a uptime.txt > /dev/null\nsha256sum -c SHA256SUMS",
+            "lang": "bash",
+            "see": "uptime.txt: FAILED, and sha256sum: WARNING: 1 computed checksum did NOT match"
+          },
+          {
+            "do": "Fill in contacts-and-severity.md: the roles, how to reach people if email and chat are down, and a four-level severity scale with an example and a response time for each level."
+          }
+        ],
+        "checks": [
+          {
+            "text": "collect.sh has the two new collectors and hashes all ten files it collects.",
+            "look_for": [
+              "ss -tlnp",
+              "list-timers",
+              "Hashed 10 files"
+            ]
+          },
+          {
+            "text": "Every collected file verifies against the manifest.",
+            "look_for": [
+              ": OK"
+            ]
+          },
+          {
+            "text": "The changed file is caught by sha256sum -c.",
+            "look_for": [
+              "uptime.txt: FAILED",
+              "did NOT match"
+            ]
+          },
+          {
+            "text": "The contact list has a way to reach people without the organisation's own systems, and each severity level has an example and a response time.",
+            "look_for": [
+              "Severity 1"
+            ]
+          }
+        ],
+        "submit": "Paste your finished collect.sh, the Hashed line it printed, both sha256sum -c outputs, and your completed contacts-and-severity.md (real names and numbers aren't needed: use roles).",
+        "files": [
+          {
+            "path": "collect.sh",
+            "content": "#!/usr/bin/env bash\n# collect.sh: record a Linux system's live state for an investigation, then hash what was collected.\n# Usage: sudo ./collect.sh CASE_ID      (sudo lets ss show the processes behind every connection)\n# Collect the most volatile things first: they change or vanish soonest.\nset -u\ncase_id=\"${1:?usage: collect.sh CASE_ID}\"\nout=\"evidence-${case_id}-$(hostname)-$(date -u +%Y%m%dT%H%M%SZ)\"\nmkdir -p \"$out\"\n\ndate -u +%Y-%m-%dT%H:%M:%SZ > \"$out/collected-at-utc.txt\"\nss -tunap        > \"$out/network-connections.txt\" 2>&1\nps auxww         > \"$out/processes.txt\" 2>&1\nwho -a           > \"$out/logged-in-users.txt\" 2>&1\nip addr          > \"$out/ip-addr.txt\" 2>&1\nip route         > \"$out/ip-route.txt\" 2>&1\nuptime           > \"$out/uptime.txt\" 2>&1\nlast -n 20       > \"$out/recent-logins.txt\" 2>&1\n# TODO 1: record the listening TCP ports and their processes (ss -tlnp) in listening-ports.txt\n# TODO 2: record every systemd timer (systemctl list-timers --all) in timers.txt\n\ncd \"$out\" || exit 1\nsha256sum -- *.txt > SHA256SUMS\necho \"Hashed $(wc -l < SHA256SUMS) files into $out\"\n"
+          },
+          {
+            "path": "contacts-and-severity.md",
+            "content": "# Incident response: contacts and severity\n\n## Who to call (keep a copy offline: printed, or on a phone)\n| Role | Name | Phone | Other way to reach them |\n|---|---|---|---|\n| Incident lead |  |  |  |\n| Deputy lead |  |  |  |\n| Business decision-maker |  |  |  |\n| Technical lead |  |  |  |\n| Communications |  |  |  |\n| Legal / data protection |  |  |  |\n| Hosting or cloud provider support |  |  |  |\n\nHow the team talks if email and chat may be compromised:\n\n## Severity scale\nFor each level: what it means, an example, who is called and how fast.\n- Severity 1 (critical):\n- Severity 2 (high):\n- Severity 3 (medium):\n- Severity 4 (low):\n\n## Practice collection\nThe Hashed ... line from collect.sh:\nThe output of sha256sum -c SHA256SUMS, before and after the change:\n"
+          }
+        ],
+        "hints": [
+          "On WSL, systemctl works only if systemd is turned on for your distribution; if it isn't, timers.txt records the error, which is fine for this practice.",
+          "If the Hashed line says 8 files, the new lines are missing or write to names that don't end in .txt."
+        ]
+      }
+    },
+    {
+      "title": "Detection and analysis: building a timeline",
+      "summary": "Confirm an incident and find out what happened, in order: validating the first report, lining up events from several logs in UTC, and following indicators to find the full scope.",
+      "instructor": "catalina-ionescu",
+      "lessons": [
+        {
+          "title": "From first report to confirmed incident",
+          "minutes": 10,
+          "objectives": [
+            "Validate a report before acting on it",
+            "Keep an investigation log as you work"
+          ],
+          "key_points": [
+            "Incidents are reported by alerts, by users who notice something odd, and by outsiders such as customers or service providers; each report is first checked to confirm something really happened.",
+            "Start an investigation log at once: what you did, when (in UTC), what you found and where you kept it, so the work can be handed over and explained later.",
+            "Analysis answers who, what, when, where and how: which accounts and systems are involved, what was done, when it started and how the intruder got in.",
+            "Work on copies of logs, not the originals, and record the commands you run, so your conclusions can be checked and repeated.",
+            "Raise the incident's severity as soon as the evidence supports it, rather than waiting for certainty."
+          ]
+        },
+        {
+          "title": "Building a timeline from logs",
+          "minutes": 12,
+          "objectives": [
+            "Convert timestamps from different logs to UTC",
+            "Merge and sort events from several logs into one timeline"
+          ],
+          "key_points": [
+            "A timeline puts every relevant event, from every source, in one order, which shows cause and effect: the failed logins, then the success, then what that account did next.",
+            "Logs record time in different ways: Ubuntu 24.04's auth.log uses RFC 3339 times such as 2026-09-14T02:07:02.118204+00:00, while web servers often write local time with an offset, such as [14/Sep/2026:04:12:40 +0200].",
+            "Convert everything to UTC before comparing: 04:12:40 at +0200 is 02:12:40 UTC, and GNU date does the arithmetic with date -u -d.",
+            "Times written as YYYY-MM-DDTHH:MM:SS sort correctly as plain text, so sort can merge lines from several logs once their times share that form.",
+            "Check for clock differences between systems: if one server's clock is a few minutes out, its events need adjusting before they're compared."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Line up events from two logs",
+            "steps": [
+              {
+                "do": "Pull out every line about the suspicious address or account from the authentication log.",
+                "code": "grep -E '203\\.0\\.113\\.77|sysupdate' auth.log | less",
+                "lang": "bash"
+              },
+              {
+                "do": "Convert one web server time to UTC by hand to see how date works.",
+                "code": "date -u -d \"14 Sep 2026 04:12:40 +0200\" +%Y-%m-%dT%H:%M:%SZ",
+                "lang": "bash",
+                "see": "2026-09-14T02:12:40Z"
+              },
+              {
+                "do": "Convert an epoch time, the way shells record history timestamps, to UTC.",
+                "code": "date -u -d @1790980865 +%Y-%m-%dT%H:%M:%SZ",
+                "lang": "bash",
+                "see": "2026-10-02T22:41:05Z"
+              },
+              {
+                "do": "Merge lines from two sources, once both start with UTC times, and sort them into one timeline.",
+                "code": "{ grep -h 'pattern' auth.log; ./to_utc.sh access.log | grep 'pattern'; } | sort > timeline.txt",
+                "lang": "bash"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Scoping: indicators and pivoting",
+          "minutes": 10,
+          "objectives": [
+            "Use indicators of compromise to find the full scope of an incident",
+            "Decide what to look for next"
+          ],
+          "key_points": [
+            "An indicator of compromise (IoC) is a clue that something malicious happened: an IP address, an account name, a file name or hash, a domain or an unusual command.",
+            "Pivoting means searching every source for each indicator you find: an address seen in the SSH log may also appear in the web or firewall logs, and each match may reveal new indicators.",
+            "Scope is the set of affected accounts, systems and data; finding all of it before containing prevents an intruder keeping a foothold you missed.",
+            "Indicators an intruder chose, such as an IP address, change easily; what they did, such as creating an account or copying data somewhere it can be downloaded, is often more useful to search for.",
+            "Record every indicator, where it was seen and when, in the investigation log; the list drives containment and later detections."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build an incident timeline from sample logs",
+        "tool": "Linux terminal",
+        "minutes": 50,
+        "goal": "Early on 14 September 2026, someone logged in to the web server web01 as the deploy account. Using its authentication log (in UTC) and its web access log (in local time, +0200), build a single UTC timeline of what happened and answer the investigation's first questions.",
+        "setup": [
+          "Your Linux environment",
+          "The starter files auth.log, access.log, to_utc.sh and timeline.md, in one folder"
+        ],
+        "steps": [
+          {
+            "do": "Look at both logs and note how each writes its timestamps.",
+            "code": "head -n 3 auth.log\nhead -n 3 access.log",
+            "lang": "bash"
+          },
+          {
+            "do": "Count the failed logins for deploy from 203.0.113.77, and find the first one.",
+            "code": "grep -c 'Failed password for deploy from 203.0.113.77' auth.log\ngrep -m1 'Failed password' auth.log",
+            "lang": "bash",
+            "see": "12, and a first failure at 2026-09-14T01:58:10."
+          },
+          {
+            "do": "Find the successful login and everything the deploy account did with sudo.",
+            "code": "grep 'Accepted' auth.log\ngrep -E 'sudo: +deploy' auth.log",
+            "lang": "bash"
+          },
+          {
+            "do": "Find the account changes: lines from useradd and usermod.",
+            "code": "grep -E 'useradd|usermod' auth.log",
+            "lang": "bash"
+          },
+          {
+            "do": "Convert the web log's times to UTC and pick out the lines from 203.0.113.77.",
+            "code": "chmod +x to_utc.sh\n./to_utc.sh access.log | grep -F 203.0.113.77",
+            "lang": "bash",
+            "see": "Two requests for /static/db-2026-09-13.sql.gz: at 2026-09-14T02:12:40Z (status 200, 48213977 bytes) and at 02:21:05Z (status 404)."
+          },
+          {
+            "do": "Merge the matching lines from both logs into one sorted timeline.",
+            "code": "{ grep -hE '203\\.0\\.113\\.77|sysupdate|sudo: +deploy' auth.log; ./to_utc.sh access.log | grep -F 203.0.113.77; } | sort > timeline.txt\nwc -l timeline.txt\nless timeline.txt",
+            "lang": "bash",
+            "see": "26 timeline.txt: the first line at 2026-09-14T01:58:10, and the last at 2026-09-14T07:41:09, when the administrator maria checked for sysupdate."
+          },
+          {
+            "do": "Fill in timeline.md: one row per significant event, in UTC, with its source and why it matters, then answer the seven questions."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The attack on the deploy account is timed correctly: 12 failures from 01:58:10, then a password login at 02:07:02 UTC.",
+            "look_for": [
+              "01:58:10",
+              "02:07:02",
+              "12"
+            ]
+          },
+          {
+            "text": "The account changes are found and timed: sysupdate created at 02:09:15 and added to the sudo group at 02:10:33.",
+            "look_for": [
+              "sysupdate",
+              "02:09:15",
+              "02:10:33"
+            ]
+          },
+          {
+            "text": "The web download is converted to UTC and linked to the session: the backup copied to the web folder at 02:11:48 and downloaded at 02:12:40 UTC, from the same address.",
+            "look_for": [
+              "02:11:48",
+              "02:12:40"
+            ]
+          },
+          {
+            "text": "The end of the session is found, and the later 404 is explained: the file had been deleted at 02:14:58.",
+            "look_for": [
+              "02:15:51",
+              "02:14:58"
+            ]
+          },
+          {
+            "text": "Next steps follow from the evidence, such as checking the sysupdate account, the deploy password and other servers for the same address.",
+            "look_for": [
+              "203.0.113.77"
+            ]
+          }
+        ],
+        "submit": "Paste your timeline.txt and your completed timeline.md with its answers.",
+        "files": [
+          {
+            "path": "auth.log",
+            "content": "2026-09-13T23:17:01.000312+00:00 web01 CRON[1102]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-13T23:17:01.004418+00:00 web01 CRON[1102]: pam_unix(cron:session): session closed for user root\n2026-09-14T00:17:01.000944+00:00 web01 CRON[1388]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T00:17:01.005127+00:00 web01 CRON[1388]: pam_unix(cron:session): session closed for user root\n2026-09-14T01:17:01.001833+00:00 web01 CRON[1720]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T01:17:01.006021+00:00 web01 CRON[1720]: pam_unix(cron:session): session closed for user root\n2026-09-14T01:58:10.204117+00:00 web01 sshd[2300]: Failed password for deploy from 203.0.113.77 port 50040 ssh2\n2026-09-14T01:58:14.551902+00:00 web01 sshd[2301]: Failed password for deploy from 203.0.113.77 port 50046 ssh2\n2026-09-14T01:58:19.003311+00:00 web01 sshd[2302]: Failed password for deploy from 203.0.113.77 port 50052 ssh2\n2026-09-14T01:59:02.771203+00:00 web01 sshd[2303]: Failed password for deploy from 203.0.113.77 port 50058 ssh2\n2026-09-14T01:59:07.118842+00:00 web01 sshd[2304]: Failed password for deploy from 203.0.113.77 port 50064 ssh2\n2026-09-14T02:01:30.660145+00:00 web01 sshd[2305]: Failed password for deploy from 203.0.113.77 port 50070 ssh2\n2026-09-14T02:01:36.890321+00:00 web01 sshd[2306]: Failed password for deploy from 203.0.113.77 port 50076 ssh2\n2026-09-14T02:03:11.412907+00:00 web01 sshd[2307]: Failed password for deploy from 203.0.113.77 port 50082 ssh2\n2026-09-14T02:04:45.009213+00:00 web01 sshd[2308]: Failed password for deploy from 203.0.113.77 port 50088 ssh2\n2026-09-14T02:05:20.300218+00:00 web01 sshd[2309]: Failed password for deploy from 203.0.113.77 port 50094 ssh2\n2026-09-14T02:06:02.118204+00:00 web01 sshd[2310]: Failed password for deploy from 203.0.113.77 port 50100 ssh2\n2026-09-14T02:06:40.330120+00:00 web01 sshd[2311]: Failed password for deploy from 203.0.113.77 port 50106 ssh2\n2026-09-14T02:07:02.118204+00:00 web01 sshd[2398]: Accepted password for deploy from 203.0.113.77 port 50112 ssh2\n2026-09-14T02:07:02.124511+00:00 web01 sshd[2398]: pam_unix(sshd:session): session opened for user deploy(uid=1002) by deploy(uid=0)\n2026-09-14T02:09:15.551020+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/useradd -m -s /bin/bash sysupdate\n2026-09-14T02:09:15.560311+00:00 web01 useradd[2412]: new group: name=sysupdate, GID=1003\n2026-09-14T02:09:15.561870+00:00 web01 useradd[2412]: new user: name=sysupdate, UID=1003, GID=1003, home=/home/sysupdate, shell=/bin/bash, from=/dev/pts/0\n2026-09-14T02:10:33.207654+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo sysupdate\n2026-09-14T02:10:33.215502+00:00 web01 usermod[2420]: add 'sysupdate' to group 'sudo'\n2026-09-14T02:10:33.215990+00:00 web01 usermod[2420]: add 'sysupdate' to shadow group 'sudo'\n2026-09-14T02:11:48.402233+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/cp /var/backups/db-2026-09-13.sql.gz /var/www/shop/static/\n2026-09-14T02:14:58.880412+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/rm /var/www/shop/static/db-2026-09-13.sql.gz\n2026-09-14T02:15:51.009876+00:00 web01 sshd[2398]: Received disconnect from 203.0.113.77 port 50112:11: disconnected by user\n2026-09-14T02:15:51.010442+00:00 web01 sshd[2398]: Disconnected from user deploy 203.0.113.77 port 50112\n2026-09-14T02:15:51.013377+00:00 web01 sshd[2398]: pam_unix(sshd:session): session closed for user deploy\n2026-09-14T02:17:01.000513+00:00 web01 CRON[2466]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T02:17:01.004981+00:00 web01 CRON[2466]: pam_unix(cron:session): session closed for user root\n2026-09-14T07:30:12.630184+00:00 web01 sshd[3105]: Accepted publickey for maria from 192.0.2.10 port 61022 ssh2: ED25519 SHA256:Yt5nK2wq8fZ0bR4mJ7cX1vL9sD3hG6pA0eU2iO8kTqM\n2026-09-14T07:30:12.636902+00:00 web01 sshd[3105]: pam_unix(sshd:session): session opened for user maria(uid=1001) by maria(uid=0)\n2026-09-14T07:41:09.118054+00:00 web01 sudo:   maria : TTY=pts/1 ; PWD=/home/maria ; USER=root ; COMMAND=/usr/bin/grep sysupdate /etc/passwd /etc/group\n"
+          },
+          {
+            "path": "access.log",
+            "content": "192.0.2.44 - - [14/Sep/2026:03:55:02 +0200] \"GET / HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.44 - - [14/Sep/2026:03:55:03 +0200] \"GET /static/site.css HTTP/1.1\" 200 8811 \"https://shop.example.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n198.51.100.14 - - [14/Sep/2026:04:01:40 +0200] \"GET /products/42 HTTP/1.1\" 200 6402 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n198.51.100.14 - - [14/Sep/2026:04:01:41 +0200] \"GET /static/site.css HTTP/1.1\" 200 8811 \"https://shop.example.com/products/42\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n203.0.113.77 - - [14/Sep/2026:04:12:40 +0200] \"GET /static/db-2026-09-13.sql.gz HTTP/1.1\" 200 48213977 \"-\" \"curl/8.5.0\"\n192.0.2.61 - - [14/Sep/2026:04:20:18 +0200] \"GET /contact HTTP/1.1\" 200 3301 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n203.0.113.77 - - [14/Sep/2026:04:21:05 +0200] \"GET /static/db-2026-09-13.sql.gz HTTP/1.1\" 404 153 \"-\" \"curl/8.5.0\"\n198.51.100.14 - - [14/Sep/2026:09:02:11 +0200] \"GET /products/7 HTTP/1.1\" 200 6188 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n"
+          },
+          {
+            "path": "to_utc.sh",
+            "content": "#!/usr/bin/env bash\n# to_utc.sh: print each line of a web access log with its time converted to UTC in front,\n# in the same YYYY-MM-DDTHH:MM:SS form auth.log uses, so the two can be sorted together.\n# Usage: ./to_utc.sh access.log\nwhile IFS= read -r line || [ -n \"$line\" ]; do\n  ts=$(sed -E 's/^[^[]*\\[([^]]+)\\].*/\\1/' <<< \"$line\")          # 14/Sep/2026:04:12:40 +0200\n  ts=$(sed -E 's#^([0-9]+)/([A-Za-z]+)/([0-9]+):#\\1 \\2 \\3 #' <<< \"$ts\")   # 14 Sep 2026 04:12:40 +0200\n  printf '%s %s\\n' \"$(date -u -d \"$ts\" +%Y-%m-%dT%H:%M:%SZ)\" \"$line\"\ndone < \"${1:?usage: to_utc.sh ACCESS_LOG}\"\n"
+          },
+          {
+            "path": "timeline.md",
+            "content": "# Incident timeline: web01, 14 September 2026 (all times UTC)\n\n| Time (UTC) | Source | Event | Why it matters |\n|---|---|---|---|\n|  |  |  |  |\n\n## Answers\n1. When did the first failed login from 203.0.113.77 happen?\n2. How many failed logins came before the successful one?\n3. When did the intruder log in, as which account, and how?\n4. What did they change, and when?\n5. When was the database backup downloaded over the web, in UTC? What did the web server log show?\n6. When did the session end?\n7. What would you check next?\n"
+          }
+        ],
+        "hints": [
+          "The last line of a starter file has no newline after it; to_utc.sh's read loop handles that with || [ -n \"$line\" ].",
+          "Watch the offset: a web log time of 04:12:40 +0200 happened two hours earlier in UTC.",
+          "The sudo lines say what deploy ran as root; the useradd and usermod lines that follow confirm the change happened."
+        ]
+      }
+    },
+    {
+      "title": "Evidence: preserve it and prove it's unchanged",
+      "summary": "Collect evidence in the right order, fingerprint it with SHA-256 so any change can be detected, and keep a chain of custody that shows who handled it and when.",
+      "instructor": "catalina-ionescu",
+      "lessons": [
+        {
+          "title": "Order of volatility and live collection",
+          "minutes": 10,
+          "objectives": [
+            "Collect evidence in order of volatility",
+            "Decide what to collect before a system is changed or shut down"
+          ],
+          "key_points": [
+            "Some evidence disappears quickly: RFC 3227, the guidelines for evidence collection, says to collect the most volatile first, such as network connections and running processes, before disks and archived logs.",
+            "Shutting down or rebooting a system loses its memory, connections and running processes, so collect live data first, unless the harm of leaving the system running is greater.",
+            "Every action changes a running system a little, so use trusted tools, keep the changes small and record exactly what you ran and when.",
+            "Send collected evidence to clean storage, such as an evidence share or external drive, rather than saving it on the system under investigation.",
+            "Logs held only on a compromised system can be altered, which is why copies sent to a central log store before the incident are worth so much."
+          ]
+        },
+        {
+          "title": "Hashes and verification",
+          "minutes": 10,
+          "objectives": [
+            "Use SHA-256 hashes to show evidence is unchanged",
+            "Create and check a hash manifest"
+          ],
+          "key_points": [
+            "A cryptographic hash such as SHA-256 turns a file's contents into a 64-character fingerprint: the same contents always give the same hash, and changing even one character changes it completely.",
+            "Hash evidence as soon as it's collected, and again whenever it's copied or used: matching hashes show the copy is identical to the original.",
+            "sha256sum file prints a file's hash; sha256sum * > SHA256SUMS records a folder's hashes in a manifest, and sha256sum -c SHA256SUMS checks every file against it, printing OK or FAILED.",
+            "MD5 and SHA-1 are no longer trusted for this, because researchers have produced different files with the same hash; SHA-256 has no such weakness known.",
+            "A hash shows a file is unchanged but not who made it or whether it's what it claims to be; that comes from the chain of custody and from where the file was collected."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Hash, copy and verify",
+            "steps": [
+              {
+                "do": "Hash every file in the evidence folder into a manifest kept beside it.",
+                "code": "cd case/original\nsha256sum * > ../SHA256SUMS\ncat ../SHA256SUMS",
+                "lang": "bash"
+              },
+              {
+                "do": "Copy the files to a working folder, keeping their timestamps.",
+                "code": "mkdir -p ../working\ncp -p * ../working/",
+                "lang": "bash"
+              },
+              {
+                "do": "Check the copies against the manifest.",
+                "code": "cd ../working\nsha256sum -c ../SHA256SUMS",
+                "lang": "bash",
+                "see": "Every file: OK."
+              },
+              {
+                "do": "Make the originals read-only so they aren't changed by accident.",
+                "code": "chmod a-w ../original/*\nls -l ../original",
+                "lang": "bash",
+                "see": "Permissions such as -r--r--r--."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Chain of custody and handling evidence",
+          "minutes": 10,
+          "objectives": [
+            "Keep a chain of custody record",
+            "Handle evidence so it stays trustworthy"
+          ],
+          "key_points": [
+            "A chain of custody records each item of evidence and everyone who held it: what it is, its hash, who collected it, when and where, and every transfer since, with the reason.",
+            "Work on verified copies and keep the originals untouched; if a question arises later, the original and its recorded hash settle it.",
+            "Store evidence where access is limited and logged, and note every time it's accessed or moved.",
+            "If an incident might lead to legal action or a regulator's investigation, involve legal advisers before collecting more, because how evidence was handled can decide whether it's accepted.",
+            "Write notes as you go, with UTC times: an investigator's notes made at the time are part of the evidence too."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Preserve and verify evidence",
+        "tool": "Linux terminal",
+        "minutes": 40,
+        "goal": "Hash the evidence for case 2026-014 into a manifest, record it in a chain of custody, and then check a copy that came back from another team: find which file changed, what was changed, and why it matters.",
+        "setup": [
+          "Your Linux environment",
+          "The starter folder case-2026-014, with original/, returned-copy/ and chain-of-custody.md"
+        ],
+        "steps": [
+          {
+            "do": "Hash the original evidence into a manifest beside the folder.",
+            "code": "cd case-2026-014/original\nsha256sum * > ../SHA256SUMS\ncat ../SHA256SUMS",
+            "lang": "bash",
+            "see": "Three lines; access.log's hash starts 188da79a3c99 and auth.log's starts b9ad9378b572."
+          },
+          {
+            "do": "Verify the originals against the manifest, then make them read-only.",
+            "code": "sha256sum -c ../SHA256SUMS\nchmod a-w *",
+            "lang": "bash",
+            "see": "access.log: OK, auth.log: OK and notes.txt: OK."
+          },
+          {
+            "do": "Record each item in chain-of-custody.md with its full SHA-256, who collected it and when (UTC), and where it's stored."
+          },
+          {
+            "do": "Another team returns a copy of the evidence. Check it against your manifest.",
+            "code": "cd ../returned-copy\nsha256sum -c ../SHA256SUMS",
+            "lang": "bash",
+            "see": "access.log: FAILED, auth.log: OK, notes.txt: OK, then sha256sum: WARNING: 1 computed checksum did NOT match"
+          },
+          {
+            "do": "Find exactly what changed.",
+            "code": "cd ..\ndiff original/access.log returned-copy/access.log",
+            "lang": "bash",
+            "see": "One line differs: the download of the database backup at 04:12:40 +0200 now shows 192.0.2.61 instead of 203.0.113.77."
+          },
+          {
+            "do": "Finish chain-of-custody.md: record the transfer, the failed verification and what the change would have meant, then explain which copy the investigation must rely on, and why."
+          }
+        ],
+        "checks": [
+          {
+            "text": "A SHA-256 manifest of the originals is made and the originals verify against it.",
+            "look_for": [
+              "188da79a3c99625eab8d0f74d701cc84c2f98995c1df21136386e9208725b743",
+              "b9ad9378b572611b58621287f522e0be9b7b8907de9db6bb4af4cd49919961fd"
+            ]
+          },
+          {
+            "text": "The returned copy is checked and the altered file found.",
+            "look_for": [
+              "access.log: FAILED",
+              "did NOT match"
+            ]
+          },
+          {
+            "text": "The change is identified: the download's address altered from 203.0.113.77 to 192.0.2.61.",
+            "look_for": [
+              "192.0.2.61",
+              "203.0.113.77"
+            ]
+          },
+          {
+            "text": "The chain of custody records each item with its hash and the transfer, and the investigation relies on the verified originals.",
+            "look_for": [
+              "original"
+            ]
+          }
+        ],
+        "submit": "Paste your SHA256SUMS, the output of both sha256sum -c runs, the diff output and your completed chain-of-custody.md.",
+        "files": [
+          {
+            "path": "case-2026-014/original/auth.log",
+            "content": "2026-09-13T23:17:01.000312+00:00 web01 CRON[1102]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-13T23:17:01.004418+00:00 web01 CRON[1102]: pam_unix(cron:session): session closed for user root\n2026-09-14T00:17:01.000944+00:00 web01 CRON[1388]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T00:17:01.005127+00:00 web01 CRON[1388]: pam_unix(cron:session): session closed for user root\n2026-09-14T01:17:01.001833+00:00 web01 CRON[1720]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T01:17:01.006021+00:00 web01 CRON[1720]: pam_unix(cron:session): session closed for user root\n2026-09-14T01:58:10.204117+00:00 web01 sshd[2300]: Failed password for deploy from 203.0.113.77 port 50040 ssh2\n2026-09-14T01:58:14.551902+00:00 web01 sshd[2301]: Failed password for deploy from 203.0.113.77 port 50046 ssh2\n2026-09-14T01:58:19.003311+00:00 web01 sshd[2302]: Failed password for deploy from 203.0.113.77 port 50052 ssh2\n2026-09-14T01:59:02.771203+00:00 web01 sshd[2303]: Failed password for deploy from 203.0.113.77 port 50058 ssh2\n2026-09-14T01:59:07.118842+00:00 web01 sshd[2304]: Failed password for deploy from 203.0.113.77 port 50064 ssh2\n2026-09-14T02:01:30.660145+00:00 web01 sshd[2305]: Failed password for deploy from 203.0.113.77 port 50070 ssh2\n2026-09-14T02:01:36.890321+00:00 web01 sshd[2306]: Failed password for deploy from 203.0.113.77 port 50076 ssh2\n2026-09-14T02:03:11.412907+00:00 web01 sshd[2307]: Failed password for deploy from 203.0.113.77 port 50082 ssh2\n2026-09-14T02:04:45.009213+00:00 web01 sshd[2308]: Failed password for deploy from 203.0.113.77 port 50088 ssh2\n2026-09-14T02:05:20.300218+00:00 web01 sshd[2309]: Failed password for deploy from 203.0.113.77 port 50094 ssh2\n2026-09-14T02:06:02.118204+00:00 web01 sshd[2310]: Failed password for deploy from 203.0.113.77 port 50100 ssh2\n2026-09-14T02:06:40.330120+00:00 web01 sshd[2311]: Failed password for deploy from 203.0.113.77 port 50106 ssh2\n2026-09-14T02:07:02.118204+00:00 web01 sshd[2398]: Accepted password for deploy from 203.0.113.77 port 50112 ssh2\n2026-09-14T02:07:02.124511+00:00 web01 sshd[2398]: pam_unix(sshd:session): session opened for user deploy(uid=1002) by deploy(uid=0)\n2026-09-14T02:09:15.551020+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/useradd -m -s /bin/bash sysupdate\n2026-09-14T02:09:15.560311+00:00 web01 useradd[2412]: new group: name=sysupdate, GID=1003\n2026-09-14T02:09:15.561870+00:00 web01 useradd[2412]: new user: name=sysupdate, UID=1003, GID=1003, home=/home/sysupdate, shell=/bin/bash, from=/dev/pts/0\n2026-09-14T02:10:33.207654+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo sysupdate\n2026-09-14T02:10:33.215502+00:00 web01 usermod[2420]: add 'sysupdate' to group 'sudo'\n2026-09-14T02:10:33.215990+00:00 web01 usermod[2420]: add 'sysupdate' to shadow group 'sudo'\n2026-09-14T02:11:48.402233+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/cp /var/backups/db-2026-09-13.sql.gz /var/www/shop/static/\n2026-09-14T02:14:58.880412+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/rm /var/www/shop/static/db-2026-09-13.sql.gz\n2026-09-14T02:15:51.009876+00:00 web01 sshd[2398]: Received disconnect from 203.0.113.77 port 50112:11: disconnected by user\n2026-09-14T02:15:51.010442+00:00 web01 sshd[2398]: Disconnected from user deploy 203.0.113.77 port 50112\n2026-09-14T02:15:51.013377+00:00 web01 sshd[2398]: pam_unix(sshd:session): session closed for user deploy\n2026-09-14T02:17:01.000513+00:00 web01 CRON[2466]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T02:17:01.004981+00:00 web01 CRON[2466]: pam_unix(cron:session): session closed for user root\n2026-09-14T07:30:12.630184+00:00 web01 sshd[3105]: Accepted publickey for maria from 192.0.2.10 port 61022 ssh2: ED25519 SHA256:Yt5nK2wq8fZ0bR4mJ7cX1vL9sD3hG6pA0eU2iO8kTqM\n2026-09-14T07:30:12.636902+00:00 web01 sshd[3105]: pam_unix(sshd:session): session opened for user maria(uid=1001) by maria(uid=0)\n2026-09-14T07:41:09.118054+00:00 web01 sudo:   maria : TTY=pts/1 ; PWD=/home/maria ; USER=root ; COMMAND=/usr/bin/grep sysupdate /etc/passwd /etc/group\n"
+          },
+          {
+            "path": "case-2026-014/original/access.log",
+            "content": "192.0.2.44 - - [14/Sep/2026:03:55:02 +0200] \"GET / HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.44 - - [14/Sep/2026:03:55:03 +0200] \"GET /static/site.css HTTP/1.1\" 200 8811 \"https://shop.example.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n198.51.100.14 - - [14/Sep/2026:04:01:40 +0200] \"GET /products/42 HTTP/1.1\" 200 6402 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n198.51.100.14 - - [14/Sep/2026:04:01:41 +0200] \"GET /static/site.css HTTP/1.1\" 200 8811 \"https://shop.example.com/products/42\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n203.0.113.77 - - [14/Sep/2026:04:12:40 +0200] \"GET /static/db-2026-09-13.sql.gz HTTP/1.1\" 200 48213977 \"-\" \"curl/8.5.0\"\n192.0.2.61 - - [14/Sep/2026:04:20:18 +0200] \"GET /contact HTTP/1.1\" 200 3301 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n203.0.113.77 - - [14/Sep/2026:04:21:05 +0200] \"GET /static/db-2026-09-13.sql.gz HTTP/1.1\" 404 153 \"-\" \"curl/8.5.0\"\n198.51.100.14 - - [14/Sep/2026:09:02:11 +0200] \"GET /products/7 HTTP/1.1\" 200 6188 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n"
+          },
+          {
+            "path": "case-2026-014/original/notes.txt",
+            "content": "Case 2026-014, web01. Responder: (your name)\n2026-09-14T07:30Z  Maria (admin) logged in and found an unknown account, sysupdate, in /etc/passwd.\n2026-09-14T07:52Z  Logs copied from web01 to the evidence share: /var/log/auth.log and the shop's access.log.\n"
+          },
+          {
+            "path": "case-2026-014/returned-copy/auth.log",
+            "content": "2026-09-13T23:17:01.000312+00:00 web01 CRON[1102]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-13T23:17:01.004418+00:00 web01 CRON[1102]: pam_unix(cron:session): session closed for user root\n2026-09-14T00:17:01.000944+00:00 web01 CRON[1388]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T00:17:01.005127+00:00 web01 CRON[1388]: pam_unix(cron:session): session closed for user root\n2026-09-14T01:17:01.001833+00:00 web01 CRON[1720]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T01:17:01.006021+00:00 web01 CRON[1720]: pam_unix(cron:session): session closed for user root\n2026-09-14T01:58:10.204117+00:00 web01 sshd[2300]: Failed password for deploy from 203.0.113.77 port 50040 ssh2\n2026-09-14T01:58:14.551902+00:00 web01 sshd[2301]: Failed password for deploy from 203.0.113.77 port 50046 ssh2\n2026-09-14T01:58:19.003311+00:00 web01 sshd[2302]: Failed password for deploy from 203.0.113.77 port 50052 ssh2\n2026-09-14T01:59:02.771203+00:00 web01 sshd[2303]: Failed password for deploy from 203.0.113.77 port 50058 ssh2\n2026-09-14T01:59:07.118842+00:00 web01 sshd[2304]: Failed password for deploy from 203.0.113.77 port 50064 ssh2\n2026-09-14T02:01:30.660145+00:00 web01 sshd[2305]: Failed password for deploy from 203.0.113.77 port 50070 ssh2\n2026-09-14T02:01:36.890321+00:00 web01 sshd[2306]: Failed password for deploy from 203.0.113.77 port 50076 ssh2\n2026-09-14T02:03:11.412907+00:00 web01 sshd[2307]: Failed password for deploy from 203.0.113.77 port 50082 ssh2\n2026-09-14T02:04:45.009213+00:00 web01 sshd[2308]: Failed password for deploy from 203.0.113.77 port 50088 ssh2\n2026-09-14T02:05:20.300218+00:00 web01 sshd[2309]: Failed password for deploy from 203.0.113.77 port 50094 ssh2\n2026-09-14T02:06:02.118204+00:00 web01 sshd[2310]: Failed password for deploy from 203.0.113.77 port 50100 ssh2\n2026-09-14T02:06:40.330120+00:00 web01 sshd[2311]: Failed password for deploy from 203.0.113.77 port 50106 ssh2\n2026-09-14T02:07:02.118204+00:00 web01 sshd[2398]: Accepted password for deploy from 203.0.113.77 port 50112 ssh2\n2026-09-14T02:07:02.124511+00:00 web01 sshd[2398]: pam_unix(sshd:session): session opened for user deploy(uid=1002) by deploy(uid=0)\n2026-09-14T02:09:15.551020+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/useradd -m -s /bin/bash sysupdate\n2026-09-14T02:09:15.560311+00:00 web01 useradd[2412]: new group: name=sysupdate, GID=1003\n2026-09-14T02:09:15.561870+00:00 web01 useradd[2412]: new user: name=sysupdate, UID=1003, GID=1003, home=/home/sysupdate, shell=/bin/bash, from=/dev/pts/0\n2026-09-14T02:10:33.207654+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo sysupdate\n2026-09-14T02:10:33.215502+00:00 web01 usermod[2420]: add 'sysupdate' to group 'sudo'\n2026-09-14T02:10:33.215990+00:00 web01 usermod[2420]: add 'sysupdate' to shadow group 'sudo'\n2026-09-14T02:11:48.402233+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/cp /var/backups/db-2026-09-13.sql.gz /var/www/shop/static/\n2026-09-14T02:14:58.880412+00:00 web01 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/bin/rm /var/www/shop/static/db-2026-09-13.sql.gz\n2026-09-14T02:15:51.009876+00:00 web01 sshd[2398]: Received disconnect from 203.0.113.77 port 50112:11: disconnected by user\n2026-09-14T02:15:51.010442+00:00 web01 sshd[2398]: Disconnected from user deploy 203.0.113.77 port 50112\n2026-09-14T02:15:51.013377+00:00 web01 sshd[2398]: pam_unix(sshd:session): session closed for user deploy\n2026-09-14T02:17:01.000513+00:00 web01 CRON[2466]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-09-14T02:17:01.004981+00:00 web01 CRON[2466]: pam_unix(cron:session): session closed for user root\n2026-09-14T07:30:12.630184+00:00 web01 sshd[3105]: Accepted publickey for maria from 192.0.2.10 port 61022 ssh2: ED25519 SHA256:Yt5nK2wq8fZ0bR4mJ7cX1vL9sD3hG6pA0eU2iO8kTqM\n2026-09-14T07:30:12.636902+00:00 web01 sshd[3105]: pam_unix(sshd:session): session opened for user maria(uid=1001) by maria(uid=0)\n2026-09-14T07:41:09.118054+00:00 web01 sudo:   maria : TTY=pts/1 ; PWD=/home/maria ; USER=root ; COMMAND=/usr/bin/grep sysupdate /etc/passwd /etc/group\n"
+          },
+          {
+            "path": "case-2026-014/returned-copy/access.log",
+            "content": "192.0.2.44 - - [14/Sep/2026:03:55:02 +0200] \"GET / HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.44 - - [14/Sep/2026:03:55:03 +0200] \"GET /static/site.css HTTP/1.1\" 200 8811 \"https://shop.example.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n198.51.100.14 - - [14/Sep/2026:04:01:40 +0200] \"GET /products/42 HTTP/1.1\" 200 6402 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n198.51.100.14 - - [14/Sep/2026:04:01:41 +0200] \"GET /static/site.css HTTP/1.1\" 200 8811 \"https://shop.example.com/products/42\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n192.0.2.61 - - [14/Sep/2026:04:12:40 +0200] \"GET /static/db-2026-09-13.sql.gz HTTP/1.1\" 200 48213977 \"-\" \"curl/8.5.0\"\n192.0.2.61 - - [14/Sep/2026:04:20:18 +0200] \"GET /contact HTTP/1.1\" 200 3301 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n203.0.113.77 - - [14/Sep/2026:04:21:05 +0200] \"GET /static/db-2026-09-13.sql.gz HTTP/1.1\" 404 153 \"-\" \"curl/8.5.0\"\n198.51.100.14 - - [14/Sep/2026:09:02:11 +0200] \"GET /products/7 HTTP/1.1\" 200 6188 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n"
+          },
+          {
+            "path": "case-2026-014/returned-copy/notes.txt",
+            "content": "Case 2026-014, web01. Responder: (your name)\n2026-09-14T07:30Z  Maria (admin) logged in and found an unknown account, sysupdate, in /etc/passwd.\n2026-09-14T07:52Z  Logs copied from web01 to the evidence share: /var/log/auth.log and the shop's access.log.\n"
+          },
+          {
+            "path": "case-2026-014/chain-of-custody.md",
+            "content": "# Chain of custody: case 2026-014\n\n| Item | Description | SHA-256 | Collected by | Date and time (UTC) | Where it's stored |\n|---|---|---|---|---|---|\n| 1 | auth.log from web01 |  |  |  |  |\n| 2 | access.log from web01 |  |  |  |  |\n| 3 | notes.txt |  |  |  |  |\n\n## Transfers\n| Date and time (UTC) | From | To | Reason | Hashes checked? |\n|---|---|---|---|---|\n|  |  |  |  |  |\n\n## Verification of the returned copy\nOutput of sha256sum -c:\nWhat changed (from diff), and what it would have meant for the investigation:\n"
+          }
+        ],
+        "hints": [
+          "Run sha256sum -c from inside the folder being checked: the manifest lists bare file names, so it looks for them in the current folder.",
+          "A changed address would have pointed the investigation at the wrong place, which is exactly why every copy is verified before it's used."
+        ]
+      }
+    },
+    {
+      "title": "Containment, recovery and lessons learned",
+      "summary": "Stop the harm without destroying evidence, remove what the intruder left, restore service safely, keep everyone informed, and turn what the team learned into a playbook.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "Containment, eradication and recovery",
+          "minutes": 12,
+          "objectives": [
+            "Choose a containment strategy and weigh its trade-offs",
+            "Plan eradication and a safe recovery"
+          ],
+          "key_points": [
+            "Containment stops the harm spreading: short-term steps such as isolating a host from the network, disabling an account or blocking an address, then longer-term ones that hold while the cause is fixed.",
+            "Every containment choice has trade-offs: acting too early can alert an intruder or lose evidence, and waiting too long lets harm continue, so record why each decision was made.",
+            "Eradication removes everything the intruder left and the way they got in: unknown accounts, SSH keys in authorized_keys, scheduled tasks, changed files, and the weak password or unpatched flaw they used.",
+            "When you can't be sure everything has been found, rebuilding the system from a trusted image and restoring checked data from backup is safer than cleaning it.",
+            "Recovery returns systems to service with stronger controls, changed credentials and extra monitoring, and watches closely for signs the intruder is trying to return."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Look for what an intruder may have left on a Linux host",
+            "steps": [
+              {
+                "do": "List accounts with UID 0, which have root's powers. Only root should appear.",
+                "code": "awk -F: '$3 == 0 {print $1}' /etc/passwd",
+                "lang": "bash",
+                "see": "root"
+              },
+              {
+                "do": "List the members of the sudo group, and accounts created recently (the highest UIDs).",
+                "code": "getent group sudo\nsort -t: -k3 -n /etc/passwd | tail -n 5",
+                "lang": "bash"
+              },
+              {
+                "do": "Find every authorized_keys file and when each was last changed.",
+                "code": "sudo find /root /home -name authorized_keys -exec ls -l {} \\;",
+                "lang": "bash"
+              },
+              {
+                "do": "Review scheduled tasks: systemd timers, and each user's crontab.",
+                "code": "systemctl list-timers --all\nsudo ls -l /var/spool/cron/crontabs/",
+                "lang": "bash"
+              },
+              {
+                "do": "Review recent logins and reboots.",
+                "code": "last -n 20",
+                "lang": "bash"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Communicating during an incident",
+          "minutes": 10,
+          "objectives": [
+            "Write clear status updates for different audiences",
+            "Decide who must be told, when and through which channel"
+          ],
+          "key_points": [
+            "Agree early who speaks for the response, so staff, customers and partners get one consistent account rather than rumours.",
+            "Share details on a need-to-know basis, through channels the intruder can't read, such as phone calls or a separate messaging service when email may be compromised.",
+            "A status update states what's known, what isn't yet, what's being done, what people should do and when the next update will come, and is honest about uncertainty.",
+            "Write for the audience: leaders need business impact and the decisions required, technical teams need indicators and actions, and customers need what happened to them and what to do.",
+            "Legal and regulatory deadlines, such as the GDPR's 72 hours for reporting a qualifying personal data breach, start when the organisation becomes aware, so tell legal advisers as soon as personal data may be involved."
+          ]
+        },
+        {
+          "title": "Lessons learned and playbooks",
+          "minutes": 12,
+          "objectives": [
+            "Run a blameless lessons-learned review",
+            "Turn its findings into a playbook and tracked actions"
+          ],
+          "key_points": [
+            "Hold a lessons-learned review soon after the incident closes, while memories are fresh, with everyone who took part.",
+            "Keep it blameless: the aim is to find out why things happened and fix the conditions that allowed them, not to punish, so people speak openly.",
+            "NIST suggests asking what happened and when, how well staff and procedures performed, what information was needed sooner, what would be done differently and what would prevent a repeat.",
+            "Each finding becomes an action with an owner and a due date, such as turning off password logins or keeping backups out of the web folder, and actions are tracked until they're done.",
+            "A playbook sets out the response to one kind of incident: its trigger, roles, steps for each phase, decision points, communications and evidence to keep; it improves after each incident and exercise."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Write the response plan and lessons learned for case 2026-014",
+        "tool": "Text editor",
+        "minutes": 45,
+        "goal": "Using your timeline and evidence from case 2026-014, write a playbook for an unauthorised SSH login on a Linux server, including a first status update, and a lessons-learned report with actions that would stop it happening again.",
+        "setup": [
+          "Your timeline.md from the module 2 lab and your chain-of-custody.md from the module 3 lab",
+          "The starter file playbook.md"
+        ],
+        "steps": [
+          {
+            "do": "Write the Trigger and Roles sections: which alerts or reports start this playbook, and who leads, works on, communicates about and decides on the incident."
+          },
+          {
+            "do": "Write Detection and analysis: the log searches that confirm it and find its scope, such as the greps you used for the timeline, and the evidence to hash before anything changes."
+          },
+          {
+            "do": "Write Containment for web01, in order, with what to preserve before each step: for example, lock the sysupdate account and the deploy account's password, block 203.0.113.77, and decide whether to take web01 off the network."
+          },
+          {
+            "do": "Write Eradication and Recovery: remove sysupdate and check for other changes (accounts, keys, scheduled tasks), change the credentials deploy could reach, rebuild or verify the server, move backups out of the web folder, and say what to monitor afterwards."
+          },
+          {
+            "do": "Write Communication, including a first status update for web01's owners: what's known, what isn't, what's being done, what they should do and when the next update comes."
+          },
+          {
+            "do": "Write the lessons-learned report: what happened, what went well, what was missing, the root causes, and at least four actions, each with an owner and a date."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Containment addresses both the intruder's account and the way in, in a sensible order with evidence kept first.",
+            "look_for": [
+              "sysupdate",
+              "deploy",
+              "203.0.113.77"
+            ]
+          },
+          {
+            "text": "Eradication and recovery remove persistence and fix the root causes: password login for deploy, and backups kept where the web server could serve them.",
+            "look_for": [
+              "password",
+              "backup"
+            ]
+          },
+          {
+            "text": "The status update says what's known and unknown, what's being done and when the next update comes.",
+            "look_for": [
+              "next update"
+            ]
+          },
+          {
+            "text": "The lessons-learned report has root causes and at least four actions, each with an owner and a date.",
+            "look_for": [
+              "owner"
+            ]
+          }
+        ],
+        "submit": "Paste your completed playbook.md, including the status update and the lessons-learned report.",
+        "files": [
+          {
+            "path": "playbook.md",
+            "content": "# Playbook: unauthorised SSH login on a Linux server\n\n## Trigger\nWhat starts this playbook (which alerts or reports):\n\n## Roles\nWho leads, who does the technical work, who communicates, who decides on business impact:\n\n## Detection and analysis\nSteps to confirm the incident and find its scope, with the commands or log searches to use:\n\n## Containment\nShort-term steps, in order, and what evidence to keep before each one:\n\n## Eradication\nHow to find and remove what the intruder left behind:\n\n## Recovery\nHow to restore normal service safely, and what to watch afterwards:\n\n## Communication\nWho is told what, when, and through which channel. Include a first status update for web01.\n\n## Post-incident activity\nWhen the lessons-learned review happens, who attends, and what it produces.\n\n# Lessons learned: case 2026-014\n- What happened (three sentences):\n- What went well:\n- What went badly or was missing:\n- Root causes:\n- Actions (each with an owner and a date):\n"
+          }
+        ],
+        "hints": [
+          "Disabling an account before copying its home folder and the logs can destroy evidence; say what to copy and hash first.",
+          "Root causes are usually conditions, not people: a guessable password on an internet-facing account, password login allowed, backups inside the web folder."
+        ]
+      }
+    }
+  ],
+  "project": {
+    "title": "Investigate case 2026-021 from start to finish",
+    "minutes": 240,
+    "brief": "Early on 3 October 2026 an administrator noticed a 2 GB outbound transfer from files01, the shared project file server, in the overnight flow report. The account involved belongs to a contractor whose contract ended on 30 September. You receive copies of the server's authentication log, the account's shell history (with epoch timestamps), a flow log from the network and the case notes. Investigate as you've learned: preserve and verify the evidence, build a UTC timeline across all three sources, work out what happened, to what data and how, then plan the containment, eradication and recovery, write updates for the technical team and for the firm's leadership, and finish with a lessons-learned report and an updated playbook.",
+    "deliverables": [
+      "A SHA-256 manifest of the evidence, its sha256sum -c verification and a chain-of-custody record",
+      "A UTC timeline across the authentication log, shell history and flow log, with each event's source",
+      "Findings: the account, the data involved, how the data left, and the indicators of compromise",
+      "A containment, eradication and recovery plan, in order, with what to preserve first",
+      "Two status updates: one for the technical team and one for the firm's leadership",
+      "A lessons-learned report with root causes and actions, each with an owner and a date",
+      "An updated playbook for this kind of incident (an account used after its owner left)"
+    ],
+    "rubric": [
+      {
+        "name": "Evidence handling",
+        "points": 15,
+        "description": "Everything is hashed before analysis and verified with sha256sum -c; the chain of custody records items, hashes and transfers."
+      },
+      {
+        "name": "Timeline",
+        "points": 25,
+        "description": "Events from all three sources are converted to UTC correctly (including the epoch times) and merged in order, from the login at 22:40:47 to the logout, with the transfer lined up against the shell commands."
+      },
+      {
+        "name": "Analysis and scope",
+        "points": 20,
+        "description": "Identifies the account, the folder archived, the destination and the size of the transfer, the failed sudo attempt, and what else should be checked."
+      },
+      {
+        "name": "Containment, eradication and recovery",
+        "points": 15,
+        "description": "Steps are in a sensible order, keep evidence, close the access that should have ended on 30 September and check for anything else left behind."
+      },
+      {
+        "name": "Communication",
+        "points": 10,
+        "description": "Each update suits its audience: clear about what's known and unknown, the actions under way and when the next update comes."
+      },
+      {
+        "name": "Lessons learned and playbook",
+        "points": 15,
+        "description": "Root causes such as offboarding gaps are found; actions have owners and dates; the playbook covers trigger, roles, every phase and communications."
+      }
+    ],
+    "submit": "Paste your manifest and its verification, your timeline, your findings, the plan, both updates, the lessons-learned report and the playbook, each under its own heading.",
+    "files": [
+      {
+        "path": "evidence/auth.log",
+        "content": "2026-10-02T21:17:01.000412+00:00 files01 CRON[8812]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-02T21:17:01.004530+00:00 files01 CRON[8812]: pam_unix(cron:session): session closed for user root\n2026-10-02T22:40:47.551873+00:00 files01 sshd[9120]: Accepted password for c.okafor from 198.51.100.23 port 58114 ssh2\n2026-10-02T22:40:47.558012+00:00 files01 sshd[9120]: pam_unix(sshd:session): session opened for user c.okafor(uid=1007) by c.okafor(uid=0)\n2026-10-02T22:52:31.207118+00:00 files01 sudo: c.okafor : user NOT in sudoers ; TTY=pts/0 ; PWD=/srv/projects ; USER=root ; COMMAND=/usr/bin/ls /root\n2026-10-02T23:03:44.880913+00:00 files01 sshd[9120]: Received disconnect from 198.51.100.23 port 58114:11: disconnected by user\n2026-10-02T23:03:44.881520+00:00 files01 sshd[9120]: Disconnected from user c.okafor 198.51.100.23 port 58114\n2026-10-02T23:03:44.884107+00:00 files01 sshd[9120]: pam_unix(sshd:session): session closed for user c.okafor\n2026-10-03T08:05:19.330927+00:00 files01 sshd[9844]: Accepted publickey for maria from 192.0.2.10 port 62410 ssh2: ED25519 SHA256:Yt5nK2wq8fZ0bR4mJ7cX1vL9sD3hG6pA0eU2iO8kTqM\n"
+      },
+      {
+        "path": "evidence/bash_history_c.okafor",
+        "content": "#1790980865\ncd /srv/projects\n#1790980869\nls -la\n#1790981070\ndu -sh harbour-bid\n#1790981232\ntar czf /tmp/hb.tgz harbour-bid\n#1790981551\nsudo ls /root\n#1790981560\nscp /tmp/hb.tgz transfer@198.51.100.23:\n#1790981883\nrm /tmp/hb.tgz\n#1790982199\nexit\n"
+      },
+      {
+        "path": "evidence/flows.csv",
+        "content": "start_utc,end_utc,src_ip,dst_ip,dst_port,protocol,bytes_out,bytes_in\n2026-10-02T22:12:09Z,2026-10-02T22:12:10Z,10.20.0.15,192.0.2.53,53,udp,74,138\n2026-10-02T22:40:46Z,2026-10-02T23:03:45Z,198.51.100.23,10.20.0.15,22,tcp,18245,96310\n2026-10-02T22:52:41Z,2026-10-02T22:57:58Z,10.20.0.15,198.51.100.23,22,tcp,2148302217,412880\n2026-10-03T08:05:18Z,2026-10-03T08:31:02Z,192.0.2.10,10.20.0.15,22,tcp,61204,1220455\n"
+      },
+      {
+        "path": "evidence/case-notes.txt",
+        "content": "Case 2026-021, files01 (10.20.0.15), the shared project file server.\n2026-10-03T08:20Z  Maria (admin) noticed a 2 GB outbound transfer from files01 in the overnight flow report.\nc.okafor is a contractor whose contract ended on 2026-09-30; the account should have been disabled then.\nThe evidence folder holds copies made at 2026-10-03T09:10Z. Hash everything before you start.\n"
+      }
+    ]
+  }
+}

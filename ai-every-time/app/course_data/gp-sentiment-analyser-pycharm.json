@@ -1,0 +1,357 @@
+{
+  "slug": "gp-sentiment-analyser-pycharm",
+  "title": "Guided Project: Build a Sentiment Analyser in PyCharm",
+  "subtitle": "Train a machine learning model that tells positive reviews from negative ones, measure how good it really is, and find where it goes wrong.",
+  "category": "Machine Learning",
+  "kind": "guided-project",
+  "level": "beginner",
+  "instructors": [
+    "khalida-sultan"
+  ],
+  "skills": [
+    "Sentiment analysis",
+    "Text classification",
+    "TF-IDF",
+    "Logistic regression",
+    "scikit-learn",
+    "Model evaluation",
+    "Cross-validation"
+  ],
+  "tools": [
+    "PyCharm",
+    "Python",
+    "scikit-learn"
+  ],
+  "outcomes": [
+    "Turn short texts into numbers with TF-IDF",
+    "Train a logistic regression sentiment classifier in a scikit-learn pipeline",
+    "Evaluate it with a test set, a confusion matrix and cross-validation",
+    "Test it on new sentences and explain where and why it fails"
+  ],
+  "prerequisites": "Basic Python: variables, lists, functions and running a script. PyCharm (the free version is enough) and Python 3 installed; you'll install scikit-learn in the first lesson.",
+  "description": "In this guided project you build a working sentiment analyser from scratch in PyCharm: a model that reads a short product review and says whether it's positive or negative. Three short lessons explain the ideas you need, how TF-IDF turns words into numbers, how logistic regression learns which words matter, and how to tell whether a classifier is any good, each shown step by step in PyCharm's Python Console, editor and debugger. Then you build it: you load 40 labelled reviews written for the project, train a scikit-learn pipeline, test it on reviews it hasn't seen, check it with cross-validation, look at the words it relies on, and try it on sentences of your own, including the ones that fool it. You finish with a model you understand, and a clear sense of what a small text classifier can and can't do.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Build, evaluate and test a sentiment analyser",
+      "summary": "Learn how text becomes numbers and how a classifier learns from them, then build a sentiment analyser, measure it honestly and probe its limits.",
+      "lessons": [
+        {
+          "title": "From words to numbers: bag of words and TF-IDF",
+          "minutes": 8,
+          "objectives": [
+            "Explain how a bag of words turns text into numbers",
+            "Describe what TF-IDF weighting adds"
+          ],
+          "key_points": [
+            "Sentiment analysis labels a text by the feeling it expresses, here positive or negative. A classifier learns to do it from examples that people have already labelled.",
+            "A bag of words represents each text by the words it contains and how often, ignoring their order; the vocabulary is the set of words found in the training texts.",
+            "TF-IDF (term frequency times inverse document frequency) gives a word more weight the more often it appears in a text, and less the more texts it appears in, so a word in every review counts for less than a rarer one such as 'refund'.",
+            "scikit-learn's TfidfVectorizer lowercases texts and splits them into words of two or more letters by default; fit_transform learns the vocabulary, and transform reuses it on new texts, ignoring words it has never seen.",
+            "Removing common stop words can hurt sentiment analysis: scikit-learn's built-in English stop-word list includes 'not', which can reverse a review's meaning."
+          ],
+          "walkthrough": {
+            "tool": "PyCharm",
+            "title": "Turn sentences into TF-IDF numbers in the Python Console",
+            "steps": [
+              {
+                "do": "Create a Pure Python project called gp-sentiment with a new virtual environment. Open the Terminal and install scikit-learn.",
+                "keys": {
+                  "mac": "Option+F12",
+                  "win": "Alt+F12"
+                },
+                "code": "pip install scikit-learn",
+                "lang": "bash"
+              },
+              {
+                "do": "Open the Python Console (Tools | Python or Debug Console) and turn three tiny texts into TF-IDF vectors.",
+                "code": "from sklearn.feature_extraction.text import TfidfVectorizer\nvec = TfidfVectorizer()\nX = vec.fit_transform([\"I love it\", \"I hate it\", \"love love love\"])\nvec.get_feature_names_out()\nX.toarray().round(2)",
+                "lang": "python",
+                "see": "The vocabulary hate, it, love ('I' is dropped: too short), and one row per text, such as 0, 0.71, 0.71 for 'I love it'."
+              },
+              {
+                "do": "Compare the rows: 'it' appears in two texts, so it weighs less than 'hate' in the second row (0.61 against 0.8). Each row is scaled to length 1, which is why the third row is just 1 for love."
+              },
+              {
+                "do": "Transform a sentence with a word the vectoriser has never seen.",
+                "code": "vec.transform([\"I adore it\"]).toarray()",
+                "lang": "python",
+                "see": "0, 1, 0: 'adore' isn't in the vocabulary, so only 'it' counts."
+              },
+              {
+                "do": "In a new Python file, type TfidfVectorizer, put the caret on it and read its documentation, looking for lowercase, stop_words and ngram_range.",
+                "keys": {
+                  "mac": "F1",
+                  "win": "Ctrl+Q"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "title": "Training a classifier: logistic regression in a pipeline",
+          "minutes": 10,
+          "objectives": [
+            "Explain how logistic regression turns word weights into a probability",
+            "Train a model on a training set while keeping a test set aside"
+          ],
+          "key_points": [
+            "Logistic regression learns a weight for every word. It adds up the weights of a text's words and turns the total into a probability between 0 and 1, so words with positive weights push towards one label and words with negative weights towards the other.",
+            "make_pipeline(TfidfVectorizer(), LogisticRegression()) chains the two steps: fit, predict and predict_proba then take raw text, and the vectoriser only ever learns its vocabulary from the training data.",
+            "train_test_split keeps some labelled examples out of training to test on later. stratify=labels keeps the share of each label the same in both parts, and random_state makes the split repeatable.",
+            "predict returns the most likely label and predict_proba the probability of each label, in the order of the model's classes_ attribute, which for text labels is alphabetical."
+          ],
+          "walkthrough": {
+            "tool": "PyCharm",
+            "title": "Train a pipeline and look inside it",
+            "steps": [
+              {
+                "do": "Download reviews.csv from this project's lab into the project folder and open it: PyCharm shows the 40 reviews, each with its label."
+              },
+              {
+                "do": "Create a new Python file, train.py, in the Project tool window.",
+                "keys": {
+                  "mac": "Cmd+N",
+                  "win": "Alt+Insert"
+                }
+              },
+              {
+                "do": "Write a script that loads the reviews, splits them and trains a pipeline. Let completion type the long names for you.",
+                "keys": {
+                  "mac": "Ctrl+Space",
+                  "win": "Ctrl+Space"
+                },
+                "code": "import csv\n\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\n\nwith open(\"reviews.csv\", newline=\"\", encoding=\"utf-8\") as f:\n    rows = list(csv.DictReader(f))\ntexts = [row[\"text\"] for row in rows]\nlabels = [row[\"label\"] for row in rows]\n\nX_train, X_test, y_train, y_test = train_test_split(\n    texts, labels, test_size=0.25, random_state=42, stratify=labels\n)\nmodel = make_pipeline(TfidfVectorizer(), LogisticRegression())\nmodel.fit(X_train, y_train)\nprint(model.predict([\"I love it\"]))",
+                "lang": "python"
+              },
+              {
+                "do": "Toggle a breakpoint on the print line.",
+                "keys": {
+                  "mac": "Cmd+F8",
+                  "win": "Ctrl+F8"
+                }
+              },
+              {
+                "do": "Debug the file: click the green arrow in the gutter beside the first line and choose Debug 'train', or use the shortcut for the last configuration.",
+                "keys": {
+                  "mac": "Ctrl+D",
+                  "win": "Shift+F9"
+                },
+                "see": "The program pauses before printing, with X_train, X_test and model in the Variables pane."
+              },
+              {
+                "do": "Open Evaluate Expression and ask the model what it thinks.",
+                "keys": {
+                  "mac": "Option+F8",
+                  "win": "Alt+F8"
+                },
+                "code": "model.named_steps[\"logisticregression\"].classes_, model.predict_proba([\"I love it\"])",
+                "lang": "python",
+                "see": "['negative' 'positive'] and about 0.39 and 0.61: a 61% chance of positive."
+              },
+              {
+                "do": "Resume the program to the end.",
+                "keys": {
+                  "mac": "Cmd+Option+R",
+                  "win": "F9"
+                },
+                "see": "['positive'] in the Debug console."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Is it any good? Evaluating a classifier, and its limits",
+          "minutes": 10,
+          "objectives": [
+            "Read accuracy, a confusion matrix, precision and recall",
+            "Explain why a small test set and new phrasings call for caution"
+          ],
+          "key_points": [
+            "Accuracy is the share of predictions that are right. A confusion matrix shows which labels were mistaken for which; for each label, precision is the share of its predictions that were right and recall the share of its real cases that were found.",
+            "On a test set of 10 reviews, accuracy moves in steps of 0.1, so one review changes the score a lot. 5-fold cross-validation trains and tests five times on different splits and averages the scores, for a steadier estimate.",
+            "The texts a model gets wrong tell you more than its score: they show which words or phrasings it hasn't learned.",
+            "A bag-of-words model ignores word order, so negation ('not bad'), sarcasm and words it never saw in training are beyond it. More and more varied training data, and features such as bigrams (pairs of neighbouring words), help with some of this."
+          ],
+          "walkthrough": {
+            "tool": "PyCharm",
+            "title": "Measure the model, then change it and measure again",
+            "steps": [
+              {
+                "do": "Add evaluation to train.py: predictions for the test set, then accuracy, a confusion matrix and a classification report.",
+                "code": "from sklearn.metrics import accuracy_score, classification_report, confusion_matrix\n\npredictions = model.predict(X_test)\nprint(accuracy_score(y_test, predictions))\nprint(confusion_matrix(y_test, predictions, labels=[\"positive\", \"negative\"]))\nprint(classification_report(y_test, predictions))",
+                "lang": "python"
+              },
+              {
+                "do": "Rerun the script.",
+                "keys": {
+                  "mac": "Ctrl+R",
+                  "win": "Shift+F10"
+                },
+                "see": "Accuracy 1.0, and a confusion matrix with 5 and 5 on the diagonal: all ten test reviews right."
+              },
+              {
+                "do": "Put the caret on cross_val_score after importing it from sklearn.model_selection, and read its documentation.",
+                "keys": {
+                  "mac": "F1",
+                  "win": "Ctrl+Q"
+                }
+              },
+              {
+                "do": "Add 5-fold cross-validation on all 40 reviews, using a fresh pipeline, and rerun.",
+                "keys": {
+                  "mac": "Ctrl+R",
+                  "win": "Shift+F10"
+                },
+                "code": "scores = cross_val_score(make_pipeline(TfidfVectorizer(), LogisticRegression()), texts, labels, cv=5)\nprint(scores, scores.mean())",
+                "lang": "python",
+                "see": "Four folds at 1.0 and one at 0.875: a mean of 0.975, not quite perfect."
+              },
+              {
+                "do": "Change both TfidfVectorizer() calls to TfidfVectorizer(ngram_range=(1, 2)), so pairs of words count too. Select the first one and use Select Next Occurrence, or Replace in File.",
+                "keys": {
+                  "mac": "Cmd+R",
+                  "win": "Ctrl+R"
+                }
+              },
+              {
+                "do": "Rerun, and compare.",
+                "keys": {
+                  "mac": "Ctrl+R",
+                  "win": "Shift+F10"
+                },
+                "see": "Test accuracy drops to 0.8 while cross-validation stays at 0.975: with ten test reviews, two changed predictions look like a big difference."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build and test a sentiment analyser",
+        "tool": "PyCharm",
+        "minutes": 60,
+        "goal": "Train a sentiment analyser on 40 short product reviews, evaluate it on reviews it hasn't seen and with cross-validation, find the words it relies on, and test its limits with new sentences.",
+        "setup": [
+          "PyCharm with a project that has its own virtual environment",
+          "scikit-learn installed in that environment (pip install scikit-learn)",
+          "Download the starter files reviews.csv and sentiment.py into the project folder"
+        ],
+        "steps": [
+          {
+            "do": "Open reviews.csv: 40 short reviews written for this project, 20 positive and 20 negative. Then open sentiment.py and the TODO tool window (View | Tool Windows | TODO) to see what's left to write."
+          },
+          {
+            "do": "Write load_reviews(path): open the file in a with block, read it with csv.DictReader and return two lists, the texts and the labels."
+          },
+          {
+            "do": "Write build_model(): a pipeline of TfidfVectorizer() and LogisticRegression() made with make_pipeline."
+          },
+          {
+            "do": "In main(), split the data with test_size=0.25, random_state=42 and stratify=labels, then fit the model, predict the test set and print the accuracy, the confusion matrix and the classification report, and any review it got wrong."
+          },
+          {
+            "do": "Run 5-fold cross-validation with cross_val_score(build_model(), texts, labels, cv=5) and print the mean and each fold's score."
+          },
+          {
+            "do": "Write top_words(model, n=5): sort the (weight, word) pairs and return the five most positive words and the five most negative, then print them."
+          },
+          {
+            "do": "Print a prediction for each new review: the label, padded to 8 characters with f'{label:8}', the probability of that label from predict_proba, and the review."
+          },
+          {
+            "do": "Run sentiment.py.",
+            "keys": {
+              "mac": "Ctrl+Shift+R",
+              "win": "Ctrl+Shift+F10"
+            },
+            "see": "40 reviews: 20 positive, 20 negative; Training on 30 reviews, testing on 10; Test accuracy: 1.00; 5-fold cross-validation accuracy: 0.97 (folds: 1.00, 1.00, 1.00, 1.00, 0.88); Most positive words: great, perfect, love, fast, excellent; Most negative words: stopped, working, cheap, broke, hard; then positive 0.54, negative 0.67, negative 0.51 and negative 0.58 for the four new reviews"
+          },
+          {
+            "do": "Look at 'Not bad at all': the model calls it negative. Add two sentences of your own to new_reviews, one it should get right and one you expect to fool it, and rerun.",
+            "keys": {
+              "mac": "Ctrl+R",
+              "win": "Shift+F10"
+            }
+          },
+          {
+            "do": "Experiment: change build_model() to use TfidfVectorizer(ngram_range=(1, 2)) and rerun. Note the test accuracy, the wrong reviews and the cross-validation score, then change it back.",
+            "keys": {
+              "mac": "Ctrl+R",
+              "win": "Shift+F10"
+            },
+            "see": "Test accuracy: 0.80, with two Wrong: lines, but cross-validation still 0.97"
+          },
+          {
+            "do": "Write a short paragraph: is 'Test accuracy: 1.00' the whole story? Why does the bigram model's 0.80 not prove it's worse? Name one limitation of this model, such as negation, sarcasm or unseen words, and how you'd improve it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The reviews load and split correctly.",
+            "look_for": [
+              "40 reviews: 20 positive, 20 negative",
+              "Training on 30 reviews, testing on 10"
+            ]
+          },
+          {
+            "text": "The model is trained and gets all 10 test reviews right.",
+            "look_for": [
+              "Test accuracy: 1.00"
+            ]
+          },
+          {
+            "text": "Cross-validation is run and each fold's score is shown.",
+            "look_for": [
+              "0.97",
+              "0.88"
+            ]
+          },
+          {
+            "text": "The most influential words are found.",
+            "look_for": [
+              "Most positive words: great",
+              "Most negative words: stopped"
+            ]
+          },
+          {
+            "text": "The new reviews are classified with probabilities, including the misread 'Not bad at all'.",
+            "look_for": [
+              "0.54",
+              "0.67",
+              "0.58"
+            ]
+          },
+          {
+            "text": "The bigram experiment is run and reported.",
+            "look_for": [
+              "Test accuracy: 0.80"
+            ]
+          },
+          {
+            "text": "The paragraph explains that ten test reviews are too few to trust one score, uses cross-validation to compare the two models fairly, and names a real limitation with a sensible improvement.",
+            "look_for": [
+              "cross-validation"
+            ]
+          }
+        ],
+        "submit": "Paste your finished sentiment.py, the output of a normal run, the output of the bigram run, and your paragraph.",
+        "files": [
+          {
+            "path": "reviews.csv",
+            "content": "text,label\nGreat headphones and I love the sound,positive\nExcellent kettle that works well every morning,positive\nFast delivery and the lamp is perfect,positive\nI love this backpack and would recommend it,positive\nComfortable shoes and great value for money,positive\nEasy to set up and it works well,positive\nA perfect gift and my sister was very happy,positive\nGreat camera that takes excellent photos,positive\nHappy with the blender because it is easy to clean,positive\nThe speaker sounds excellent and I love it,positive\nIt works well and the battery is great,positive\nI recommend this keyboard because it is comfortable to type on,positive\nExcellent screen and fast to set up,positive\nA perfect mug and I am very happy with it,positive\nGreat service and fast delivery,positive\nThe charger works well and was easy to use,positive\nComfortable chair and I would recommend it to anyone,positive\nI love the colour and the quality is excellent,positive\nHappy with my phone case because it is a perfect fit,positive\nEasy to use and I love it,positive\nThe headphones broke after a week,negative\nTerrible kettle and I want a refund,negative\nSlow delivery and the lamp arrived broken,negative\nDisappointed with this backpack because the zip broke,negative\nPoor quality shoes that feel cheap,negative\nHard to set up and it stopped working,negative\nA waste of money and my sister was disappointed,negative\nThe camera is poor and the photos are terrible,negative\nThe blender stopped working so I returned it,negative\nCheap speaker with a terrible sound,negative\nThe battery is poor and it stopped working after a day,negative\nI returned this keyboard because two keys broke,negative\nTerrible screen and slow to set up,negative\nThe mug leaks and it was a waste of money,negative\nPoor service and slow delivery,negative\nThe charger stopped working and I want a refund,negative\nUncomfortable chair and I would not recommend it,negative\nThe colour faded and the quality is poor,negative\nDisappointed with my phone case because it feels cheap,negative\nHard to use and a waste of money,negative\n"
+          },
+          {
+            "path": "sentiment.py",
+            "content": "\"\"\"A sentiment analyser: TF-IDF features and logistic regression, trained on 40 short reviews.\"\"\"\n\nimport csv\n\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, classification_report, confusion_matrix\nfrom sklearn.model_selection import cross_val_score, train_test_split\nfrom sklearn.pipeline import make_pipeline\n\n\ndef load_reviews(path):\n    \"\"\"Return the texts and the labels in the CSV file at path, as two lists.\"\"\"\n    # TODO: open the file with newline=\"\" and encoding=\"utf-8\", read it with csv.DictReader,\n    # and return a list of the \"text\" values and a list of the \"label\" values\n    pass\n\n\ndef build_model():\n    \"\"\"TF-IDF features feeding a logistic regression classifier.\"\"\"\n    # TODO: return make_pipeline(...) with a TfidfVectorizer() and a LogisticRegression()\n    pass\n\n\ndef top_words(model, n=5):\n    \"\"\"The n words that push hardest towards \"positive\", and the n that push hardest towards \"negative\".\"\"\"\n    words = model.named_steps[\"tfidfvectorizer\"].get_feature_names_out()\n    weights = model.named_steps[\"logisticregression\"].coef_[0]  # above 0 pushes towards \"positive\"\n    # TODO: sort the (weight, word) pairs and return two lists of n words:\n    # the most positive first, then the most negative\n    pass\n\n\ndef main():\n    texts, labels = load_reviews(\"reviews.csv\")\n    print(f\"{len(texts)} reviews: {labels.count('positive')} positive, {labels.count('negative')} negative\")\n\n    # TODO: split into training and test sets with test_size=0.25, random_state=42 and stratify=labels,\n    # then print:  Training on 30 reviews, testing on 10\n\n    # TODO: build the model, fit it on the training set and predict the test set, then print\n    #   Test accuracy: ...        (to 2 decimal places)\n    # the confusion matrix, with labels=[\"positive\", \"negative\"], and the classification report\n\n    # TODO: print each test review the model got wrong, like:\n    #   Wrong: 'the review' is negative, predicted positive\n\n    # TODO: run 5-fold cross-validation on all 40 reviews with a fresh build_model() and print:\n    #   5-fold cross-validation accuracy: ... (folds: ..., ..., ..., ..., ...)\n\n    # TODO: print the top words from top_words(model), like:\n    #   Most positive words: ...\n    #   Most negative words: ...\n\n    new_reviews = [\n        \"The sound is excellent and I love the design\",\n        \"It stopped working after a week and I want a refund\",\n        \"I would not recommend it\",\n        \"Not bad at all\",\n    ]\n    # TODO: for each new review, print the predicted label (padded to 8 characters), the probability\n    # of that label and the review, like:\n    #   positive 0.54  The sound is excellent and I love the design\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "csv.DictReader gives each row as a dictionary, so row['text'] and row['label'] are the two columns.",
+          "sorted(zip(weights, words)) puts the most negative words first; take the last n, reversed, for the most positive.",
+          "model.predict_proba([review])[0].max() is the probability of the label the model predicted.",
+          "If your numbers differ slightly, check test_size=0.25, random_state=42 and stratify=labels: a different split gives different results."
+        ]
+      }
+    }
+  ]
+}

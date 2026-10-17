@@ -1,0 +1,366 @@
+{
+  "slug": "gp-claude-chatbot-pycharm",
+  "title": "Guided Project: Build a Chatbot with the Claude API in PyCharm",
+  "subtitle": "In about two hours, build a terminal chatbot in PyCharm with the Claude API: a personality set by a system prompt, a memory of the conversation and replies that stream in as they're written.",
+  "category": "Generative AI",
+  "kind": "guided-project",
+  "level": "beginner",
+  "instructors": [
+    "sebastian-vargas"
+  ],
+  "skills": [
+    "Claude API",
+    "Anthropic Python SDK",
+    "System prompts",
+    "Conversation history",
+    "Streaming responses",
+    "PyCharm run configurations",
+    "API error handling"
+  ],
+  "tools": [
+    "PyCharm",
+    "Python",
+    "Anthropic Python SDK"
+  ],
+  "outcomes": [
+    "Set up a PyCharm project for the Claude API, with your key and model kept in environment variables",
+    "Give a chatbot a personality and rules with a system prompt",
+    "Keep a conversation history so the chatbot remembers what was said",
+    "Stream replies as they're written and report the tokens each turn uses",
+    "Handle API errors so the chatbot keeps running"
+  ],
+  "prerequisites": "Basic Python: variables, loops, functions and lists. PyCharm (the free version is enough) and Python 3.10 or newer, and an account in the Claude Console with API credit: API calls are billed by the token, separately from any Claude chat subscription.",
+  "description": "Build a working chatbot on the Claude API in one sitting, in PyCharm. You'll set up a project with the Anthropic Python SDK and keep your API key and model in run configuration environment variables, where they can't leak into your code. Short lessons show how the Messages API works: why a chatbot has to send the whole conversation every time, how the system prompt gives it a personality and rules, and how streaming makes replies appear as they're written, with PyCharm's debugger letting you watch the conversation grow. Then you'll build the chatbot itself from a starter file: it streams its replies, remembers what you said, reports the tokens each turn uses, starts afresh on /reset, and survives errors instead of crashing.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Build a streaming chatbot",
+      "summary": "Set up PyCharm for the Claude API, learn how a chatbot keeps a conversation and streams its replies, then build one that runs in PyCharm's Run tool window.",
+      "instructor": "sebastian-vargas",
+      "lessons": [
+        {
+          "title": "Set up PyCharm for the Claude API",
+          "minutes": 8,
+          "objectives": [
+            "Create a PyCharm project with the Anthropic Python SDK installed",
+            "Keep your API key and model name in run configuration environment variables, not in code"
+          ],
+          "key_points": [
+            "The Claude API lets your own code use Claude. It needs an account in the Claude Console and an API key, and calls are billed by the token, separately from any Claude chat subscription.",
+            "The Anthropic Python SDK (pip install anthropic) wraps the API; anthropic.Anthropic() creates a client that reads your key from the ANTHROPIC_API_KEY environment variable.",
+            "Keep the key out of your code: set it in the run configuration (Run | Edit Configurations, Environment variables), so it never ends up in a file you share or commit.",
+            "This project reads the model's ID from the CLAUDE_MODEL environment variable: set it to a current model from the models overview in Anthropic's documentation, and the code never goes out of date.",
+            "PyCharm keeps run configurations in your own workspace settings unless you tick Store as project file, so leave that unticked for a configuration that holds your key."
+          ],
+          "walkthrough": {
+            "tool": "PyCharm",
+            "title": "Create the project and make a first call",
+            "steps": [
+              {
+                "do": "On the Welcome screen, click New Project and choose a plain Python project (Pure Python). Name it claude-chatbot, keep the option that creates a new virtual environment (venv), and click Create."
+              },
+              {
+                "do": "Open the Terminal tool window and install the SDK into the project's environment.",
+                "keys": {
+                  "mac": "Option+F12",
+                  "win": "Alt+F12"
+                },
+                "code": "pip install anthropic",
+                "lang": "bash",
+                "see": "A line starting Successfully installed that includes anthropic."
+              },
+              {
+                "do": "In the Claude Console (platform.claude.com), go to the API keys page in Settings, create a key and copy it. The Console shows a new key only once, so keep it somewhere safe, such as a password manager."
+              },
+              {
+                "do": "In the Project tool window, select the project folder and create a Python file named hello.py with this code.",
+                "keys": {
+                  "mac": "Cmd+N",
+                  "win": "Alt+Insert"
+                },
+                "code": "import os\n\nimport anthropic\n\nMODEL = os.environ[\"CLAUDE_MODEL\"]  # a current model ID from Anthropic's documentation\nclient = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY\n\nreply = client.messages.create(\n    model=MODEL,\n    max_tokens=1024,\n    messages=[{\"role\": \"user\", \"content\": \"Say hello in three languages.\"}],\n)\nprint(\"\".join(block.text for block in reply.content if block.type == \"text\"))",
+                "lang": "python"
+              },
+              {
+                "do": "Run the file.",
+                "keys": {
+                  "mac": "Ctrl+Shift+R",
+                  "win": "Ctrl+Shift+F10"
+                },
+                "see": "KeyError: 'CLAUDE_MODEL'. The code expects the model's ID in an environment variable that isn't set yet."
+              },
+              {
+                "do": "Open Run | Edit Configurations and select the hello configuration PyCharm just made. In Environment variables, add ANTHROPIC_API_KEY with your key, and CLAUDE_MODEL with a current model ID from the models overview in Anthropic's documentation. Keep any variable that's already there, such as PYTHONUNBUFFERED=1."
+              },
+              {
+                "do": "Run the configuration again.",
+                "keys": {
+                  "mac": "Ctrl+R",
+                  "win": "Shift+F10"
+                },
+                "see": "Hello in three languages, written by Claude, in the Run tool window."
+              },
+              {
+                "do": "To avoid adding the variables for every new script, open Run | Edit Configurations, click Edit configuration templates, choose Python and add the same two variables. New Python run configurations copy them."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Messages, roles and the system prompt",
+          "minutes": 8,
+          "objectives": [
+            "Explain how a chatbot remembers a conversation",
+            "Give a chatbot its role and rules with a system prompt"
+          ],
+          "key_points": [
+            "The Messages API is stateless: it remembers nothing between calls, so a chatbot keeps the conversation in a list and sends the whole list with every request.",
+            "Each message is a dictionary with a role, \"user\" or \"assistant\", and its content. The list starts with a user message and alternates, with Claude's earlier replies stored as assistant messages.",
+            "The system prompt is passed in the system parameter, not as a message, and sets the chatbot's role, tone and rules for the whole conversation.",
+            "A reply's content is a list of blocks. Join the text of the blocks whose type is \"text\" rather than assuming the first block is text, because some models also return other blocks, such as thinking.",
+            "Each request is billed for every token it sends, so a long conversation costs more each turn; the reply's usage reports its input and output tokens."
+          ],
+          "walkthrough": {
+            "tool": "PyCharm",
+            "title": "Watch the conversation grow in the debugger",
+            "steps": [
+              {
+                "do": "Create memory_demo.py with this code. It sends two messages in one conversation.",
+                "keys": {
+                  "mac": "Cmd+N",
+                  "win": "Alt+Insert"
+                },
+                "code": "import os\n\nimport anthropic\n\nMODEL = os.environ[\"CLAUDE_MODEL\"]\nclient = anthropic.Anthropic()\nSYSTEM = \"You are a cheerful tour guide for Caracas. Keep replies under 60 words.\"\n\nmessages = [{\"role\": \"user\", \"content\": \"Hi! My name is Ana and I love museums.\"}]\nfirst = client.messages.create(model=MODEL, max_tokens=1024, system=SYSTEM, messages=messages)\nmessages.append({\"role\": \"assistant\", \"content\": \"\".join(b.text for b in first.content if b.type == \"text\")})\n\nmessages.append({\"role\": \"user\", \"content\": \"What's my name, and what should I visit first?\"})\nsecond = client.messages.create(model=MODEL, max_tokens=1024, system=SYSTEM, messages=messages)\nprint(\"\".join(b.text for b in second.content if b.type == \"text\"))\nprint(\"input tokens:\", second.usage.input_tokens, \"| output tokens:\", second.usage.output_tokens)",
+                "lang": "python"
+              },
+              {
+                "do": "Run it. If you see KeyError: 'CLAUDE_MODEL', add the two environment variables to its run configuration, or set them in the configuration template as in the last lesson.",
+                "keys": {
+                  "mac": "Ctrl+Shift+R",
+                  "win": "Ctrl+Shift+F10"
+                },
+                "see": "Claude uses the name Ana from the first message, then the token counts."
+              },
+              {
+                "do": "Put the caret on the line that starts second = and toggle a line breakpoint.",
+                "keys": {
+                  "mac": "Cmd+F8",
+                  "win": "Ctrl+F8"
+                },
+                "see": "A red dot beside the line."
+              },
+              {
+                "do": "Debug the last run configuration.",
+                "keys": {
+                  "mac": "Ctrl+D",
+                  "win": "Shift+F9"
+                },
+                "see": "The program pauses at the breakpoint and the Debug tool window opens."
+              },
+              {
+                "do": "In the Variables pane, expand messages. It holds the first user message, Claude's reply as an assistant message, and the new user message."
+              },
+              {
+                "do": "Open Evaluate Expression and check the roles.",
+                "keys": {
+                  "mac": "Option+F8",
+                  "win": "Alt+F8"
+                },
+                "code": "[m[\"role\"] for m in messages]",
+                "lang": "python",
+                "see": "['user', 'assistant', 'user']"
+              },
+              {
+                "do": "Resume the program.",
+                "keys": {
+                  "mac": "Cmd+Option+R",
+                  "win": "F9"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "title": "Streaming replies",
+          "minutes": 7,
+          "objectives": [
+            "Stream a reply so it appears as it's written",
+            "Get the complete message and its token usage after streaming"
+          ],
+          "key_points": [
+            "Without streaming, nothing appears until the whole reply is ready; with streaming, text arrives in small pieces as Claude writes it, so a chatbot feels responsive.",
+            "client.messages.stream(...) takes the same arguments as messages.create and is used in a with block; its text_stream gives each new piece of text as it arrives.",
+            "Print each piece with print(text, end=\"\", flush=True) so it appears at once, on the same line.",
+            "After the loop, stream.get_final_message() returns the complete message, with its content blocks, stop_reason and usage, ready to store in the history.",
+            "Anthropic recommends streaming for long replies, because a long request that doesn't stream can time out before the reply is complete."
+          ],
+          "walkthrough": {
+            "tool": "PyCharm",
+            "title": "Stream a reply",
+            "steps": [
+              {
+                "do": "Create stream_demo.py with this code.",
+                "keys": {
+                  "mac": "Cmd+N",
+                  "win": "Alt+Insert"
+                },
+                "code": "import os\n\nimport anthropic\n\nMODEL = os.environ[\"CLAUDE_MODEL\"]\nclient = anthropic.Anthropic()\n\nwith client.messages.stream(\n    model=MODEL,\n    max_tokens=1024,\n    messages=[{\"role\": \"user\", \"content\": \"Write a four-line poem about rain on a tin roof.\"}],\n) as stream:\n    for text in stream.text_stream:\n        print(text, end=\"\", flush=True)\n    final = stream.get_final_message()\n\nprint()\nprint(\"stop_reason:\", final.stop_reason)\nprint(\"output tokens:\", final.usage.output_tokens)",
+                "lang": "python"
+              },
+              {
+                "do": "Put the caret on stream in client.messages.stream and read its documentation without leaving the editor.",
+                "keys": {
+                  "mac": "F1",
+                  "win": "Ctrl+Q"
+                }
+              },
+              {
+                "do": "Run it.",
+                "keys": {
+                  "mac": "Ctrl+Shift+R",
+                  "win": "Ctrl+Shift+F10"
+                },
+                "see": "The poem appears a few words at a time, followed by stop_reason: end_turn and the output token count."
+              },
+              {
+                "do": "Change print(text, end=\"\", flush=True) to print(text) and run it again.",
+                "keys": {
+                  "mac": "Ctrl+R",
+                  "win": "Shift+F10"
+                },
+                "see": "Each piece on its own line, showing the small chunks the reply arrives in. Change it back afterwards."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build a terminal chatbot",
+        "tool": "PyCharm",
+        "minutes": 90,
+        "goal": "Build a chatbot that runs in PyCharm's Run tool window: a personality and rules set by a system prompt, a memory of the conversation, replies that stream in as they're written, a token report after each reply, and error handling that keeps it running.",
+        "setup": [
+          "PyCharm (the free version is enough) and Python 3.10 or newer",
+          "The claude-chatbot project from the first lesson, with anthropic installed",
+          "An API key from the Claude Console, with credit on the account, and a current model ID from Anthropic's documentation",
+          "Download the starter file chatbot.py into the project"
+        ],
+        "steps": [
+          {
+            "do": "Open chatbot.py and the TODO tool window (View | Tool Windows | TODO) to see the tasks. Make sure the file's run configuration has ANTHROPIC_API_KEY and CLAUDE_MODEL set."
+          },
+          {
+            "do": "TODO 1: write the system prompt. Give the chatbot a name, a job, a tone and at least two rules, such as a length limit and what to do with off-topic questions."
+          },
+          {
+            "do": "TODO 2: in the loop, read the user's message with input(), skip empty lines, and break out of the loop on /quit."
+          },
+          {
+            "do": "TODO 3: add the user's message to history, then stream the reply, printing each piece of text as it arrives.",
+            "code": "with client.messages.stream(model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM, messages=history) as stream:\n    for text in stream.text_stream:\n        print(text, end=\"\", flush=True)\n    final = stream.get_final_message()",
+            "lang": "python"
+          },
+          {
+            "do": "TODO 4: join the text of the final message's text blocks and add it to history as an assistant message."
+          },
+          {
+            "do": "TODO 5: after each reply, print the tokens used and the length of the history.",
+            "code": "print(f\"\\n[{final.usage.input_tokens} in / {final.usage.output_tokens} out tokens, {len(history)} messages]\")",
+            "lang": "python"
+          },
+          {
+            "do": "TODO 6: on /reset, clear the history. Wrap the streaming in try and except anthropic.APIError: remove the unanswered user message from history with history.pop(), print a friendly message and continue."
+          },
+          {
+            "do": "Run the chatbot. Tell it your name and something you enjoy, ask about something else, then ask it what your name is.",
+            "keys": {
+              "mac": "Ctrl+Shift+R",
+              "win": "Ctrl+Shift+F10"
+            },
+            "see": "It remembers, because the whole history goes with every request, and the input token count grows each turn."
+          },
+          {
+            "do": "Type /reset and ask your name again.",
+            "see": "(Conversation cleared.) It no longer knows your name."
+          },
+          {
+            "do": "Test the error handling: in Run | Edit Configurations, set CLAUDE_MODEL to not-a-real-model, run, and send a message. Then set it back.",
+            "keys": {
+              "mac": "Ctrl+R",
+              "win": "Shift+F10"
+            },
+            "see": "Your friendly message naming NotFoundError, not a traceback, and the chatbot keeps running."
+          },
+          {
+            "do": "Set a breakpoint on the line that starts the stream, debug the chatbot, send a message and inspect history in the Variables pane.",
+            "keys": {
+              "mac": "Ctrl+D",
+              "win": "Shift+F9"
+            }
+          },
+          {
+            "do": "Reformat the file and fix anything the Problems tool window shows.",
+            "keys": {
+              "mac": "Cmd+Option+L",
+              "win": "Ctrl+Alt+L"
+            }
+          }
+        ],
+        "checks": [
+          {
+            "text": "Replies are streamed with client.messages.stream and printed piece by piece from text_stream.",
+            "look_for": [
+              "messages.stream",
+              "text_stream"
+            ]
+          },
+          {
+            "text": "A system prompt with a name, a job, a tone and at least two rules is passed with the system parameter.",
+            "look_for": [
+              "system="
+            ]
+          },
+          {
+            "text": "Each reply is added to the history as an assistant message, and the transcript shows the chatbot recalling something said earlier.",
+            "look_for": [
+              "\"assistant\"",
+              "get_final_message"
+            ]
+          },
+          {
+            "text": "A line with the input and output tokens is printed after each reply.",
+            "look_for": [
+              "out tokens"
+            ]
+          },
+          {
+            "text": "/reset clears the history, and an API error gives a friendly message instead of a traceback.",
+            "look_for": [
+              "clear()",
+              "except anthropic."
+            ]
+          },
+          {
+            "text": "The key and the model come from environment variables; no API key appears in the code.",
+            "look_for": [
+              "os.environ"
+            ]
+          }
+        ],
+        "submit": "Paste your finished chatbot.py, then a transcript from the Run tool window showing at least four turns (including the chatbot remembering your name), a /reset, and the friendly error message from the test with not-a-real-model.",
+        "files": [
+          {
+            "path": "chatbot.py",
+            "content": "\"\"\"A terminal chatbot built on the Claude API: a system prompt, a conversation history and streamed replies.\n\nBefore running, set ANTHROPIC_API_KEY and CLAUDE_MODEL in Run | Edit Configurations | Environment variables.\n\"\"\"\n\nimport os\n\nimport anthropic\n\nMODEL = os.environ[\"CLAUDE_MODEL\"]  # a current model ID from Anthropic's documentation\nMAX_TOKENS = 1024\n\n# TODO 1: describe your chatbot: its name, its job, its tone and at least two rules.\nSYSTEM = \"\"\n\n\ndef main():\n    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY\n    history = []  # the whole conversation, as {\"role\": ..., \"content\": ...} dictionaries\n    print(\"Type a message and press Enter. Commands: /reset starts again, /quit leaves.\")\n\n    while True:\n        # TODO 2: read the user's message with input(\"\\nYou: \"), skip empty lines, and leave the loop on /quit.\n        # TODO 6a: on /reset, empty the history, print \"(Conversation cleared.)\" and go round the loop again.\n\n        # TODO 3: add the user's message to the history, then stream the reply with\n        #   client.messages.stream(model=MODEL, max_tokens=MAX_TOKENS, system=SYSTEM, messages=history)\n        #   in a with block, printing each piece of text with end=\"\" and flush=True.\n        # TODO 6b: if the API raises an error, remove the unanswered message from the history,\n        #   print a friendly message and go round the loop again.\n\n        # TODO 4: get the final message, join the text of its text blocks, and add it to the history\n        #   as an assistant message.\n\n        # TODO 5: print a line like  [52 in / 31 out tokens, 4 messages]  from the final message's usage.\n        break  # delete this line when your loop is written\n\n    print(\"\\nGoodbye!\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "anthropic.Anthropic() complains about a missing API key, or you see KeyError: 'CLAUDE_MODEL': the run configuration for chatbot.py doesn't have the environment variables yet.",
+          "A 400 error mentioning roles usually means the history has two user messages in a row: remove the unanswered message when a request fails.",
+          "If input() doesn't seem to wait, click in the Run tool window before typing: that's where your typing goes.",
+          "Leave max_tokens at 1024 or more: if a reply stops mid-sentence, the final message's stop_reason will be max_tokens."
+        ]
+      }
+    }
+  ]
+}
