@@ -104,10 +104,10 @@ def _course_setting(lesson: Lesson) -> tuple[str, str]:
              f"({c.level} level) to the learners taking it.")
     if w is None:
         return where, ""
-    demo = (f"\n\nBeside your lesson, learners see a step-by-step walkthrough in {w.tool}, '{w.title}', exactly as "
-            f"below. Teach the ideas its steps rely on, and introduce it: say what it shows and why it matters, and "
-            f"invite them to follow along in {w.tool}. Don't repeat its steps, menu paths or keyboard shortcuts, and "
-            f"don't give others.\n{catalog.walkthrough_text(w)}")
+    demo = (f"\n\nAfter your lesson, learners see a step-by-step walkthrough in {w.tool}, '{w.title}', exactly as "
+            f"below. Teach the ideas its steps rely on, and end by introducing it: say what it shows and why it "
+            f"matters, and invite them to follow along in {w.tool}. Don't repeat its steps, menu paths or keyboard "
+            f"shortcuts, and don't give others.\n{catalog.walkthrough_text(w)}")
     return where, demo
 
 

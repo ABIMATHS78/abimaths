@@ -39,6 +39,7 @@ def _spawn(coro) -> None:
 async def lifespan(_: FastAPI):
     db.init_db()
     catalog.data()  # read the courses now, so a course file that doesn't fit stops the app here, saying which
+    courses.forget_changed_lessons()
     companions.seed_starters()
     guides.seed()  # before first posts: a starter with guides has posted already
     _spawn(content.ensure_initial_posts())
@@ -278,6 +279,8 @@ def get_companion(companion_id: int, user: dict = User):
         "designer": designer["display_name"] if designer else None, "has_photo": has_photo is not None,
         # Only the designer sees why a companion was removed and where their appeal stands.
         "moderation": staff.moderation_for_owner(c) if mine else None,
+        "courses": [{"slug": x.slug, "title": x.title, "kind": x.kind, "level": x.level}
+                    for x in catalog.taught_by(c["slug"])] if c["is_starter"] else [],
     }
 
 

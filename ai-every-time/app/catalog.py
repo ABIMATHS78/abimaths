@@ -405,6 +405,11 @@ def course(slug: str) -> Course | None:
     return data().by_slug.get(slug)
 
 
+def taught_by(slug: str) -> list[Course]:
+    """The courses a starter companion teaches, in catalogue order."""
+    return [c for c in data().courses if slug in c.instructors]
+
+
 def find_lesson(lesson_id: str) -> tuple[LearningPath, Lesson] | None:
     return data().lessons.get(lesson_id) if lesson_id.startswith("course-") else None
 
@@ -452,6 +457,20 @@ def lesson_extra(lesson_id: str) -> str:
     out = f"Course: {p.course.title} ({p.course.level}), module {p.m}: {p.module.title}"
     if p.lesson.walkthrough:
         out += "\n" + walkthrough_text(p.lesson.walkthrough)
+    return out
+
+
+def lesson_versions() -> dict[str, str]:
+    """A fingerprint of what each course lesson is taught from (its brief and walkthrough), by lesson id, so
+    lessons already written can be written again when that changes."""
+    import hashlib
+
+    from app.curriculum import lesson_brief
+
+    out = {}
+    for lid, (_, lesson) in data().lessons.items():
+        text = lesson_brief(lesson) + "\n" + lesson_extra(lid)
+        out[lid] = hashlib.sha256(text.encode()).hexdigest()[:16]
     return out
 
 

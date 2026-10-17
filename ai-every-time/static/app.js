@@ -1090,6 +1090,8 @@ async function viewCompanion(m) {
           <p class="small" style="margin:0">${esc(p.bio)}</p>
           <p class="muted small" style="margin:.6em 0 0">Teaching style: ${label(p.teaching_style)}</p>
         </div>
+        ${c.courses?.length ? `<div class="card"><h3>🎓 Courses ${esc(p.name.split(" ")[0])} teaches</h3>
+          <div class="stack" style="gap:6px">${c.courses.map((x) => `<a href="#/course/${x.slug}">${esc(x.title)}</a>`).join("")}</div></div>` : ""}
         <div class="card memory">
           <h3>What ${esc(p.name)} remembers</h3>
           <div id="mem"></div>

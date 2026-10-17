@@ -1,0 +1,1136 @@
+{
+  "slug": "switching-vlans-stp",
+  "title": "LAN Switching: VLANs, Trunks and Spanning Tree",
+  "subtitle": "Configure, verify and troubleshoot Cisco switched networks: VLANs, 802.1Q trunks, inter-VLAN routing, Rapid PVST+ and EtherChannel, built and tested in Packet Tracer.",
+  "category": "Networking",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "carlos-ramirez",
+    "ismaile-rahimovi"
+  ],
+  "skills": [
+    "Cisco IOS switch configuration",
+    "VLANs",
+    "802.1Q trunking",
+    "Inter-VLAN routing",
+    "Layer 3 switching",
+    "Spanning Tree Protocol",
+    "Rapid PVST+",
+    "EtherChannel and LACP",
+    "Switch troubleshooting",
+    "Cisco Packet Tracer"
+  ],
+  "tools": [
+    "Cisco Packet Tracer",
+    "Cisco IOS"
+  ],
+  "outcomes": [
+    "Explain how switches learn, flood and forward frames, and manage a Cisco switch from its command line",
+    "Create VLANs, assign access ports, and carry VLANs between switches on 802.1Q trunks with a safe native VLAN",
+    "Route between VLANs with router-on-a-stick and with switch virtual interfaces on a Layer 3 switch",
+    "Control Rapid PVST+: place the root bridge, read port roles, and protect edge ports with PortFast and BPDU guard",
+    "Bundle links into EtherChannels with LACP, and verify and troubleshoot switched networks with show commands"
+  ],
+  "prerequisites": "Networking basics: what switches, routers, MAC addresses and IP addresses are, and how to subnet a /24 (Networking Fundamentals and IP Addressing and Subnetting cover them). You need Cisco Packet Tracer (free with a Cisco Networking Academy account).",
+  "description": "Switches connect almost every wired device in an office, school or data centre, and how they're configured decides whether the network is fast, secure and resilient. In this course you'll configure Cisco switches the way network engineers do. You'll see how a switch learns and forwards frames and manage it from the IOS command line, then divide the network into VLANs, carry them between switches on 802.1Q trunks with a safe native VLAN, and route between them, first with router-on-a-stick and then with switch virtual interfaces on a Layer 3 switch. Finally you'll add redundant links without creating loops: you'll work out how spanning tree chooses its root bridge and blocks ports, tune Rapid PVST+, protect edge ports with PortFast and BPDU guard, and bundle links into EtherChannels with LACP.\n\nEvery lesson shows the commands step by step in Cisco Packet Tracer, with the output you should see, and every module ends with a lab your instructor reviews against real show command output. The course ends with a project in which you build, test and document the switched network for a two-floor office. It follows the Network Access topics in Cisco's published CCNA (200-301) exam topics.",
+  "aligned_with": "Cisco CCNA (200-301) exam topics: Network Access",
+  "modules": [
+    {
+      "title": "Switch operation and the switch CLI",
+      "summary": "Look inside a switch's forwarding decisions and its MAC address table, and get fluent with the IOS commands for managing and configuring a Cisco switch.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "How a switch forwards frames",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a switch builds and uses its MAC address table, VLAN by VLAN",
+            "Describe store-and-forward and cut-through switching, and when a switch floods"
+          ],
+          "key_points": [
+            "A switch keeps its MAC address table per VLAN: it learns each frame's source MAC address against the port and VLAN the frame arrived on, and forwards frames only within their VLAN.",
+            "Known unicast frames go out of one port; broadcasts, multicasts and frames to unknown unicast addresses are flooded out of every other port in the VLAN, including the trunks that carry it.",
+            "Learned entries age out after 300 seconds without traffic by default on Cisco switches; when a MAC address appears on a different port, the switch moves its entry, which is how it copes with devices that move.",
+            "Store-and-forward switching receives the whole frame and checks its FCS before forwarding, so damaged frames are dropped; cut-through starts forwarding once it has read the destination address, for less delay. Catalyst access switches such as the 2960 store and forward.",
+            "Switch ports negotiate speed and duplex with the device at the other end by default; set them by hand with the speed and duplex commands only when you set both ends the same way.",
+            "show mac address-table shows the table and clear mac address-table dynamic empties its learned entries; show interfaces status lists every port with its state, VLAN, duplex and speed."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Read a switch's MAC address table",
+            "steps": [
+              {
+                "do": "Build two 2960 switches, S1 and S2, joined GigabitEthernet0/1 to GigabitEthernet0/1 with a Copper Cross-Over cable. Connect PC1 and PC2 to S1 Fa0/1 and Fa0/2, and PC3 to S2 Fa0/1. Address them 192.168.1.11, .12 and .13, mask 255.255.255.0."
+              },
+              {
+                "do": "Ping PC2 and PC3 from PC1. Then, on S1's CLI, show the table.",
+                "code": "enable\nshow mac address-table",
+                "lang": "cisco",
+                "see": "PC1 on Fa0/1, PC2 on Fa0/2, and PC3's MAC address on Gig0/1: from S1's point of view, PC3 is through the link to S2. You may also see S2's own MAC address on Gig0/1."
+              },
+              {
+                "do": "Do the same on S2.",
+                "see": "PC3 on Fa0/1, and PC1 and PC2 both on Gig0/1."
+              },
+              {
+                "do": "List the ports with their state, VLAN, duplex and speed.",
+                "code": "show interfaces status",
+                "lang": "cisco",
+                "see": "One line per port: connected or notconnect, VLAN 1, and the duplex and speed it negotiated."
+              },
+              {
+                "do": "Empty the learned entries, check the table, then ping from PC1 again and watch the entries come back.",
+                "code": "clear mac address-table dynamic\nshow mac address-table",
+                "lang": "cisco"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Managing a switch from the command line",
+          "minutes": 12,
+          "objectives": [
+            "Move between IOS command modes and use help, completion and history",
+            "Configure a switch's name, port descriptions and management address, and save the configuration"
+          ],
+          "key_points": [
+            "IOS has modes, each with its own prompt: user EXEC (Switch>), privileged EXEC (Switch#, entered with enable), global configuration (Switch(config)#, entered with configure terminal) and modes for parts of the device, such as an interface (Switch(config-if)#).",
+            "exit goes up one mode and end or Ctrl+Z returns to privileged EXEC; ? lists what you can type next, Tab completes a word, the Up arrow recalls earlier commands, and any unique abbreviation works, such as conf t for configure terminal.",
+            "Changes take effect at once in the running configuration (show running-config) but are lost at a restart unless saved to the startup configuration with copy running-config startup-config.",
+            "interface range fa0/1 - 24 configures many ports at once, description labels a port, and do runs an EXEC command such as do show ip interface brief without leaving configuration mode.",
+            "A layer 2 switch is managed through a switch virtual interface (SVI), such as interface vlan 1, with an IP address and no shutdown, plus ip default-gateway so it can be reached from other subnets.",
+            "Putting no in front of a command removes or reverses it, as in no shutdown to turn an interface on or no description to remove a label."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Give a switch its basic configuration",
+            "steps": [
+              {
+                "do": "On S1's CLI, move into global configuration mode.",
+                "code": "enable\nconfigure terminal",
+                "lang": "cisco",
+                "see": "Switch(config)#"
+              },
+              {
+                "do": "Name the switch.",
+                "code": "hostname S1",
+                "lang": "cisco",
+                "see": "The prompt becomes S1(config)#."
+              },
+              {
+                "do": "Ask for help: type interface ? to see the interface types, or type a few letters of a word and press Tab to complete it.",
+                "keys": {
+                  "mac": "Tab",
+                  "win": "Tab"
+                }
+              },
+              {
+                "do": "Label ports, several at once.",
+                "code": "interface range fa0/1 - 2\ndescription Office PCs\nexit\ninterface g0/1\ndescription Link to S2\nexit",
+                "lang": "cisco"
+              },
+              {
+                "do": "Give the switch a management address and a default gateway.",
+                "code": "interface vlan 1\nip address 192.168.1.2 255.255.255.0\nno shutdown\nexit\nip default-gateway 192.168.1.1",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check your work without leaving configuration mode.",
+                "code": "do show ip interface brief",
+                "lang": "cisco",
+                "see": "Vlan1 with 192.168.1.2, up and up."
+              },
+              {
+                "do": "Return to privileged EXEC mode.",
+                "keys": {
+                  "mac": "Ctrl+Z",
+                  "win": "Ctrl+Z"
+                },
+                "see": "S1#"
+              },
+              {
+                "do": "Read the running configuration.",
+                "code": "show running-config",
+                "lang": "cisco",
+                "see": "hostname S1, the descriptions under their interfaces, and ip address 192.168.1.2 255.255.255.0 under interface Vlan1."
+              },
+              {
+                "do": "Save it.",
+                "code": "copy running-config startup-config",
+                "lang": "cisco",
+                "see": "Destination filename [startup-config]? Press Enter, then [OK]."
+              },
+              {
+                "do": "From PC1, ping the switch.",
+                "code": "ping 192.168.1.2",
+                "lang": "text",
+                "see": "Reply from 192.168.1.2 with TTL=255."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Set up and map a two-switch LAN",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 40,
+        "goal": "Give two switches names, port descriptions and management addresses, then use their MAC address tables to show exactly where every PC is connected.",
+        "setup": [
+          "Cisco Packet Tracer"
+        ],
+        "steps": [
+          {
+            "do": "Build two 2960 switches joined Gig0/1 to Gig0/1 with a Copper Cross-Over cable. On S1, connect PC1 to Fa0/1 and PC2 to Fa0/2; on S2, PC3 to Fa0/1 and PC4 to Fa0/2."
+          },
+          {
+            "do": "Address the PCs 192.168.1.11 to 192.168.1.14, mask 255.255.255.0, gateway 192.168.1.1 (for a router you'll add in a later module)."
+          },
+          {
+            "do": "Configure S1: hostname, descriptions and a management address.",
+            "code": "enable\nconfigure terminal\nhostname S1\ninterface fa0/1\ndescription PC1\ninterface fa0/2\ndescription PC2\ninterface g0/1\ndescription Link to S2\ninterface vlan 1\nip address 192.168.1.2 255.255.255.0\nno shutdown\nexit\nip default-gateway 192.168.1.1\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Configure S2 the same way, with hostname S2, descriptions PC3, PC4 and Link to S1, and management address 192.168.1.3."
+          },
+          {
+            "do": "Save both configurations.",
+            "code": "copy running-config startup-config",
+            "lang": "cisco"
+          },
+          {
+            "do": "On both switches, empty the learned addresses.",
+            "code": "clear mac address-table dynamic",
+            "lang": "cisco"
+          },
+          {
+            "do": "From PC1, ping PC2, PC3, PC4 and both switches.",
+            "code": "ping 192.168.1.12\nping 192.168.1.13\nping 192.168.1.14\nping 192.168.1.2\nping 192.168.1.3",
+            "lang": "text"
+          },
+          {
+            "do": "Show each switch's MAC address table.",
+            "code": "show mac address-table",
+            "lang": "cisco"
+          },
+          {
+            "do": "On each PC run ipconfig /all, note its Physical Address, and match every entry in both tables to a PC or to the other switch."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Both switches have their names, port descriptions and management addresses.",
+            "look_for": [
+              "hostname S1",
+              "hostname S2",
+              "description",
+              "192.168.1.3"
+            ]
+          },
+          {
+            "text": "S1's management interface is up with its address.",
+            "look_for": [
+              "Vlan1",
+              "192.168.1.2",
+              "up"
+            ]
+          },
+          {
+            "text": "PC1 reaches every other PC and both switches.",
+            "look_for": [
+              "Reply from 192.168.1.14",
+              "Reply from 192.168.1.2",
+              "Reply from 192.168.1.3"
+            ]
+          },
+          {
+            "text": "S1's table lists PC1 and PC2 on Fa0/1 and Fa0/2, and PC3 and PC4 on Gig0/1.",
+            "look_for": [
+              "Fa0/1",
+              "Fa0/2",
+              "Gig0/1",
+              "DYNAMIC"
+            ]
+          },
+          {
+            "text": "Every table entry is matched to a device, using the PCs' Physical Address.",
+            "look_for": [
+              "Physical Address"
+            ]
+          },
+          {
+            "text": "Both configurations are saved.",
+            "look_for": [
+              "[OK]"
+            ]
+          }
+        ],
+        "submit": "Paste both switches' show running-config and show mac address-table, PC1's pings, and your list matching each MAC address in the tables to a device.",
+        "hints": [
+          "If Vlan1 stays down, check that it has no shutdown and that at least one port is connected.",
+          "A MAC address on Gig0/1 belongs to something on the other side of the link: a PC on the other switch, or the other switch itself."
+        ]
+      }
+    },
+    {
+      "title": "VLANs and trunks",
+      "summary": "Split a switched network into VLANs, carry them between switches on 802.1Q trunks, and find the faults that most often break them.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "VLANs and access ports",
+          "minutes": 12,
+          "objectives": [
+            "Explain what a VLAN is and why networks use them",
+            "Create VLANs and assign access ports, including a voice VLAN"
+          ],
+          "key_points": [
+            "A VLAN is a separate broadcast domain inside a switched network: devices in different VLANs can't reach each other directly, even on the same switch, and need a router or Layer 3 switch between them. Each VLAN normally has its own IP subnet.",
+            "VLANs group devices by role rather than by where they are, contain broadcasts, and improve security by keeping groups such as staff, guests and management apart.",
+            "VLAN IDs run from 1 to 4094: 1 to 1005 is the normal range and 1006 to 4094 the extended range. VLAN 1 is the default VLAN every port starts in and can't be deleted, and 1002 to 1005 are kept for old Token Ring and FDDI networks.",
+            "vlan 10 creates a VLAN and name SALES names it; on a port, switchport mode access makes it an access port and switchport access vlan 10 puts it in the VLAN, which the switch creates if it doesn't exist yet.",
+            "An access port can also carry a voice VLAN for an IP phone (switchport voice vlan 150): the phone tags its own traffic for the voice VLAN, while a PC plugged into the phone stays in the data VLAN.",
+            "show vlan brief lists each VLAN with its ports. Deleting a VLAN (no vlan 10) leaves its ports in a VLAN that no longer exists, so they stop forwarding until they're moved or the VLAN is created again."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Create VLANs and assign ports",
+            "steps": [
+              {
+                "do": "On S1, create two VLANs and name them.",
+                "code": "enable\nconfigure terminal\nvlan 10\nname SALES\nvlan 20\nname ENGINEERING\nexit",
+                "lang": "cisco"
+              },
+              {
+                "do": "Put Fa0/1 in VLAN 10 and Fa0/2 in VLAN 20 as access ports.",
+                "code": "interface fa0/1\nswitchport mode access\nswitchport access vlan 10\ninterface fa0/2\nswitchport mode access\nswitchport access vlan 20\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the VLANs and their ports.",
+                "code": "show vlan brief",
+                "lang": "cisco",
+                "see": "10 SALES active with Fa0/1, 20 ENGINEERING active with Fa0/2, and the other ports still in 1 default."
+              },
+              {
+                "do": "Read one port's VLAN settings in detail.",
+                "code": "show interfaces fa0/1 switchport",
+                "lang": "cisco",
+                "see": "Administrative Mode: static access, Operational Mode: static access and Access Mode VLAN: 10 (SALES)."
+              },
+              {
+                "do": "Put a port in a VLAN that doesn't exist yet.",
+                "code": "configure terminal\ninterface fa0/3\nswitchport mode access\nswitchport access vlan 30\nend",
+                "lang": "cisco",
+                "see": "% Access VLAN does not exist. Creating vlan 30"
+              },
+              {
+                "do": "Set up a port for an IP phone with a PC behind it.",
+                "code": "configure terminal\nvlan 150\nname VOICE\nexit\ninterface fa0/4\nswitchport mode access\nswitchport access vlan 10\nswitchport voice vlan 150\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Try an experiment: give PC1 (Fa0/1, VLAN 10) the address 192.168.1.11 and PC2 (Fa0/2, VLAN 20) 192.168.1.12, the same subnet, and ping PC2 from PC1.",
+                "see": "Request timed out: PC1's ARP broadcast never reaches VLAN 20. Separate VLANs need separate subnets and a router."
+              }
+            ]
+          }
+        },
+        {
+          "title": "802.1Q trunks and the native VLAN",
+          "minutes": 14,
+          "objectives": [
+            "Explain how 802.1Q tags frames on a trunk and how the native VLAN works",
+            "Configure and verify a trunk with a native VLAN and a list of allowed VLANs"
+          ],
+          "key_points": [
+            "A trunk carries many VLANs over one link, between switches or between a switch and a router. 802.1Q adds a 4-byte tag after each frame's source MAC address, holding a 12-bit VLAN ID and a 3-bit priority.",
+            "Frames in the native VLAN cross an 802.1Q trunk untagged. Both ends must use the same native VLAN, or frames land in the wrong VLAN; Cisco switches spot a mismatch through CDP and log a native VLAN mismatch message.",
+            "The native VLAN is VLAN 1 by default. Good practice is to change it, on both ends, to a VLAN used for nothing else, such as 99, and to keep user traffic out of VLAN 1.",
+            "switchport mode trunk makes a port a trunk, switchport trunk native vlan 99 sets its native VLAN, and switchport trunk allowed vlan 10,20,99 limits the VLANs it carries; add and remove change the list later.",
+            "DTP (Dynamic Trunking Protocol) can negotiate trunks: a 2960's ports default to dynamic auto, and two dynamic auto ports stay access ports. Setting switchport mode trunk on both ends and adding switchport nonegotiate turns DTP off.",
+            "show interfaces trunk lists each trunk with its mode, encapsulation, status and native VLAN, the VLANs allowed on it, and those allowed and active; a VLAN must exist on both switches to be active across the trunk."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Configure an 802.1Q trunk",
+            "steps": [
+              {
+                "do": "On both S1 and S2, create VLANs 10, 20 and 99 with the same IDs and names.",
+                "code": "configure terminal\nvlan 10\nname SALES\nvlan 20\nname ENGINEERING\nvlan 99\nname NATIVE\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On S1, make Gig0/1, the link to S2, a trunk with native VLAN 99 and only the VLANs it needs.",
+                "code": "configure terminal\ninterface g0/1\nswitchport mode trunk\nswitchport trunk native vlan 99\nswitchport trunk allowed vlan 10,20,99\nswitchport nonegotiate\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Before you configure S2, wait up to a minute and watch S1's console.",
+                "see": "%CDP-4-NATIVE_VLAN_MISMATCH: Native VLAN mismatch discovered on GigabitEthernet0/1 (99), with S2 GigabitEthernet0/1 (1)."
+              },
+              {
+                "do": "Configure S2's Gig0/1 the same way.",
+                "see": "The mismatch messages stop."
+              },
+              {
+                "do": "Check the trunk on each switch.",
+                "code": "show interfaces trunk",
+                "lang": "cisco",
+                "see": "Gig0/1, mode on, encapsulation 802.1q, status trunking, native VLAN 99; 10,20,99 allowed, and the same list allowed and active."
+              },
+              {
+                "do": "Read the port's details.",
+                "code": "show interfaces g0/1 switchport",
+                "lang": "cisco",
+                "see": "Administrative Mode: trunk, Operational Mode: trunk, Negotiation of Trunking: Off and Trunking Native Mode VLAN: 99 (NATIVE)."
+              },
+              {
+                "do": "Put PC1 (S1 Fa0/1) and PC3 (S2 Fa0/1) in VLAN 10 with 192.168.10.11 and 192.168.10.13, mask 255.255.255.0, and ping PC3 from PC1.",
+                "see": "Reply from 192.168.10.13: VLAN 10's frames cross the trunk, tagged."
+              },
+              {
+                "do": "On S1, take VLAN 10 off the trunk, ping again, then put it back.",
+                "code": "configure terminal\ninterface g0/1\nswitchport trunk allowed vlan remove 10\nend\n! ping fails now\nconfigure terminal\ninterface g0/1\nswitchport trunk allowed vlan add 10\nend",
+                "lang": "cisco"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Troubleshooting VLANs and trunks",
+          "minutes": 12,
+          "objectives": [
+            "Diagnose common VLAN and trunk faults from their symptoms",
+            "Use CDP and show commands to see how switches are connected and configured"
+          ],
+          "key_points": [
+            "When hosts in the same VLAN can't reach each other across switches, check in order: is each host's port in the right VLAN, does the VLAN exist on every switch on the path, is each link really a trunk, and is the VLAN allowed and active on it?",
+            "A port assigned to a VLAN that doesn't exist on its switch stops forwarding: show vlan brief doesn't list it, and show interfaces switchport shows its access VLAN as inactive.",
+            "Two ports left at dynamic auto never form a trunk, and a trunk facing an access port only works for that access port's VLAN; configure switchport mode trunk on both ends.",
+            "A native VLAN mismatch puts untagged frames into different VLANs at each end. It shows up as CDP mismatch messages, and as hosts reaching the wrong network; make the native VLAN match on both ends.",
+            "CDP (Cisco Discovery Protocol), on by default on Cisco devices, and the open standard LLDP tell you what's at the other end of each link: show cdp neighbors lists each neighbour's name, the local and remote ports, and its platform.",
+            "Hosts in the right VLAN can still fail at the IP layer: a wrong subnet, mask or gateway for the VLAN looks like a VLAN fault, so check the hosts' settings too."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Find a VLAN fault step by step",
+            "steps": [
+              {
+                "do": "Using S1 and S2 from the last lesson, create a fault: delete VLAN 10 on S2.",
+                "code": "configure terminal\nno vlan 10\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "From PC1, ping PC3 (both in VLAN 10).",
+                "code": "ping 192.168.10.13",
+                "lang": "text",
+                "see": "Request timed out."
+              },
+              {
+                "do": "Check S2's VLANs.",
+                "code": "show vlan brief",
+                "lang": "cisco",
+                "see": "VLAN 10 is gone, and Fa0/1 isn't listed under any VLAN."
+              },
+              {
+                "do": "Check the port.",
+                "code": "show interfaces fa0/1 switchport",
+                "lang": "cisco",
+                "see": "Access Mode VLAN: 10 (Inactive)."
+              },
+              {
+                "do": "Check the trunk.",
+                "code": "show interfaces trunk",
+                "lang": "cisco",
+                "see": "10 is still allowed on the trunk, but missing from Vlans allowed and active in management domain."
+              },
+              {
+                "do": "Fix it by creating the VLAN again, and ping once more.",
+                "code": "configure terminal\nvlan 10\nname SALES\nend",
+                "lang": "cisco",
+                "see": "Reply from 192.168.10.13: the port is active again."
+              },
+              {
+                "do": "See which device is at the other end of each link.",
+                "code": "show cdp neighbors",
+                "lang": "cisco",
+                "see": "S2, with local interface Gig 0/1, its platform (2960) and its port ID, Gig 0/1."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "VLANs across two switches",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 60,
+        "goal": "Divide a two-switch network into VLANs, join the switches with a secure 802.1Q trunk, and show that hosts reach their own VLAN across the trunk but not the other VLAN.",
+        "setup": [
+          "Cisco Packet Tracer",
+          "Your two-switch network from the module 1 lab, or two new 2960s joined Gig0/1 to Gig0/1"
+        ],
+        "steps": [
+          {
+            "do": "Plan: VLAN 10 SALES uses 192.168.10.0/24, VLAN 20 ENGINEERING uses 192.168.20.0/24, and VLAN 99 NATIVE is the trunk's native VLAN, with no hosts in it."
+          },
+          {
+            "do": "Connect PC1 to S1 Fa0/1 and PC2 to S1 Fa0/2; PC3 to S2 Fa0/1 and PC4 to S2 Fa0/2."
+          },
+          {
+            "do": "Address the PCs: PC1 192.168.10.11, PC2 192.168.20.12, PC3 192.168.10.13 and PC4 192.168.20.14, all with mask 255.255.255.0, and gateways 192.168.10.1 and 192.168.20.1 for the router you'll add in the next module."
+          },
+          {
+            "do": "On both switches, create VLANs 10, 20 and 99 with their names."
+          },
+          {
+            "do": "On both switches, put Fa0/1 in VLAN 10 and Fa0/2 in VLAN 20 as access ports."
+          },
+          {
+            "do": "On both switches, make Gig0/1 a trunk with native VLAN 99, allowed VLANs 10, 20 and 99, and DTP off.",
+            "code": "interface g0/1\nswitchport mode trunk\nswitchport trunk native vlan 99\nswitchport trunk allowed vlan 10,20,99\nswitchport nonegotiate",
+            "lang": "cisco"
+          },
+          {
+            "do": "On both switches, shut down the ports you aren't using.",
+            "code": "interface range fa0/3 - 24\nshutdown\ninterface g0/2\nshutdown",
+            "lang": "cisco"
+          },
+          {
+            "do": "Verify.",
+            "code": "show vlan brief\nshow interfaces trunk\nshow ip interface brief",
+            "lang": "cisco"
+          },
+          {
+            "do": "From PC1 ping PC3, and from PC2 ping PC4.",
+            "see": "Replies: same VLAN, across the trunk."
+          },
+          {
+            "do": "From PC1 ping PC2 and PC4.",
+            "see": "Request timed out: different VLANs, and no router yet."
+          },
+          {
+            "do": "Save both configurations."
+          }
+        ],
+        "checks": [
+          {
+            "text": "show vlan brief on both switches lists SALES, ENGINEERING and NATIVE, with Fa0/1 in VLAN 10 and Fa0/2 in VLAN 20.",
+            "look_for": [
+              "SALES",
+              "ENGINEERING",
+              "NATIVE"
+            ]
+          },
+          {
+            "text": "Gig0/1 is an 802.1Q trunk with native VLAN 99 on both switches.",
+            "look_for": [
+              "802.1q",
+              "trunking",
+              "99"
+            ]
+          },
+          {
+            "text": "The trunk allows only VLANs 10, 20 and 99.",
+            "look_for": [
+              "10,20,99"
+            ]
+          },
+          {
+            "text": "PCs reach the PC in their own VLAN on the other switch.",
+            "look_for": [
+              "Reply from 192.168.10.13",
+              "Reply from 192.168.20.14"
+            ]
+          },
+          {
+            "text": "PCs can't reach the other VLAN yet.",
+            "look_for": [
+              "Request timed out"
+            ]
+          },
+          {
+            "text": "Unused ports are shut down.",
+            "look_for": [
+              "administratively down"
+            ]
+          }
+        ],
+        "submit": "Paste show vlan brief, show interfaces trunk and show ip interface brief from both switches, then the four pings from PC1 and PC2.",
+        "hints": [
+          "If show interfaces trunk shows nothing, the port isn't trunking: check switchport mode trunk on both ends.",
+          "If a VLAN is allowed but not active on the trunk, it probably doesn't exist on one of the switches."
+        ]
+      }
+    },
+    {
+      "title": "Routing between VLANs",
+      "summary": "Give each VLAN a gateway and route between them: first with a router on a trunk (router-on-a-stick), then with switch virtual interfaces on a Layer 3 switch.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "Router-on-a-stick",
+          "minutes": 12,
+          "objectives": [
+            "Explain how one router interface can route for many VLANs",
+            "Configure and verify router subinterfaces with 802.1Q encapsulation"
+          ],
+          "key_points": [
+            "Router-on-a-stick connects one router interface to a switch trunk and divides it into subinterfaces, one per VLAN, each with an IP address that the VLAN's hosts use as their default gateway.",
+            "On each subinterface, encapsulation dot1Q 10 tags its traffic for VLAN 10 and must come before the IP address; encapsulation dot1Q 99 native marks the subinterface for the native VLAN, whose frames travel untagged.",
+            "The physical interface needs no shutdown, which brings its subinterfaces up too; it doesn't need an IP address of its own.",
+            "The switch port facing the router must be a trunk that allows every VLAN being routed, with the same native VLAN as the router.",
+            "Every packet between VLANs crosses the one link twice, up to the router and back down, so the link's bandwidth limits traffic between VLANs; that's why larger networks route on Layer 3 switches instead.",
+            "show ip interface brief lists subinterfaces such as GigabitEthernet0/0.10, show ip route shows each VLAN's subnet as connected through its subinterface, and show interfaces g0/0.10 shows the subinterface's VLAN tag."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Configure router-on-a-stick",
+            "steps": [
+              {
+                "do": "Add a 2911 router, R1, to the two-switch VLAN network, and connect its G0/0 to S1's Gig0/2 with a Copper Straight-Through cable."
+              },
+              {
+                "do": "On S1, make Gig0/2 a trunk that matches the S1 to S2 trunk.",
+                "code": "configure terminal\ninterface g0/2\nno shutdown\nswitchport mode trunk\nswitchport trunk native vlan 99\nswitchport trunk allowed vlan 10,20,99\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On R1, turn on the physical interface and create a subinterface for each VLAN.",
+                "code": "enable\nconfigure terminal\ninterface g0/0\nno shutdown\ninterface g0/0.10\nencapsulation dot1Q 10\nip address 192.168.10.1 255.255.255.0\ninterface g0/0.20\nencapsulation dot1Q 20\nip address 192.168.20.1 255.255.255.0\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the subinterfaces and the routes.",
+                "code": "show ip interface brief\nshow ip route",
+                "lang": "cisco",
+                "see": "GigabitEthernet0/0.10 with 192.168.10.1 and GigabitEthernet0/0.20 with 192.168.20.1, up and up; C 192.168.10.0/24 is directly connected, GigabitEthernet0/0.10, and the same for VLAN 20."
+              },
+              {
+                "do": "Check a subinterface's tag.",
+                "code": "show interfaces g0/0.10",
+                "lang": "cisco",
+                "see": "Encapsulation 802.1Q Virtual LAN, Vlan ID 10."
+              },
+              {
+                "do": "From PC1 (VLAN 10), ping and trace PC4 (VLAN 20).",
+                "code": "ping 192.168.20.14\ntracert 192.168.20.14",
+                "lang": "text",
+                "see": "Replies with TTL=127, and a trace whose first hop is 192.168.10.1, R1's subinterface for VLAN 10."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Layer 3 switches and switch virtual interfaces",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a Layer 3 switch routes between VLANs with switch virtual interfaces",
+            "Configure SVIs and a routed port on a multilayer switch"
+          ],
+          "key_points": [
+            "A Layer 3 (multilayer) switch can route as well as switch: ip routing turns routing on, and a switch virtual interface (SVI) for each VLAN, such as interface vlan 10 with an IP address, becomes that VLAN's default gateway.",
+            "A Layer 3 switch routes between VLANs in its own hardware, so it's much faster than router-on-a-stick and has no single trunk to limit it.",
+            "An SVI is up only while its VLAN exists and at least one port carrying that VLAN, access or trunk, is up; until then its line protocol stays down.",
+            "no switchport turns a switch port into a routed port, which behaves like a router interface and takes an IP address directly; it's often used for the link to a router or firewall.",
+            "Switches that support two trunk encapsulations, such as the 3560, need switchport trunk encapsulation dot1q before switchport mode trunk.",
+            "show ip route on the switch lists each VLAN's subnet as connected through its Vlan interface, as in C 192.168.10.0/24 is directly connected, Vlan10."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Route between VLANs on a Layer 3 switch",
+            "steps": [
+              {
+                "do": "Add a 3560-24PS multilayer switch (Network Devices > Switches) and connect PC5 to its Fa0/1 and PC6 to its Fa0/2. A 3650-24PS works too, once you've added a power supply on its Physical tab; its ports are named Gig1/0/1 and so on."
+              },
+              {
+                "do": "Name it, create the VLANs and assign the ports.",
+                "code": "enable\nconfigure terminal\nhostname MLS1\nvlan 10\nname SALES\nvlan 20\nname ENGINEERING\nexit\ninterface fa0/1\nswitchport mode access\nswitchport access vlan 10\ninterface fa0/2\nswitchport mode access\nswitchport access vlan 20\nexit",
+                "lang": "cisco"
+              },
+              {
+                "do": "Turn on routing and create an SVI for each VLAN.",
+                "code": "ip routing\ninterface vlan 10\nip address 192.168.10.1 255.255.255.0\nno shutdown\ninterface vlan 20\nip address 192.168.20.1 255.255.255.0\nno shutdown\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the SVIs and the routing table.",
+                "code": "show ip interface brief\nshow ip route",
+                "lang": "cisco",
+                "see": "Vlan10 and Vlan20 up and up, and C 192.168.10.0/24 is directly connected, Vlan10 and C 192.168.20.0/24 is directly connected, Vlan20."
+              },
+              {
+                "do": "Give PC5 192.168.10.15 with gateway 192.168.10.1, and PC6 192.168.20.16 with gateway 192.168.20.1, then ping PC6 from PC5.",
+                "see": "Reply from 192.168.20.16 with TTL=127: the switch routed it."
+              },
+              {
+                "do": "Shut down PC6's port and look at Vlan20.",
+                "code": "configure terminal\ninterface fa0/2\nshutdown\nend\nshow ip interface brief",
+                "lang": "cisco",
+                "see": "Vlan20's protocol goes down: no port in VLAN 20 is up any more. Turn the port back on with no shutdown."
+              },
+              {
+                "do": "Make Gig0/1 a routed port, as you would for a link to a router.",
+                "code": "configure terminal\ninterface g0/1\nno switchport\nip address 10.0.0.1 255.255.255.252\nno shutdown\nend\nshow ip interface brief",
+                "lang": "cisco",
+                "see": "GigabitEthernet0/1 now has the address 10.0.0.1, like a router interface; it stays down until it's cabled."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Route between VLANs two ways",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 70,
+        "goal": "Add router-on-a-stick routing to the two-switch VLAN network, then route between the same VLANs on a Layer 3 switch with SVIs, and compare the two.",
+        "setup": [
+          "Cisco Packet Tracer",
+          "Your VLAN network from the module 2 lab: S1 and S2 with VLANs 10, 20 and 99 and PC1 to PC4"
+        ],
+        "steps": [
+          {
+            "do": "Part A. Add a 2911 router, R1, and connect its G0/0 to S1's Gig0/2 with a Copper Straight-Through cable."
+          },
+          {
+            "do": "On S1, turn Gig0/2 on and make it a trunk with native VLAN 99 and allowed VLANs 10, 20 and 99."
+          },
+          {
+            "do": "On R1, turn on G0/0 and create subinterfaces G0/0.10 (192.168.10.1/24) and G0/0.20 (192.168.20.1/24) with dot1Q encapsulation for their VLANs."
+          },
+          {
+            "do": "Verify R1 and S1.",
+            "code": "! on R1\nshow ip interface brief\nshow ip route\n\n! on S1\nshow interfaces trunk",
+            "lang": "cisco"
+          },
+          {
+            "do": "From PC1 (VLAN 10) ping and trace PC4 (VLAN 20), and from PC2 (VLAN 20) ping PC3 (VLAN 10).",
+            "code": "ping 192.168.20.14\ntracert 192.168.20.14",
+            "lang": "text"
+          },
+          {
+            "do": "Part B. In the same file, add a 3560-24PS, MLS1, with PC5 on Fa0/1 and PC6 on Fa0/2, not connected to the other switches."
+          },
+          {
+            "do": "On MLS1, create VLANs 10 and 20, put Fa0/1 in VLAN 10 and Fa0/2 in VLAN 20, turn on ip routing, and create SVIs Vlan10 (192.168.10.1/24) and Vlan20 (192.168.20.1/24)."
+          },
+          {
+            "do": "Give PC5 192.168.10.15 with gateway 192.168.10.1 and PC6 192.168.20.16 with gateway 192.168.20.1, then verify.",
+            "code": "! on MLS1\nshow ip interface brief\nshow ip route\n\n! on PC5\nping 192.168.20.16",
+            "lang": "cisco"
+          },
+          {
+            "do": "Write two or three sentences comparing the methods: where the routing happens, what limits each, and which you'd choose for a network with heavy traffic between VLANs."
+          }
+        ],
+        "checks": [
+          {
+            "text": "R1's subinterfaces are up with the VLAN gateway addresses.",
+            "look_for": [
+              "GigabitEthernet0/0.10",
+              "192.168.10.1",
+              "GigabitEthernet0/0.20",
+              "192.168.20.1"
+            ]
+          },
+          {
+            "text": "R1's routing table shows both VLAN subnets as connected through subinterfaces.",
+            "look_for": [
+              "is directly connected, GigabitEthernet0/0.10",
+              "is directly connected, GigabitEthernet0/0.20"
+            ]
+          },
+          {
+            "text": "S1's link to R1 is a trunk.",
+            "look_for": [
+              "Gig0/2",
+              "trunking"
+            ]
+          },
+          {
+            "text": "PCs in different VLANs reach each other through R1, with the VLAN's gateway as the first hop.",
+            "look_for": [
+              "Reply from 192.168.20.14",
+              "Reply from 192.168.10.13",
+              "192.168.10.1"
+            ]
+          },
+          {
+            "text": "MLS1 routes between VLANs with SVIs.",
+            "look_for": [
+              "Vlan10",
+              "Vlan20",
+              "is directly connected, Vlan10"
+            ]
+          },
+          {
+            "text": "PC5 reaches PC6 through MLS1.",
+            "look_for": [
+              "Reply from 192.168.20.16"
+            ]
+          },
+          {
+            "text": "The comparison explains that router-on-a-stick routes on the router across one trunk link, which limits it, while the Layer 3 switch routes inside the switch with SVIs.",
+            "look_for": [
+              "trunk",
+              "SVI"
+            ]
+          }
+        ],
+        "submit": "Paste R1's show ip interface brief and show ip route, S1's show interfaces trunk, the pings and trace from Part A, MLS1's show ip interface brief and show ip route with PC5's ping from Part B, and your comparison.",
+        "hints": [
+          "If the subinterfaces are up but pings fail, check that S1's Gig0/2 is trunking and allows VLANs 10 and 20.",
+          "An SVI that stays down usually means its VLAN doesn't exist on the switch, or no port in that VLAN is up."
+        ]
+      }
+    },
+    {
+      "title": "Spanning tree and EtherChannel",
+      "summary": "Add redundant links without loops: see how spanning tree chooses a root and blocks ports, tune Rapid PVST+, protect edge ports, and bundle links with LACP.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "Why loops happen and how spanning tree stops them",
+          "minutes": 14,
+          "objectives": [
+            "Explain why redundant switch links cause broadcast storms without spanning tree",
+            "Work out the root bridge, root ports, designated ports and blocked ports of a small network"
+          ],
+          "key_points": [
+            "Ethernet frames have no TTL, so with redundant links and nothing to stop them, broadcasts loop for ever: a broadcast storm, which also unsettles MAC address tables and delivers duplicate frames. Spanning Tree Protocol (STP, IEEE 802.1D) blocks just enough ports to leave one loop-free path.",
+            "Switches exchange BPDUs, every 2 seconds by default, and elect as root bridge the switch with the lowest bridge ID: a priority (32768 by default, plus the VLAN number on Cisco switches) followed by its MAC address. With equal priorities, the lowest MAC address wins.",
+            "Every other switch chooses one root port, its port with the lowest total cost to the root. The default costs are 100 for 10 Mb/s, 19 for 100 Mb/s, 4 for 1 Gb/s and 2 for 10 Gb/s.",
+            "Each link has one designated port, the end with the lower cost to the root, and all the root bridge's ports are designated. Ports that are neither root nor designated are blocked.",
+            "Ties are broken by the lowest bridge ID of the neighbouring switch, then by the lowest port ID, which is a port priority (128 by default) followed by the port number.",
+            "Classic 802.1D ports move from blocking through listening (15 seconds) and learning (15 seconds) to forwarding, so the network can take 30 to 50 seconds to recover from a change, which is why Rapid STP replaced it."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Watch spanning tree block a loop",
+            "steps": [
+              {
+                "do": "In a new file, join three 2960 switches in a triangle with Copper Cross-Over cables: S1 Fa0/1 to S2 Fa0/1, S1 Fa0/2 to S3 Fa0/1, and S2 Fa0/2 to S3 Fa0/2."
+              },
+              {
+                "do": "Wait about 30 seconds and look at the link lights.",
+                "see": "Green everywhere except one end of one link, which stays amber: that port is blocked."
+              },
+              {
+                "do": "On each switch, show the spanning tree.",
+                "code": "enable\nshow spanning-tree",
+                "lang": "cisco",
+                "see": "On one switch, This bridge is the root. On the others, the root's priority and address, and a port with the role Root."
+              },
+              {
+                "do": "Compare the three switches' Bridge ID lines to see why the root won.",
+                "see": "All have priority 32769 (32768 plus VLAN 1), so the lowest MAC address won."
+              },
+              {
+                "do": "On the switch with the amber light, read the port roles.",
+                "see": "Root FWD on the port towards the root, and Altn BLK on the blocked port: an alternate path, held in reserve."
+              },
+              {
+                "do": "Shut down that switch's root port and watch the blocked port.",
+                "code": "configure terminal\ninterface fa0/1\nshutdown\nend",
+                "lang": "cisco",
+                "see": "Use whichever port is Root on your switch. After about 30 seconds, the blocked port moves through listening and learning to forwarding."
+              },
+              {
+                "do": "Turn the port back on with no shutdown and watch the tree settle as it was."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Rapid PVST+: root bridges, PortFast and BPDU guard",
+          "minutes": 14,
+          "objectives": [
+            "Configure Rapid PVST+ and choose the root bridge for each VLAN",
+            "Protect access ports with PortFast and BPDU guard"
+          ],
+          "key_points": [
+            "Rapid PVST+ is Cisco's form of Rapid STP (IEEE 802.1w), running a separate spanning tree for each VLAN. On point-to-point links it converges far faster than 802.1D, often within a second or so. Turn it on with spanning-tree mode rapid-pvst.",
+            "RSTP port roles are root, designated, alternate (a spare path to the root, discarding) and backup (a spare port onto a link where the switch already has the designated port); its port states are discarding, learning and forwarding.",
+            "Choose the root bridge rather than leaving it to the lowest MAC address: spanning-tree vlan 10 root primary sets a priority low enough to win (24576, or lower if needed), root secondary sets 28672, and spanning-tree vlan 10 priority 4096 sets one directly, in multiples of 4096.",
+            "spanning-tree portfast on an access port for a single host makes it forward at once instead of waiting; RSTP calls such ports edge ports. Never use it on ports to other switches.",
+            "BPDU guard (spanning-tree bpduguard enable) puts a PortFast port into the err-disabled state the moment a BPDU arrives, such as when someone plugs in a switch; shutdown then no shutdown brings it back once the cause is removed.",
+            "Related protections: root guard stops a port from accepting a better root bridge, loop guard stops a port from forwarding when its BPDUs stop arriving, and BPDU filter stops a port sending and receiving BPDUs."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Tune Rapid PVST+ and protect edge ports",
+            "steps": [
+              {
+                "do": "On all three switches from the last lesson, switch to Rapid PVST+.",
+                "code": "configure terminal\nspanning-tree mode rapid-pvst\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Make S1 the root for VLAN 1, and S2 its backup.",
+                "code": "! on S1\nconfigure terminal\nspanning-tree vlan 1 root primary\nend\n\n! on S2\nconfigure terminal\nspanning-tree vlan 1 root secondary\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check S1.",
+                "code": "show spanning-tree",
+                "lang": "cisco",
+                "see": "Spanning tree enabled protocol rstp, This bridge is the root, and Bridge ID Priority 24577 (priority 24576 sys-id-ext 1)."
+              },
+              {
+                "do": "Read S3's port roles.",
+                "code": "show spanning-tree",
+                "lang": "cisco",
+                "see": "Fa0/1, towards S1, is Root FWD; Fa0/2, towards S2, is Altn BLK, because S2 (priority 28672) beats S3 for the designated port on that link."
+              },
+              {
+                "do": "Connect a PC to S3 Fa0/10 and make that port an edge port with BPDU guard.",
+                "code": "configure terminal\ninterface fa0/10\nswitchport mode access\nspanning-tree portfast\nspanning-tree bpduguard enable\nend",
+                "lang": "cisco",
+                "see": "A warning that PortFast should only be enabled on ports connected to a single host."
+              },
+              {
+                "do": "Test BPDU guard: replace the PC with a spare 2960 switch, plugged into S3 Fa0/10.",
+                "see": "%SPANTREE-2-BLOCK_BPDUGUARD: Received BPDU on port FastEthernet0/10 with BPDU Guard enabled. Disabling port."
+              },
+              {
+                "do": "Look at the port.",
+                "code": "show interfaces fa0/10",
+                "lang": "cisco",
+                "see": "FastEthernet0/10 is down, line protocol is down (err-disabled)."
+              },
+              {
+                "do": "Recover: reconnect the PC, then bounce the port.",
+                "code": "configure terminal\ninterface fa0/10\nshutdown\nno shutdown\nend",
+                "lang": "cisco"
+              }
+            ]
+          }
+        },
+        {
+          "title": "EtherChannel with LACP",
+          "minutes": 12,
+          "objectives": [
+            "Explain what EtherChannel adds and why spanning tree treats it as one link",
+            "Configure and verify an LACP EtherChannel trunk"
+          ],
+          "key_points": [
+            "EtherChannel bundles several parallel links between two switches into one logical link, a port channel. Spanning tree sees a single link, so no member is blocked, and traffic is shared across them all.",
+            "Traffic is shared per flow, not per frame: a hash of addresses, such as source and destination MAC or IP, chooses the member link, so one conversation stays on one link and its frames stay in order.",
+            "LACP (Link Aggregation Control Protocol, IEEE 802.3ad, now 802.1AX) negotiates the bundle: active mode starts negotiation and passive mode only answers, so active with active or active with passive forms a channel, but passive with passive doesn't.",
+            "Cisco's own PAgP uses the modes desirable and auto, and mode on forces a channel with no negotiation at all. With LACP, a channel can have up to 8 active links, plus up to 8 more on standby.",
+            "Member ports must match in speed, duplex and VLAN or trunk settings. Configure them with channel-group 1 mode active, then put trunk settings on interface port-channel 1, which passes them to the members.",
+            "show etherchannel summary shows each bundle: Po1(SU) means a Layer 2 channel in use, and (P) after a port means it's bundled; (s) for suspended or (I) for stand-alone means a port didn't join, usually because of a mismatch."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Bundle two links with LACP",
+            "steps": [
+              {
+                "do": "Join two 2960 switches, S1 and S2, with two Copper Cross-Over cables: Fa0/23 to Fa0/23 and Fa0/24 to Fa0/24.",
+                "see": "After a while one link turns amber: spanning tree blocks it."
+              },
+              {
+                "do": "On S1, put both ports in channel group 1, with LACP active.",
+                "code": "enable\nconfigure terminal\ninterface range fa0/23 - 24\nchannel-group 1 mode active\nexit",
+                "lang": "cisco",
+                "see": "Creating a port-channel interface Port-channel 1"
+              },
+              {
+                "do": "Make the port channel a trunk.",
+                "code": "interface port-channel 1\nswitchport mode trunk\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On S2, do the same with mode passive, to see that one active end is enough.",
+                "code": "enable\nconfigure terminal\ninterface range fa0/23 - 24\nchannel-group 1 mode passive\nexit\ninterface port-channel 1\nswitchport mode trunk\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the bundle.",
+                "code": "show etherchannel summary",
+                "lang": "cisco",
+                "see": "1 Po1(SU) LACP Fa0/23(P) Fa0/24(P)"
+              },
+              {
+                "do": "See how spanning tree treats it.",
+                "code": "show spanning-tree",
+                "lang": "cisco",
+                "see": "One interface, Po1, in place of Fa0/23 and Fa0/24, with a lower cost than a single FastEthernet link's 19, and no blocked member."
+              },
+              {
+                "do": "Shut down one member and check that the channel carries on.",
+                "code": "configure terminal\ninterface fa0/23\nshutdown\nend\nshow etherchannel summary",
+                "lang": "cisco",
+                "see": "Fa0/23(D) and Fa0/24(P): Po1 is still in use on one link. Turn Fa0/23 back on afterwards."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Resilient links: Rapid PVST+, edge ports and EtherChannel",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 80,
+        "goal": "Build a triangle of three switches with an LACP EtherChannel, place the Rapid PVST+ root for each VLAN so traffic is shared across the links, protect host ports, and prove the network survives a failed link.",
+        "setup": [
+          "Cisco Packet Tracer"
+        ],
+        "steps": [
+          {
+            "do": "Build three 2960 switches with Copper Cross-Over cables: S1 Fa0/23 and Fa0/24 to S2 Fa0/23 and Fa0/24, S1 Fa0/21 to S3 Fa0/21, and S2 Fa0/22 to S3 Fa0/22."
+          },
+          {
+            "do": "Add four PCs: PC1 on S3 Fa0/1 (VLAN 10, 192.168.10.31), PC2 on S3 Fa0/2 (VLAN 20, 192.168.20.32), PC3 on S2 Fa0/1 (VLAN 10, 192.168.10.33) and PC4 on S1 Fa0/1 (VLAN 20, 192.168.20.34), all with mask 255.255.255.0."
+          },
+          {
+            "do": "On every switch, create VLANs 10, 20 and 99, put each PC's port in its VLAN as an access port, and turn on Rapid PVST+.",
+            "code": "spanning-tree mode rapid-pvst",
+            "lang": "cisco"
+          },
+          {
+            "do": "On S1 and S2, bundle Fa0/23 and Fa0/24 into port channel 1 with LACP active, and make Port-channel1 a trunk with native VLAN 99 and allowed VLANs 10, 20 and 99.",
+            "code": "interface range fa0/23 - 24\nchannel-group 1 mode active\nexit\ninterface port-channel 1\nswitchport mode trunk\nswitchport trunk native vlan 99\nswitchport trunk allowed vlan 10,20,99",
+            "lang": "cisco"
+          },
+          {
+            "do": "Make the S1 to S3 links (Fa0/21) and the S2 to S3 links (Fa0/22) trunks with the same native VLAN and allowed VLANs."
+          },
+          {
+            "do": "Share the load: make S1 the root for VLAN 10 and S2 the root for VLAN 20, each the other's backup.",
+            "code": "! on S1\nspanning-tree vlan 10 root primary\nspanning-tree vlan 20 root secondary\n\n! on S2\nspanning-tree vlan 20 root primary\nspanning-tree vlan 10 root secondary",
+            "lang": "cisco"
+          },
+          {
+            "do": "On every PC port, turn on PortFast and BPDU guard.",
+            "code": "spanning-tree portfast\nspanning-tree bpduguard enable",
+            "lang": "cisco"
+          },
+          {
+            "do": "Verify the channel and the trees.",
+            "code": "! on S1\nshow etherchannel summary\nshow spanning-tree vlan 10\n\n! on S2\nshow spanning-tree vlan 20\n\n! on S3\nshow spanning-tree vlan 10\nshow spanning-tree vlan 20",
+            "lang": "cisco"
+          },
+          {
+            "do": "Ping across the network: PC1 to PC3 (VLAN 10) and PC2 to PC4 (VLAN 20).",
+            "see": "Replies from 192.168.10.33 and 192.168.20.34."
+          },
+          {
+            "do": "Test resilience: shut down S1's Fa0/23, check show etherchannel summary on S1, and ping again.",
+            "see": "Po1 stays up on Fa0/24, and the pings still work."
+          },
+          {
+            "do": "Test BPDU guard: connect a spare switch to a PC port in place of the PC, note the message and the port's state, then reconnect the PC and recover the port with shutdown and no shutdown."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Rapid PVST+ is running and S1 is the root for VLAN 10, with priority 24586 (24576 plus 10).",
+            "look_for": [
+              "rstp",
+              "This bridge is the root",
+              "24586"
+            ]
+          },
+          {
+            "text": "S2 is the root for VLAN 20, with priority 24596.",
+            "look_for": [
+              "24596",
+              "This bridge is the root"
+            ]
+          },
+          {
+            "text": "On S3, VLAN 10 uses Fa0/21 (towards S1) as its root port and blocks Fa0/22, and VLAN 20 does the opposite.",
+            "look_for": [
+              "Root FWD",
+              "Altn BLK",
+              "Fa0/21",
+              "Fa0/22"
+            ]
+          },
+          {
+            "text": "Po1 is an LACP EtherChannel in use, with both members bundled.",
+            "look_for": [
+              "Po1(SU)",
+              "LACP",
+              "Fa0/23(P)",
+              "Fa0/24(P)"
+            ]
+          },
+          {
+            "text": "PC ports are edge ports, and BPDU guard err-disabled the port when a switch was plugged in.",
+            "look_for": [
+              "Edge",
+              "err-disabled"
+            ]
+          },
+          {
+            "text": "PCs reach the other PC in their VLAN across the network.",
+            "look_for": [
+              "Reply from 192.168.10.33",
+              "Reply from 192.168.20.34"
+            ]
+          },
+          {
+            "text": "With one member shut down, the channel stays in use and the pings still work.",
+            "look_for": [
+              "(D)",
+              "Po1(SU)"
+            ]
+          }
+        ],
+        "submit": "Paste S1's show etherchannel summary and show spanning-tree vlan 10, S2's show spanning-tree vlan 20, S3's show spanning-tree for VLANs 10 and 20, the pings before and after shutting Fa0/23, and the BPDU guard message with the port's state.",
+        "hints": [
+          "If Po1 shows (SD) or its ports show (I) or (s), the two ends don't match: check the members' settings and that at least one end is active.",
+          "To read S3's roles, compare costs: the EtherChannel between S1 and S2 costs less than a single FastEthernet link, so each root's path to S3's far side runs through it."
+        ]
+      }
+    }
+  ],
+  "project": {
+    "title": "Build a switched network for a two-floor office",
+    "minutes": 300,
+    "brief": "Design, build and document the switched network for a two-floor office in Packet Tracer. Each floor has an access switch (a 2960) with staff PCs in VLAN 10 (192.168.10.0/24) and guest PCs in VLAN 20 (192.168.20.0/24). Both access switches connect to a Layer 3 distribution switch (a 3560-24PS) over two-link LACP EtherChannel trunks, and the two access switches are also linked to each other, so there's a redundant path. The distribution switch routes between the VLANs with SVIs, using .1 on each subnet, and the switches' management addresses are in VLAN 100 (192.168.100.0/24). Use VLAN 99 as the native VLAN on every trunk, allow only the VLANs each trunk needs, make the distribution switch the Rapid PVST+ root for every VLAN, protect every host port with PortFast and BPDU guard, label every link with a description, and shut down unused ports. Then prove it all works, explain which port spanning tree blocks and why, and show that the network survives the loss of a link.",
+    "deliverables": [
+      "A table of the devices, links, port channels, VLANs and IP addresses",
+      "The running configuration of each switch",
+      "show vlan brief, show interfaces trunk and show etherchannel summary from every switch",
+      "show spanning-tree for VLANs 10 and 20 on both access switches, with an explanation of each blocked port",
+      "Pings between the VLANs and to each switch's management address, repeated with one EtherChannel member shut down and again with a whole uplink shut down",
+      "A short design note: why the distribution switch is the root, why the native VLAN is 99, and what BPDU guard protects against"
+    ],
+    "rubric": [
+      {
+        "name": "VLANs and trunks",
+        "points": 20,
+        "description": "The VLANs exist everywhere they're needed, host ports are in the right VLANs, and every trunk uses native VLAN 99 with only the VLANs it needs allowed."
+      },
+      {
+        "name": "Inter-VLAN routing and management",
+        "points": 20,
+        "description": "SVIs on the distribution switch route between VLANs 10 and 20, and every switch is reachable on its VLAN 100 management address with a default gateway set."
+      },
+      {
+        "name": "Spanning tree",
+        "points": 20,
+        "description": "Rapid PVST+ runs everywhere with the distribution switch as root for every VLAN, and the blocked ports are identified and explained correctly."
+      },
+      {
+        "name": "EtherChannel",
+        "points": 15,
+        "description": "Both uplinks are LACP EtherChannel trunks in use (SU) with every member bundled, and they keep working when one member fails."
+      },
+      {
+        "name": "Edge protection and tidiness",
+        "points": 10,
+        "description": "Host ports have PortFast and BPDU guard, unused ports are shut down, and links are labelled with descriptions."
+      },
+      {
+        "name": "Verification and design note",
+        "points": 15,
+        "description": "Show command and ping output proves each requirement and the failure tests; the design note is accurate and clear."
+      }
+    ],
+    "submit": "Paste your table, each switch's running configuration, the show command output and pings from the deliverables, and your design note. A link to your .pkt file is welcome too."
+  }
+}

@@ -30,6 +30,21 @@ MAX_SUBMISSION = 40000
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I to misread
 
 
+def forget_changed_lessons() -> None:
+    """When the app starts: forget the instructors' written text of any course lesson whose objectives, key points
+    or walkthrough changed, or that's gone, so it's written again from what the course says now."""
+    now = catalog.lesson_versions()
+    with db.connect() as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key = 'course_lessons'").fetchone()
+        before = json.loads(row["value"]) if row else {}
+        stale = [lid for lid, v in before.items() if now.get(lid) != v]
+        for i in range(0, len(stale), 500):
+            part = stale[i:i + 500]
+            conn.execute(f"DELETE FROM lesson_content WHERE lesson_id IN ({','.join('?' * len(part))})", part)
+        conn.execute("INSERT INTO meta (key, value) VALUES ('course_lessons', ?) "
+                     "ON CONFLICT (key) DO UPDATE SET value = excluded.value", (json.dumps(now),))
+
+
 def _course_or_404(slug: str) -> Course:
     c = catalog.course(slug)
     if c is None:

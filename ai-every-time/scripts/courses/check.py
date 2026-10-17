@@ -20,6 +20,27 @@ from app.starter_companions import CSV_PATH, REAL_PEOPLE  # noqa: E402
 
 STARTERS = {row["slug"] for row in csv.DictReader(CSV_PATH.open(encoding="utf-8"))}
 MODEL_ID = re.compile(r"claude-(?:opus|sonnet|haiku|fable|instant)-\d", re.I)
+JETBRAINS_TOOL = re.compile(r"PyCharm|IntelliJ|WebStorm|GoLand|Rider|CLion|DataGrip|RustRover|PhpStorm|JetBrains")
+
+
+def _shortcuts() -> set[tuple[str, str]]:
+    """The JetBrains shortcuts courses may use: the table in README.md, as (macOS, Windows and Linux) pairs."""
+    guide = Path(__file__).with_name("README.md").read_text(encoding="utf-8")
+    table = guide[guide.index("| Action | macOS |"):]
+    pairs = set()
+    for row in table.splitlines()[2:]:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        if len(cells) != 3:
+            break
+        _, mac, win = cells
+        pairs.add((mac, win))
+        macs, wins = mac.split(" / "), win.split(" / ")
+        if len(macs) == len(wins):
+            pairs.update(zip((m.strip() for m in macs), (w.strip() for w in wins)))
+    return pairs
+
+
+SHORTCUTS = _shortcuts()
 
 
 def check(path: Path) -> tuple[list[str], list[str]]:
@@ -42,6 +63,14 @@ def check(path: Path) -> tuple[list[str], list[str]]:
             errors.append(f"instructor {s!r} is modelled on a real person; choose another")
     if MODEL_ID.search(text):
         errors.append("names a Claude model ID; let learners pick a current one from Anthropic's docs instead")
+    shown = [(f"lesson {m}.{n}", l.walkthrough.steps) for m, mod in enumerate(c.modules, 1) for n, l in enumerate(mod.lessons, 1)
+             if l.walkthrough and JETBRAINS_TOOL.search(l.walkthrough.tool)]
+    shown += [(f"module {m} lab", lab.steps) for m, lab in c.labs if JETBRAINS_TOOL.search(lab.tool)]
+    for where, steps in shown:
+        for s in steps:
+            if s.keys and (s.keys.mac, s.keys.win) not in SHORTCUTS:
+                errors.append(f"{where}: shortcut {s.keys.mac} / {s.keys.win} isn't in the table in README.md; "
+                              "use one from it, or the menu path")
     lessons = [l for m in c.modules for l in m.lessons]
     if c.jetbrains:
         shown = sum(l.walkthrough is not None for l in lessons)
