@@ -390,6 +390,11 @@ const routes = [
   [/^#\/studio\/remix\/(\d+)$/, (m) => viewStudio({ mode: "remix", id: +m[1] })],
   [/^#\/studio\/(\d+)$/, (m) => viewStudio({ mode: "edit", id: +m[1] })],
   [/^#\/profile$/, viewProfile],
+  [/^#\/courses(?:\?(.*))?$/, viewCourses],
+  [/^#\/course\/([a-z0-9-]+)$/, viewCourse],
+  [/^#\/course\/([a-z0-9-]+)\/learn\/(l\d+-\d+|lab\d+|quiz\d+|project|grades)$/, viewCoursePlayer],
+  [/^#\/track\/([a-z0-9-]+)$/, viewTrack],
+  [/^#\/certificate\/([A-Za-z0-9]+)$/, viewCertificate, null],
   [/^#\/learn$/, viewLearn],
   [/^#\/lesson\/([\w-]+)(?:\?companion=(\d+))?$/, viewLesson],
   [/^#\/quiz\/(\d+)$/, viewQuiz],
@@ -401,6 +406,7 @@ const routes = [
 
 async function router() {
   state.nav++;
+  document.title = "AI Every Time";
   // A dialog belongs to the page that opened it (Back, a notification or a link can change pages under it).
   if ($("#dialog")?.open) $("#dialog").close();
   const hash = location.hash || "#/feed";
@@ -437,7 +443,7 @@ async function router() {
 window.addEventListener("hashchange", router);
 
 function shell(active, inner) {
-  const nav = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
+  const nav = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["courses", "🎓", "Courses"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
     ["companions", "🌍", "Companions"], ["profile", "👤", "Profile"]];
   if (state.me?.role && state.me.role !== "learner") nav.push(["staff", "🛡️", "Staff"]);
   const primary = state.me?.primary_companion_id;
@@ -1084,6 +1090,8 @@ async function viewCompanion(m) {
           <p class="small" style="margin:0">${esc(p.bio)}</p>
           <p class="muted small" style="margin:.6em 0 0">Teaching style: ${label(p.teaching_style)}</p>
         </div>
+        ${c.courses?.length ? `<div class="card"><h3>🎓 Courses ${esc(p.name.split(" ")[0])} teaches</h3>
+          <div class="stack" style="gap:6px">${c.courses.map((x) => `<a href="#/course/${x.slug}">${esc(x.title)}</a>`).join("")}</div></div>` : ""}
         <div class="card memory">
           <h3>What ${esc(p.name)} remembers</h3>
           <div id="mem"></div>
@@ -1999,7 +2007,9 @@ async function viewLearn() {
   const paths = await api("/api/paths");
   const main = shell("learn", `
     <h1>Learning paths</h1>
-    <p class="muted">Structured courses taught by your companion, in their own voice. Finish lessons, test yourself, and take a mock exam at the end of each path.</p>
+    <p class="muted">Short paths taught by your companion, in their own voice. Finish lessons, test yourself, and take a mock exam at the end of each path.</p>
+    <a class="card row spread plain courses-pointer" href="#/courses"><div><b>🎓 Looking for full courses?</b>
+      <div class="muted small">Courses with hands-on labs, projects and certificates, taught by the AI Learning Companions.</div></div><span class="btn">Browse courses</span></a>
     <form class="card stack" id="newPath">
       <div><h3 style="margin:0">✨ Learn anything: ask your companion for a path</h3>
         <div class="muted small">Name a topic and your companion designs a step-by-step path just for you.</div></div>
@@ -2069,6 +2079,8 @@ async function viewLearn() {
 
 async function viewLesson(m) {
   const lessonId = m[1], companionId = m[2] ? +m[2] : null;
+  const inCourse = lessonId.match(/^course-([a-z0-9-]+)-(\d+)-(\d+)$/);
+  if (inCourse) { location.replace(`#/course/${inCourse[1]}/learn/l${inCourse[2]}-${inCourse[3]}`); return; }
   const main = shell("learn", `<div class="card empty">Your companion is preparing this lesson…</div>`);
   let lesson, list;
   try {
@@ -2196,6 +2208,13 @@ async function viewQuiz(m) {
   }
 }
 
+/* From a course's quiz or mock exam, back to where it sits in the course. */
+function courseBack(r) {
+  const module = r.source_type === "path" && r.source_ref.match(/^course-([a-z0-9-]+)-(\d+)$/);
+  if (module) return `<a class="btn" href="#/course/${module[1]}/learn/quiz${module[2]}">Back to the course</a>`;
+  return r.source_type === "course" ? `<a class="btn" href="#/course/${r.source_ref}/learn/grades">Back to the course</a>` : "";
+}
+
 function renderResults(r) {
   const main = shell("practice", `
     <h1>${esc(r.title)}</h1>
@@ -2216,6 +2235,7 @@ function renderResults(r) {
     <div class="row" style="margin-top:16px">
       <button class="btn primary" id="retry">Try a new ${r.kind === "exam" ? "exam" : "quiz"}</button>
       ${r.source_type === "lesson" ? `<a class="btn" href="#/lesson/${r.source_ref}">Back to lesson</a>` : ""}
+      ${courseBack(r)}
       <a class="btn" href="#/practice">All practice</a>
     </div>`);
   $("#retry", main).addEventListener("click", (e) => studyAction(r.kind, r.source_type, r.source_ref, { companionId: r.companion_id, button: e.target }));
@@ -2280,7 +2300,10 @@ async function viewReview(m) {
 /* ----------------------------------------------------------------- progress */
 
 async function viewProgress() {
-  const [p, plan, paths] = await Promise.all([api("/api/progress"), api("/api/study-plan"), api("/api/paths")]);
+  const [p, plan, paths, cat] = await Promise.all([api("/api/progress"), api("/api/study-plan"), api("/api/paths"), api("/api/courses")]);
+  const myCourses = cat.courses.filter((c) => c.enrolled || c.certificate);
+  const certificates = [...cat.tracks.filter((t) => t.certificate).map((t) => ({ code: t.certificate, title: `${t.title} ${t.kind}` })),
+    ...cat.courses.filter((c) => c.certificate).map((c) => ({ code: c.certificate, title: c.title }))];
   const tile = (v, t) => `<div class="card tile"><div class="big">${v}</div><div class="muted small">${t}</div></div>`;
   const ACT = { lesson: "📖 Lesson", quiz: "📝 Quiz", flashcards: "🃏 Flashcards", exam: "🎓 Mock exam" };
   const main = shell("progress", `
@@ -2297,6 +2320,12 @@ async function viewProgress() {
       <div class="stack">
         <div class="card"><h3>Last 7 days</h3><div class="week">${p.last_7_days.map((d) => `<div class="day ${d.active ? "on" : ""}" title="${d.day}"><span>${new Date(d.day + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "short" })}</span></div>`).join("")}</div></div>
         ${p.next_lesson ? `<div class="card row spread"><div><div class="muted small">Up next · ${esc(p.next_lesson.path_title)}</div><b>${esc(p.next_lesson.title)}</b></div><a class="btn primary" href="#/lesson/${p.next_lesson.lesson_id}">Continue</a></div>` : ""}
+        <div class="card"><div class="row spread"><h3 style="margin:0">Your courses</h3><a class="small" href="#/courses">All courses</a></div>
+          ${myCourses.length ? myCourses.map((c) => `<div class="row spread small" style="margin-top:10px"><a href="#/course/${c.slug}">${esc(c.title)}</a>
+            ${c.certificate ? `<a href="#/certificate/${c.certificate}">🎓 Certificate</a>` : `<a href="#/course/${c.slug}/learn/${c.next || "grades"}">Continue</a>`}</div>${bar(c.progress, 100)}`).join("")
+            : `<p class="muted small" style="margin:8px 0 0">You haven't enrolled in a course yet. <a href="#/courses">Find one</a>: they're free.</p>`}
+          ${certificates.length ? `<h3 style="margin:14px 0 6px">Certificates</h3>${certificates.map((x) => `<div class="small"><a href="#/certificate/${x.code}">🎓 ${esc(x.title)}</a></div>`).join("")}` : ""}
+        </div>
         <div class="card"><h3>Paths</h3>${p.paths.map((x) => `<div class="row spread small"><span>${esc(x.title)}</span><span>${x.completed}/${x.total}</span></div>${bar(x.completed, x.total)}`).join("")}</div>
         ${p.needs_review.length ? `<div class="card"><h3>Worth reviewing</h3>${p.needs_review.map((x) => `<div class="row spread small"><a href="#/lesson/${x.lesson_id}">${esc(x.title)}</a><span class="muted">best ${x.best_score}%</span></div>`).join("")}</div>` : ""}
       </div>
@@ -2368,7 +2397,7 @@ async function viewStaff(m) {
 const KIND_LABEL = {
   chat: "Chat replies", lesson: "Lessons, the first time taught", quiz: "Quizzes", exam: "Mock exams", flashcards: "Flashcard decks",
   summary: "Summaries", plan: "Study plans", path: "Custom paths", post: "Companion posts", automatic: "Scheduled posts (no learner)",
-  opening: "Companions starting chats (free to learners)",
+  opening: "Companions starting chats (free to learners)", lab: "Course lab reviews", project: "Course project reviews",
 };
 const fmt = (n) => (n == null ? "–" : n >= 10000 ? new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(n) : n.toLocaleString());
 const plural = (n, one, many = `${one}s`) => `${fmt(n)} ${n === 1 ? one : many}`;
@@ -2674,6 +2703,751 @@ async function staffLog(body) {
     ${rows.map((r) => `<tr><td class="muted small">${timeAgo(r.created_at)}</td><td>${esc(r.staff_name || "–")}</td>
       <td>${esc(label(r.action.replace(":", " → ")))} ${esc(r.target_type)} #${r.target_id}</td><td class="small">${esc(r.note)}</td></tr>`).join("")}
   </tbody></table></div>` : `<div class="card empty">No decisions yet.</div>`;
+}
+
+/* ------------------------------------------------------------------ courses */
+
+/* Each subject's icon and the two colours of its courses' covers. */
+const CATEGORY_LOOK = {
+  "Generative AI": ["✨", "#6d4cff", "#c46bd6"],
+  "Machine Learning": ["🧠", "#3f51d6", "#7b8cff"],
+  "Data Science": ["📊", "#0d837f", "#36bf9e"],
+  "Software Development": ["💻", "#1f5fd1", "#46a8f5"],
+  "Networking": ["🌐", "#08779c", "#2fbcd3"],
+  "Cybersecurity": ["🛡️", "#ad2f3c", "#e8744f"],
+  "Cloud & DevOps": ["☁️", "#2f62c2", "#64a2ec"],
+  "AI for Business": ["💼", "#a9680f", "#e8a83a"],
+  "Responsible AI": ["⚖️", "#277f45", "#6fba6a"],
+  "AI in Industry": ["🏥", "#b54c22", "#ec9150"],
+  "Robotics & Edge AI": ["🤖", "#434c5e", "#8494b0"],
+};
+const look = (category) => CATEGORY_LOOK[category] || ["🎓", "#5b4cdb", "#8a7dff"];
+const ITEM_ICON = { lesson: "📖", lab: "🧪", quiz: "📝", project: "🏗️" };
+const ITEM_STATUS = { completed: "✅", passed: "✅", started: "🟣", attempted: "🟠", needs_work: "🟠", not_started: "⚪" };
+const STATUS_WORDS = { completed: "Completed", passed: "Passed", started: "Started", attempted: "Not passed yet", needs_work: "Needs work", not_started: "Not started" };
+const kindName = (c) => (c.kind === "guided-project" ? "Guided project" : "Course");
+const plural2 = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const duration = (minutes) => (minutes < 60 ? `${minutes} min` : (() => {
+  const h = Math.round(minutes / 30) / 2;
+  return `${h % 1 ? h.toFixed(1) : h} ${h === 1 ? "hour" : "hours"}`;
+})());
+const hoursText = (h) => duration(Math.round(h * 60));
+/* "an 11-hour", "a 45-minute": the length before a noun, with its article. */
+const lengthOf = (h) => {
+  const minutes = Math.round(h * 60), n = minutes < 60 ? minutes : Math.round(h * 2) / 2;
+  const whole = String(Math.floor(n));
+  const an = whole.startsWith("8") || whole === "11" || whole === "18";
+  return `${an ? "an" : "a"} ${n % 1 ? n.toFixed(1) : n}-${minutes < 60 ? "minute" : "hour"}`;
+};
+const chipList = (items) => `<div class="chips-row">${items.map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</div>`;
+const faceUrl = (i) => `/api/companions/${i.id}/avatar?v=${encodeURIComponent(i.updated_at || "")}`;
+const faces = (list, size = 28) => `<span class="faces-sm">${list.map((i) =>
+  `<img class="avatar" src="${faceUrl(i)}" width="${size}" height="${size}" alt="${esc(i.name)}" title="${esc(i.name)}" loading="lazy" decoding="async">`).join("")}</span>`;
+const ratingText = (r) => (r ? `<span class="stars" aria-hidden="true">★</span> <b>${r.average.toFixed(1)}</b> <span class="muted">(${fmtCount(r.count)})</span>` : `<span class="new">New</span>`);
+
+function courseCard(c) {
+  const [icon, c1, c2] = look(c.category);
+  const tools = c.jetbrains.length ? c.jetbrains.slice(0, 2).join(" · ") : c.cisco ? "Cisco-aligned" : c.tools[0] || "";
+  return `<a class="card course-card" href="#/course/${c.slug}">
+    <div class="course-cover" style="--c1:${c1};--c2:${c2}">
+      <span class="kind">${kindName(c)}</span><span class="icon" aria-hidden="true">${icon}</span>${tools ? `<span class="tools">${esc(tools)}</span>` : ""}
+    </div>
+    <div class="body">
+      <div class="row" style="gap:4px">${faces(c.instructors, 26)}<span class="inst-names">${esc(c.instructors.map((i) => i.name).join(", "))}</span></div>
+      <h3>${esc(c.title)}</h3>
+      <div class="small muted clamp2"><b>Skills you'll gain:</b> ${esc(c.skills.join(", "))}</div>
+      <div class="meta">${ratingText(c.rating)} · ${label(c.level)} · ${hoursText(c.hours)}</div>
+      ${c.enrolled || c.certificate ? `<div>${bar(c.progress, 100)}<div class="small muted">${c.certificate ? "🎓 Certificate earned" : `${c.progress}% complete`}</div></div>`
+        : c.labs ? `<div class="small hands-on">🧪 ${plural2(c.labs, "hands-on lab")}${c.walkthroughs ? ` · 🖥️ ${plural2(c.walkthroughs, "walkthrough")}` : ""}</div>` : ""}
+    </div>
+  </a>`;
+}
+
+function trackCard(t) {
+  return `<a class="card track-card" href="#/track/${t.slug}">
+    <div class="eyebrow">${esc(t.kind)}</div>
+    <h3>${esc(t.title)}</h3>
+    <div class="small muted clamp2">${esc(t.subtitle)}</div>
+    <div>${faces(t.instructors.slice(0, 7), 26)}</div>
+    <div class="meta">${t.total}-course series · ${hoursText(t.hours)}${t.done ? ` · ${t.done} of ${t.total} done` : ""}</div>
+  </a>`;
+}
+
+/* The catalogue: what's in progress, the tracks, then every course, with filters kept in the address. */
+async function viewCourses(m) {
+  const params = new URLSearchParams(m[1] || "");
+  const cat = await api("/api/courses");
+  const f = { category: params.get("category") || "", level: params.get("level") || "", kind: params.get("kind") || "", tag: params.get("tag") || "" };
+  const q = (params.get("q") || "").trim().toLowerCase();
+  const TAGS = {
+    "hands-on": ["🧪 Hands-on labs", (c) => c.labs > 0],
+    jetbrains: ["🖥️ JetBrains IDEs", (c) => c.jetbrains.length > 0],
+    cisco: ["🌐 Cisco-aligned", (c) => c.cisco],
+  };
+  const words = (c) => [c.title, c.subtitle, c.category, ...c.skills, ...c.tools, ...c.instructors.map((i) => i.name)].join(" ").toLowerCase();
+  const list = cat.courses.filter((c) => (!f.category || c.category === f.category) && (!f.level || c.level === f.level)
+    && (!f.kind || c.kind === f.kind) && (!f.tag || TAGS[f.tag]?.[1](c)) && (!q || q.split(/\s+/).every((w) => words(c).includes(w))));
+  const filtering = q || f.category || f.level || f.kind || f.tag;
+  const going = cat.courses.filter((c) => c.enrolled && !c.completed);
+  const link = (changes) => {
+    const p = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(changes)) v ? p.set(k, v) : p.delete(k);
+    const s = p.toString();
+    return `#/courses${s ? `?${s}` : ""}`;
+  };
+  const tab = (key, value, text) => `<a href="${link({ [key]: value })}" class="${f[key] === value ? "active" : ""}">${text}</a>`;
+  const main = shell("courses", `
+    <div class="course-hero">
+      <h1>Courses</h1>
+      <p class="muted">Structured courses taught by the AI Learning Companions: lessons in their own voice, tools shown step by step,
+        hands-on labs and projects they review, graded quizzes, and a certificate when you finish.</p>
+      <form class="course-search" id="courseSearch" role="search">
+        <input type="search" name="q" value="${esc(params.get("q") || "")}" placeholder="What do you want to learn? Try PyCharm, subnetting or RAG" aria-label="Search courses">
+        <button class="btn primary">Search</button>
+      </form>
+    </div>
+    ${!filtering && going.length ? `<h2 class="section">Continue learning</h2><div class="course-grid">${going.map(courseCard).join("")}</div>` : ""}
+    ${!filtering && cat.tracks.length ? `<h2 class="section">Professional Certificates and Specializations</h2>
+      <div class="track-row">${cat.tracks.map(trackCard).join("")}</div>` : ""}
+    <h2 class="section">${filtering ? "Results" : "Explore every course"}</h2>
+    <nav class="region-tabs" aria-label="Subject">${tab("category", "", "All subjects")}${cat.categories.map((x) =>
+      tab("category", x.name, `${look(x.name)[0]} ${esc(x.name)} <span class="count">${x.count}</span>`)).join("")}</nav>
+    <div class="row filters">
+      <div class="seg" role="group" aria-label="Type">${tab("kind", "", "All")}${tab("kind", "course", "Courses")}${tab("kind", "guided-project", "Guided projects")}</div>
+      <div class="seg" role="group" aria-label="Level">${tab("level", "", "Any level")}${["beginner", "intermediate", "advanced"].map((l) => tab("level", l, label(l))).join("")}</div>
+      ${Object.entries(TAGS).map(([k, [text]]) => `<a class="btn tag ${f.tag === k ? "on" : ""}" href="${link({ tag: f.tag === k ? "" : k })}">${text}</a>`).join("")}
+    </div>
+    <div class="row spread small muted" style="margin:0 0 12px"><span>${plural2(list.length, "course")}</span>${filtering ? `<a href="#/courses">Clear the filters</a>` : ""}</div>
+    <div class="course-grid">${list.length ? list.map(courseCard).join("") : `<div class="card empty">No courses match. <a href="#/courses">See them all</a></div>`}</div>`);
+  $("#courseSearch", main).addEventListener("submit", (e) => { e.preventDefault(); location.hash = link({ q: e.target.q.value.trim() }); });
+}
+
+const allItems = (c) => [...c.syllabus.flatMap((mod) => mod.items.map((i) => ({ ...i, module: mod }))), ...(c.project ? [c.project] : [])];
+const itemLine = (i) => ({
+  lesson: `Lesson${i.walkthrough ? ` with a ${i.walkthrough} walkthrough` : ""}${i.video ? " and video" : ""}`,
+  lab: `Hands-on lab in ${i.tool}`, quiz: `Graded quiz · ${i.questions} questions`, project: "Capstone project",
+}[i.type]) + ` · ${duration(i.minutes)}`;
+
+function itemRow(c, i) {
+  const inner = `<span class="ico" aria-hidden="true">${ITEM_ICON[i.type]}</span><span class="what"><span class="t">${esc(i.title)}</span>
+    <span class="type">${itemLine(i)}</span></span>${c.enrolled ? `<span title="${STATUS_WORDS[i.status]}">${ITEM_STATUS[i.status]}</span>` : ""}`;
+  return `<li>${c.enrolled ? `<a class="item-row" href="#/course/${c.slug}/learn/${i.key}">${inner}</a>` : `<div class="item-row">${inner}</div>`}</li>`;
+}
+
+function moduleBlock(c, mod, open) {
+  const n = (type) => mod.items.filter((i) => i.type === type).length;
+  const included = [plural2(n("lesson"), "lesson"), n("lab") && plural2(n("lab"), "lab"), plural2(n("quiz"), "quiz", "quizzes")].filter(Boolean).join(" · ");
+  return `<details class="module"${open ? " open" : ""}>
+    <summary>
+      <div><div class="muted small">Module ${mod.index} · ${duration(mod.minutes)} to complete</div><h3>${esc(mod.title)}</h3>
+        <div class="small muted">${esc(mod.summary)}</div></div>
+      <span class="muted small included">${included}</span>
+    </summary>
+    ${mod.instructor ? `<div class="row small taught">${faces([mod.instructor], 24)} Taught by ${esc(mod.instructor.name)} ${esc(mod.instructor.flag)}</div>` : ""}
+    <ul class="items">${mod.items.map((i) => itemRow(c, i)).join("")}</ul>
+  </details>`;
+}
+
+function instructorCard(i) {
+  return `<div class="card inst-card">
+    <img class="avatar" src="${faceUrl(i)}" width="72" height="72" alt="" loading="lazy">
+    <div class="stack" style="gap:6px">
+      <div><b>${esc(i.name)} ${esc(i.flag)}</b> <span class="chip">AI Learning Companion</span>${i.tagline ? `<div class="muted small">${esc(i.tagline)}</div>` : ""}</div>
+      <p class="small" style="margin:0">${esc(i.bio)}</p>
+      ${i.expertise?.length ? chipList(i.expertise) : ""}
+      <div class="row small"><span class="muted">${plural2(i.courses, "course")} on AI Every Time</span>
+        <a class="btn" href="#/c/${i.id}">💬 Chat with ${esc(i.name.split(" ")[0])}</a></div>
+    </div>
+  </div>`;
+}
+
+/* What a learner has done towards the certificate, and the certificate once it's theirs to get. */
+function progressBlock(c, { grades = false } = {}) {
+  const r = c.requirements, tick = (ok) => (ok ? "✅" : "⬜");
+  const lines = [
+    `${tick(r.lessons.done === r.lessons.total)} Lessons completed: ${r.lessons.done} of ${r.lessons.total}`,
+    `${tick(r.quizzes.done === r.quizzes.total)} Module quizzes passed with 70% or more: ${r.quizzes.done} of ${r.quizzes.total}`,
+    r.labs.total ? `${tick(r.labs.done === r.labs.total)} Labs passed: ${r.labs.done} of ${r.labs.total}` : "",
+    r.project !== null ? `${tick(r.project)} Capstone project passed, with 70 points or more` : "",
+  ].filter(Boolean);
+  return `<section class="card stack" id="yours">
+    <div class="row spread"><h2 style="margin:0">Your progress</h2><b>${c.progress}%</b></div>
+    ${bar(c.progress, 100)}
+    <ul class="checklist">${lines.map((l) => `<li>${l}</li>`).join("")}</ul>
+    ${c.certificate ? `<div class="row"><a class="btn primary" href="#/certificate/${c.certificate}">🎓 View your certificate</a></div>`
+      : r.complete ? `<form id="certForm" class="stack cert-form">
+          <div><b>🎉 You've finished the ${kindName(c).toLowerCase()}!</b> Your certificate is ready.</div>
+          <label>Name on your certificate <input type="text" name="name" value="${esc(state.me.display_name)}" minlength="2" maxlength="80" required></label>
+          <div><button class="btn primary">Get my certificate</button></div></form>`
+      : `<div class="muted small">Finish all of these to earn your certificate.</div>`}
+    <div class="row rate-row"><span class="small">Rate this ${kindName(c).toLowerCase()}:</span><span class="rate" role="group" aria-label="Your rating">${[1, 2, 3, 4, 5].map((n) =>
+      `<button type="button" class="star ${n <= (c.my_rating || 0) ? "on" : ""}" data-stars="${n}" aria-label="${n} star${n === 1 ? "" : "s"}">★</button>`).join("")}</span></div>
+    <div class="row small">${grades ? `<a href="#/course/${c.slug}">Course page</a>` : `<a href="#/course/${c.slug}/learn/grades">Grades</a>`}
+      <button type="button" class="textbtn" id="leave">Leave this ${kindName(c).toLowerCase()}</button></div>
+  </section>`;
+}
+
+function wireProgress(root, c) {
+  $("#certForm", root)?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("button", e.target);
+    btn.disabled = true;
+    try {
+      const cert = await api(`/api/courses/${c.slug}/certificate`, { method: "POST", body: { name: e.target.name.value } });
+      location.hash = `#/certificate/${cert.code}`;
+    } catch (err) { toast(err.message); btn.disabled = false; }
+  });
+  $$(".star", root).forEach((b) => b.addEventListener("click", async () => {
+    const stars = +b.dataset.stars;
+    try {
+      await api(`/api/courses/${c.slug}/rating`, { method: "PUT", body: { stars } });
+      $$(".star", root).forEach((s) => s.classList.toggle("on", +s.dataset.stars <= stars));
+      toast("Thanks for rating it");
+    } catch (err) { toast(err.message); }
+  }));
+  $("#leave", root)?.addEventListener("click", async () => {
+    if (!confirm("Leave this course? It comes off your list; your progress is kept in case you come back.")) return;
+    await api(`/api/courses/${c.slug}/enroll`, { method: "DELETE" });
+    toast("You've left the course");
+    const page = `#/course/${c.slug}`;
+    if (location.hash === page) router();
+    else location.hash = page;
+  });
+}
+
+/* A course's page, as Coursera lays one out: what it is, what you'll learn, the syllabus, the instructors. */
+async function viewCourse(m) {
+  const slug = m[1];
+  const c = await api(`/api/courses/${slug}`);
+  const [icon, c1, c2] = look(c.category);
+  const items = allItems(c);
+  const count = (type) => items.filter((i) => i.type === type).length;
+  const next = items.find((i) => i.key === c.next);
+  const kind = kindName(c).toLowerCase();
+  const start = c.enrolled
+    ? `<a class="btn primary go" href="#/course/${slug}/learn/${c.next || "grades"}">${!c.next ? "Go to the course" : c.progress ? "Resume" : "Start learning"}</a>`
+    : `<button class="btn primary go" id="enrol">Enrol for free</button>`;
+  const main = shell("courses", `
+    <div class="muted small crumbs"><a href="#/courses">Courses</a> › <a href="#/courses?category=${encodeURIComponent(c.category)}">${esc(c.category)}</a></div>
+    <section class="card course-head" style="--c1:${c1};--c2:${c2}">
+      <div class="badges"><span class="badge">${kindName(c)}</span><span class="badge">${label(c.level)}</span>${c.jetbrains.map((t) =>
+        `<span class="badge">🖥️ ${esc(t)}</span>`).join("")}${c.cisco ? `<span class="badge">🌐 Cisco-aligned</span>` : ""}</div>
+      <h1><span aria-hidden="true">${icon}</span> ${esc(c.title)}</h1>
+      <p class="lead">${esc(c.subtitle)}</p>
+      <div class="row">${faces(c.instructors, 36)}<span>${c.instructors.length > 1 ? "Instructors" : "Instructor"}: ${c.instructors.map((i) =>
+        `<a href="#/c/${i.id}">${esc(i.name)} ${esc(i.flag)}</a>`).join(", ")}</span></div>
+      <div class="row">${start}<span class="muted small">${c.learners ? `${fmtCount(c.learners)} ${c.learners === 1 ? "learner has" : "learners have"} enrolled` : "Free · be one of the first to enrol"}</span></div>
+      ${c.enrolled ? `<div>${bar(c.progress, 100)}<div class="small muted">${c.progress}% complete${next ? ` · Up next: ${esc(next.title)}` : ""}</div></div>` : ""}
+      ${c.aligned_with ? `<div class="small">📋 Follows ${esc(c.aligned_with)}</div>` : ""}
+      ${c.tracks.length ? `<div class="small">🎓 Part of ${c.tracks.map((t) => `the <a href="#/track/${t.slug}">${esc(t.title)} ${esc(t.kind)}</a>`).join(" and ")}</div>` : ""}
+    </section>
+    <div class="card course-stats">
+      <div><b>${plural2(c.syllabus.length, "module")}</b><span class="muted small">${plural2(count("lesson"), "lesson")}</span></div>
+      <div><b>${c.rating ? `★ ${c.rating.average.toFixed(1)}` : "New"}</b><span class="muted small">${c.rating ? plural2(c.rating.count, "rating") : "No ratings yet"}</span></div>
+      <div><b>${label(c.level)} level</b><span class="muted small">${c.level === "beginner" ? "No experience needed" : "Some experience needed"}</span></div>
+      <div><b>${hoursText(c.hours)}</b><span class="muted small">At your own pace</span></div>
+      <div><b>${count("lab") ? plural2(count("lab"), "hands-on lab") : "Graded quizzes"}</b><span class="muted small">${c.project ? "and a capstone project" : "reviewed by your instructor"}</span></div>
+    </div>
+    <nav class="anchors" aria-label="On this page">${[["about", "About"], ["modules", "Modules"], ["instructors", "Instructors"], ...(c.enrolled ? [["yours", "Your progress"]] : [])]
+      .map(([id, t]) => `<button type="button" data-to="${id}">${t}</button>`).join("")}</nav>
+    <section class="stack" id="about">
+      <div class="card"><h2>What you'll learn</h2><ul class="outcomes">${c.outcomes.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>
+      <div class="two-col">
+        <div class="card stack"><div><h3>Skills you'll gain</h3>${chipList(c.skills)}</div>${c.tools.length ? `<div><h3>Tools you'll use</h3>${chipList(c.tools)}</div>` : ""}</div>
+        <div class="card details-grid">
+          <div>🎓 <b>Shareable certificate</b><div class="muted small">When you finish: print it, or add it to LinkedIn</div></div>
+          <div>📝 <b>Assessments</b><div class="muted small">${[plural2(count("quiz"), "graded quiz", "graded quizzes"), count("lab") && plural2(count("lab"), "lab"), c.project && "a capstone project"].filter(Boolean).join(", ")}</div></div>
+          <div>🤖 <b>Taught by AI Learning Companions</b><div class="muted small">Ask your instructor about any lesson or lab</div></div>
+          <div>🖥️ <b>${c.walkthroughs ? plural2(c.walkthroughs, "tool walkthrough") : "Self-paced"}</b><div class="muted small">${c.walkthroughs ? "Shown step by step, with shortcuts for macOS, Windows and Linux" : "Study whenever suits you"}</div></div>
+        </div>
+      </div>
+      <div class="card"><h2>About this ${kind}</h2><p>${esc(c.description)}</p><h3>Before you start</h3><p style="margin:0">${esc(c.prerequisites)}</p></div>
+    </section>
+    <section class="stack" id="modules">
+      <h2 class="section">There ${c.syllabus.length === 1 ? "is 1 module" : `are ${c.syllabus.length} modules`} in this ${kind}</h2>
+      ${c.syllabus.map((mod, i) => moduleBlock(c, mod, i === 0)).join("")}
+      ${c.project ? `<div class="card stack project-block"><div class="muted small">Capstone project · ${duration(c.project.minutes)}</div>
+        <h3 style="margin:0">🏗️ ${esc(c.project.title)}</h3><div class="small muted">Put the whole ${kind} to work on a project of your own, scored by your instructor against a rubric.</div>
+        ${c.enrolled ? `<div><a class="btn" href="#/course/${slug}/learn/project">${ITEM_STATUS[c.project.status]} Open the project</a></div>` : ""}</div>` : ""}
+    </section>
+    <section class="stack" id="instructors"><h2 class="section">${c.instructors.length > 1 ? "Instructors" : "Instructor"}</h2>${c.instructors.map(instructorCard).join("")}</section>
+    ${c.enrolled ? progressBlock(c) : ""}
+    ${c.notices.length ? `<p class="notice">${c.notices.map(esc).join(" ")}</p>` : ""}`);
+  $$(".anchors button", main).forEach((b) => b.addEventListener("click", () => $(`#${b.dataset.to}`)?.scrollIntoView({ behavior: "smooth", block: "start" })));
+  $("#enrol", main)?.addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      await api(`/api/courses/${slug}/enroll`, { method: "POST" });
+      toast(`You're enrolled in ${c.title}`);
+      location.hash = `#/course/${slug}/learn/${c.next || "l1-1"}`;
+    } catch (err) { toast(err.message); e.target.disabled = false; }
+  });
+  if (c.enrolled) wireProgress(main, c);
+}
+
+/* ------------------------------------------------------------ course player */
+
+const KEYS_PREF = "aiet-keys";
+const keysFor = () => {
+  try { const v = localStorage.getItem(KEYS_PREF); if (v === "mac" || v === "win") return v; } catch {}
+  return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "mac" : "win";
+};
+const MAC_KEYS = { Cmd: "⌘", Option: "⌥", Shift: "⇧", Ctrl: "⌃", Enter: "↩", Backspace: "⌫", Up: "↑", Down: "↓", Left: "←", Right: "→" };
+/* A shortcut as keys: "Cmd+Shift+A" pressed together, "Shift Shift" one key twice, "A / B" either. */
+function keysHtml(text, os) {
+  return text.split(" / ").map((alt) => {
+    const twice = !alt.includes("+") && alt.trim().includes(" ");
+    const parts = twice ? alt.trim().split(/\s+/) : alt.split("+");
+    const ks = parts.map((p) => `<kbd>${esc(os === "mac" && MAC_KEYS[p.trim()] ? MAC_KEYS[p.trim()] : p.trim())}</kbd>`);
+    return twice ? ks.join(" ") : ks.join(os === "mac" ? "" : "+");
+  }).join(" <span class='muted'>or</span> ");
+}
+const codeBlock = (code, lang) => `<div class="prose codebox"><pre class="code"${lang ? ` data-lang="${esc(lang)}"` : ""}><code>${esc(code)}</code></pre>
+  <button type="button" class="copy" data-copy>Copy</button></div>`;
+function stepHtml(s, os, i, tick = null) {
+  return `<li data-step="${i}">${tick !== null ? `<input type="checkbox" class="tick" data-i="${i}" aria-label="Step ${i + 1} done"${tick ? " checked" : ""}>` : ""}
+    <div class="stack" style="gap:6px"><div>${esc(s.do)}${s.keys ? ` <span class="keys" data-mac="${esc(s.keys.mac)}" data-win="${esc(s.keys.win)}">${keysHtml(s.keys[os], os)}</span>` : ""}</div>
+    ${s.code ? codeBlock(s.code, s.lang) : ""}${s.see ? `<div class="see">👀 ${esc(s.see)}</div>` : ""}</div></li>`;
+}
+const osSwitch = (os) => `<div class="seg os" role="group" aria-label="Keyboard shortcuts for">${[["mac", "macOS"], ["win", "Windows / Linux"]].map(([o, t]) =>
+  `<button type="button" data-os="${o}" class="${os === o ? "active" : ""}">${t}</button>`).join("")}</div>`;
+function walkthroughHtml(w) {
+  const os = keysFor();
+  return `<section class="walk" id="walk" aria-label="Walkthrough">
+    <div class="walk-head"><div><div class="tool">Follow along in ${esc(w.tool)}</div><b>${esc(w.title)}</b></div>
+      <div class="row" style="gap:8px">${osSwitch(os)}<button type="button" class="btn play" id="playWalk">▶ Play</button></div></div>
+    <ol>${w.steps.map((s, i) => stepHtml(s, os, i)).join("")}</ol>
+  </section>`;
+}
+/* The shortcut switch, copy buttons and step ticks in a part of the page. */
+function wireSteps(root, tickKey = null) {
+  $$(".os button", root).forEach((b) => b.addEventListener("click", () => {
+    const os = b.dataset.os;
+    try { localStorage.setItem(KEYS_PREF, os); } catch {}
+    $$(".os button").forEach((x) => x.classList.toggle("active", x.dataset.os === os));
+    $$(".keys").forEach((k) => (k.innerHTML = keysHtml(k.dataset[os], os)));
+  }));
+  $$("[data-copy]", root).forEach((b) => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.previousElementSibling.textContent); b.textContent = "Copied"; }
+    catch { b.textContent = "Select and copy"; }
+    setTimeout(() => (b.textContent = "Copy"), 1500);
+  }));
+  if (tickKey) $$(".tick", root).forEach((t) => t.addEventListener("change", () => {
+    const done = $$(".tick:checked", root).map((x) => +x.dataset.i);
+    try { localStorage.setItem(tickKey, JSON.stringify(done)); } catch {}
+  }));
+}
+const ticked = (key) => { try { return new Set(JSON.parse(localStorage.getItem(key) || "[]")); } catch { return new Set(); } };
+
+/* Play a walkthrough like a screencast: each step lit in turn and read out in the instructor's voice, or shown for
+   a few seconds each where the browser can't speak. Pressing again stops it. */
+async function playWalkthrough(root, w, teacherId, button) {
+  if (root.dataset.playing) { delete root.dataset.playing; if (canSpeak) speechSynthesis.cancel(); return; }
+  root.dataset.playing = "1";
+  button.textContent = "■ Stop";
+  let voice = null;
+  try { voice = (await api(`/api/companions/${teacherId}`)).persona.voice; } catch {}
+  const steps = $$("li[data-step]", root);
+  let i = 0;
+  const stop = () => { delete root.dataset.playing; steps.forEach((li) => li.classList.remove("now")); button.textContent = "▶ Play"; };
+  const step = () => {
+    steps.forEach((li) => li.classList.remove("now"));
+    if (!root.dataset.playing || i >= steps.length || !document.body.contains(root)) return stop();
+    steps[i].classList.add("now");
+    steps[i].scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const s = w.steps[i++];
+    const text = `Step ${i}. ${s.do}${s.see ? ` You should see: ${s.see}` : ""}`;
+    if (canSpeak && voice && voice.enabled !== false) {
+      const u = new SpeechSynthesisUtterance(plainText(text));
+      const voices = speechSynthesis.getVoices(), lang = voice.lang || "en-US";
+      u.voice = voices.find((v) => v.lang === lang) || voices.find((v) => v.lang.startsWith(lang.split("-")[0])) || null;
+      u.lang = lang; u.rate = voice.rate ?? 1; u.pitch = voice.pitch ?? 1;
+      u.onend = step; u.onerror = step;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } else setTimeout(step, Math.max(3500, text.length * 60));
+  };
+  step();
+}
+
+const videoEmbed = (url) => `<div class="video"><iframe src="${esc(url)}" title="Lesson video" loading="lazy" allowfullscreen
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+
+/* Ask the instructor, beside a lesson, lab or project: the chat knows which one. */
+function tutorCard(t, what) {
+  return `<section class="card chat tutor-inline" aria-label="Ask ${esc(t.name)}">
+    <div class="row" style="padding:14px 16px 0">${faces([t], 30)}<h3 style="margin:0">Ask ${esc(t.name)} about this ${what}</h3></div>
+    <div class="log" id="tlog"><div class="msg assistant"><div class="prose"><p>${what === "lesson" ? "Stuck on anything here, or want another example? Ask me."
+      : what === "lab" ? "Stuck on a step, or getting an error? Paste it here and we'll work it out together." : "Want to talk through your plan, or a part you're unsure of? Ask me."}</p></div></div></div>
+    <form class="composer" id="tform"><textarea id="tinput" rows="1" maxlength="4000" placeholder="Ask a question…" aria-label="Question"></textarea>
+      <button class="btn primary" id="tsend">Ask</button></form>
+  </section>`;
+}
+function wireTutor(root, t, contextId) {
+  const log = $("#tlog", root), input = $("#tinput", root), ctx = { name: t.name };
+  if (!log) return;
+  wireReactions(log, ctx);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#tform", root).requestSubmit(); } });
+  $("#tform", root).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    $("#tsend", root).disabled = true;
+    closePicker(log);
+    const u = chatBubble("user", text, {}, ctx); log.appendChild(u);
+    const a = chatBubble("assistant", "…", {}, ctx); log.appendChild(a);
+    log.scrollTop = log.scrollHeight;
+    try {
+      const { reply, sentId } = await streamChat(t.id, { message: text, lesson_id: contextId }, (acc) => { a.innerHTML = `<div class="prose">${md(withoutReactionTags(acc))}</div>`; log.scrollTop = log.scrollHeight; });
+      if (!reply.trim()) a.remove();
+      savedExchange(t.id, sentId, u, reply.trim() ? a : null, ctx);
+    } catch (err) {
+      a.innerHTML = `<span class="error">${esc(err.message)}</span>`;
+      if (!input.value) input.value = text;
+    }
+    $("#tsend", root).disabled = false;
+  });
+}
+
+function reviewHtml(a, kind) {
+  const r = a.review;
+  const head = kind === "lab" ? (a.passed ? "✅ Passed" : "🟠 Not passed yet: see what to fix")
+    : `${a.score} / 100 · ${a.passed ? "✅ Passed" : "🟠 Not passed yet (70 to pass)"}`;
+  return `<div class="review ${a.passed ? "pass" : "fail"} stack">
+    <div class="row spread"><b>${head}</b><span class="muted small">${timeAgo(a.created_at)}</span></div>
+    ${kind === "lab" ? `<ul class="checklist">${r.checks.map((x) => `<li>${x.met ? "✅" : "❌"} <b>${esc(x.check)}</b><div class="small muted">${esc(x.comment)}</div></li>`).join("")}</ul>`
+      : `<div class="table-wrap"><table class="table"><thead><tr><th>Criterion</th><th>Score</th></tr></thead><tbody>${r.criteria.map((x) =>
+          `<tr><td><b>${esc(x.criterion)}</b><div class="small muted">${esc(x.comment)}</div></td><td>${x.score}/${x.points}</td></tr>`).join("")}</tbody></table></div>
+        ${r.strengths?.length ? `<div><b>What's strong</b><ul>${r.strengths.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>` : ""}
+        ${r.improvements?.length ? `<div><b>To improve</b><ul>${r.improvements.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>` : ""}`}
+    <p style="margin:0">${esc(r.feedback)}</p>
+    ${r.next_step ? `<div class="small"><b>Next:</b> ${esc(r.next_step)}</div>` : ""}
+  </div>`;
+}
+const earlier = (attempts, kind) => (attempts.length > 1 ? `<details><summary>Earlier attempts (${attempts.length - 1})</summary><div class="stack" style="margin-top:10px">
+  ${attempts.slice(1).map((a) => `${reviewHtml(a, kind)}<details class="small"><summary>What you submitted</summary><pre class="submitted">${esc(a.content)}</pre></details>`).join("")}</div></details>` : "");
+
+/* The player: the course's outline beside the item in hand (a lesson, lab, quiz, the project, or the grades). */
+async function viewCoursePlayer(m) {
+  const slug = m[1], key = m[2];
+  const c = await api(`/api/courses/${slug}`);
+  if (!c.enrolled) {
+    shell("courses", `<div class="card empty stack"><div>Enrol in <b>${esc(c.title)}</b> to start it. It's free.</div>
+      <div class="row" style="justify-content:center"><button class="btn primary" id="enrolNow">Enrol for free</button><a class="btn" href="#/course/${slug}">About the ${kindName(c).toLowerCase()}</a></div></div>`);
+    $("#enrolNow").addEventListener("click", async () => { await api(`/api/courses/${slug}/enroll`, { method: "POST" }); router(); });
+    return;
+  }
+  const items = allItems(c);
+  const idx = items.findIndex((i) => i.key === key);
+  if (idx < 0 && key !== "grades") { location.replace(`#/course/${slug}`); return; }
+  const item = items[idx], prev = idx > 0 ? items[idx - 1] : null, next = idx >= 0 ? items[idx + 1] : null;
+  const wide = matchMedia("(min-width: 981px)").matches;
+  const link = (i) => `<a href="#/course/${slug}/learn/${i.key}" class="${i.key === key ? "active" : ""}"><span class="st" title="${STATUS_WORDS[i.status]}">${ITEM_STATUS[i.status]}</span>
+    <span><span class="t">${esc(i.title)}</span><span class="type">${{ lesson: "Lesson", lab: "Lab", quiz: "Quiz", project: "Project" }[i.type]} · ${duration(i.minutes)}</span></span></a>`;
+  const main = shell("courses", `
+    <div class="player-top">
+      <div class="muted small crumbs"><a href="#/courses">Courses</a> › <a href="#/course/${slug}">${esc(c.title)}</a></div>
+      <div class="row spread small"><b>${c.progress}% complete</b><a href="#/course/${slug}/learn/grades">Grades and certificate</a></div>${bar(c.progress, 100)}
+    </div>
+    <div class="player">
+      <details class="card outline"${wide ? " open" : ""}><summary>Course outline</summary>
+        ${c.syllabus.map((mod) => `<h4>Module ${mod.index}: ${esc(mod.title)}</h4>${mod.items.map(link).join("")}`).join("")}
+        ${c.project ? `<h4>Capstone project</h4>${link(c.project)}` : ""}
+        <h4>Your work</h4><a href="#/course/${slug}/learn/grades" class="${key === "grades" ? "active" : ""}"><span class="st">📊</span><span><span class="t">Grades and certificate</span></span></a>
+      </details>
+      <div class="stack" id="item"><div class="card empty">Loading…</div></div>
+    </div>`);
+  const box = $("#item", main);
+  const go = (i) => `#/course/${slug}/learn/${i.key}`;
+  const short = (t) => (t.length > 38 ? `${t.slice(0, 36)}…` : t);
+  const nav = `<div class="row spread item-nav">${prev ? `<a class="btn ghost" href="${go(prev)}">← ${esc(short(prev.title))}</a>` : "<span></span>"}
+    ${next ? `<a class="btn ghost" href="${go(next)}">${esc(short(next.title))} →</a>` : `<a class="btn ghost" href="#/course/${slug}/learn/grades">Grades →</a>`}</div>`;
+  const ctx = { c, slug, item, next, nav, box, go };
+  if (key === "grades") return playerGrades(ctx);
+  await { lesson: playerLesson, lab: playerLab, quiz: playerQuiz, project: playerProject }[item.type](ctx);
+}
+
+state.courseTeacher = {};  // per course, the instructor the learner chose to teach its lessons
+
+async function playerLesson({ c, slug, item, next, nav, box, go }) {
+  const chosen = state.courseTeacher[slug];
+  box.innerHTML = `<div class="card empty">${esc(item.module.instructor?.name || "Your instructor")} is preparing this lesson…</div>`;
+  let lesson;
+  try {
+    lesson = await api(`/api/lessons/${item.id}${chosen ? `?companion_id=${chosen}` : ""}`);
+  } catch (err) {
+    if (err instanceof StaleView) throw err;
+    box.innerHTML = `<div class="card empty stack"><div>${esc(err.message)}</div>${nav}</div>`;
+    return;
+  }
+  const t = lesson.teacher, done = lesson.status === "completed";
+  box.innerHTML = `
+    <article class="card stack lesson-item">
+      <div class="muted small">Module ${lesson.course.module} · Lesson ${lesson.course.lesson} · ${lesson.minutes} min</div>
+      <h1 style="margin:0">${esc(lesson.title)}</h1>
+      <div class="row spread">
+        <div class="row">${faces([{ id: t.id, name: t.name, updated_at: t.updated_at }], 42)}<div><b>${esc(t.name)} ${esc(t.flag)}</b><div class="muted small">Your instructor</div></div></div>
+        ${c.instructors.length > 1 ? `<label class="row small" style="font-weight:500">Taught by <select id="teacher" style="width:auto">${c.instructors.map((i) =>
+          `<option value="${i.id}" ${i.id === t.id ? "selected" : ""}>${esc(i.name)} ${esc(i.flag)}</option>`).join("")}</select></label>` : ""}
+      </div>
+      ${lesson.video ? videoEmbed(lesson.video) : ""}
+      ${/^#+\s*What you'll learn/i.test(lesson.body) ? "" : `<div class="objectives"><b>In this lesson you'll</b><ul>${lesson.objectives.map((o) =>
+        `<li>${esc(o.charAt(0).toLowerCase() + o.slice(1))}</li>`).join("")}</ul></div>`}
+      <div class="prose" id="lessonBody">${md(lesson.body)}</div>
+      ${lesson.walkthrough ? walkthroughHtml(lesson.walkthrough) : ""}
+      <div class="row">
+        <button class="btn ${done ? "on" : "primary"}" id="complete">${done ? "✅ Completed" : "Mark as complete"}</button>
+        <button class="btn" data-study="quiz">📝 Quiz me</button>
+        <button class="btn" data-study="cards">🃏 Flashcards</button>
+        <button class="btn" data-study="summary">📄 Summary</button>
+        ${canSpeak ? `<button class="btn" id="listen">🔊 Listen</button>` : ""}
+      </div>
+      ${nav}
+    </article>
+    ${tutorCard(t, "lesson")}`;
+  $("#teacher", box)?.addEventListener("change", (e) => { state.courseTeacher[slug] = +e.target.value; router(); });
+  $("#complete", box).addEventListener("click", async () => {
+    await api(`/api/lessons/${item.id}/complete`, { method: "POST" });
+    toast("Lesson completed");
+    location.hash = next ? go(next) : `#/course/${slug}/learn/grades`;
+  });
+  $$("[data-study]", box).forEach((b) => b.addEventListener("click", () => studyAction(b.dataset.study, "lesson", item.id, { companionId: t.id, button: b })));
+  $("#listen", box)?.addEventListener("click", async () => {
+    try { speak(lesson.body, (await api(`/api/companions/${t.id}`)).persona.voice); } catch (err) { toast(err.message); }
+  });
+  if (lesson.walkthrough) {
+    const walk = $("#walk", box);
+    wireSteps(walk);
+    $("#playWalk", walk).addEventListener("click", (e) => playWalkthrough(walk, lesson.walkthrough, t.id, e.currentTarget));
+  }
+  wireTutor(box, t, item.id);
+}
+
+async function playerLab({ slug, item, nav, box }) {
+  const m = +item.key.slice(3);
+  const lab = await api(`/api/courses/${slug}/labs/${m}`);
+  const tickKey = `aiet-lab:${slug}:${m}`, done = ticked(tickKey), os = keysFor(), latest = lab.attempts[0];
+  box.innerHTML = `
+    <article class="card stack">
+      <div class="muted small">Module ${m} · Hands-on lab · ${esc(lab.tool)} · about ${duration(lab.minutes)}</div>
+      <h1 style="margin:0">🧪 ${esc(lab.title)}</h1>
+      <p style="margin:0">${esc(lab.goal)}</p>
+      ${lab.setup.length ? `<div><b>What you need</b><ul>${lab.setup.map((s) => `<li>${esc(s)}</li>`).join("")}</ul></div>` : ""}
+      ${lab.files.length ? `<div class="row"><a class="btn" href="/api/courses/${slug}/labs/${m}/files" download>⬇️ Download the starter files</a>
+        <span class="muted small">${lab.files.map(esc).join(", ")}</span></div>` : ""}
+      <section class="walk" aria-label="Lab steps">
+        <div class="walk-head"><div><div class="tool">In ${esc(lab.tool)}</div><b>Steps</b></div>${lab.steps.some((s) => s.keys) ? osSwitch(os) : ""}</div>
+        <ol class="ticks">${lab.steps.map((s, i) => stepHtml(s, os, i, done.has(i))).join("")}</ol>
+      </section>
+      <div class="passes"><b>Your lab passes when</b><ul class="checklist">${lab.checks.map((ch) => `<li>☑️ ${esc(ch)}</li>`).join("")}</ul></div>
+      ${lab.hints.length ? `<details><summary>Hints</summary><ul>${lab.hints.map((h) => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}
+    </article>
+    <section class="card stack" id="submitBox">
+      <h2 style="margin:0">Submit your work</h2>
+      <p class="muted" style="margin:0">${esc(lab.submit)}</p>
+      <form id="workForm" class="stack">
+        <textarea name="content" rows="10" maxlength="40000" required class="mono" placeholder="Paste your work here" aria-label="Your work"></textarea>
+        <div class="row"><button class="btn primary">Submit for review</button>
+          <span class="muted small">${esc(lab.instructor?.name || "Your instructor")} reviews it against the checks above.</span></div>
+      </form>
+      <div id="review">${latest ? reviewHtml(latest, "lab") : ""}</div>
+      ${earlier(lab.attempts, "lab")}
+    </section>
+    ${nav}
+    ${lab.instructor ? tutorCard(lab.instructor, "lab") : ""}`;
+  wireSteps(box, tickKey);
+  wireWork(box, `/api/courses/${slug}/labs/${m}/submit`, "lab");
+  if (lab.instructor) wireTutor(box, lab.instructor, lab.id);
+}
+
+function wireWork(box, url, kind) {
+  $("#workForm", box).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("button", e.target);
+    btn.disabled = true; btn.textContent = "Your instructor is reviewing it…";
+    try {
+      const a = await api(url, { method: "POST", body: { content: e.target.content.value } });
+      toast(a.passed ? (kind === "lab" ? "Lab passed!" : "Project passed!") : "Reviewed: see what to fix");
+      router();  // the outline and progress change too
+    } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = "Submit for review"; }
+  });
+}
+
+function playerQuiz({ item, nav, box }) {
+  const mod = item.module, passed = item.status === "passed";
+  box.innerHTML = `<article class="card stack">
+    <div class="muted small">Module ${mod.index} · Graded quiz · about ${item.minutes} min</div>
+    <h1 style="margin:0">📝 ${esc(item.title)}: ${esc(mod.title)}</h1>
+    <p style="margin:0">${item.questions} questions on this module's lessons, written by ${esc(mod.instructor?.name || "your instructor")}. You pass with 70% or more,
+      and you can take a new quiz as often as you like: your best score counts.</p>
+    ${item.best_score != null ? `<div class="card row spread result ${passed ? "pass" : "fail"}"><div><div class="big">${item.best_score}%</div>
+      <div class="muted small">your best score</div></div><b>${passed ? "✅ Passed" : "Not passed yet: try a new quiz"}</b></div>` : ""}
+    <div class="row"><button class="btn primary" id="startQuiz">${item.best_score == null ? "Start the quiz" : "Take a new quiz"}</button></div>
+    ${nav}
+  </article>`;
+  $("#startQuiz", box).addEventListener("click", (e) => studyAction("quiz", "path", item.id, { companionId: mod.instructor?.id ?? null, button: e.target }));
+}
+
+async function playerProject({ slug, nav, box }) {
+  const p = await api(`/api/courses/${slug}/project`);
+  const latest = p.attempts[0];
+  box.innerHTML = `
+    <article class="card stack">
+      <div class="muted small">Capstone project · about ${duration(p.minutes)}</div>
+      <h1 style="margin:0">🏗️ ${esc(p.title)}</h1>
+      <p style="margin:0">${esc(p.brief)}</p>
+      <div><b>What to hand in</b><ul>${p.deliverables.map((d) => `<li>${esc(d)}</li>`).join("")}</ul></div>
+      ${p.files.length ? `<div class="row"><a class="btn" href="/api/courses/${slug}/project/files" download>⬇️ Download the starter files</a></div>` : ""}
+      <div><b>How it's scored</b> <span class="muted small">(${p.pass_mark} of 100 points to pass)</span>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Criterion</th><th>Points</th></tr></thead><tbody>${p.rubric.map((r) =>
+          `<tr><td><b>${esc(r.name)}</b><div class="small muted">${esc(r.description)}</div></td><td>${r.points}</td></tr>`).join("")}</tbody></table></div></div>
+    </article>
+    <section class="card stack" id="submitBox">
+      <h2 style="margin:0">Submit your project</h2>
+      <p class="muted" style="margin:0">${esc(p.submit)}</p>
+      <form id="workForm" class="stack">
+        <textarea name="content" rows="14" maxlength="40000" required class="mono" placeholder="Paste your project here" aria-label="Your project"></textarea>
+        <div class="row"><button class="btn primary">Submit for review</button>
+          <span class="muted small">${esc(p.instructor?.name || "Your instructor")} scores it against the rubric.</span></div>
+      </form>
+      <div id="review">${latest ? reviewHtml(latest, "project") : ""}</div>
+      ${earlier(p.attempts, "project")}
+    </section>
+    ${nav}
+    ${p.instructor ? tutorCard(p.instructor, "project") : ""}`;
+  wireWork(box, `/api/courses/${slug}/project/submit`, "project");
+  if (p.instructor) wireTutor(box, p.instructor, p.id);
+}
+
+function playerGrades({ c, slug, box, go }) {
+  const graded = allItems(c).filter((i) => i.type !== "lesson");
+  const grade = (i) => (i.type === "quiz" ? (i.best_score != null ? `${i.best_score}%` : "–") : i.type === "project" ? (i.best_score != null ? `${i.best_score}/100` : "–") : "");
+  const lead = c.instructors[0];
+  box.innerHTML = `
+    <div class="card stack">
+      <h1 style="margin:0">Grades</h1>
+      <div class="table-wrap"><table class="table"><thead><tr><th>Item</th><th>Status</th><th>Grade</th></tr></thead><tbody>
+        ${graded.map((i) => `<tr><td><a href="${go(i)}">${ITEM_ICON[i.type]} ${esc(i.title)}</a>${i.module ? `<div class="small muted">Module ${i.module.index}: ${esc(i.module.title)}</div>` : ""}</td>
+          <td>${ITEM_STATUS[i.status]} ${STATUS_WORDS[i.status]}</td><td>${grade(i)}</td></tr>`).join("")}
+      </tbody></table></div>
+    </div>
+    ${progressBlock(c, { grades: true })}
+    <div class="card stack">
+      <h2 style="margin:0">Practise the whole ${kindName(c).toLowerCase()}</h2>
+      <p class="muted" style="margin:0">A timed mock exam on every lesson (it doesn't count towards your certificate), or flashcards to review them all.</p>
+      <div class="row"><button class="btn primary" id="exam">🎓 Mock exam</button><button class="btn" id="cards">🃏 Flashcards</button></div>
+    </div>`;
+  wireProgress(box, c);
+  $("#exam", box).addEventListener("click", (e) => studyAction("exam", "course", slug, { companionId: lead?.id ?? null, button: e.target }));
+  $("#cards", box).addEventListener("click", (e) => studyAction("cards", "course", slug, { companionId: lead?.id ?? null, button: e.target }));
+}
+
+/* ------------------------------------------------------------------ tracks */
+
+async function viewTrack(m) {
+  const t = await api(`/api/tracks/${m[1]}`);
+  const complete = t.done === t.total;
+  const main = shell("courses", `
+    <div class="muted small crumbs"><a href="#/courses">Courses</a> › ${esc(t.kind)}s</div>
+    <section class="card course-head" style="--c1:#5b4cdb;--c2:#8a7dff">
+      <div class="badges"><span class="badge">${esc(t.kind)}</span><span class="badge">${t.total}-course series</span></div>
+      <h1>${esc(t.title)}</h1>
+      <p class="lead">${esc(t.subtitle)}</p>
+      <div class="row">${faces(t.instructors.slice(0, 8), 34)}<span class="small muted">Taught by ${plural2(t.instructors.length, "AI Learning Companion")}</span></div>
+      <div>${bar(t.done, t.total)}<div class="small muted">${t.done} of ${t.total} courses finished</div></div>
+    </section>
+    <div class="card course-stats">
+      <div><b>${plural2(t.total, "course")}</b><span class="muted small">taken in order</span></div>
+      <div><b>${t.levels.map(label).join(" to ")}</b><span class="muted small">level</span></div>
+      <div><b>${hoursText(t.hours)}</b><span class="muted small">at your own pace</span></div>
+      <div><b>${esc(t.kind)}</b><span class="muted small">when you finish every course</span></div>
+    </div>
+    <div class="two-col" style="margin-top:16px">
+      <div class="card stack"><h2 style="margin:0">About this ${esc(t.kind)}</h2><p style="margin:0">${esc(t.description)}</p>
+        ${t.roles.length ? `<div><h3>It prepares you for roles such as</h3>${chipList(t.roles)}</div>` : ""}
+        <div><h3>Skills you'll gain</h3>${chipList(t.skills)}</div></div>
+      <div class="card stack" id="trackCert"><h2 style="margin:0">🎓 Your certificate</h2>
+        ${t.certificate ? `<p style="margin:0">You've earned the ${esc(t.title)} ${esc(t.kind)}.</p><div><a class="btn primary" href="#/certificate/${t.certificate}">View your certificate</a></div>`
+          : complete ? `<form id="certForm" class="stack cert-form"><div><b>🎉 You've finished every course!</b></div>
+              <label>Name on your certificate <input type="text" name="name" value="${esc(state.me.display_name)}" minlength="2" maxlength="80" required></label>
+              <div><button class="btn primary">Get my certificate</button></div></form>`
+          : `<p class="muted" style="margin:0">Earn the certificate for each of its ${t.total} courses to get the ${esc(t.kind)} certificate.</p>`}
+      </div>
+    </div>
+    <h2 class="section">${t.total} courses in this ${esc(t.kind)}</h2>
+    <ol class="track-courses">${t.courses.map((c, i) => `<li class="card">
+      <div class="muted small">Course ${i + 1} · ${label(c.level)} · ${hoursText(c.hours)}</div>
+      <div class="row spread"><a class="plain" href="#/course/${c.slug}"><h3 style="margin:0">${esc(c.title)}</h3></a>
+        <span>${c.certificate ? "🎓 Done" : c.enrolled ? `${c.progress}%` : ""}</span></div>
+      <div class="small muted">${esc(c.subtitle)}</div>
+      ${c.enrolled ? bar(c.progress, 100) : ""}
+      <div class="row small">${faces(c.instructors, 24)}<span class="muted">${esc(c.instructors.map((x) => x.name).join(", "))}</span></div>
+    </li>`).join("")}</ol>`);
+  $("#certForm", main)?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("button", e.target);
+    btn.disabled = true;
+    try {
+      const cert = await api(`/api/tracks/${t.slug}/certificate`, { method: "POST", body: { name: e.target.name.value } });
+      location.hash = `#/certificate/${cert.code}`;
+    } catch (err) { toast(err.message); btn.disabled = false; }
+  });
+}
+
+/* --------------------------------------------------------------- certificate */
+
+/* A certificate's own page, open to anyone with its link, so learners can share it and others can check it. */
+async function viewCertificate(m) {
+  let cert;
+  try {
+    cert = await api(`/api/certificates/${m[1]}`);
+  } catch (err) {
+    if (err instanceof StaleView) throw err;
+    app.innerHTML = `<div class="narrow-card card stack">${logo()}<p>${esc(err.message)}</p><div><a class="btn" href="#/feed">Go to AI Every Time</a></div></div>`;
+    return;
+  }
+  const issued = new Date(cert.issued_at);
+  const day = issued.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+  const url = `${location.origin}/#/certificate/${cert.code}`;
+  const f = cert.for, track = cert.kind === "track";
+  const heading = track ? f.kind : f.kind === "Guided project" ? "Guided Project Certificate" : "Course Certificate";
+  const what = track ? `a ${f.courses.length}-course ${f.kind} of about ${hoursText(f.hours)}`
+    : `${lengthOf(f.hours)} ${f.level} ${f.kind.toLowerCase()}`;
+  const linkedIn = new URLSearchParams({ startTask: "CERTIFICATION_NAME", name: f.title, organizationName: "AI Every Time",
+    issueYear: String(issued.getFullYear()), issueMonth: String(issued.getMonth() + 1), certUrl: url, certId: cert.code });
+  app.innerHTML = `
+    <div class="cert-page">
+      <div class="cert-bar">${logo(30)}${state.me ? `<a class="btn" href="#/courses">Back to courses</a>` : `<a class="btn primary" href="#/welcome">Learn with AI Every Time</a>`}</div>
+      <article class="cert" aria-label="Certificate">
+        <div class="cert-top"><img src="/static/icons/logo-256.webp" width="56" height="56" alt="">
+          <div><div class="cert-brand">AI <span>Every</span> Time</div><div class="cert-kind">${esc(heading)}</div></div></div>
+        <div class="cert-main">
+          <div class="cert-date">${esc(day)}</div>
+          <div class="cert-name">${esc(cert.name)}</div>
+          <div class="cert-has">has successfully completed</div>
+          <div class="cert-course">${esc(f.title)}</div>
+          <div class="cert-desc">${esc(what)}, taught by AI Learning Companions on AI Every Time</div>
+        </div>
+        <div class="cert-foot">
+          <div class="cert-signs">${cert.instructors.map((i) => `<div class="sign"><img class="avatar" src="${faceUrl(i)}" width="38" height="38" alt="">
+            <div><b>${esc(i.name)}</b><div>Instructor · AI Learning Companion</div></div></div>`).join("")}</div>
+          <div class="cert-verify">Check this certificate at<br><b>${esc(url.replace(/^https?:\/\//, ""))}</b></div>
+        </div>
+      </article>
+      <div class="row cert-actions">
+        <button class="btn primary" id="printCert">🖨️ Print or save as PDF</button>
+        <button class="btn" id="copyCert">🔗 Copy the link</button>
+        <a class="btn" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/profile/add?${linkedIn}">Add to LinkedIn</a>
+      </div>
+      <p class="muted small cert-note">This certificate shows that ${esc(cert.name)} completed every lesson, graded quiz, lab and project in this
+        ${track ? "series" : f.kind.toLowerCase()} on AI Every Time, reviewed by its AI instructors. It isn't an academic credit, or a certification from any company whose products it teaches.</p>
+    </div>`;
+  document.title = `${cert.name}: ${f.title} · AI Every Time`;
+  $("#printCert").addEventListener("click", () => print());
+  $("#copyCert").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { prompt("Copy this link:", url); }
+  });
 }
 
 router();

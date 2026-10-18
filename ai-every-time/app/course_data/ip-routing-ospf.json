@@ -1,0 +1,1117 @@
+{
+  "slug": "ip-routing-ospf",
+  "title": "IP Routing: Static Routes and OSPF",
+  "subtitle": "Read routing tables, build static, default and floating routes, run single-area OSPFv2 and keep gateways available with HSRP, on Cisco routers in Packet Tracer.",
+  "category": "Networking",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "chaiyapon-srisomboon",
+    "kaimana-kahananui"
+  ],
+  "skills": [
+    "IP routing",
+    "Routing tables",
+    "Static routing",
+    "Default and floating static routes",
+    "IPv6 static routing",
+    "OSPFv2",
+    "OSPF troubleshooting",
+    "HSRP",
+    "Cisco IOS",
+    "Cisco Packet Tracer"
+  ],
+  "tools": [
+    "Cisco Packet Tracer",
+    "Cisco IOS"
+  ],
+  "outcomes": [
+    "Read every part of a Cisco routing table and predict the route a router will use, by longest prefix match, administrative distance and metric",
+    "Configure and verify IPv4 and IPv6 static routes: network, host, default and floating static",
+    "Configure single-area OSPFv2 with router IDs, passive interfaces, costs and DR/BDR priorities",
+    "Verify OSPF neighbours and routes, and troubleshoot adjacencies that won't form",
+    "Explain how first-hop redundancy keeps a default gateway available, and configure HSRP"
+  ],
+  "prerequisites": "IPv4 subnetting and basic Cisco IOS configuration (command modes, interfaces and show commands); IP Addressing and Subnetting and LAN Switching cover them. You need Cisco Packet Tracer (free with a Cisco Networking Academy account).",
+  "description": "Routers decide where every packet goes, and knowing how they decide is what lets you design networks that work and fix them when they don't. In this course you'll learn to read a Cisco routing table line by line and predict which route a router will use, by longest prefix match, administrative distance and metric. You'll configure static routes, host routes, default routes and floating backups for IPv4 and IPv6, then let routers find their own routes with single-area OSPFv2: router IDs, network statements, passive interfaces, DR and BDR elections on shared LANs, and costs that steer traffic where you want it. Finally you'll troubleshoot OSPF neighbours that won't come up, and keep a LAN's default gateway available with HSRP.\n\nEvery configuration is shown step by step in Cisco Packet Tracer with the output you should see, and every module ends with a lab your instructor reviews against real show command output, including one where you break and fix OSPF on purpose. The course ends with a project in which you build the routed network for a three-site company, with OSPF, a default route to the internet, path control and HSRP. It follows the IP Connectivity topics in Cisco's published CCNA (200-301) exam topics.",
+  "aligned_with": "Cisco CCNA (200-301) exam topics: IP Connectivity",
+  "modules": [
+    {
+      "title": "How routers choose a path",
+      "summary": "Read a Cisco routing table line by line, and learn the rules a router uses to choose one route from several: longest prefix match, administrative distance and metric.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Reading the routing table",
+          "minutes": 12,
+          "objectives": [
+            "Identify each part of a routing table entry: code, prefix, mask, administrative distance, metric and next hop",
+            "Explain connected and local routes and the gateway of last resort"
+          ],
+          "key_points": [
+            "A router forwards each packet by looking up its destination address in the routing table, which lists networks, how the router learned them, and where to send packets for them: a next-hop address, an exit interface, or both.",
+            "Each entry starts with a code for its source: C connected, L local, S static, O OSPF, D EIGRP, R RIP and B BGP; an asterisk marks a candidate default route.",
+            "When an interface with an address comes up, the router adds two routes: C for the interface's network, and L, a /32 host route for the router's own address on it.",
+            "In O 192.168.2.0/24 [110/2] via 10.0.12.2, 00:05:12, GigabitEthernet0/1, the numbers in brackets are the administrative distance and the metric, via gives the next hop, and then come the route's age and its exit interface.",
+            "The gateway of last resort is the default route, 0.0.0.0/0, used when nothing more specific matches; without one, a router drops packets for networks it doesn't know and may send an ICMP unreachable message back.",
+            "show ip route shows the IPv4 table, show ip route 192.168.2.0 shows one entry in detail, show ip route ospf or show ip route static shows one source, and show ipv6 route shows the IPv6 table."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Read a router's connected and local routes",
+            "steps": [
+              {
+                "do": "Add a 2911 router, R1, with a 2960 switch on G0/0 and another on G0/1, and open R1's CLI (answer no to the initial configuration dialog)."
+              },
+              {
+                "do": "Address two interfaces and a loopback.",
+                "code": "enable\nconfigure terminal\nhostname R1\ninterface g0/0\nip address 192.168.1.1 255.255.255.0\nno shutdown\ninterface g0/1\nip address 192.168.2.1 255.255.255.0\nno shutdown\ninterface loopback0\nip address 10.1.1.1 255.255.255.0\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Read the routing table.",
+                "code": "show ip route",
+                "lang": "cisco",
+                "see": "The list of codes, Gateway of last resort is not set, then a C and an L route for each network, such as C 192.168.1.0/24 is directly connected, GigabitEthernet0/0 and L 192.168.1.1/32 is directly connected, GigabitEthernet0/0, and the same for G0/1 and Loopback0."
+              },
+              {
+                "do": "Shut down G0/1 and look again.",
+                "code": "configure terminal\ninterface g0/1\nshutdown\nend\nshow ip route",
+                "lang": "cisco",
+                "see": "192.168.2.0/24 and its L route have gone: a connected route exists only while its interface is up. Turn G0/1 back on with no shutdown."
+              },
+              {
+                "do": "Look at the IPv6 table too: turn on IPv6 routing and give G0/0 an IPv6 address.",
+                "code": "configure terminal\nipv6 unicast-routing\ninterface g0/0\nipv6 address 2001:db8:acad:1::1/64\nend\nshow ipv6 route",
+                "lang": "cisco",
+                "see": "C 2001:DB8:ACAD:1::/64 [0/0] via GigabitEthernet0/0, directly connected; L 2001:DB8:ACAD:1::1/128 [0/0] via GigabitEthernet0/0, receive; and L FF00::/8 via Null0."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Longest prefix match and administrative distance",
+          "minutes": 12,
+          "objectives": [
+            "Predict which route a router uses when several match a destination",
+            "Compare routes from different sources by administrative distance and metric"
+          ],
+          "key_points": [
+            "When several routes match a destination, the router uses the one with the longest prefix, the most specific: for 10.1.1.5, a route to 10.1.1.0/24 beats one to 10.1.0.0/16, which beats 10.0.0.0/8, which beats 0.0.0.0/0.",
+            "Administrative distance (AD) ranks how much a route's source is trusted, and decides between sources offering the same prefix; the lowest wins: connected 0, static 1, eBGP 20, EIGRP 90, OSPF 110, RIP 120, external EIGRP 170, iBGP 200. A distance of 255 means never use it.",
+            "Within one routing protocol, the lowest metric wins: OSPF uses cost, RIP uses hop count, and EIGRP a composite metric based on bandwidth and delay.",
+            "Routes with the same prefix, distance and metric are all installed, and the router shares traffic across them (equal-cost multipath); OSPF does this by default.",
+            "The order matters: longest prefix match chooses between different prefixes, and distance and metric only choose between routes to the same prefix. That's why a /24 learned by RIP is used ahead of a /16 static route for addresses inside the /24.",
+            "A route is installed only while it's usable: a static route whose exit interface goes down, or whose next hop is no longer reachable, leaves the table."
+          ],
+          "walkthrough": {
+            "tool": "Pen and paper",
+            "title": "Worked example: which route wins?",
+            "steps": [
+              {
+                "do": "Here are the routes a router has learned from different sources, before it chooses the best. Write them down.",
+                "code": "Source  Prefix         AD/metric  Next hop\nstatic  0.0.0.0/0      1/0        203.0.113.1\nOSPF    10.0.0.0/8     110/30     10.255.0.2\nstatic  10.1.0.0/16    1/0        10.255.0.6\nOSPF    10.1.1.0/24    110/20     10.255.0.2\nRIP     10.1.1.0/24    120/2      10.255.0.10\nOSPF    10.1.1.64/26   110/40     10.255.0.14",
+                "lang": "text"
+              },
+              {
+                "do": "First settle routes to the same prefix: OSPF and RIP both offer 10.1.1.0/24, and OSPF's distance, 110, is lower than RIP's 120.",
+                "see": "The table holds 0.0.0.0/0, 10.0.0.0/8, 10.1.0.0/16, 10.1.1.0/24 (from OSPF) and 10.1.1.64/26. The RIP route is held back."
+              },
+              {
+                "do": "Destination 10.1.1.70: it matches 0.0.0.0/0, 10.0.0.0/8, 10.1.0.0/16, 10.1.1.0/24 and 10.1.1.64/26 (.64 to .127). The longest is /26.",
+                "see": "Via 10.255.0.14, even though that route's metric, 40, is the highest: the longest prefix comes first."
+              },
+              {
+                "do": "Destination 10.1.1.200: it's outside 10.1.1.64/26, so the longest match is 10.1.1.0/24.",
+                "see": "Via 10.255.0.2."
+              },
+              {
+                "do": "Destination 10.1.9.9: it matches 10.1.0.0/16 and 10.0.0.0/8, and /16 is longer.",
+                "see": "Via 10.255.0.6, the static route."
+              },
+              {
+                "do": "Destination 10.200.0.1: only 10.0.0.0/8 and the default route match.",
+                "see": "Via 10.255.0.2."
+              },
+              {
+                "do": "Destination 8.8.8.8: only the default route matches.",
+                "see": "Via 203.0.113.1, the gateway of last resort."
+              },
+              {
+                "do": "Now suppose the OSPF route to 10.1.1.0/24 disappears. Where does 10.1.1.200 go?",
+                "see": "The RIP route to 10.1.1.0/24 goes into the table instead, so 10.1.1.200 goes via 10.255.0.10."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Predict, then prove: forwarding decisions",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 45,
+        "goal": "Predict the routes a router will choose for six destinations from the routes it has learned, then build a router with four connected networks in Packet Tracer and read the routes it creates.",
+        "setup": [
+          "Cisco Packet Tracer",
+          "Pen and paper, or a text file, for your predictions"
+        ],
+        "steps": [
+          {
+            "do": "Part A. A router has learned these routes. Decide first which route for each prefix goes into the table.",
+            "code": "Source  Prefix           AD/metric   Next hop\nstatic  0.0.0.0/0        1/0         198.51.100.1\nOSPF    172.16.0.0/16    110/65      10.0.0.2\nOSPF    172.16.4.0/22    110/3       10.0.0.6\nstatic  172.16.5.0/24    1/0         10.0.0.10\nEIGRP   172.16.5.0/24    90/30720    10.0.0.14\nOSPF    172.16.5.128/25  110/12      10.0.0.2",
+            "lang": "text"
+          },
+          {
+            "do": "For each destination, write the route the router uses, its next hop, and why.",
+            "code": "a. 172.16.5.200\nb. 172.16.5.20\nc. 172.16.6.1\nd. 172.16.200.1\ne. 172.17.0.1",
+            "lang": "text"
+          },
+          {
+            "do": "Part B. In Packet Tracer, add a 2911 router, R1, three 2960 switches and three PCs. Connect R1's G0/0, G0/1 and G0/2 each to its own switch, with one PC on each switch."
+          },
+          {
+            "do": "Configure R1.",
+            "code": "enable\nconfigure terminal\nhostname R1\ninterface g0/0\nip address 192.168.10.1 255.255.255.0\nno shutdown\ninterface g0/1\nip address 192.168.20.1 255.255.255.0\nno shutdown\ninterface g0/2\nip address 192.168.30.1 255.255.255.0\nno shutdown\ninterface loopback0\nip address 10.10.10.1 255.255.255.0\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Give the PCs 192.168.10.10, 192.168.20.10 and 192.168.30.10, each with mask 255.255.255.0 and its LAN's router address as gateway: PC-A, PC-B and PC-C."
+          },
+          {
+            "do": "Read R1's routing table.",
+            "code": "show ip route",
+            "lang": "cisco",
+            "see": "A C and an L route for each of the four networks."
+          },
+          {
+            "do": "From PC-A, ping PC-B, PC-C and R1's loopback, and trace to PC-C.",
+            "code": "ping 192.168.20.10\nping 192.168.30.10\nping 10.10.10.1\ntracert 192.168.30.10",
+            "lang": "text",
+            "see": "Replies from all three; the trace goes through 192.168.10.1 to 192.168.30.10."
+          },
+          {
+            "do": "Shut down G0/2, read the table again and ping PC-C, then turn G0/2 back on.",
+            "see": "192.168.30.0/24 leaves the table, and PC-A's ping gets Destination host unreachable from 192.168.10.1, or times out."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Installed: the static 172.16.5.0/24 (distance 1) beats the EIGRP route (90). a. 172.16.5.200 uses 172.16.5.128/25 via 10.0.0.2: the longest match, whatever the metrics.",
+            "look_for": [
+              "172.16.5.128/25",
+              "10.0.0.2"
+            ]
+          },
+          {
+            "text": "b. 172.16.5.20 is outside the /25, so it uses the static 172.16.5.0/24 via 10.0.0.10.",
+            "look_for": [
+              "172.16.5.0/24",
+              "10.0.0.10"
+            ]
+          },
+          {
+            "text": "c. 172.16.6.1 uses 172.16.4.0/22 (172.16.4.0 to 172.16.7.255) via 10.0.0.6; d. 172.16.200.1 uses 172.16.0.0/16 via 10.0.0.2.",
+            "look_for": [
+              "172.16.4.0/22",
+              "10.0.0.6",
+              "172.16.0.0/16"
+            ]
+          },
+          {
+            "text": "e. 172.17.0.1 matches only the default route, via 198.51.100.1.",
+            "look_for": [
+              "198.51.100.1"
+            ]
+          },
+          {
+            "text": "R1's table shows a C and an L route for each of its four networks.",
+            "look_for": [
+              "192.168.30.0/24 is directly connected",
+              "192.168.30.1/32 is directly connected",
+              "10.10.10.0/24 is directly connected, Loopback0"
+            ]
+          },
+          {
+            "text": "PC-A reaches the other LANs and R1's loopback.",
+            "look_for": [
+              "Reply from 192.168.20.10",
+              "Reply from 192.168.30.10",
+              "Reply from 10.10.10.1"
+            ]
+          }
+        ],
+        "submit": "Paste your Part A answers, each with the route, next hop and reason; then R1's show ip route, PC-A's pings and trace, and what happened when G0/2 was shut down.",
+        "hints": [
+          "Work out each candidate prefix's range first: 172.16.4.0/22 runs from 172.16.4.0 to 172.16.7.255, and 172.16.5.128/25 from 172.16.5.128 to 172.16.5.255.",
+          "Distance and metric never beat a longer prefix: they only choose between routes to exactly the same prefix."
+        ]
+      }
+    },
+    {
+      "title": "Static and default routes",
+      "summary": "Configure the routes a router can't learn for itself: static routes to networks and hosts, default routes for stub networks and the internet, floating backups, and their IPv6 equivalents.",
+      "instructor": "kaimana-kahananui",
+      "lessons": [
+        {
+          "title": "Configuring static routes",
+          "minutes": 12,
+          "objectives": [
+            "Configure static routes with a next-hop address, an exit interface or both",
+            "Verify static routes and explain why return routes matter"
+          ],
+          "key_points": [
+            "ip route 192.168.2.0 255.255.255.0 10.0.12.2 sends traffic for 192.168.2.0/24 to the next-hop router 10.0.12.2; the router then looks up 10.0.12.2 in its own table to find the exit interface (a recursive lookup).",
+            "A static route can name the exit interface instead (ip route 192.168.2.0 255.255.255.0 g0/1), or both (a fully specified route). On Ethernet, include the next hop: a route with only an interface relies on the next router answering ARP for every destination (proxy ARP).",
+            "Static routes have an administrative distance of 1 and appear with the code S; a static route leaves the table if its exit interface goes down or its next hop becomes unreachable.",
+            "Routing has to work in both directions: every router on the path needs a route to the destination, and the routers on the way back need a route to the source, or the replies are lost.",
+            "A host route is a static route to one address, with a /32 mask (255.255.255.255); a summary route covers several networks with one shorter prefix, such as 172.16.0.0/22 for 172.16.0.0/24 to 172.16.3.0/24.",
+            "Static routes suit small and stub networks and fixed paths, but don't adapt to failures or new networks by themselves; that's the job of dynamic routing protocols such as OSPF."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Connect two routers with static routes",
+            "steps": [
+              {
+                "do": "Build R1 and R2 (2911s) joined G0/1 to G0/1 with a Copper Cross-Over cable, each with a switch and a PC on G0/0. Address R1 G0/0 192.168.1.1/24 and G0/1 10.0.12.1/30; R2 G0/0 192.168.2.1/24 and G0/1 10.0.12.2/30; PC1 192.168.1.10 and PC2 192.168.2.10, with their router as gateway."
+              },
+              {
+                "do": "From PC1, ping PC2 before adding any routes.",
+                "code": "ping 192.168.2.10",
+                "lang": "text",
+                "see": "Reply from 192.168.1.1: Destination host unreachable. R1 has no route to 192.168.2.0/24."
+              },
+              {
+                "do": "On R1, add a static route to R2's LAN.",
+                "code": "configure terminal\nip route 192.168.2.0 255.255.255.0 10.0.12.2\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Ping again.",
+                "see": "Request timed out. The echo now reaches PC2, but R2 has no route back to 192.168.1.0/24."
+              },
+              {
+                "do": "On R2, add the return route.",
+                "code": "configure terminal\nip route 192.168.1.0 255.255.255.0 10.0.12.1\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Ping and trace from PC1.",
+                "code": "ping 192.168.2.10\ntracert 192.168.2.10",
+                "lang": "text",
+                "see": "Replies with TTL=126 (two routers on the way), and three hops: 192.168.1.1, 10.0.12.2 and 192.168.2.10."
+              },
+              {
+                "do": "Read R1's table.",
+                "code": "show ip route",
+                "lang": "cisco",
+                "see": "S 192.168.2.0/24 [1/0] via 10.0.12.2"
+              },
+              {
+                "do": "Add a host route to PC2 alone and see it beside the network route.",
+                "code": "configure terminal\nip route 192.168.2.10 255.255.255.255 10.0.12.2\nend\nshow ip route",
+                "lang": "cisco",
+                "see": "S 192.168.2.10/32 [1/0] via 10.0.12.2 as well as S 192.168.2.0/24."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Default and floating static routes",
+          "minutes": 12,
+          "objectives": [
+            "Configure a default route for a stub network or an internet connection",
+            "Configure a floating static route as a backup path"
+          ],
+          "key_points": [
+            "A default route, ip route 0.0.0.0 0.0.0.0 followed by a next hop, matches every destination, so it's used whenever nothing more specific does. It appears as S* 0.0.0.0/0 and becomes the gateway of last resort.",
+            "A stub network, with only one way out, such as a branch office or a home network, needs nothing more than a default route towards its provider or head office.",
+            "A floating static route is a backup with a higher administrative distance than the main route, given at the end of the command, as in ip route 0.0.0.0 0.0.0.0 10.0.21.2 5. It stays out of the table until the main route disappears.",
+            "To back up a route learned by a routing protocol, the floating route's distance must be higher than the protocol's: above 110 for OSPF, such as 115 or 200.",
+            "A floating route takes over only when the main route leaves the table, typically because its exit interface went down; if the main path fails further away while the interface stays up, a plain static route doesn't notice.",
+            "In IPv6 the default route is ::/0, as in ipv6 route ::/0 2001:db8:acad:12::2, and a floating IPv6 route takes its distance at the end in the same way."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Add a backup default route",
+            "steps": [
+              {
+                "do": "Using R1 and R2 from the last lesson, add a second Copper Cross-Over cable between R1 G0/2 and R2 G0/2. Address it R1 10.0.21.1/30 and R2 10.0.21.2/30, with no shutdown on both. On R2, add Loopback0 with 203.0.113.1/24 to stand for the internet."
+              },
+              {
+                "do": "On R1, replace the static routes with a default route over the main link, and a floating default over the backup link with distance 5.",
+                "code": "configure terminal\nno ip route 192.168.2.0 255.255.255.0 10.0.12.2\nno ip route 192.168.2.10 255.255.255.255 10.0.12.2\nip route 0.0.0.0 0.0.0.0 10.0.12.2\nip route 0.0.0.0 0.0.0.0 10.0.21.2 5\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Read R1's table.",
+                "code": "show ip route",
+                "lang": "cisco",
+                "see": "Gateway of last resort is 10.0.12.2 to network 0.0.0.0, and S* 0.0.0.0/0 [1/0] via 10.0.12.2. The floating route isn't shown."
+              },
+              {
+                "do": "On R2, add a floating return route over the backup link.",
+                "code": "configure terminal\nip route 192.168.1.0 255.255.255.0 10.0.21.1 5\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "From PC1, trace to PC2.",
+                "code": "tracert 192.168.2.10",
+                "lang": "text",
+                "see": "192.168.1.1, 10.0.12.2, 192.168.2.10: the main link."
+              },
+              {
+                "do": "Break the main link by shutting down R1's G0/1, then read the table.",
+                "code": "configure terminal\ninterface g0/1\nshutdown\nend\nshow ip route",
+                "lang": "cisco",
+                "see": "S* 0.0.0.0/0 [5/0] via 10.0.21.2: the floating route has taken over."
+              },
+              {
+                "do": "Trace again from PC1, and ping the internet address.",
+                "code": "tracert 192.168.2.10\nping 203.0.113.1",
+                "lang": "text",
+                "see": "The middle hop is now 10.0.21.2, and 203.0.113.1 replies."
+              },
+              {
+                "do": "Turn R1's G0/1 back on with no shutdown and check that the main route returns."
+              }
+            ]
+          }
+        },
+        {
+          "title": "IPv6 static routes",
+          "minutes": 10,
+          "objectives": [
+            "Configure IPv6 static and default routes with global and link-local next hops",
+            "Verify IPv6 routes and connectivity"
+          ],
+          "key_points": [
+            "A router forwards IPv6 only after ipv6 unicast-routing. IPv6 static routes then work like IPv4 ones, written with a prefix length: ipv6 route 2001:db8:acad:2::/64 2001:db8:acad:12::2.",
+            "The next hop can be the neighbour's link-local address, but then the exit interface must be given too, because link-local addresses are only unique on their own link: ipv6 route 2001:db8:acad:1::/64 g0/1 fe80::1.",
+            "The IPv6 default route is ::/0, and a floating IPv6 route takes its distance at the end, as in ipv6 route ::/0 2001:db8:acad:21::2 5.",
+            "An IPv6 host route is a /128, such as ipv6 route 2001:db8:acad:2::10/128 2001:db8:acad:12::2.",
+            "show ipv6 route lists static routes with the code S and [1/0], and ping and traceroute take IPv6 addresses just as they take IPv4 ones."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Route IPv6 between two routers",
+            "steps": [
+              {
+                "do": "On R1, turn on IPv6 routing and address its interfaces, with fe80::1 as the link-local address on each.",
+                "code": "configure terminal\nipv6 unicast-routing\ninterface g0/0\nipv6 address 2001:db8:acad:1::1/64\nipv6 address fe80::1 link-local\ninterface g0/1\nipv6 address 2001:db8:acad:12::1/64\nipv6 address fe80::1 link-local\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On R2, do the same with fe80::2.",
+                "code": "configure terminal\nipv6 unicast-routing\ninterface g0/0\nipv6 address 2001:db8:acad:2::1/64\nipv6 address fe80::2 link-local\ninterface g0/1\nipv6 address 2001:db8:acad:12::2/64\nipv6 address fe80::2 link-local\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Give PC1 2001:db8:acad:1::10/64 with gateway fe80::1, and PC2 2001:db8:acad:2::10/64 with gateway fe80::2."
+              },
+              {
+                "do": "On R1, add a route to R2's LAN through R2's global address; on R2, use R1's link-local address with the exit interface.",
+                "code": "! on R1\nconfigure terminal\nipv6 route 2001:db8:acad:2::/64 2001:db8:acad:12::2\nend\n\n! on R2\nconfigure terminal\nipv6 route 2001:db8:acad:1::/64 g0/1 fe80::1\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the routes on each router.",
+                "code": "show ipv6 route",
+                "lang": "cisco",
+                "see": "On R1, S 2001:DB8:ACAD:2::/64 [1/0] via 2001:DB8:ACAD:12::2; on R2, S 2001:DB8:ACAD:1::/64 [1/0] via FE80::1, GigabitEthernet0/1."
+              },
+              {
+                "do": "Ping and trace PC2 from PC1.",
+                "code": "ping 2001:db8:acad:2::10\ntracert 2001:db8:acad:2::10",
+                "lang": "text",
+                "see": "Replies, and a trace through 2001:DB8:ACAD:1::1 and 2001:DB8:ACAD:12::2 to PC2."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Static, default and floating routes",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 75,
+        "goal": "Connect a branch router to head office over two links with default routes and floating backups, for IPv4 and IPv6, and prove the backup takes over when the main link fails.",
+        "setup": [
+          "Cisco Packet Tracer"
+        ],
+        "steps": [
+          {
+            "do": "Build two 2911 routers: R1 (branch) and R2 (head office), joined G0/1 to G0/1 (the main link) and G0/2 to G0/2 (the backup link) with Copper Cross-Over cables. Give each a switch and a PC on G0/0."
+          },
+          {
+            "do": "Address everything from the plan, and turn on IPv6 routing on both routers.",
+            "code": "Device  Interface  IPv4               IPv6\nR1      G0/0       192.168.1.1/24     2001:db8:acad:1::1/64\nR1      G0/1       10.0.12.1/30       2001:db8:acad:12::1/64\nR1      G0/2       10.0.21.1/30       2001:db8:acad:21::1/64\nR2      G0/0       192.168.2.1/24     2001:db8:acad:2::1/64\nR2      G0/1       10.0.12.2/30       2001:db8:acad:12::2/64\nR2      G0/2       10.0.21.2/30       2001:db8:acad:21::2/64\nR2      Loopback0  203.0.113.1/24     (the internet)\nPC1     LAN        192.168.1.10/24    2001:db8:acad:1::10/64\nPC2     LAN        192.168.2.10/24    2001:db8:acad:2::10/64",
+            "lang": "text"
+          },
+          {
+            "do": "Give each router fe80::1 (R1) or fe80::2 (R2) as the link-local address on G0/0, and set the PCs' IPv6 gateways to those addresses and their IPv4 gateways to .1."
+          },
+          {
+            "do": "R1 is a stub: give it IPv4 and IPv6 default routes over the main link, and floating defaults with distance 5 over the backup link.",
+            "code": "ip route 0.0.0.0 0.0.0.0 10.0.12.2\nip route 0.0.0.0 0.0.0.0 10.0.21.2 5\nipv6 route ::/0 2001:db8:acad:12::2\nipv6 route ::/0 2001:db8:acad:21::2 5",
+            "lang": "cisco"
+          },
+          {
+            "do": "On R2, add routes back to the branch LAN over the main link, and floating ones over the backup link.",
+            "code": "ip route 192.168.1.0 255.255.255.0 10.0.12.1\nip route 192.168.1.0 255.255.255.0 10.0.21.1 5\nipv6 route 2001:db8:acad:1::/64 2001:db8:acad:12::1\nipv6 route 2001:db8:acad:1::/64 2001:db8:acad:21::1 5",
+            "lang": "cisco"
+          },
+          {
+            "do": "Verify R1.",
+            "code": "show ip route\nshow ipv6 route",
+            "lang": "cisco"
+          },
+          {
+            "do": "From PC1, ping PC2 and the internet address over IPv4, ping PC2 over IPv6, and trace to PC2.",
+            "code": "ping 192.168.2.10\nping 203.0.113.1\nping 2001:db8:acad:2::10\ntracert 192.168.2.10",
+            "lang": "text"
+          },
+          {
+            "do": "Fail the main link: shut down R1's G0/1. Then read R1's routes and repeat the tests.",
+            "code": "configure terminal\ninterface g0/1\nshutdown\nend\nshow ip route\nshow ipv6 route",
+            "lang": "cisco"
+          },
+          {
+            "do": "Turn G0/1 back on and confirm that the main routes return."
+          }
+        ],
+        "checks": [
+          {
+            "text": "R1's gateway of last resort is the main link.",
+            "look_for": [
+              "Gateway of last resort is 10.0.12.2",
+              "S*",
+              "[1/0]"
+            ]
+          },
+          {
+            "text": "With the main link down, the floating route takes over.",
+            "look_for": [
+              "[5/0] via 10.0.21.2"
+            ]
+          },
+          {
+            "text": "R2 has main and floating routes back to the branch LAN.",
+            "look_for": [
+              "ip route 192.168.1.0 255.255.255.0 10.0.12.1",
+              "ip route 192.168.1.0 255.255.255.0 10.0.21.1 5"
+            ]
+          },
+          {
+            "text": "PC1 reaches the head-office LAN and the internet address, and the traces show the path moving to the backup link.",
+            "look_for": [
+              "Reply from 192.168.2.10",
+              "Reply from 203.0.113.1",
+              "10.0.12.2",
+              "10.0.21.2"
+            ]
+          },
+          {
+            "text": "R1's IPv6 default route moves from the main link to the backup the same way.",
+            "look_for": [
+              "::/0",
+              "2001:DB8:ACAD:12::2",
+              "2001:DB8:ACAD:21::2"
+            ]
+          },
+          {
+            "text": "PC1 reaches PC2 over IPv6.",
+            "look_for": [
+              "Reply from 2001:DB8:ACAD:2::10"
+            ]
+          }
+        ],
+        "submit": "Paste R1's and R2's static route lines (show running-config | include route), R1's show ip route and show ipv6 route with both links up and with the main link down, and PC1's pings and traces from both tests.",
+        "hints": [
+          "If the floating route never appears, check its distance: it must be higher than the main route's distance of 1.",
+          "If PC1 reaches R2 but not PC2, R2 is missing its route back to 192.168.1.0/24."
+        ]
+      }
+    },
+    {
+      "title": "Single-area OSPFv2",
+      "summary": "Let routers find their routes for themselves: how OSPF builds a map of the network, how to configure it in one area, and how it elects designated routers and chooses the cheapest paths.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "How OSPF works",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a link-state protocol builds its routing table",
+            "Describe OSPF router IDs, hellos, neighbour states and areas"
+          ],
+          "key_points": [
+            "OSPF (Open Shortest Path First) is an open-standard link-state routing protocol: each router describes its links in link-state advertisements (LSAs), every router in an area gathers the same link-state database (LSDB), and each runs the SPF (Dijkstra) algorithm on it to find its own shortest paths.",
+            "Routers find OSPF neighbours by sending hello packets to 224.0.0.5, every 10 seconds on Ethernet; if no hello arrives within the dead interval, 40 seconds by default, the neighbour is declared down. OSPF runs directly over IP, as protocol 89.",
+            "Neighbours pass through the states Down, Init, 2-Way, ExStart, Exchange, Loading and Full. Full means their databases match; on a shared LAN, routers that are neither DR nor BDR stay at 2-Way with each other, which is normal.",
+            "Each router has a 32-bit router ID, written like an IPv4 address: the one set with router-id; if none is set, the highest IPv4 address on a loopback interface; otherwise the highest address on an active physical interface.",
+            "OSPF can divide a large network into areas to keep databases small, and every area connects to the backbone, area 0. A single-area design puts every router in area 0, which suits small and medium networks.",
+            "OSPF sends updates when something changes, plus a refresh of each LSA every 30 minutes, and reacts quickly to failures, unlike the regular full-table updates of RIP."
+          ],
+          "walkthrough": {
+            "tool": "Pen and paper",
+            "title": "Worked example: shortest paths from R1",
+            "steps": [
+              {
+                "do": "Draw the network from its links and OSPF costs.",
+                "code": "R1 - R2  cost 10\nR1 - R3  cost 1\nR3 - R2  cost 1\nR2 - R4  cost 1\nR3 - R4  cost 5",
+                "lang": "text"
+              },
+              {
+                "do": "Start at R1 with cost 0 and look at its neighbours: R3 at 1 and R2 at 10. The cheapest, R3, is now settled.",
+                "see": "R3: cost 1, via R3."
+              },
+              {
+                "do": "From R3, add its links: R2 at 1 + 1 = 2, which beats 10, and R4 at 1 + 5 = 6. The cheapest unsettled router is R2.",
+                "see": "R2: cost 2, via R3, not over the direct link."
+              },
+              {
+                "do": "From R2, add its link to R4: 2 + 1 = 3, which beats 6.",
+                "see": "R4: cost 3, via R3 and then R2."
+              },
+              {
+                "do": "Write R1's routing decisions: every destination's total cost and first hop.",
+                "see": "R3 cost 1 via R3; R2 cost 2 via R3; R4 cost 3 via R3. The direct link to R2 isn't used, because its cost is too high."
+              },
+              {
+                "do": "Change the R1 to R2 cost to 1 and work it out again.",
+                "see": "R2 is now cost 1 direct, and R4 cost 2 via R2."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Configuring single-area OSPFv2",
+          "minutes": 14,
+          "objectives": [
+            "Configure OSPFv2 with network statements or interface commands, a router ID and passive interfaces",
+            "Verify OSPF neighbours, interfaces and routes"
+          ],
+          "key_points": [
+            "router ospf 10 starts an OSPF process; its number matters only inside the router, so neighbours don't need to match it. router-id 1.1.1.1 sets the router ID; changing it later takes effect only after clear ip ospf process.",
+            "network 10.0.12.0 0.0.0.3 area 0 turns OSPF on for every interface whose address falls in that range. The wildcard mask is the inverse of the subnet mask (255.255.255.252 becomes 0.0.0.3), and network 10.0.12.1 0.0.0.0 area 0 matches one interface exactly.",
+            "OSPF can also be turned on directly on an interface, with ip ospf 10 area 0.",
+            "passive-interface g0/0 stops hellos on an interface, such as one with only PCs on it, while still advertising its network; passive-interface default makes every interface passive, and no passive-interface g0/1 turns one back on.",
+            "default-information originate, on the router with the default route to the internet, advertises that default route to the other OSPF routers, where it appears as O*E2 0.0.0.0/0.",
+            "Check OSPF with show ip ospf neighbor (each neighbour's ID, priority, state and interface), show ip protocols (router ID, networks and passive interfaces), show ip ospf interface, and show ip route ospf (routes with the code O and [110/cost])."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Configure OSPF on two routers",
+            "steps": [
+              {
+                "do": "Using R1 and R2 from module 2, remove the static routes. show running-config | include route lists them; put no in front of each.",
+                "code": "show running-config | include route",
+                "lang": "cisco"
+              },
+              {
+                "do": "On R1, start OSPF process 10 with router ID 1.1.1.1, turn it on for both of R1's main networks with network statements, and make the LAN interface passive.",
+                "code": "configure terminal\nrouter ospf 10\nrouter-id 1.1.1.1\nnetwork 192.168.1.0 0.0.0.255 area 0\nnetwork 10.0.12.0 0.0.0.3 area 0\npassive-interface g0/0\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On R2, use router ID 2.2.2.2, and turn OSPF on interface by interface this time.",
+                "code": "configure terminal\nrouter ospf 10\nrouter-id 2.2.2.2\npassive-interface g0/0\nexit\ninterface g0/0\nip ospf 10 area 0\ninterface g0/1\nip ospf 10 area 0\nend",
+                "lang": "cisco",
+                "see": "%OSPF-5-ADJCHG: Process 10, Nbr 1.1.1.1 on GigabitEthernet0/1 from LOADING to FULL, Loading Done"
+              },
+              {
+                "do": "Check the neighbours.",
+                "code": "show ip ospf neighbor",
+                "lang": "cisco",
+                "see": "On R2: neighbour 1.1.1.1, priority 1, state FULL/DR or FULL/BDR, address 10.0.12.1, interface GigabitEthernet0/1."
+              },
+              {
+                "do": "Check the routes OSPF found.",
+                "code": "show ip route ospf",
+                "lang": "cisco",
+                "see": "On R2: O 192.168.1.0/24 [110/2] via 10.0.12.1, with the route's age and GigabitEthernet0/1."
+              },
+              {
+                "do": "Check what OSPF is doing on R1.",
+                "code": "show ip protocols",
+                "lang": "cisco",
+                "see": "Routing Protocol is \"ospf 10\", Router ID 1.1.1.1, the networks it routes for, and GigabitEthernet0/0 under Passive Interface(s)."
+              },
+              {
+                "do": "Ping PC2 from PC1.",
+                "code": "ping 192.168.2.10",
+                "lang": "text",
+                "see": "Replies, now over a route OSPF learned."
+              }
+            ]
+          }
+        },
+        {
+          "title": "DR and BDR, network types and OSPF cost",
+          "minutes": 14,
+          "objectives": [
+            "Explain DR and BDR election on multiaccess networks and control it with priority",
+            "Calculate OSPF cost and change it to steer traffic"
+          ],
+          "key_points": [
+            "On a multiaccess network such as an Ethernet LAN, OSPF elects a designated router (DR) and a backup designated router (BDR); the other routers, DROTHERs, become fully adjacent only with these two, which reduces the number of adjacencies and the flooding of updates.",
+            "The election picks the highest interface priority (1 by default, from 0 to 255), then the highest router ID; priority 0 means never DR or BDR. It isn't pre-emptive: a better router that arrives later doesn't take over until the DR and BDR fail or the OSPF process is cleared.",
+            "OSPF treats Ethernet as a broadcast network, so even a link with just two routers elects a DR and a BDR; ip ospf network point-to-point on both ends skips the election, and the neighbours then show FULL/ - instead.",
+            "DROTHERs send their updates to the DR and BDR at 224.0.0.6, and the DR passes them on to every OSPF router at 224.0.0.5.",
+            "OSPF cost is the reference bandwidth divided by the interface's bandwidth, rounded down, with a minimum of 1. With the default reference of 100 Mb/s, FastEthernet and GigabitEthernet both cost 1; auto-cost reference-bandwidth 1000, on every router, makes them 10 and 1.",
+            "A route's metric is the total of the costs of the outgoing interfaces along the path. ip ospf cost 50 sets an interface's cost directly, which is how you make OSPF prefer one path over another."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Control the DR election and path cost",
+            "steps": [
+              {
+                "do": "On R2, look at OSPF on its link to R1.",
+                "code": "show ip ospf interface g0/1",
+                "lang": "cisco",
+                "see": "Network Type BROADCAST, Cost: 1, its State (DR or BDR), Priority 1, and the IDs of the designated and backup designated routers."
+              },
+              {
+                "do": "Make R2 win the next election, then clear OSPF on both routers so the election runs again.",
+                "code": "! on R2\nconfigure terminal\ninterface g0/1\nip ospf priority 200\nend\nclear ip ospf process\n\n! on R1\nclear ip ospf process",
+                "lang": "cisco",
+                "see": "Reset ALL OSPF processes? [no]: type yes."
+              },
+              {
+                "do": "Check from R1.",
+                "code": "show ip ospf neighbor",
+                "lang": "cisco",
+                "see": "2.2.2.2 with priority 200 and state FULL/DR."
+              },
+              {
+                "do": "On R1, read the link's cost and the route to R2's LAN.",
+                "code": "show ip ospf interface g0/1\nshow ip route ospf",
+                "lang": "cisco",
+                "see": "Cost: 1, and O 192.168.2.0/24 [110/2]: 1 for R1's G0/1 plus 1 for R2's G0/0."
+              },
+              {
+                "do": "On both routers, raise the reference bandwidth so faster links can cost less.",
+                "code": "configure terminal\nrouter ospf 10\nauto-cost reference-bandwidth 1000\nend",
+                "lang": "cisco",
+                "see": "% OSPF: Reference bandwidth is changed. Please ensure reference bandwidth is consistent across all routers."
+              },
+              {
+                "do": "Set the cost of R1's G0/1 by hand and watch the metric change.",
+                "code": "configure terminal\ninterface g0/1\nip ospf cost 50\nend\nshow ip route ospf",
+                "lang": "cisco",
+                "see": "O 192.168.2.0/24 [110/51]: 50 for R1's G0/1 plus 1 for R2's G0/0."
+              },
+              {
+                "do": "Put the cost back with no ip ospf cost on G0/1."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Configure single-area OSPF",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 90,
+        "goal": "Run single-area OSPFv2 on three routers, a branch and two head-office routers that share a LAN, then control the DR election on the shared LAN and steer the branch's traffic with OSPF cost.",
+        "setup": [
+          "Cisco Packet Tracer"
+        ],
+        "steps": [
+          {
+            "do": "Build three 2911 routers. R1 (branch) G0/1 to R2 G0/1 and R1 G0/2 to R3 G0/1, with Copper Cross-Over cables. R1 G0/0 to switch S1 with PC1; R2 G0/0 and R3 G0/0 both to switch S2, the head-office LAN, with PC2."
+          },
+          {
+            "do": "Address everything.",
+            "code": "Device  Interface  Address           Router ID\nR1      G0/0       192.168.1.1/24    1.1.1.1\nR1      G0/1       10.0.12.1/30\nR1      G0/2       10.0.13.1/30\nR2      G0/0       192.168.2.2/24    2.2.2.2\nR2      G0/1       10.0.12.2/30\nR3      G0/0       192.168.2.3/24    3.3.3.3\nR3      G0/1       10.0.13.2/30\nPC1                192.168.1.10/24, gateway 192.168.1.1\nPC2                192.168.2.10/24, gateway 192.168.2.2",
+            "lang": "text"
+          },
+          {
+            "do": "On R1, configure OSPF process 10 in area 0 with network statements, router ID 1.1.1.1, and G0/0 passive.",
+            "code": "router ospf 10\nrouter-id 1.1.1.1\nnetwork 192.168.1.0 0.0.0.255 area 0\nnetwork 10.0.12.0 0.0.0.3 area 0\nnetwork 10.0.13.0 0.0.0.3 area 0\npassive-interface g0/0",
+            "lang": "cisco"
+          },
+          {
+            "do": "On R2 and R3, configure OSPF process 10 in area 0 on both interfaces, with router IDs 2.2.2.2 and 3.3.3.3. Don't make G0/0 passive on them: they must become neighbours across the head-office LAN."
+          },
+          {
+            "do": "Verify on every router.",
+            "code": "show ip ospf neighbor\nshow ip protocols\nshow ip route ospf",
+            "lang": "cisco",
+            "see": "R1 has two FULL neighbours; R2 and R3 are also neighbours of each other over 192.168.2.0/24."
+          },
+          {
+            "do": "On R1, look at the routes to the head-office LAN.",
+            "code": "show ip route ospf",
+            "lang": "cisco",
+            "see": "Two equal-cost routes to 192.168.2.0/24, both [110/2]: via 10.0.12.2 and via 10.0.13.2."
+          },
+          {
+            "do": "Make R2 the DR on the head-office LAN: set its G0/0 priority to 100, then clear OSPF on R2 and R3.",
+            "code": "! on R2\ninterface g0/0\nip ospf priority 100\nend\nclear ip ospf process\n\n! on R3\nclear ip ospf process",
+            "lang": "cisco"
+          },
+          {
+            "do": "On R3, check the neighbours.",
+            "code": "show ip ospf neighbor",
+            "lang": "cisco",
+            "see": "2.2.2.2, priority 100, FULL/DR, on GigabitEthernet0/0."
+          },
+          {
+            "do": "Steer the branch's traffic through R3: give R1's G0/1 a cost of 10, then read R1's routes again.",
+            "code": "interface g0/1\nip ospf cost 10\nend\nshow ip ospf interface g0/1\nshow ip route ospf",
+            "lang": "cisco",
+            "see": "One route to 192.168.2.0/24 now: [110/2] via 10.0.13.2. Through R2 it would cost 10 + 1 = 11."
+          },
+          {
+            "do": "From PC1, ping and trace to PC2.",
+            "code": "ping 192.168.2.10\ntracert 192.168.2.10",
+            "lang": "text",
+            "see": "Replies, and a middle hop of 10.0.13.2: R3."
+          },
+          {
+            "do": "Save every router's configuration: you'll need this network in module 4."
+          }
+        ],
+        "checks": [
+          {
+            "text": "R1 has two FULL neighbours, 2.2.2.2 and 3.3.3.3.",
+            "look_for": [
+              "2.2.2.2",
+              "3.3.3.3",
+              "FULL/"
+            ]
+          },
+          {
+            "text": "R2 and R3 are neighbours on the head-office LAN, with R2 as DR after the priority change.",
+            "look_for": [
+              "2.2.2.2",
+              "100",
+              "FULL/DR",
+              "192.168.2.2"
+            ]
+          },
+          {
+            "text": "R1's router ID is 1.1.1.1 and its LAN interface is passive.",
+            "look_for": [
+              "Router ID 1.1.1.1",
+              "Passive Interface"
+            ]
+          },
+          {
+            "text": "Before the cost change, R1 has two equal-cost routes to the head-office LAN.",
+            "look_for": [
+              "192.168.2.0/24",
+              "[110/2] via 10.0.12.2",
+              "[110/2] via 10.0.13.2"
+            ]
+          },
+          {
+            "text": "After the cost change, R1's G0/1 costs 10 and its route to the head-office LAN goes through R3.",
+            "look_for": [
+              "Cost: 10",
+              "via 10.0.13.2"
+            ]
+          },
+          {
+            "text": "PC1 reaches PC2, and the trace's middle hop shows the path R1 chose.",
+            "look_for": [
+              "Reply from 192.168.2.10",
+              "10.0.13.2"
+            ]
+          }
+        ],
+        "submit": "Paste show ip ospf neighbor from all three routers, R1's show ip protocols, R1's show ip route ospf before and after the cost change, R1's show ip ospf interface g0/1, and PC1's ping and trace.",
+        "hints": [
+          "If R2 and R3 aren't neighbours, check that G0/0 isn't passive on either of them.",
+          "A network statement's wildcard mask is the inverse of the subnet mask: 0.0.0.255 for a /24 and 0.0.0.3 for a /30."
+        ]
+      }
+    },
+    {
+      "title": "Troubleshooting and first-hop redundancy",
+      "summary": "Find out why OSPF neighbours won't come up or routes are missing, then keep hosts' default gateway available with HSRP.",
+      "instructor": "kaimana-kahananui",
+      "lessons": [
+        {
+          "title": "Troubleshooting OSPF",
+          "minutes": 14,
+          "objectives": [
+            "List what two routers must agree on to become OSPF neighbours",
+            "Diagnose missing adjacencies and routes with show commands"
+          ],
+          "key_points": [
+            "Two routers become OSPF neighbours only if their interfaces are in the same subnet with the same mask, in the same area, with the same hello and dead intervals and matching authentication, and if their router IDs are different.",
+            "Neighbours stuck in ExStart or Exchange usually have mismatched MTUs; a neighbour that's missing altogether usually means a mismatched area, subnet or timer, a passive interface, or a link that's down.",
+            "show ip ospf interface g0/1 shows an interface's area, cost, network type, DR and BDR, and its Hello and Dead timers; comparing it at both ends finds most mismatches.",
+            "If a network is missing from other routers' tables, check that OSPF is on for its interface (show ip ospf interface or show ip protocols): a mistyped network statement or wildcard mask leaves it out.",
+            "A passive interface still advertises its network but forms no neighbours, so passive-interface on a link between routers breaks the adjacency on that link.",
+            "Work up through the layers: is the interface up/up, and can the routers ping each other's addresses; then are they neighbours; then are the routes in the table; and finally, does traffic follow them (traceroute)?"
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Break and fix an OSPF adjacency",
+            "steps": [
+              {
+                "do": "Using R1 and R2 from module 3, change the hello interval on R1's G0/1.",
+                "code": "configure terminal\ninterface g0/1\nip ospf hello-interval 5\nend",
+                "lang": "cisco",
+                "see": "About 40 seconds later, R2's dead interval: a message that neighbour 1.1.1.1 went from FULL to DOWN."
+              },
+              {
+                "do": "Compare the timers at both ends.",
+                "code": "show ip ospf interface g0/1",
+                "lang": "cisco",
+                "see": "R1 shows Hello 5, Dead 20; R2 shows Hello 10, Dead 40. Changing the hello interval also changed R1's dead interval."
+              },
+              {
+                "do": "Fix it.",
+                "code": "configure terminal\ninterface g0/1\nno ip ospf hello-interval\nend",
+                "lang": "cisco",
+                "see": "LOADING to FULL once more."
+              },
+              {
+                "do": "Now make R2's link interface passive by mistake.",
+                "code": "configure terminal\nrouter ospf 10\npassive-interface g0/1\nend",
+                "lang": "cisco",
+                "see": "The adjacency drops at once."
+              },
+              {
+                "do": "Find the cause.",
+                "code": "show ip protocols",
+                "lang": "cisco",
+                "see": "GigabitEthernet0/1 under Passive Interface(s)."
+              },
+              {
+                "do": "Fix it.",
+                "code": "configure terminal\nrouter ospf 10\nno passive-interface g0/1\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the result, end to end.",
+                "code": "show ip ospf neighbor\nshow ip route ospf",
+                "lang": "cisco",
+                "see": "FULL again, and the O routes back in the table."
+              }
+            ]
+          }
+        },
+        {
+          "title": "First-hop redundancy with HSRP",
+          "minutes": 12,
+          "objectives": [
+            "Explain why hosts need a first-hop redundancy protocol and how HSRP provides one",
+            "Configure and verify a basic HSRP group"
+          ],
+          "key_points": [
+            "Hosts send everything for other subnets to one default gateway address, so if that router fails they're cut off, even when another router is on the same LAN. A first-hop redundancy protocol (FHRP) lets several routers share one virtual gateway address.",
+            "In HSRP (Hot Standby Router Protocol, Cisco's FHRP), the routers in a group share a virtual IP address and a virtual MAC address; the active router forwards traffic sent to them, and the standby router takes over if the active one fails.",
+            "The router with the highest priority (100 by default) becomes active, with the highest IP address breaking a tie. Pre-emption is off by default, so standby 1 preempt is needed for a higher-priority router to take the active role back when it returns.",
+            "HSRP routers exchange hellos, every 3 seconds by default with a 10-second hold time. Version 1 uses the virtual MAC address 0000.0c07.acXX, where XX is the group number in hexadecimal; version 2 uses 0000.0c9f.fXXX and allows many more groups.",
+            "Hosts use the virtual IP address as their default gateway and never need to know which router is active. VRRP is the open-standard equivalent, and Cisco's GLBP also shares the load between gateways.",
+            "Configure HSRP on each router's LAN interface with standby version 2 and standby 1 ip followed by the virtual address, adding standby 1 priority 110 and standby 1 preempt on the preferred router. show standby brief shows each group's state, its active and standby routers and its virtual IP."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Give a LAN a virtual gateway with HSRP",
+            "steps": [
+              {
+                "do": "Using the network from the module 3 lab, join R2's G0/0 (192.168.2.2) to HSRP group 1 with the virtual address 192.168.2.1, priority 110 and pre-emption.",
+                "code": "configure terminal\ninterface g0/0\nstandby version 2\nstandby 1 ip 192.168.2.1\nstandby 1 priority 110\nstandby 1 preempt\nend",
+                "lang": "cisco",
+                "see": "A state change message for Grp 1 on GigabitEthernet0/0, ending in Active."
+              },
+              {
+                "do": "Join R3's G0/0 (192.168.2.3) to the same group, with the default priority.",
+                "code": "configure terminal\ninterface g0/0\nstandby version 2\nstandby 1 ip 192.168.2.1\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check the group on both routers.",
+                "code": "show standby brief",
+                "lang": "cisco",
+                "see": "On R2: group 1, priority 110, P for pre-empt, state Active, standby router 192.168.2.3 and virtual IP 192.168.2.1. On R3: state Standby, with 192.168.2.2 as the active router."
+              },
+              {
+                "do": "Change PC2's default gateway to the virtual address, 192.168.2.1, and ping PC1.",
+                "code": "ping 192.168.1.10",
+                "lang": "text",
+                "see": "Reply from 192.168.1.10."
+              },
+              {
+                "do": "Look at the MAC address PC2 now uses for its gateway.",
+                "code": "arp -a",
+                "lang": "text",
+                "see": "192.168.2.1 with the MAC address 0000.0c9f.f001: HSRP version 2, group 1."
+              },
+              {
+                "do": "Fail the active router: shut down R2's G0/0, then ping PC1 from PC2 again.",
+                "see": "R3 becomes Active within about 10 seconds, and the pings work again without any change to PC2."
+              },
+              {
+                "do": "Turn R2's G0/0 back on.",
+                "see": "With pre-emption, R2 takes the Active role back."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Troubleshoot OSPF and add a virtual gateway",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 80,
+        "goal": "Introduce four common OSPF faults one at a time into the module 3 network, diagnose each from show command output and fix it, then protect the head-office LAN's gateway with HSRP and prove it survives a router failure.",
+        "setup": [
+          "Cisco Packet Tracer",
+          "Your OSPF network from the module 3 lab: R1, R2 and R3, with PC1 and PC2"
+        ],
+        "steps": [
+          {
+            "do": "Check the starting point: every router has its neighbours FULL, and PC1 reaches PC2. Put R1's G0/1 cost back to the default with no ip ospf cost."
+          },
+          {
+            "do": "Fault 1: on R1's G0/1, set ip ospf hello-interval 5. Wait 40 seconds, record the symptom with show ip ospf neighbor on R1 and R2, find the cause with show ip ospf interface g0/1 at both ends, then fix it."
+          },
+          {
+            "do": "Fault 2: on R3, move its link to R1 into area 1.",
+            "code": "router ospf 10\nnetwork 10.0.13.0 0.0.0.3 area 1",
+            "lang": "cisco",
+            "see": "If R3's G0/1 was turned on with ip ospf 10 area 0, use ip ospf 10 area 1 on the interface instead."
+          },
+          {
+            "do": "Record the symptom, find the cause with show ip ospf interface g0/1 on R3 and R1, then put the link back in area 0."
+          },
+          {
+            "do": "Fault 3: on R2, make G0/0 passive. Record what changes in show ip ospf neighbor on R2 and R3, check whether PC1 can still reach PC2, find the cause with show ip protocols, then fix it."
+          },
+          {
+            "do": "Fault 4: on R1, replace the LAN's network statement with one that has the wrong wildcard mask.",
+            "code": "router ospf 10\nno network 192.168.1.0 0.0.0.255 area 0\nnetwork 192.168.1.0 0.0.0.0 area 0",
+            "lang": "cisco"
+          },
+          {
+            "do": "Record the symptom in R2's routing table and with a ping from PC2 to PC1, find the cause, then fix it."
+          },
+          {
+            "do": "Confirm that everything is back.",
+            "code": "show ip ospf neighbor\nshow ip route ospf",
+            "lang": "cisco"
+          },
+          {
+            "do": "Add HSRP to the head-office LAN: group 1, virtual IP 192.168.2.1, R2 with priority 110 and pre-emption, R3 with the default priority. Use standby version 2 on both."
+          },
+          {
+            "do": "Set PC2's gateway to 192.168.2.1, and check.",
+            "code": "! on R2 and R3\nshow standby brief\n\n! on PC2\nping 192.168.1.10\narp -a",
+            "lang": "cisco"
+          },
+          {
+            "do": "Shut down R2's G0/0, check show standby brief on R3, and ping PC1 from PC2 again. Then turn G0/0 back on and watch R2 take over again."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Fault 1: the hello mismatch is found from the timers at each end (Hello 5, Dead 20 against Hello 10, Dead 40) and fixed.",
+            "look_for": [
+              "Hello 5",
+              "Hello 10",
+              "Dead 40"
+            ]
+          },
+          {
+            "text": "Fault 2: the area mismatch is found (R3's G0/1 in Area 1, R1's in area 0) and fixed.",
+            "look_for": [
+              "Area 1"
+            ]
+          },
+          {
+            "text": "Fault 3: the passive interface on R2's LAN is found, and the learner notes that R2 and R3 lost their adjacency while traffic still flowed over the other paths.",
+            "look_for": [
+              "Passive Interface",
+              "GigabitEthernet0/0"
+            ]
+          },
+          {
+            "text": "Fault 4: the wildcard mask 0.0.0.0 matches no interface, so R1's LAN disappears from R2's and R3's tables until 0.0.0.255 is restored.",
+            "look_for": [
+              "0.0.0.255",
+              "192.168.1.0/24"
+            ]
+          },
+          {
+            "text": "After the fixes, every router has its neighbours and routes back.",
+            "look_for": [
+              "FULL/",
+              "192.168.1.0/24 [110/"
+            ]
+          },
+          {
+            "text": "HSRP group 1 is up, with R2 active at priority 110 and R3 standby, for virtual IP 192.168.2.1.",
+            "look_for": [
+              "Active",
+              "Standby",
+              "192.168.2.1",
+              "110"
+            ]
+          },
+          {
+            "text": "PC2 uses the virtual gateway's MAC address and keeps reaching PC1 while R2's LAN interface is down.",
+            "look_for": [
+              "Reply from 192.168.1.10",
+              "0000.0c9f.f001"
+            ]
+          }
+        ],
+        "submit": "For each fault, paste the show output that revealed the symptom and the cause, and a sentence on the fix. Then paste show ip ospf neighbor from all three routers after the fixes, show standby brief from R2 and R3 before and during the failover, and PC2's pings and arp -a.",
+        "hints": [
+          "Compare the same command at both ends of a link: most OSPF faults are a difference between them.",
+          "Fault 3 is easy to miss: with redundant paths, a broken adjacency doesn't always stop traffic.",
+          "If HSRP shows both routers Active, they aren't hearing each other's hellos: check that both use the same group number and version."
+        ]
+      }
+    }
+  ],
+  "project": {
+    "title": "Route a three-site company network",
+    "minutes": 300,
+    "brief": "Build and document the routed network for a company with a head office, a branch and an internet connection. At head office, two routers, HQ1 and HQ2, share the user LAN and give it an HSRP virtual gateway, with HQ1 active. The branch router, BR1, has its own LAN and a link to each head-office router. HQ1 also links to an ISP router, which stands for the internet with a loopback address in 198.51.100.0/24. Plan the company's addresses from 10.50.0.0/16 (a /24 for each LAN and a /30 for each link) and use 203.0.113.0/30 for the ISP link. Run single-area OSPFv2 (area 0) on BR1, HQ1 and HQ2, with router IDs set, passive interfaces wherever no neighbour is needed, and auto-cost reference-bandwidth 1000 on all three. Give HQ1 a static default route to the ISP and advertise it into OSPF, and give the ISP a static route back to 10.50.0.0/16. Use OSPF cost so the branch's traffic prefers the BR1 to HQ1 link, with BR1 to HQ2 as the backup. Then prove it works and survives failures.",
+    "deliverables": [
+      "An addressing table for every interface, and a diagram or description of the topology",
+      "The running configurations of BR1, HQ1, HQ2 and the ISP router",
+      "show ip ospf neighbor and show ip route from every company router, and show standby brief from HQ1 and HQ2",
+      "Pings and traces from a branch PC to a head-office PC and to the ISP's loopback, before and after the BR1 to HQ1 link is shut down",
+      "Evidence that the head-office PCs keep working when HQ1's LAN interface is shut down",
+      "A one-page explanation of how traffic leaves the branch, why BR1 shows the default route as O*E2, and how the design survives each failure"
+    ],
+    "rubric": [
+      {
+        "name": "Addressing and interfaces",
+        "points": 10,
+        "description": "A consistent plan from 10.50.0.0/16, with every interface addressed as planned and up."
+      },
+      {
+        "name": "OSPF configuration",
+        "points": 25,
+        "description": "BR1, HQ1 and HQ2 are FULL neighbours where they should be, with router IDs set, sensible passive interfaces, a consistent reference bandwidth, and every company network advertised."
+      },
+      {
+        "name": "Default and static routing",
+        "points": 15,
+        "description": "HQ1's static default route to the ISP is advertised with default-information originate, and the ISP's return route covers the company's block."
+      },
+      {
+        "name": "Path control and failover",
+        "points": 20,
+        "description": "OSPF costs make BR1 prefer HQ1, and the traces prove that traffic moves to HQ2 when the BR1 to HQ1 link fails."
+      },
+      {
+        "name": "HSRP",
+        "points": 15,
+        "description": "HQ1 is active with pre-emption and HQ2 standby for the LAN's virtual gateway, and the head-office PCs keep working when HQ1's LAN interface fails."
+      },
+      {
+        "name": "Verification and explanation",
+        "points": 15,
+        "description": "Show command and ping output proves each requirement, and the explanation of the routing decisions and failovers is accurate and clear."
+      }
+    ],
+    "submit": "Paste your addressing table, the four running configurations, the show command output, pings and traces from the deliverables, and your explanation. A link to your .pkt file is welcome too."
+  }
+}

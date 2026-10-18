@@ -1,0 +1,361 @@
+{
+  "slug": "gp-small-office-network",
+  "title": "Guided Project: Build a Small Office Network in Cisco Packet Tracer",
+  "subtitle": "Build, address and secure a small office network in Packet Tracer: a router that hands out addresses by DHCP, a managed switch, PCs, and SSH-only management.",
+  "category": "Networking",
+  "kind": "guided-project",
+  "level": "beginner",
+  "instructors": [
+    "sekouu-camara"
+  ],
+  "skills": [
+    "Cisco Packet Tracer",
+    "Cisco IOS basics",
+    "IPv4 address planning",
+    "DHCP",
+    "Default gateways",
+    "Device hardening",
+    "SSH",
+    "Network verification"
+  ],
+  "tools": [
+    "Cisco Packet Tracer",
+    "Cisco IOS"
+  ],
+  "outcomes": [
+    "Plan the addressing for a small office network, keeping fixed addresses out of the DHCP range",
+    "Configure a Cisco router as the office's default gateway and DHCP server",
+    "Secure a router and a switch with hostnames, hashed passwords, a warning banner and SSH-only remote access",
+    "Verify the network with ping, ipconfig and show commands"
+  ],
+  "prerequisites": "Basic networking ideas: IP addresses, subnet masks and default gateways. No Cisco experience is needed. You need Cisco Packet Tracer (free with a Cisco Networking Academy account).",
+  "description": "In this guided project you'll build a small office's network from scratch in Cisco Packet Tracer, the way a network technician would set one up for real. Three short lessons cover the plan, how DHCP hands out addresses, and what a router or switch needs before it can be managed safely over SSH. Then, in one hands-on lab, you'll cable a router, a switch, PCs and a printer, make the router the office's default gateway and DHCP server, give the switch a management address, and lock both devices down with an enable secret, a console password, a warning banner and SSH-only remote access. You'll prove every part works with ping, ipconfig and show commands, and your instructor reviews your results.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Build the office network",
+      "summary": "Plan the network, learn what DHCP and SSH need, then build the whole office network in Packet Tracer and prove that it works and is locked down.",
+      "lessons": [
+        {
+          "title": "Plan the office network",
+          "minutes": 8,
+          "objectives": [
+            "Describe the office's topology and what each device does",
+            "Plan the office's addresses: the gateway, the fixed addresses and a DHCP range"
+          ],
+          "key_points": [
+            "The office network has a 2911 router as its default gateway (and, later, its link to the internet), a 2960 switch that connects everything, a printer and the staff PCs, all on one LAN.",
+            "One subnet, 192.168.10.0/24, gives 254 usable addresses: plenty for a small office, with room to grow.",
+            "Devices that others need to find at a fixed address get static addresses at the low end: the router 192.168.10.1, the switch's management address 192.168.10.2 and the printer 192.168.10.5. Addresses .1 to .10 are kept out of DHCP for them.",
+            "PCs and laptops get their settings from DHCP: an address from 192.168.10.11 upwards, the mask 255.255.255.0, the default gateway 192.168.10.1 and a DNS server.",
+            "Write the plan down before building: a table of devices, ports, addresses and how each gets its address prevents mistakes and documents the network for whoever looks after it next."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Lay out and cable the office",
+            "steps": [
+              {
+                "do": "In a new Packet Tracer file, add a 2911 router, a 2960 switch, three PCs and a printer (End Devices > Printer)."
+              },
+              {
+                "do": "Rename the devices R1, S1, PC1, PC2, PC3 and Printer: click a device's name label in the workspace and type, or use Config > Display Name. This changes only the label; the router's and switch's own hostnames are set in IOS later."
+              },
+              {
+                "do": "With Copper Straight-Through cables, connect R1's G0/0 to S1's G0/1, PC1, PC2 and PC3 to S1's Fa0/1, Fa0/2 and Fa0/3, and the printer to Fa0/10."
+              },
+              {
+                "do": "Wait for the switch ports' lights to turn green.",
+                "see": "The router's link stays red: its interface is shut down until you configure it."
+              },
+              {
+                "do": "Add a note with your address plan, using the Place Note tool in the toolbar, so the plan travels with the file."
+              },
+              {
+                "do": "Save the file as small-office.pkt."
+              }
+            ]
+          }
+        },
+        {
+          "title": "DHCP and the default gateway",
+          "minutes": 10,
+          "objectives": [
+            "Explain how a PC gets its settings from DHCP",
+            "Configure a Cisco router as a DHCP server and check its leases"
+          ],
+          "key_points": [
+            "DHCP hands out addresses in four messages, DORA: the client broadcasts a Discover, a server answers with an Offer, the client broadcasts a Request for it, and the server confirms with an Acknowledgement. DHCP runs over UDP, on port 67 at the server and 68 at the client.",
+            "A lease gives the client an IP address, subnet mask, default gateway, DNS servers and a length of time; the client renews it before it runs out.",
+            "On a Cisco router, ip dhcp excluded-address 192.168.10.1 192.168.10.10 keeps addresses out of the pool, and ip dhcp pool OFFICE, with network, default-router and dns-server lines, sets what to hand out.",
+            "show ip dhcp binding lists the leases the router has given, with each client's IP address and hardware (MAC) address; show ip dhcp pool shows how much of the pool is in use.",
+            "A PC that gets no answer from DHCP gives itself a 169.254.x.x link-local address, and Packet Tracer's IP Configuration window says that DHCP failed: check the cable, the router's interface and the pool.",
+            "The default gateway handed out must be the router's address on the same LAN; without it, PCs can reach each other but nothing beyond the office."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Turn the router into a DHCP server",
+            "steps": [
+              {
+                "do": "Open R1's CLI and type no at the initial configuration dialog. Name the router and give G0/0 the gateway address.",
+                "code": "enable\nconfigure terminal\nhostname R1\ninterface g0/0\nip address 192.168.10.1 255.255.255.0\nno shutdown\nexit",
+                "lang": "cisco",
+                "see": "The link lights turn green."
+              },
+              {
+                "do": "Keep the fixed addresses out of DHCP.",
+                "code": "ip dhcp excluded-address 192.168.10.1 192.168.10.10",
+                "lang": "cisco"
+              },
+              {
+                "do": "Create the pool. 8.8.8.8 is a public DNS resolver: nothing answers there inside Packet Tracer, but the PCs receive the setting.",
+                "code": "ip dhcp pool OFFICE\nnetwork 192.168.10.0 255.255.255.0\ndefault-router 192.168.10.1\ndns-server 8.8.8.8\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On PC1, open Desktop > IP Configuration and choose DHCP.",
+                "see": "DHCP request successful., with IPv4 Address 192.168.10.11, Subnet Mask 255.255.255.0, Default Gateway 192.168.10.1 and DNS Server 8.8.8.8."
+              },
+              {
+                "do": "See the lease on R1.",
+                "code": "show ip dhcp binding",
+                "lang": "cisco",
+                "see": "192.168.10.11 with PC1's hardware address and the type Automatic."
+              },
+              {
+                "do": "Check from PC1's Command Prompt.",
+                "code": "ipconfig\nping 192.168.10.1",
+                "lang": "text",
+                "see": "The address and gateway from DHCP, and replies from R1 with TTL=255."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Secure the devices: passwords and SSH",
+          "minutes": 12,
+          "objectives": [
+            "Protect a router or switch with an enable secret, a console password, a banner and local user accounts",
+            "Configure SSH and turn off Telnet for remote management"
+          ],
+          "key_points": [
+            "enable secret sets the password for privileged EXEC mode and stores it as a hash; the older enable password stores it as plain text, so use enable secret.",
+            "The console port (line console 0) needs a password and login, so that someone with a console cable can't walk straight in; exec-timeout logs out sessions left idle.",
+            "service password-encryption hides plain-text passwords in the configuration with a weak, reversible scheme (type 7): it stops someone reading them over your shoulder, but isn't real protection.",
+            "Telnet sends everything, passwords included, as plain text, while SSH encrypts the session. SSH on IOS needs a hostname, a domain name (ip domain-name), RSA keys (crypto key generate rsa, at least 768 bits for SSH version 2, and larger is better) and a local user (username admin secret ...).",
+            "On the vty lines that carry remote sessions, transport input ssh allows SSH only and login local checks the local user accounts; ip ssh version 2 turns off the older SSH version 1.",
+            "banner motd shows a warning to everyone who connects, and copy running-config startup-config saves all of this so it survives a restart."
+          ],
+          "walkthrough": {
+            "tool": "Cisco IOS (in Packet Tracer)",
+            "title": "Harden R1 and allow SSH only",
+            "steps": [
+              {
+                "do": "Set the enable secret, hide the plain-text passwords and add a warning banner.",
+                "code": "configure terminal\nenable secret OfficeEnable26\nservice password-encryption\nbanner motd #Authorised access only.#",
+                "lang": "cisco"
+              },
+              {
+                "do": "Protect the console.",
+                "code": "line console 0\npassword OfficeConsole26\nlogin\nexec-timeout 5 0\nexit",
+                "lang": "cisco"
+              },
+              {
+                "do": "Give the router a domain name and a local user, and generate RSA keys.",
+                "code": "ip domain-name office.test\nusername admin secret OfficeAdmin26\ncrypto key generate rsa",
+                "lang": "cisco",
+                "see": "The name for the keys will be: R1.office.test, then How many bits in the modulus [512]:. Type 2048 and press Enter, and the keys are generated."
+              },
+              {
+                "do": "Use SSH version 2 only, and lock the remote-access lines to SSH with local accounts.",
+                "code": "ip ssh version 2\nline vty 0 4\ntransport input ssh\nlogin local\nexec-timeout 5 0\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check SSH.",
+                "code": "show ip ssh",
+                "lang": "cisco",
+                "see": "SSH Enabled - version 2.0"
+              },
+              {
+                "do": "From PC1's Command Prompt, connect over SSH as admin.",
+                "code": "ssh -l admin 192.168.10.1",
+                "lang": "text",
+                "see": "A Password: prompt (nothing shows as you type OfficeAdmin26), then the R1> prompt. Type exit to leave."
+              },
+              {
+                "do": "Save, then read what's stored.",
+                "code": "copy running-config startup-config\nshow running-config",
+                "lang": "cisco",
+                "see": "enable secret 5 followed by a hash, password 7 followed by scrambled text under line con 0, username admin secret 5, and transport input ssh under line vty 0 4."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build, address and secure the office network",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 90,
+        "goal": "Build the whole office network from the plan: a router that is the gateway and DHCP server, a managed switch, PCs that get their addresses automatically, a printer with a fixed address, and both network devices hardened and reachable only over SSH.",
+        "setup": [
+          "Cisco Packet Tracer, signed in",
+          "Your small-office.pkt from the first lesson, or a new file",
+          "The starter file office-plan.txt: the address plan, cabling and the lab's example passwords"
+        ],
+        "steps": [
+          {
+            "do": "Open small-office.pkt, or build the topology from office-plan.txt: R1 (2911) G0/0 to S1 (2960) G0/1, PC1 to PC3 on S1 Fa0/1 to Fa0/3 and the printer on Fa0/10, all with Copper Straight-Through cables."
+          },
+          {
+            "do": "On R1, set the hostname, address G0/0 and turn it on.",
+            "code": "enable\nconfigure terminal\nhostname R1\ninterface g0/0\ndescription Office LAN\nip address 192.168.10.1 255.255.255.0\nno shutdown\nexit",
+            "lang": "cisco"
+          },
+          {
+            "do": "On R1, keep .1 to .10 out of DHCP and create the OFFICE pool.",
+            "code": "ip dhcp excluded-address 192.168.10.1 192.168.10.10\nip dhcp pool OFFICE\nnetwork 192.168.10.0 255.255.255.0\ndefault-router 192.168.10.1\ndns-server 8.8.8.8\nexit",
+            "lang": "cisco"
+          },
+          {
+            "do": "Set PC1, PC2 and PC3 to DHCP in Desktop > IP Configuration, one after another.",
+            "see": "DHCP request successful. on each, with addresses 192.168.10.11, .12 and .13 in the order they asked."
+          },
+          {
+            "do": "Give the printer its fixed address in its Config tab: gateway 192.168.10.1 under Settings, and under FastEthernet0, Static, 192.168.10.5 with mask 255.255.255.0."
+          },
+          {
+            "do": "On S1, set the hostname and a management address with a default gateway.",
+            "code": "enable\nconfigure terminal\nhostname S1\ninterface vlan 1\nip address 192.168.10.2 255.255.255.0\nno shutdown\nexit\nip default-gateway 192.168.10.1",
+            "lang": "cisco"
+          },
+          {
+            "do": "Harden R1: enable secret, password encryption, banner and console.",
+            "code": "enable secret OfficeEnable26\nservice password-encryption\nbanner motd #Authorised access only.#\nline console 0\npassword OfficeConsole26\nlogin\nexec-timeout 5 0\nexit",
+            "lang": "cisco"
+          },
+          {
+            "do": "Set up SSH on R1. At How many bits in the modulus, type 2048.",
+            "code": "ip domain-name office.test\nusername admin secret OfficeAdmin26\ncrypto key generate rsa\nip ssh version 2\nline vty 0 4\ntransport input ssh\nlogin local\nexec-timeout 5 0\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Harden S1 the same way, from its own configuration mode. A 2960 has 16 vty lines, so use line vty 0 15.",
+            "code": "enable secret OfficeEnable26\nservice password-encryption\nbanner motd #Authorised access only.#\nline console 0\npassword OfficeConsole26\nlogin\nexit\nip domain-name office.test\nusername admin secret OfficeAdmin26\ncrypto key generate rsa\nip ssh version 2\nline vty 0 15\ntransport input ssh\nlogin local\nexit",
+            "lang": "cisco"
+          },
+          {
+            "do": "On S1, label the used ports and shut down the unused ones.",
+            "code": "interface range fa0/1 - 3\ndescription Staff PCs\ninterface fa0/10\ndescription Printer\ninterface g0/1\ndescription Uplink to R1\ninterface range fa0/4 - 9\nshutdown\ninterface range fa0/11 - 24\nshutdown\ninterface g0/2\nshutdown\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Save both configurations.",
+            "code": "copy running-config startup-config",
+            "lang": "cisco"
+          },
+          {
+            "do": "From PC1, check its settings and reach every device: ping R1, S1, the printer and PC2 (at the address ipconfig shows on PC2).",
+            "code": "ipconfig\nping 192.168.10.1\nping 192.168.10.2\nping 192.168.10.5",
+            "lang": "text"
+          },
+          {
+            "do": "From PC1, connect to R1 and then S1 over SSH, run show ip interface brief on each, and exit.",
+            "code": "ssh -l admin 192.168.10.1\nssh -l admin 192.168.10.2",
+            "lang": "text"
+          },
+          {
+            "do": "From PC1, try Telnet to R1.",
+            "code": "telnet 192.168.10.1",
+            "lang": "text",
+            "see": "The connection is refused or closed: R1 accepts only SSH."
+          },
+          {
+            "do": "On R1, collect the evidence.",
+            "code": "show ip dhcp binding\nshow ip interface brief\nshow ip ssh\nshow running-config",
+            "lang": "cisco"
+          },
+          {
+            "do": "On S1, collect the evidence.",
+            "code": "show ip interface brief\nshow running-config",
+            "lang": "cisco"
+          }
+        ],
+        "checks": [
+          {
+            "text": "All three PCs got addresses by DHCP from the pool.",
+            "look_for": [
+              "192.168.10.11",
+              "192.168.10.13",
+              "Automatic"
+            ]
+          },
+          {
+            "text": "The fixed addresses are kept out of the pool, and the printer answers at its fixed address.",
+            "look_for": [
+              "ip dhcp excluded-address 192.168.10.1 192.168.10.10",
+              "Reply from 192.168.10.5"
+            ]
+          },
+          {
+            "text": "PC1 reaches the router and the switch.",
+            "look_for": [
+              "Reply from 192.168.10.1",
+              "Reply from 192.168.10.2"
+            ]
+          },
+          {
+            "text": "R1's G0/0 and S1's Vlan1 are up with the planned addresses.",
+            "look_for": [
+              "GigabitEthernet0/0",
+              "192.168.10.1",
+              "Vlan1",
+              "192.168.10.2"
+            ]
+          },
+          {
+            "text": "Passwords are hashed or encrypted, and a warning banner is set.",
+            "look_for": [
+              "enable secret 5",
+              "service password-encryption",
+              "banner motd"
+            ]
+          },
+          {
+            "text": "SSH version 2 is enabled, and the vty lines accept only SSH with local accounts.",
+            "look_for": [
+              "SSH Enabled - version 2.0",
+              "transport input ssh",
+              "login local"
+            ]
+          },
+          {
+            "text": "PC1 can manage R1 over SSH.",
+            "look_for": [
+              "ssh -l admin",
+              "R1>"
+            ]
+          },
+          {
+            "text": "S1's unused ports are shut down.",
+            "look_for": [
+              "administratively down"
+            ]
+          }
+        ],
+        "submit": "Paste, in order: PC1's ipconfig and pings; the SSH sessions from PC1 to R1 and S1; the Telnet attempt; R1's show ip dhcp binding, show ip interface brief, show ip ssh and show running-config; and S1's show ip interface brief and show running-config.",
+        "files": [
+          {
+            "path": "office-plan.txt",
+            "content": "Small office network: address plan (192.168.10.0/24)\n\nDevice    Port              Address           Mask            How it gets it\nR1        G0/0              192.168.10.1      255.255.255.0   static (the office's default gateway)\nS1        Vlan1             192.168.10.2      255.255.255.0   static (switch management)\nPrinter   FastEthernet0     192.168.10.5      255.255.255.0   static, gateway 192.168.10.1\nPC1-PC3   FastEthernet0     from .11 upwards  255.255.255.0   DHCP from R1\n\nKept out of DHCP: 192.168.10.1 to 192.168.10.10 (for devices with fixed addresses)\nDHCP pool OFFICE: network 192.168.10.0/24, default router 192.168.10.1, DNS server 8.8.8.8\n\nCabling (Copper Straight-Through)\nR1 G0/0  - S1 G0/1\nPC1      - S1 Fa0/1\nPC2      - S1 Fa0/2\nPC3      - S1 Fa0/3\nPrinter  - S1 Fa0/10\n\nNames and accounts (example passwords for the lab only: choose your own on real equipment)\nHostnames: R1 and S1        Domain name: office.test\nenable secret: OfficeEnable26    console password: OfficeConsole26\nLocal user for SSH: admin, secret OfficeAdmin26\n"
+          }
+        ],
+        "hints": [
+          "If a PC says DHCP failed, check that R1's G0/0 is up (show ip interface brief) and that the pool's network line is 192.168.10.0 255.255.255.0.",
+          "SSH needs all four pieces: a hostname other than the default, ip domain-name, RSA keys and a local username. show ip ssh says SSH is disabled until they're all in place.",
+          "If SSH asks for a password and then refuses it, check the username's spelling and that the vty lines say login local, not just login.",
+          "Locked out of a device's remote access? The CLI tab in Packet Tracer is the console, so the console password still lets you in."
+        ]
+      }
+    }
+  ]
+}

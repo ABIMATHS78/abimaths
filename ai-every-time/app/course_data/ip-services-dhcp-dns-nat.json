@@ -1,0 +1,1064 @@
+{
+  "slug": "ip-services-dhcp-dns-nat",
+  "title": "IP Services: DHCP, DNS, NAT, NTP and Network Management",
+  "subtitle": "Configure and verify the services every IP network depends on, from DHCP, DNS and NAT to NTP, syslog, SNMP, SSH and configuration backups, on Cisco routers in Packet Tracer.",
+  "category": "Networking",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "carlos-ramirez",
+    "mouhamadouu-ba"
+  ],
+  "skills": [
+    "DHCP",
+    "DNS",
+    "NAT and PAT",
+    "NTP",
+    "Syslog",
+    "SNMP",
+    "QoS",
+    "SSH",
+    "Cisco IOS",
+    "Cisco Packet Tracer"
+  ],
+  "tools": [
+    "Cisco Packet Tracer",
+    "Cisco IOS"
+  ],
+  "outcomes": [
+    "Configure a Cisco router as a DHCP server, a DHCP relay and a DHCP client, and verify the leases",
+    "Explain how DNS resolves names, and set up name resolution for a small network",
+    "Translate private addresses with static NAT, dynamic NAT pools and PAT, and read the translation table",
+    "Synchronise clocks with NTP, collect time-stamped logs on a syslog server and monitor devices with SNMP",
+    "Describe how QoS classifies, marks, queues, polices and shapes traffic",
+    "Manage devices over SSH and back up their configurations to a TFTP server"
+  ],
+  "prerequisites": "Basic Cisco IOS configuration: moving between modes, addressing interfaces and checking them with show commands, plus IPv4 subnetting. Install Cisco Packet Tracer (free with a Cisco Networking Academy account) on Windows, macOS or Linux.",
+  "description": "Every IP network leans on a handful of services that nobody notices until they break. This course takes you through them one at a time on Cisco routers and switches in Cisco Packet Tracer, following the IP Services topics of Cisco's CCNA (200-301) exam. You'll make a router hand out addresses with DHCP, relay requests across routers and take its own address by DHCP, and run DNS so hosts find each other by name. You'll translate private addresses with static NAT, a dynamic pool and PAT, and read the translation table to see exactly what the router did. Then you'll make the network manageable: one clock for every device with NTP, time-stamped logs collected on a syslog server, SNMP queries from a management station, SSH instead of Telnet, and configuration backups on a TFTP server. A lesson on QoS explains how routers decide which traffic waits when a link is busy.\n\nEvery module ends with a Packet Tracer lab, with starting configurations to paste in, which you submit for your instructor's review. The course finishes with a capstone that brings every service together in one branch office network.",
+  "aligned_with": "Cisco CCNA (200-301) exam topics: IP Services",
+  "modules": [
+    {
+      "title": "DHCP and DNS: addresses and names for every host",
+      "summary": "How hosts get their addresses and find each other by name: DHCP from the first broadcast to the lease, relays that carry it across routers, routers as DHCP clients, and DNS.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "How DHCP works: DORA, leases and relays",
+          "minutes": 10,
+          "objectives": [
+            "Describe the four messages a DHCPv4 client and server exchange",
+            "Explain leases, renewal and the options a server hands out",
+            "Explain why DHCP needs a relay agent to cross a router"
+          ],
+          "key_points": [
+            "DHCPv4 gives a host its address, subnet mask, default gateway and DNS servers in four messages, DORA: Discover (a client broadcast), Offer (from a server), Request (a client broadcast, so every server hears which offer it took) and Acknowledgement (from the server).",
+            "DHCP runs over UDP: servers listen on port 67 and clients on port 68. A client with no address yet sends from 0.0.0.0 to the broadcast address 255.255.255.255.",
+            "An address is leased, not given for good. A client asks its server to renew at half the lease time (T1) and asks any server at seven-eighths of it (T2); a Cisco IOS pool's default lease is one day.",
+            "Options carry the other settings: option 3 is the default gateway (router), 6 the DNS servers, 15 the domain name and 51 the lease time. Cisco IP phones use option 150 to find their TFTP server.",
+            "Routers don't forward broadcasts, so a DHCP server on another subnet never hears a Discover. A relay agent on the client's router forwards it as a unicast and writes its own interface address in it (giaddr), which tells the server which pool to use.",
+            "A Windows-style client that gets no answer gives itself an APIPA address from 169.254.0.0/16, which only works on the local link: seeing one means DHCP failed."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Watch DORA in Simulation mode",
+            "steps": [
+              {
+                "do": "Build a tiny network: a 2960 switch with a PC on f0/1 and a Server on f0/2, both connected with Copper Straight-Through cables."
+              },
+              {
+                "do": "Click the Server and, on Desktop | IP Configuration, give it the static address 192.168.10.5 with mask 255.255.255.0."
+              },
+              {
+                "do": "On the Server's Services tab choose DHCP and turn the service On. Set Default Gateway 192.168.10.1, DNS Server 192.168.10.5, Start IP Address 192.168.10.100, Subnet Mask 255.255.255.0 and Maximum Number of Users 50, then click Save.",
+                "see": "The pool serverPool listed with your settings."
+              },
+              {
+                "do": "Switch from Realtime to Simulation mode with the Simulation tab at the bottom right of the workspace. Under Event List Filters, show only DHCP: click Show All/None to clear the list, then Edit Filters and tick DHCP."
+              },
+              {
+                "do": "Click the PC, open Desktop | IP Configuration and choose DHCP.",
+                "see": "An envelope waiting on the PC: its first DHCP message."
+              },
+              {
+                "do": "Click Play, or step with Capture/Forward, and click each event in the Event List to open its details. The OSI Model tab describes what each device is doing.",
+                "see": "The PC's Discover broadcast, the Server's Offer, the PC's Request and the Server's Acknowledgement, in that order."
+              },
+              {
+                "do": "Go back to Realtime mode and read the PC's IP Configuration again.",
+                "see": "DHCP request successful., an address from 192.168.10.100 up, the gateway 192.168.10.1 and the DNS server 192.168.10.5."
+              }
+            ]
+          }
+        },
+        {
+          "title": "DHCP on Cisco IOS: server, relay and client",
+          "minutes": 14,
+          "objectives": [
+            "Configure a router as a DHCP server with excluded addresses and pools",
+            "Forward DHCP requests across a router with ip helper-address",
+            "Make a router interface a DHCP client, and verify all three"
+          ],
+          "key_points": [
+            "ip dhcp excluded-address keeps addresses such as gateways, servers and printers out of every pool. It's a global configuration command, typed outside the pool.",
+            "A pool (ip dhcp pool NAME) needs network, the subnet it serves, and usually default-router and dns-server. The router serves a request from the pool whose subnet matches the interface it arrived on, or the giaddr of a relayed request.",
+            "Before it offers an address, IOS pings it to check that nobody is using it; an address that answers is recorded as a conflict (show ip dhcp conflict) and isn't offered.",
+            "ip helper-address SERVER goes on the interface that faces the clients, not the one that faces the server. Besides DHCP, it relays a few other UDP broadcasts by default, such as DNS and TFTP.",
+            "ip address dhcp makes a router interface a DHCP client, as on many links to an internet provider; show ip interface brief then shows DHCP in the Method column.",
+            "show ip dhcp binding lists the leases a router has given out and show ip dhcp pool shows how full each pool is; on a Windows-style client, ipconfig /all shows what it received."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Serve, relay and receive DHCP on IOS",
+            "steps": [
+              {
+                "do": "The network: R1's g0/0 is LAN 10 (192.168.10.0/24), R1's g0/1 links to R2's g0/1 (10.0.0.0/30), and R2's g0/0 is LAN 20 (192.168.20.0/24). R1 will be the DHCP server for all three subnets. On R1, exclude the addresses you'll set by hand, then create LAN 10's pool.",
+                "code": "configure terminal\nip dhcp excluded-address 192.168.10.1 192.168.10.10\nip dhcp excluded-address 192.168.10.254\nip dhcp pool LAN10\n network 192.168.10.0 255.255.255.0\n default-router 192.168.10.1\n dns-server 192.168.10.254\n exit",
+                "lang": "cisco"
+              },
+              {
+                "do": "Add a pool for LAN 20, the subnet behind R2, and one for the link between the routers. R1 will serve LAN 20 through R2's relay.",
+                "code": "ip dhcp excluded-address 192.168.20.1 192.168.20.10\nip dhcp pool LAN20\n network 192.168.20.0 255.255.255.0\n default-router 192.168.20.1\n dns-server 192.168.10.254\n exit\nip dhcp excluded-address 10.0.0.1\nip dhcp pool LINK\n network 10.0.0.0 255.255.255.252\n end",
+                "lang": "cisco"
+              },
+              {
+                "do": "On R2, make the link interface a DHCP client, then check what it got.",
+                "code": "configure terminal\ninterface g0/1\n ip address dhcp\n no shutdown\n end\nshow ip interface brief",
+                "lang": "cisco",
+                "see": "GigabitEthernet0/1 with 10.0.0.2, the only free address in the LINK pool, and DHCP in the Method column."
+              },
+              {
+                "do": "On R2, configure the relay on the interface that faces LAN 20's clients, pointing at R1.",
+                "code": "configure terminal\ninterface g0/0\n ip helper-address 10.0.0.1\n end",
+                "lang": "cisco"
+              },
+              {
+                "do": "On a PC in each LAN, open Desktop | IP Configuration and choose DHCP.",
+                "see": "DHCP request successful. The PC in LAN 10 gets 192.168.10.11 and the one in LAN 20 gets 192.168.20.11, the first addresses after the excluded ones."
+              },
+              {
+                "do": "Back on R1, look at the leases and the pools.",
+                "code": "show ip dhcp binding\nshow ip dhcp pool",
+                "lang": "cisco",
+                "see": "Three bindings of type Automatic, for 10.0.0.2, 192.168.10.11 and 192.168.20.11, and each pool's leased addresses."
+              }
+            ]
+          }
+        },
+        {
+          "title": "DNS: turning names into addresses",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a DNS query is resolved, and the common record types",
+            "Run a DNS server and test name resolution from hosts",
+            "Configure name lookup on Cisco IOS, or turn it off"
+          ],
+          "key_points": [
+            "DNS turns names into addresses. A host asks its configured DNS server, a recursive resolver, which finds the answer by asking a root server, then the top-level domain's servers, then the domain's authoritative servers, and caches it for the record's TTL.",
+            "Common record types: A (an IPv4 address), AAAA (an IPv6 address), CNAME (an alias for another name), MX (a domain's mail servers), NS (a zone's name servers) and PTR (an address back to a name).",
+            "DNS uses UDP port 53 for most queries, and TCP port 53 for zone transfers and for answers too large for UDP.",
+            "Cisco IOS looks names up with the servers set by ip name-server. ip domain-lookup is on by default, so a mistyped command is treated as a host name to look up; no ip domain-lookup stops that.",
+            "ip host NAME ADDRESS adds a static name on the router itself, and ip domain-name sets its default domain, which generating SSH keys also needs.",
+            "On a Windows-style host, nslookup NAME asks the DNS server directly, and ipconfig /all shows which DNS servers the host is using."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Run a DNS server and test it",
+            "steps": [
+              {
+                "do": "Click Server0 (192.168.10.254), open Services | DNS and turn DNS Service On."
+              },
+              {
+                "do": "Add an A record: Name www.example.com, Type A Record, Address 192.168.10.254, then click Add. The server's HTTP service is on by default, so the name leads to a web page.",
+                "see": "The record in the list below the form."
+              },
+              {
+                "do": "On a PC whose DNS server is 192.168.10.254, open Desktop | Command Prompt, look the name up and ping it.",
+                "code": "nslookup www.example.com\nping www.example.com",
+                "lang": "cmd",
+                "see": "nslookup names the server that answered and gives 192.168.10.254; ping shows Pinging 192.168.10.254 with 32 bytes of data, then replies."
+              },
+              {
+                "do": "Open the PC's Web Browser and go to http://www.example.com.",
+                "see": "The server's default web page, found by name."
+              },
+              {
+                "do": "On a router that still has domain lookup on, mistype a command in privileged EXEC mode, such as shw, and wait.",
+                "see": "Translating \"shw\"...domain server (255.255.255.255), then an error: IOS treated the typo as a host name."
+              },
+              {
+                "do": "Turn lookup off and try the typo again.",
+                "code": "configure terminal\nno ip domain-lookup\nend\nshw",
+                "lang": "cisco",
+                "see": "The error appears straight away."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Addresses and names for two LANs",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 60,
+        "goal": "Build two LANs joined by two routers. Make R1 the DHCP server for both LANs and for the link between the routers, relay LAN 20's requests from R2, and give every host working name resolution.",
+        "setup": [
+          "Cisco Packet Tracer 8 or later (free with a Cisco Networking Academy account)",
+          "The starter files r1-base.txt and r2-base.txt, each router's starting configuration, ready to paste into its CLI",
+          "The addressing table in addressing.txt"
+        ],
+        "steps": [
+          {
+            "do": "Build the topology from addressing.txt: R1 and R2 (2911 routers), S1 and S2 (2960 switches), PC1 and Server0 on S1, PC2 on S2. Use a Copper Cross-Over cable between R1 g0/1 and R2 g0/1, and Copper Straight-Through cables everywhere else."
+          },
+          {
+            "do": "Open each router's CLI tab, answer no to the initial configuration dialog, and paste in its starter file. Give Server0 the static address 192.168.10.254/24 with gateway 192.168.10.1 and DNS server 192.168.10.254 (Desktop | IP Configuration)."
+          },
+          {
+            "do": "On R1, exclude the static addresses and create the three pools.",
+            "code": "configure terminal\nip dhcp excluded-address 192.168.10.1 192.168.10.10\nip dhcp excluded-address 192.168.10.254\nip dhcp excluded-address 192.168.20.1 192.168.20.10\nip dhcp excluded-address 10.0.0.1\nip dhcp pool LAN10\n network 192.168.10.0 255.255.255.0\n default-router 192.168.10.1\n dns-server 192.168.10.254\nip dhcp pool LAN20\n network 192.168.20.0 255.255.255.0\n default-router 192.168.20.1\n dns-server 192.168.10.254\nip dhcp pool LINK\n network 10.0.0.0 255.255.255.252\n end",
+            "lang": "cisco"
+          },
+          {
+            "do": "On R2, make g0/1 a DHCP client and check its address.",
+            "code": "configure terminal\ninterface g0/1\n ip address dhcp\n end\nshow ip interface brief",
+            "lang": "cisco",
+            "see": "GigabitEthernet0/1 with 10.0.0.2, DHCP in the Method column, and status up/up."
+          },
+          {
+            "do": "On R2, add the relay to the LAN 20 interface.",
+            "code": "configure terminal\ninterface g0/0\n ip helper-address 10.0.0.1\n end",
+            "lang": "cisco"
+          },
+          {
+            "do": "Set PC1 and PC2 to DHCP (Desktop | IP Configuration | DHCP).",
+            "see": "DHCP request successful. PC1 gets 192.168.10.11 and PC2 gets 192.168.20.11, each with its own LAN's gateway and the DNS server 192.168.10.254."
+          },
+          {
+            "do": "On Server0, turn DNS Service On and add an A record: www.example.com, 192.168.10.254."
+          },
+          {
+            "do": "On PC2's Command Prompt, check its settings and test the name.",
+            "code": "ipconfig /all\nping www.example.com",
+            "lang": "cmd",
+            "see": "Pinging 192.168.10.254 with 32 bytes of data, then replies. The first reply may time out while the routers learn MAC addresses with ARP."
+          },
+          {
+            "do": "On R1, list the leases and the pools.",
+            "code": "show ip dhcp binding\nshow ip dhcp pool",
+            "lang": "cisco",
+            "see": "Bindings for 10.0.0.2, 192.168.10.11 and 192.168.20.11, all of type Automatic."
+          },
+          {
+            "do": "Break it on purpose: remove the helper address on R2. On PC2, choose Static and then DHCP again so it asks for a new address, and read the result. Then put the helper address back and ask again.",
+            "code": "configure terminal\ninterface g0/0\n no ip helper-address 10.0.0.1\n end",
+            "lang": "cisco",
+            "see": "DHCP failed. APIPA is being used., and an address starting 169.254. With the relay back, PC2 gets an address from LAN20 again."
+          }
+        ],
+        "checks": [
+          {
+            "text": "R2's link interface got its address from R1's LINK pool.",
+            "look_for": [
+              "10.0.0.2",
+              "DHCP"
+            ]
+          },
+          {
+            "text": "R1 has leased addresses to both PCs and to R2, all of type Automatic.",
+            "look_for": [
+              "192.168.10.11",
+              "192.168.20.11",
+              "Automatic"
+            ]
+          },
+          {
+            "text": "PC2 received its address, gateway and DNS server through the relay.",
+            "look_for": [
+              "192.168.20.11",
+              "192.168.20.1",
+              "192.168.10.254"
+            ]
+          },
+          {
+            "text": "Names resolve: PC2 pings www.example.com and gets replies from 192.168.10.254.",
+            "look_for": [
+              "www.example.com",
+              "Reply from 192.168.10.254"
+            ]
+          },
+          {
+            "text": "Without the helper address PC2 fell back to an APIPA address, and a sentence explains why.",
+            "look_for": [
+              "169.254"
+            ]
+          }
+        ],
+        "submit": "Paste R1's show ip dhcp binding, R2's show ip interface brief, PC2's ipconfig /all and its ping to www.example.com, and a sentence on what happened to PC2 without the helper address, and why.",
+        "files": [
+          {
+            "path": "r1-base.txt",
+            "content": "enable\nconfigure terminal\nhostname R1\nno ip domain-lookup\ninterface g0/0\n description LAN 10\n ip address 192.168.10.1 255.255.255.0\n no shutdown\n exit\ninterface g0/1\n description Link to R2\n ip address 10.0.0.1 255.255.255.252\n no shutdown\n exit\nip route 192.168.20.0 255.255.255.0 10.0.0.2\nend\n"
+          },
+          {
+            "path": "r2-base.txt",
+            "content": "enable\nconfigure terminal\nhostname R2\nno ip domain-lookup\ninterface g0/0\n description LAN 20\n ip address 192.168.20.1 255.255.255.0\n no shutdown\n exit\ninterface g0/1\n description Link to R1 (gets its address by DHCP in the lab)\n no shutdown\n exit\nip route 0.0.0.0 0.0.0.0 10.0.0.1\nend\n"
+          },
+          {
+            "path": "addressing.txt",
+            "content": "Lab 1 addressing\n\nDevice   Interface         Address           Mask               Gateway        Connects to\nR1       g0/0              192.168.10.1      255.255.255.0      -              S1 g0/1\nR1       g0/1              10.0.0.1          255.255.255.252    -              R2 g0/1 (cross-over)\nR2       g0/1              DHCP (10.0.0.2)   255.255.255.252    -              R1 g0/1\nR2       g0/0              192.168.20.1      255.255.255.0      -              S2 g0/1\nServer0  FastEthernet0     192.168.10.254    255.255.255.0      192.168.10.1   S1 f0/2  (DNS server: 192.168.10.254)\nPC1      FastEthernet0     DHCP              -                  -              S1 f0/1\nPC2      FastEthernet0     DHCP              -                  -              S2 f0/1\n\nExcluded from DHCP: 192.168.10.1-192.168.10.10, 192.168.10.254, 192.168.20.1-192.168.20.10, 10.0.0.1\nDNS record on Server0: www.example.com  A  192.168.10.254\n"
+          }
+        ],
+        "hints": [
+          "If a PC says DHCP failed, check that a pool's network command matches the subnet the request arrives on: the interface's own subnet, or the relay's address.",
+          "Relayed requests carry R2's g0/0 address, 192.168.20.1, as the relay address (giaddr). R1 picks the LAN20 pool from it and sends its reply there, so R1 needs its route to 192.168.20.0/24.",
+          "Excluded addresses are global commands: type them in global configuration mode, not inside a pool."
+        ]
+      }
+    },
+    {
+      "title": "NAT and PAT: sharing public addresses",
+      "summary": "Why private networks need address translation, and how to configure and verify static NAT, dynamic NAT with a pool, and PAT on a Cisco router.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "Private addresses and the four NAT addresses",
+          "minutes": 10,
+          "objectives": [
+            "Explain why NAT is used, and what it costs",
+            "Name the inside local, inside global, outside local and outside global addresses of a translation"
+          ],
+          "key_points": [
+            "RFC 1918 reserves 10.0.0.0/8, 172.16.0.0/12 and 192.168.0.0/16 for private networks. They aren't routed on the internet, so traffic from them must be translated to a public address on the way out.",
+            "NAT rewrites addresses in packets as they cross a router between its inside and outside interfaces, and keeps a translation table so it can translate the replies back.",
+            "Inside local is an inside host's real, usually private, address; inside global is the public address it appears as. Outside global is an outside host's real address; outside local is how that host appears from inside, usually the same address.",
+            "NAT saves public IPv4 addresses and hides inside addressing, but it breaks end-to-end addressing: outside hosts can't open connections to inside ones without a static mapping, and some protocols, such as IPsec without NAT traversal, need extra help.",
+            "NAT isn't a firewall, though it's often mistaken for one: protection comes from access lists and stateful filtering, not from translation."
+          ]
+        },
+        {
+          "title": "Static NAT: publishing an inside server",
+          "minutes": 10,
+          "objectives": [
+            "Configure a permanent one-to-one translation for a server",
+            "Mark NAT inside and outside interfaces, and verify the translation"
+          ],
+          "key_points": [
+            "Static NAT maps one inside local address to one inside global address for good, so outside hosts can reach an inside server at a fixed public address: ip nat inside source static 192.168.1.10 203.0.113.10.",
+            "Every interface that takes part needs its role: ip nat inside on interfaces towards the private network and ip nat outside on the interface towards the internet. Swapping them is a common reason NAT does nothing.",
+            "A static mapping is always in show ip nat translations, with dashes for the outside addresses; each conversation through it adds an entry that includes the outside host's address and the ports.",
+            "The internet must route the public address to your router: in the lab, the provider routes the office's block 203.0.113.8/29 to it.",
+            "Static NAT can also forward a single port: ip nat inside source static tcp 192.168.1.10 80 203.0.113.10 80 publishes only the web server's port 80."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Publish a web server with static NAT",
+            "steps": [
+              {
+                "do": "On R1, give each interface its NAT role: g0/0 faces the office LAN and g0/1 faces the provider.",
+                "code": "configure terminal\ninterface g0/0\n ip nat inside\n exit\ninterface g0/1\n ip nat outside\n exit",
+                "lang": "cisco"
+              },
+              {
+                "do": "Map the web server's private address to its public one.",
+                "code": "ip nat inside source static 192.168.1.10 203.0.113.10\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "From the outside PC (198.51.100.20), ping the public address, then open it in the Web Browser.",
+                "code": "ping 203.0.113.10",
+                "lang": "cmd",
+                "see": "Reply from 203.0.113.10, and the server's web page at http://203.0.113.10."
+              },
+              {
+                "do": "On R1, look at the translation table.",
+                "code": "show ip nat translations",
+                "lang": "cisco",
+                "see": "The static entry 203.0.113.10 to 192.168.1.10, plus an icmp entry for the pings that includes the outside PC's address, 198.51.100.20."
+              },
+              {
+                "do": "Watch a translation happen: in Simulation mode, send a ping from the outside PC, click the packet when it's at R1, and compare the Inbound PDU Details with the Outbound PDU Details.",
+                "see": "The destination address is 203.0.113.10 coming in and 192.168.1.10 going out."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Dynamic NAT pools and PAT",
+          "minutes": 12,
+          "objectives": [
+            "Configure dynamic NAT with a pool and an access list",
+            "Configure PAT on the outside interface",
+            "Read and clear the translation table"
+          ],
+          "key_points": [
+            "Dynamic NAT hands inside hosts addresses from a pool, first come, first served: an access list says which inside addresses may be translated, ip nat pool defines the public addresses, and ip nat inside source list 1 pool NAME joins them.",
+            "When every address in a dynamic pool is in use, the next host can't get out until a translation times out or is cleared, which is why dynamic NAT on its own is rare.",
+            "PAT, or NAT overload, lets many inside hosts share one public address by translating source ports as well: add overload, as in ip nat inside source list 1 interface g0/1 overload, or overload a pool.",
+            "Overloading the outside interface's own address suits a connection whose public address can change, such as one learned by DHCP.",
+            "show ip nat translations lists each translation; show ip nat statistics counts them and names the inside and outside interfaces; clear ip nat translation * removes the dynamic ones.",
+            "A NAT access list should match only the inside networks you mean to translate. Cisco advises against permit any, which can make NAT use too many router resources."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "From a small pool to PAT",
+            "steps": [
+              {
+                "do": "On R1, say which inside addresses may be translated, define a two-address pool, and join them.",
+                "code": "configure terminal\naccess-list 1 permit 192.168.1.0 0.0.0.255\nip nat pool PUBLIC 203.0.113.12 203.0.113.13 netmask 255.255.255.248\nip nat inside source list 1 pool PUBLIC\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Ping the outside server 198.51.100.10 from PC1, then PC2, then PC3, and look at the table.",
+                "code": "show ip nat translations",
+                "lang": "cisco",
+                "see": "PC1 has 203.0.113.12 and PC2 203.0.113.13; PC3's pings time out because the pool is used up."
+              },
+              {
+                "do": "Clear the dynamic translations, remove the pool mapping, and overload R1's outside interface instead.",
+                "code": "clear ip nat translation *\nconfigure terminal\nno ip nat inside source list 1 pool PUBLIC\nip nat inside source list 1 interface g0/1 overload\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Ping 198.51.100.10 from all three PCs again, then look at the table and the statistics straight away: translations for pings last about a minute.",
+                "code": "show ip nat translations\nshow ip nat statistics",
+                "lang": "cisco",
+                "see": "Every PC gets through, all translated to 203.0.113.2, told apart by the number after the colon; the statistics list g0/1 under Outside interfaces and g0/0 under Inside interfaces."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "NAT for a small office",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 50,
+        "goal": "Publish an office web server with static NAT, share a small pool with dynamic NAT and watch it run out, then switch to PAT so every host can reach the internet.",
+        "setup": [
+          "Cisco Packet Tracer 8 or later",
+          "The starter files r1-base.txt and isp-base.txt, and the addressing table in addressing.txt"
+        ],
+        "steps": [
+          {
+            "do": "Build the topology from addressing.txt: R1 and ISP (2911 routers) joined by a Copper Cross-Over cable from g0/1 to g0/1; S1 (2960) on R1's g0/0 with Server1 and PC1 to PC3; S2 (2960) on ISP's g0/0 with the Internet server and OutsidePC. Paste each router's starter file and give every host its static address and gateway."
+          },
+          {
+            "do": "Before any NAT, ping the outside server from PC1.",
+            "code": "ping 198.51.100.10",
+            "lang": "cmd",
+            "see": "Request timed out. The ISP has no route back to 192.168.1.0/24, because private addresses aren't routed on the internet."
+          },
+          {
+            "do": "On R1, set the interfaces' NAT roles and publish Server1 with static NAT.",
+            "code": "configure terminal\ninterface g0/0\n ip nat inside\n exit\ninterface g0/1\n ip nat outside\n exit\nip nat inside source static 192.168.1.10 203.0.113.10\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "From OutsidePC, ping 203.0.113.10 and open http://203.0.113.10 in its Web Browser.",
+            "see": "Replies from 203.0.113.10, and Server1's web page."
+          },
+          {
+            "do": "On R1, add dynamic NAT with a two-address pool.",
+            "code": "configure terminal\naccess-list 1 permit 192.168.1.0 0.0.0.255\nip nat pool PUBLIC 203.0.113.12 203.0.113.13 netmask 255.255.255.248\nip nat inside source list 1 pool PUBLIC\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Ping 198.51.100.10 from PC1, then PC2, then PC3. Then look at the translations on R1.",
+            "code": "show ip nat translations",
+            "lang": "cisco",
+            "see": "PC1 and PC2 succeed, as 203.0.113.12 and 203.0.113.13; PC3 times out."
+          },
+          {
+            "do": "Switch to PAT on R1's outside address.",
+            "code": "clear ip nat translation *\nconfigure terminal\nno ip nat inside source list 1 pool PUBLIC\nip nat inside source list 1 interface g0/1 overload\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Ping 198.51.100.10 from all three PCs, then straight away show the translations and the statistics on R1.",
+            "code": "show ip nat translations\nshow ip nat statistics",
+            "lang": "cisco",
+            "see": "All three PCs translated to 203.0.113.2, each with its own number after the colon, and the inside and outside interfaces in the statistics."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Before NAT, PC1 couldn't reach the internet, and a sentence explains why.",
+            "look_for": [
+              "Request timed out"
+            ]
+          },
+          {
+            "text": "The web server answers from outside on its public address.",
+            "look_for": [
+              "Reply from 203.0.113.10"
+            ]
+          },
+          {
+            "text": "The static translation maps 203.0.113.10 to 192.168.1.10.",
+            "look_for": [
+              "203.0.113.10",
+              "192.168.1.10"
+            ]
+          },
+          {
+            "text": "With the two-address pool, two PCs got pool addresses and the third couldn't get out.",
+            "look_for": [
+              "203.0.113.12",
+              "203.0.113.13"
+            ]
+          },
+          {
+            "text": "With PAT, all three PCs share R1's outside address, each with its own port.",
+            "look_for": [
+              "203.0.113.2:",
+              "192.168.1.11",
+              "192.168.1.12",
+              "192.168.1.13"
+            ]
+          },
+          {
+            "text": "The statistics name the inside and outside interfaces.",
+            "look_for": [
+              "Inside interfaces",
+              "Outside interfaces"
+            ]
+          }
+        ],
+        "submit": "Paste PC1's ping before NAT, OutsidePC's ping to 203.0.113.10, show ip nat translations after the pool test and again after PAT, and show ip nat statistics, with a sentence on why PC3 failed with the pool.",
+        "files": [
+          {
+            "path": "r1-base.txt",
+            "content": "enable\nconfigure terminal\nhostname R1\nno ip domain-lookup\ninterface g0/0\n description Office LAN (NAT inside)\n ip address 192.168.1.1 255.255.255.0\n no shutdown\n exit\ninterface g0/1\n description Link to ISP (NAT outside)\n ip address 203.0.113.2 255.255.255.252\n no shutdown\n exit\nip route 0.0.0.0 0.0.0.0 203.0.113.1\nend\n"
+          },
+          {
+            "path": "isp-base.txt",
+            "content": "enable\nconfigure terminal\nhostname ISP\nno ip domain-lookup\ninterface g0/1\n description Link to the office\n ip address 203.0.113.1 255.255.255.252\n no shutdown\n exit\ninterface g0/0\n description Internet hosts\n ip address 198.51.100.1 255.255.255.0\n no shutdown\n exit\n! The office's public block 203.0.113.8/29 is routed to R1.\n! There is no route to 192.168.1.0/24: private addresses aren't routed on the internet.\nip route 203.0.113.8 255.255.255.248 203.0.113.2\nend\n"
+          },
+          {
+            "path": "addressing.txt",
+            "content": "Lab 2 addressing\n\nDevice       Interface       Address           Mask               Gateway         Connects to\nR1           g0/0            192.168.1.1       255.255.255.0      -               S1 g0/1   (NAT inside)\nR1           g0/1            203.0.113.2       255.255.255.252    -               ISP g0/1  (NAT outside, cross-over)\nISP          g0/1            203.0.113.1       255.255.255.252    -               R1 g0/1\nISP          g0/0            198.51.100.1      255.255.255.0      -               S2 g0/1\nServer1      FastEthernet0   192.168.1.10      255.255.255.0      192.168.1.1     S1 f0/1   (office web server)\nPC1          FastEthernet0   192.168.1.11      255.255.255.0      192.168.1.1     S1 f0/2\nPC2          FastEthernet0   192.168.1.12      255.255.255.0      192.168.1.1     S1 f0/3\nPC3          FastEthernet0   192.168.1.13      255.255.255.0      192.168.1.1     S1 f0/4\nInternet     FastEthernet0   198.51.100.10     255.255.255.0      198.51.100.1    S2 f0/1   (outside web server)\nOutsidePC    FastEthernet0   198.51.100.20     255.255.255.0      198.51.100.1    S2 f0/2\n\nPublic addresses the ISP routes to the office: 203.0.113.8/29 (203.0.113.9 - 203.0.113.14)\n  203.0.113.10          static NAT for Server1\n  203.0.113.12 - .13    the dynamic NAT pool PUBLIC\n  203.0.113.2           R1's own outside address, used by PAT\n"
+          }
+        ],
+        "hints": [
+          "If nothing is translated, check that ip nat inside is on g0/0 and ip nat outside on g0/1, not the other way round.",
+          "If IOS won't remove the pool mapping because it's in use, run clear ip nat translation * in privileged EXEC mode first.",
+          "Translations for pings last about a minute: ping again just before show ip nat translations."
+        ]
+      }
+    },
+    {
+      "title": "Time, logs and monitoring: NTP, syslog and SNMP",
+      "summary": "Give every device the same clock, collect their logs in one place with the right timestamps, and let a management station read their state with SNMP.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "NTP: one clock for the whole network",
+          "minutes": 10,
+          "objectives": [
+            "Explain why devices need synchronised clocks, and what an NTP stratum is",
+            "Configure a router as an NTP client and verify it"
+          ],
+          "key_points": [
+            "Matching, accurate clocks make logs from different devices line up when you troubleshoot, and certificates, authentication and scheduled jobs all depend on the right time.",
+            "NTP (Network Time Protocol) uses UDP port 123. The stratum counts the distance from a reference clock: stratum 1 servers are attached to one, such as a GPS receiver or an atomic clock, and each NTP step below adds one.",
+            "ntp server ADDRESS makes an IOS device a client of that server. A synchronised IOS device also answers NTP requests itself, and ntp master makes a router an authoritative server from its own clock, at stratum 8 unless you give another.",
+            "show ntp status says whether the clock is synchronised, at what stratum and from which reference; in show ntp associations, an asterisk marks the server it's synchronised to (the sys.peer).",
+            "NTP authentication stops a device taking time from an impostor: ntp authenticate, ntp authentication-key 1 md5 KEY, ntp trusted-key 1, and key 1 at the end of the ntp server command.",
+            "ntp update-calendar copies the NTP time to the router's hardware calendar, so the clock is about right after a reload, even before NTP synchronises again."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Synchronise a router to an NTP server",
+            "steps": [
+              {
+                "do": "Click the Server (192.168.1.5), open Services | NTP, make sure the service is On, and note the date and time it will hand out."
+              },
+              {
+                "do": "On R1, check its clock first.",
+                "code": "show clock",
+                "lang": "cisco",
+                "see": "A time that has nothing to do with the server's, marked with an asterisk because it isn't authoritative."
+              },
+              {
+                "do": "Point R1 at the server.",
+                "code": "configure terminal\nntp server 192.168.1.5\nntp update-calendar\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "Give it a minute, then check the association and the status.",
+                "code": "show ntp associations\nshow ntp status",
+                "lang": "cisco",
+                "see": "*~192.168.1.5 in the associations, and Clock is synchronized, stratum 2, reference is 192.168.1.5."
+              },
+              {
+                "do": "Check the clock again.",
+                "code": "show clock",
+                "lang": "cisco",
+                "see": "The server's date and time."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Syslog: severity levels, facilities and log servers",
+          "minutes": 12,
+          "objectives": [
+            "Read a Cisco log message and its severity level",
+            "Send time-stamped logs to a syslog server",
+            "Choose which levels go to which destination"
+          ],
+          "key_points": [
+            "Syslog severity levels run from 0 to 7: emergencies, alerts, critical, errors, warnings, notifications, informational and debugging. The lower the number, the more severe the message.",
+            "Choosing a level includes everything more severe: logging trap warnings sends levels 0 to 4 to syslog servers. The default trap level is informational (6).",
+            "A message reads %FACILITY-SEVERITY-MNEMONIC: description. %LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down is a level 5 (notification) message from the LINEPROTO facility.",
+            "Logs can go to the console (on by default), to SSH and Telnet sessions after terminal monitor, to a buffer in RAM (logging buffered, read with show logging) and to syslog servers on UDP port 514 (logging host ADDRESS).",
+            "Syslog servers also sort messages by a syslog facility, such as local0 to local7; Cisco IOS sends as local7 unless logging facility changes it.",
+            "service timestamps log datetime msec stamps every message with the date and time to the millisecond, which is only useful when NTP keeps the clock right."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Send a router's logs to a syslog server",
+            "steps": [
+              {
+                "do": "On the Server (192.168.1.5), open Services | SYSLOG and turn the service On."
+              },
+              {
+                "do": "On R1, add timestamps and send logs to the server.",
+                "code": "configure terminal\nservice timestamps log datetime msec\nlogging host 192.168.1.5\nlogging trap informational\nend",
+                "lang": "cisco",
+                "see": "Leaving configuration mode logs %SYS-5-CONFIG_I: Configured from console by console."
+              },
+              {
+                "do": "Make something happen: open an unused interface, then shut it down.",
+                "code": "configure terminal\ninterface g0/2\n no shutdown\n shutdown\n end",
+                "lang": "cisco",
+                "see": "Interface messages on the console, such as %LINK-5-CHANGED: Interface GigabitEthernet0/2, changed state to administratively down."
+              },
+              {
+                "do": "Back on the server's SYSLOG page, read what arrived.",
+                "see": "Each message with its time and the router's address."
+              },
+              {
+                "do": "Look at the router's own view of its logging.",
+                "code": "show logging",
+                "lang": "cisco",
+                "see": "The trap level, and 192.168.1.5 among the destinations."
+              }
+            ]
+          }
+        },
+        {
+          "title": "SNMP: managers, agents and MIBs",
+          "minutes": 12,
+          "objectives": [
+            "Explain how an SNMP manager reads and changes information on agents",
+            "Compare SNMPv2c and SNMPv3",
+            "Configure a read-only community and query it"
+          ],
+          "key_points": [
+            "SNMP lets a network management system (the manager) read and change information on devices (the agents). An agent holds its information in a MIB, a tree of objects each named by an OID, such as 1.3.6.1.2.1.1.5.0 for the device's name, sysName.",
+            "The manager reads with Get, GetNext and GetBulk (from SNMPv2c) and changes values with Set. Agents also send unrequested notifications: traps, which aren't acknowledged, and informs, which are.",
+            "Agents listen on UDP port 161; managers receive traps and informs on UDP port 162.",
+            "SNMPv1 and v2c protect access only with a community string, sent in clear text. SNMPv3 adds users with authentication and encryption, at three security levels: noAuthNoPriv, authNoPriv and authPriv.",
+            "snmp-server community NAME ro allows reads only, and rw allows changes too. Avoid the well-known public and private, prefer ro, and limit which managers may use it with an access list: snmp-server community NAME ro 10.",
+            "Polling asks devices for values on a schedule, such as interface counters every few minutes; traps report events, such as a link going down, as they happen."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Query a router with the MIB Browser",
+            "steps": [
+              {
+                "do": "On R1, create a read-only community.",
+                "code": "configure terminal\nsnmp-server community netops-ro ro\nend",
+                "lang": "cisco"
+              },
+              {
+                "do": "On PC1, open Desktop | MIB Browser and click Advanced. Set Address 192.168.1.1, Read Community netops-ro and SNMP Version v2c, then click OK."
+              },
+              {
+                "do": "Expand the MIB tree down to system, under mib-2, and select sysName. Choose Get under Operations and click GO.",
+                "see": "The OID .1.3.6.1.2.1.1.5.0, and R1 as the value in the Result Table."
+              },
+              {
+                "do": "Select sysUpTime and Get it twice, a minute apart.",
+                "see": "A larger value the second time: polling the same object over time is how monitoring tools draw graphs."
+              },
+              {
+                "do": "Try a Set on sysName with only the read-only community.",
+                "see": "The name doesn't change: a read-only community can't set anything."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Time-stamped logs and SNMP monitoring",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 45,
+        "goal": "Synchronise a router to an NTP server, send its time-stamped logs to a syslog server, and read its name over SNMP from a management PC.",
+        "setup": [
+          "Cisco Packet Tracer 8 or later",
+          "The starter file r1-base.txt"
+        ],
+        "steps": [
+          {
+            "do": "Build the topology: R1 (2911) g0/0 to S1 (2960) g0/1, with Server0 on f0/1 and PC1 on f0/2. Paste r1-base.txt into R1. Give Server0 192.168.1.5/24 and PC1 192.168.1.11/24, both with gateway 192.168.1.1."
+          },
+          {
+            "do": "On Server0, turn on the NTP service and the SYSLOG service (Services | NTP, Services | SYSLOG)."
+          },
+          {
+            "do": "Make R1 an NTP client of Server0.",
+            "code": "configure terminal\nntp server 192.168.1.5\nntp update-calendar\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "After a minute or two, check that R1 is synchronised.",
+            "code": "show ntp associations\nshow ntp status\nshow clock",
+            "lang": "cisco",
+            "see": "*~192.168.1.5, then Clock is synchronized, stratum 2, reference is 192.168.1.5, and the server's date and time."
+          },
+          {
+            "do": "Add timestamps and send the logs to Server0.",
+            "code": "configure terminal\nservice timestamps log datetime msec\nlogging host 192.168.1.5\nlogging trap informational\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "Make some log messages: shut down g0/2, bring it back, and leave configuration mode.",
+            "code": "configure terminal\ninterface g0/2\n shutdown\n no shutdown\n end",
+            "lang": "cisco",
+            "see": "%LINK messages for GigabitEthernet0/2 and %SYS-5-CONFIG_I: Configured from console by console on the console."
+          },
+          {
+            "do": "Open Server0's SYSLOG page and copy the messages that arrived from R1."
+          },
+          {
+            "do": "Create a read-only community on R1.",
+            "code": "configure terminal\nsnmp-server community netops-ro ro\nend",
+            "lang": "cisco"
+          },
+          {
+            "do": "On PC1's MIB Browser, set Address 192.168.1.1, Read Community netops-ro and SNMP Version v2c under Advanced, then Get sysName (in system, under mib-2).",
+            "see": "The OID .1.3.6.1.2.1.1.5.0 and the value R1."
+          },
+          {
+            "do": "Think it through: if R1 had logging trap warnings instead, which severity levels would reach Server0, and would %LINEPROTO-5-UPDOWN be one of them? Write your answer in a sentence or two."
+          }
+        ],
+        "checks": [
+          {
+            "text": "R1 is synchronised to Server0 by NTP.",
+            "look_for": [
+              "Clock is synchronized",
+              "192.168.1.5"
+            ]
+          },
+          {
+            "text": "R1's log messages reach the syslog server.",
+            "look_for": [
+              "%SYS-5-CONFIG_I",
+              "%LINK"
+            ]
+          },
+          {
+            "text": "An SNMP Get with the read-only community returns the router's name.",
+            "look_for": [
+              "1.3.6.1.2.1.1.5",
+              "R1"
+            ]
+          },
+          {
+            "text": "The answer explains that logging trap warnings sends levels 0 to 4 only, so a level 5 message such as %LINEPROTO-5-UPDOWN wouldn't reach the server.",
+            "look_for": [
+              "warnings"
+            ]
+          }
+        ],
+        "submit": "Paste show ntp associations and show ntp status, the messages on Server0's SYSLOG page, the OID and value the MIB Browser returned for sysName, and your answer about logging trap warnings.",
+        "files": [
+          {
+            "path": "r1-base.txt",
+            "content": "enable\nconfigure terminal\nhostname R1\nno ip domain-lookup\ninterface g0/0\n description Management LAN\n ip address 192.168.1.1 255.255.255.0\n no shutdown\n exit\ninterface g0/2\n description Unused: shut and reopened in the lab to make log messages\n no shutdown\n exit\nend\n"
+          }
+        ],
+        "hints": [
+          "NTP takes a little while to synchronise. If show ntp status still says unsynchronized after a few minutes, check the server's NTP service is On and that R1 can ping 192.168.1.5.",
+          "If no messages reach the server, check its SYSLOG service is On and that R1 can ping it.",
+          "A Get that times out usually means the community string doesn't match: it's case-sensitive."
+        ]
+      }
+    },
+    {
+      "title": "Managing devices: QoS, SSH and configuration backups",
+      "summary": "How routers decide which traffic waits when a link is busy, how to manage devices over SSH instead of Telnet, and how to back up and restore configurations with TFTP and FTP.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "QoS: classification, marking, queuing, policing and shaping",
+          "minutes": 14,
+          "objectives": [
+            "Explain what QoS can and can't do on a congested link",
+            "Describe the per-hop behaviours: classification, marking, queuing, congestion avoidance, policing and shaping"
+          ],
+          "key_points": [
+            "QoS decides which traffic suffers when a link is congested: it manages delay, jitter (variation in delay) and loss for each kind of traffic, but it can't create bandwidth. Voice and video need little delay and jitter; file transfers cope with delay.",
+            "Classification sorts packets into classes, by access list, by application recognition (NBAR) or by markings already there. Marking writes the class into the packet: the 6-bit DSCP field in the IP header, or the 3-bit CoS (PCP) field of an 802.1Q tag.",
+            "Common DSCP values: EF (46) for voice, AF classes such as AF41 (34) for interactive video, CS values for network control, and Default (0) for best effort. In AFxy, x is the class and y the drop precedence: the higher y, the sooner it's dropped.",
+            "Mark as close to the source as you can, and decide where markings start to be trusted, the trust boundary: often an access switch port with an IP phone, so a PC can't mark its own traffic as voice.",
+            "When an interface is congested, queuing chooses what's sent next: CBWFQ guarantees each class a share of the bandwidth, and LLQ adds a strict-priority queue for voice, limited so it can't starve the rest.",
+            "Tail drop discards whatever arrives at a full queue; WRED drops some packets early, lower classes first, so TCP senders slow down. Policing drops or re-marks traffic over a rate at once; shaping queues the excess and sends it later, smoothing traffic to a rate."
+          ]
+        },
+        {
+          "title": "Remote management with SSH",
+          "minutes": 12,
+          "objectives": [
+            "Explain why SSH replaces Telnet for managing devices",
+            "Configure SSH version 2 with local users on a router and a switch",
+            "Connect over SSH and verify it"
+          ],
+          "key_points": [
+            "Telnet (TCP port 23) sends everything, passwords included, in clear text. SSH (TCP port 22) encrypts the whole session; use SSH version 2.",
+            "IOS needs four things for SSH: a host name other than the default, a domain name (ip domain-name), an RSA key pair (crypto key generate rsa) and a way to log in, usually local users (username NAME secret PASSWORD) with login local on the vty lines.",
+            "transport input ssh on the vty lines allows SSH only. Routers such as the 2911 have vty lines 0 to 4 by default and 2960 switches have 0 to 15: configure all of them the same way.",
+            "SSH version 2 needs an RSA modulus of at least 768 bits, and 2048 is a common choice; ip ssh version 2 then refuses version 1 clients.",
+            "A switch is managed through a VLAN interface (an SVI) with an address, such as interface vlan 1, plus ip default-gateway so it can answer managers in other subnets.",
+            "show ip ssh shows whether SSH is enabled and which version, and show ssh lists current sessions. From a host, ssh -l admin 192.168.1.1, or ssh admin@192.168.1.1 with OpenSSH, connects."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Turn on SSH and connect from a PC",
+            "steps": [
+              {
+                "do": "On R1, set the host name and a domain name, and create a local user.",
+                "code": "configure terminal\nhostname R1\nip domain-name example.com\nusername admin secret Lab-Admin-2026",
+                "lang": "cisco"
+              },
+              {
+                "do": "Generate the RSA key pair. When asked How many bits in the modulus, type 2048.",
+                "code": "crypto key generate rsa",
+                "lang": "cisco",
+                "see": "The name for the keys will be: R1.example.com, then a message that SSH has been enabled (%SSH-5-ENABLED)."
+              },
+              {
+                "do": "Use version 2, and let the vty lines accept SSH only, with local users.",
+                "code": "ip ssh version 2\nline vty 0 4\n login local\n transport input ssh\n end",
+                "lang": "cisco"
+              },
+              {
+                "do": "Check that SSH is on.",
+                "code": "show ip ssh",
+                "lang": "cisco",
+                "see": "SSH Enabled - version 2.0"
+              },
+              {
+                "do": "On PC1's Command Prompt, connect as admin and run a command on R1.",
+                "code": "ssh -l admin 192.168.1.1",
+                "lang": "cmd",
+                "see": "A Password: prompt, then the R1> prompt."
+              },
+              {
+                "do": "Type exit to leave, then try Telnet from the same PC.",
+                "code": "telnet 192.168.1.1",
+                "lang": "cmd",
+                "see": "The connection is refused: the vty lines accept SSH only."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Backing up configurations with TFTP and FTP",
+          "minutes": 10,
+          "objectives": [
+            "Compare TFTP and FTP for moving files to and from network devices",
+            "Back up and restore a configuration, and explain what a restore to the running configuration does"
+          ],
+          "key_points": [
+            "The running configuration lives in RAM and is lost on reload; copy running-config startup-config saves it to NVRAM, where the device reads it when it starts.",
+            "TFTP (UDP port 69) is simple, with no login and no directory listing. FTP (TCP port 21 for control, and port 20 for data in active mode) needs a username and password. Neither encrypts, so SCP or SFTP are safer where devices support them.",
+            "copy running-config tftp: asks for the server's address and a file name, and saves the configuration as a text file on the server; the default name is the host name followed by -confg.",
+            "copy tftp: running-config merges the file into the running configuration rather than replacing it: lines in the file are added or overwrite matching ones, and anything not in the file stays. To replace a configuration, copy the file to startup-config and reload.",
+            "Back up the IOS image as well: show flash: lists it and copy flash: tftp: copies it to the server. Back up before every change, and keep the date in the file name."
+          ],
+          "walkthrough": {
+            "tool": "Cisco Packet Tracer",
+            "title": "Back up and restore R1's configuration",
+            "steps": [
+              {
+                "do": "On the Server (192.168.1.10), open Services | TFTP and check the service is On. The list shows the files it already holds, including IOS images."
+              },
+              {
+                "do": "On R1, save the running configuration, then copy it to the server. Type the server's address when asked, and press Enter to accept the file name.",
+                "code": "copy running-config startup-config\ncopy running-config tftp:",
+                "lang": "cisco",
+                "see": "Address or name of remote host []?, then Destination filename [R1-confg]?, then !! and the number of bytes copied."
+              },
+              {
+                "do": "Look at the server's TFTP list again (click another service and back to refresh it).",
+                "see": "R1-confg in the list."
+              },
+              {
+                "do": "Change the configuration: add a banner and rename the router. Then merge the saved file back in, giving the server's address and R1-confg as the source.",
+                "code": "configure terminal\nbanner motd #Authorised access only#\nhostname TEST\nend\ncopy tftp: running-config",
+                "lang": "cisco",
+                "see": "The prompt says R1 again, but the banner is still there: the file was merged, not swapped in."
+              },
+              {
+                "do": "List the files in flash, including the IOS image.",
+                "code": "show flash:",
+                "lang": "cisco",
+                "see": "The IOS image, whose name starts c2900-universalk9, and its size."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Manage a router and a switch securely, and back them up",
+        "tool": "Cisco Packet Tracer",
+        "minutes": 45,
+        "goal": "Turn on SSH version 2 on a router and a switch, allow nothing else on their vty lines, and back up both configurations to a TFTP server.",
+        "setup": [
+          "Cisco Packet Tracer 8 or later",
+          "The starter files r1-base.txt and s1-base.txt"
+        ],
+        "steps": [
+          {
+            "do": "Build the topology: R1 (2911) g0/0 to S1 (2960) g0/1, with PC1 on f0/1 and Server0 on f0/2. Paste the starter files. Give PC1 192.168.1.11/24 and Server0 192.168.1.10/24, both with gateway 192.168.1.1."
+          },
+          {
+            "do": "On R1, set up SSH version 2 with a local user, and SSH-only vty lines.",
+            "code": "configure terminal\nip domain-name example.com\nusername admin secret Lab-Admin-2026\ncrypto key generate rsa\n! answer 2048 when asked for the modulus\nip ssh version 2\nline vty 0 4\n login local\n transport input ssh\n end",
+            "lang": "cisco"
+          },
+          {
+            "do": "On S1, give the switch a management address and gateway, then the same SSH setup on all 16 vty lines.",
+            "code": "configure terminal\ninterface vlan 1\n ip address 192.168.1.2 255.255.255.0\n no shutdown\n exit\nip default-gateway 192.168.1.1\nip domain-name example.com\nusername admin secret Lab-Admin-2026\ncrypto key generate rsa\n! answer 2048 when asked for the modulus\nip ssh version 2\nline vty 0 15\n login local\n transport input ssh\n end",
+            "lang": "cisco"
+          },
+          {
+            "do": "Check SSH on both devices.",
+            "code": "show ip ssh",
+            "lang": "cisco",
+            "see": "SSH Enabled - version 2.0 on R1 and on S1."
+          },
+          {
+            "do": "From PC1, log in to each device over SSH, then type exit.",
+            "code": "ssh -l admin 192.168.1.1\nssh -l admin 192.168.1.2",
+            "lang": "cmd",
+            "see": "A Password: prompt, then R1> and S1>."
+          },
+          {
+            "do": "From PC1, try Telnet to R1.",
+            "code": "telnet 192.168.1.1",
+            "lang": "cmd",
+            "see": "The connection is refused."
+          },
+          {
+            "do": "Save each device's configuration and back it up to Server0, accepting the default file names.",
+            "code": "copy running-config startup-config\ncopy running-config tftp:",
+            "lang": "cisco",
+            "see": "R1-confg and S1-confg in Server0's TFTP list."
+          },
+          {
+            "do": "On R1, add a banner (banner motd #Authorised access only#), then copy R1-confg from the server back to running-config, and check whether the banner is still there with show running-config | include banner."
+          }
+        ],
+        "checks": [
+          {
+            "text": "SSH version 2 is enabled on both devices.",
+            "look_for": [
+              "SSH Enabled - version 2.0"
+            ]
+          },
+          {
+            "text": "PC1 logs in to both devices over SSH with the local user.",
+            "look_for": [
+              "ssh -l admin 192.168.1.1",
+              "ssh -l admin 192.168.1.2"
+            ]
+          },
+          {
+            "text": "Telnet to R1 is refused.",
+            "look_for": [
+              "refused"
+            ]
+          },
+          {
+            "text": "Both configurations are backed up to the TFTP server.",
+            "look_for": [
+              "R1-confg",
+              "S1-confg",
+              "bytes copied"
+            ]
+          },
+          {
+            "text": "A sentence explains, from the banner test, that copying to running-config merges rather than replaces.",
+            "look_for": [
+              "merge"
+            ]
+          }
+        ],
+        "submit": "Paste show ip ssh from R1 and S1, PC1's SSH logins and Telnet attempt, the output of both copy running-config tftp: commands, and your sentence about the banner test.",
+        "files": [
+          {
+            "path": "r1-base.txt",
+            "content": "enable\nconfigure terminal\nhostname R1\nno ip domain-lookup\nenable secret Class-Lab-2026\ninterface g0/0\n description Management LAN\n ip address 192.168.1.1 255.255.255.0\n no shutdown\n exit\nend\n"
+          },
+          {
+            "path": "s1-base.txt",
+            "content": "enable\nconfigure terminal\nhostname S1\nno ip domain-lookup\nenable secret Class-Lab-2026\nend\n"
+          }
+        ],
+        "hints": [
+          "% Please define a domain-name first. means crypto key generate rsa needs ip domain-name set before it, and a host name other than Router or Switch.",
+          "If SSH rejects the password, check the vty lines have login local and that you're typing the user's secret, not the enable secret.",
+          "If the switch can't be reached, check interface vlan 1 has its address and no shutdown, and that ip default-gateway is set."
+        ]
+      }
+    }
+  ],
+  "project": {
+    "title": "Bring IP services to a branch office",
+    "minutes": 240,
+    "brief": "Build a branch office network in Cisco Packet Tracer and give it every service in this course. The branch router, a 2911, connects a staff LAN and a guest LAN to an internet provider's router. A services server in the staff LAN runs DNS, NTP, syslog and TFTP, and is the DHCP server for both LANs, so the guest LAN's requests must be relayed. Inside hosts reach a server on the provider's side through PAT on the router's outside address, and the services server's web page is published to the outside with static NAT. The router takes its time from the services server, sends it time-stamped logs, answers SNMP queries from a management PC with a read-only community, accepts management over SSH version 2 only, and its configuration is backed up to the TFTP server. Choose your own addressing, using private ranges inside and documentation ranges (such as 203.0.113.0/24 and 198.51.100.0/24) outside. Finish with a short QoS plan for the day the branch adds IP phones.",
+    "deliverables": [
+      "An addressing table for every device and interface",
+      "The branch router's running configuration",
+      "Verification output: a PC in each LAN with ipconfig /all and a ping by name, show ip nat translations with both PAT and static entries, show ntp status, the server's syslog messages, an SNMP Get of sysName, show ip ssh, and the copy running-config tftp: output",
+      "A QoS plan of half a page: which traffic gets which DSCP marking, where the trust boundary is, and how each class is queued",
+      "A troubleshooting note: one fault you hit while building, how you found it and how you fixed it"
+    ],
+    "rubric": [
+      {
+        "name": "Addressing, DHCP and DNS",
+        "points": 20,
+        "description": "Hosts in both LANs get addresses, gateways and the DNS server from the services server, the guest LAN through a relay on the right interface, and names resolve from both LANs."
+      },
+      {
+        "name": "NAT and PAT",
+        "points": 20,
+        "description": "Inside hosts reach the provider's server through PAT on the outside address, the services server answers on its public address, and the translation table shows both kinds of entry."
+      },
+      {
+        "name": "NTP, syslog and SNMP",
+        "points": 20,
+        "description": "The router is synchronised to the services server, its time-stamped messages arrive on the syslog server, and an SNMP Get with a read-only community (not public) returns its name."
+      },
+      {
+        "name": "Secure management and backups",
+        "points": 15,
+        "description": "Management is SSH version 2 only with local users, Telnet is refused, and the configuration is saved and backed up to the TFTP server."
+      },
+      {
+        "name": "QoS plan",
+        "points": 15,
+        "description": "The plan marks voice EF and puts it in a priority queue, gives other classes sensible markings and bandwidth, places the trust boundary at the access edge, and explains why."
+      },
+      {
+        "name": "Documentation and troubleshooting",
+        "points": 10,
+        "description": "The addressing table matches the configuration, and the troubleshooting note describes the symptom, the commands that found the cause, and the fix."
+      }
+    ],
+    "submit": "Paste your addressing table, the router's running configuration, the verification outputs listed in the deliverables, your QoS plan and your troubleshooting note. If you can share your .pkt file, add a link to it."
+  }
+}

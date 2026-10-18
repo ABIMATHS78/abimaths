@@ -17,8 +17,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import (account, auth, companions, content, db, digest, guides, insights, learning, llm, photos, push,
-                 reactions, reminders, staff, usage)
+from app import (account, auth, catalog, companions, content, courses, db, digest, guides, insights, learning, llm,
+                 photos, push, reactions, reminders, staff, usage)
 from app.avatar import render_initials, render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -38,6 +38,8 @@ def _spawn(coro) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.init_db()
+    catalog.data()  # read the courses now, so a course file that doesn't fit stops the app here, saying which
+    courses.forget_changed_lessons()
     companions.seed_starters()
     guides.seed()  # before first posts: a starter with guides has posted already
     _spawn(content.ensure_initial_posts())
@@ -59,6 +61,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
 app.include_router(learning.router)
+app.include_router(courses.router)
 app.include_router(reminders.router)
 app.include_router(staff.router)
 app.include_router(insights.router)
@@ -276,6 +279,8 @@ def get_companion(companion_id: int, user: dict = User):
         "designer": designer["display_name"] if designer else None, "has_photo": has_photo is not None,
         # Only the designer sees why a companion was removed and where their appeal stands.
         "moderation": staff.moderation_for_owner(c) if mine else None,
+        "courses": [{"slug": x.slug, "title": x.title, "kind": x.kind, "level": x.level}
+                    for x in catalog.taught_by(c["slug"])] if c["is_starter"] else [],
     }
 
 

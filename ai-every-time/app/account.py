@@ -227,6 +227,15 @@ def export(user: dict = User):
             "custom_paths": [r | {"data": json.loads(r["data"])} for r in rows(
                 "SELECT status, data, review_note, created_at, submitted_at, reviewed_at FROM custom_paths "
                 "WHERE user_id = ? ORDER BY id")],
+            "courses": {
+                "enrolled": rows("SELECT course_slug, enrolled_at FROM course_enrollments WHERE user_id = ? ORDER BY enrolled_at"),
+                "labs_and_projects": [r | {"review": json.loads(r["review"]), "passed": bool(r["passed"])} for r in rows(
+                    "SELECT course_slug, item, content, passed, score, review, created_at FROM course_submissions "
+                    "WHERE user_id = ? ORDER BY id")],
+                "certificates": rows("SELECT code, kind, ref, learner_name, issued_at FROM certificates WHERE user_id = ? "
+                                     "ORDER BY issued_at"),
+                "ratings": rows("SELECT course_slug, stars, updated_at FROM course_ratings WHERE user_id = ? ORDER BY updated_at"),
+            },
             "reports_you_made": rows("SELECT companion_id, reason, created_at FROM reports WHERE user_id = ? ORDER BY created_at"),
             "appeals": rows("SELECT companion_id, message, status, decision_note, created_at, decided_at FROM appeals "
                             "WHERE user_id = ? ORDER BY id"),

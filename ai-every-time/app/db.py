@@ -279,6 +279,44 @@ CREATE TABLE IF NOT EXISTS ai_refusals (
     count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (hour, user_id, reason)
 );
+-- Courses (app/catalog.py, app/courses.py): who's enrolled in which, their lab and project work and the instructor's
+-- review of it (each attempt kept), certificates, and ratings. Courses are named by slug; lab items are "lab-{m}".
+CREATE TABLE IF NOT EXISTS course_enrollments (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_slug TEXT NOT NULL,
+    enrolled_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, course_slug)
+);
+CREATE TABLE IF NOT EXISTS course_submissions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_slug TEXT NOT NULL,
+    item TEXT NOT NULL CHECK (item = 'project' OR item LIKE 'lab-%'),
+    companion_id INTEGER REFERENCES companions(id) ON DELETE SET NULL,
+    content TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    score INTEGER,
+    review TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_course_submissions ON course_submissions(user_id, course_slug, item);
+-- A certificate for a course or a track, with the code its public page is found by and the name it was made out to.
+CREATE TABLE IF NOT EXISTS certificates (
+    code TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('course', 'track')),
+    ref TEXT NOT NULL,
+    learner_name TEXT NOT NULL,
+    issued_at TEXT NOT NULL,
+    UNIQUE (user_id, kind, ref)
+);
+CREATE TABLE IF NOT EXISTS course_ratings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    course_slug TEXT NOT NULL,
+    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, course_slug)
+);
 -- Keys the server makes once and keeps, such as the VAPID key that push subscriptions are tied to.
 CREATE TABLE IF NOT EXISTS server_keys (
     name TEXT PRIMARY KEY,

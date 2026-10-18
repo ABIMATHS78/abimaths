@@ -1,0 +1,790 @@
+{
+  "slug": "security-operations-monitoring",
+  "title": "Security Operations: Monitoring, Detection and Alert Triage",
+  "subtitle": "Work like a security operations centre analyst: read the logs that matter, write and test detection rules in Python, look at traffic in Wireshark, and triage alerts into clear findings.",
+  "category": "Cybersecurity",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "rodrigoo-silva",
+    "chukwuemeka-obieche"
+  ],
+  "skills": [
+    "Security monitoring",
+    "Log analysis",
+    "Detection engineering",
+    "SIEM concepts",
+    "Alert triage",
+    "False positive tuning",
+    "Network traffic analysis",
+    "Python for security",
+    "Incident documentation"
+  ],
+  "tools": [
+    "Python",
+    "Wireshark",
+    "grep"
+  ],
+  "outcomes": [
+    "Explain what a security operations centre does and how events become alerts and incidents",
+    "Read operating system, authentication, web server and firewall logs and find what matters in them",
+    "Analyse logs with grep and Python, and look at your own network traffic in Wireshark",
+    "Write detection rules with thresholds and time windows, and test them before they go live",
+    "Triage alerts with context, separate false positives from real incidents, and document findings"
+  ],
+  "prerequisites": "Basic Python (reading files, loops, dictionaries and functions) and comfort in a terminal. Python 3.10 or later and Wireshark installed; on Windows, grep is available in Git Bash or WSL, and every grep step has a Python alternative. An introductory security course, or equivalent knowledge of accounts, logs and networks, helps.",
+  "description": "A security operations centre (SOC) is where an organisation watches for trouble and decides, many times a day, what deserves a response. This course teaches that work from the analyst's chair. You'll learn which logs matter and how to read them: authentication logs, web server access logs, firewall logs and operating system event logs, and how a SIEM collects and normalises them so one search covers everything.\n\nThe labs follow one day on a payments server through a SOC's workflow. You'll find repeated failed logins with grep and Python, connect web and firewall logs to the same addresses, look at your own traffic in Wireshark, write threshold and sequence detections in Python and prove them with tests, then triage a queue of alerts using asset, scanner, staff and change records, separating real incidents from false positives and writing them up as a clear ticket. The capstone is a fresh day of logs to monitor end to end. All of it is defensive practice on sample data and your own machine.",
+  "modules": [
+    {
+      "title": "Security operations and the logs that matter",
+      "summary": "What a SOC does, how raw events become alerts and incidents, and the operating system and authentication logs that analysts read every day.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "What a security operations centre does",
+          "minutes": 10,
+          "objectives": [
+            "Describe the purpose and work of a SOC",
+            "Explain how SOC teams are organised and measured"
+          ],
+          "key_points": [
+            "A security operations centre (SOC) is the team, processes and tools that watch an organisation's systems, detect threats and lead the first response, often around the clock.",
+            "Its core cycle is collect, detect, triage, investigate and respond: logs and alerts come in, analysts decide what matters, and real incidents are escalated and contained.",
+            "Many SOCs work in tiers: tier 1 analysts triage alerts, tier 2 investigate the ones that need it and coordinate the response, and tier 3 hunt for threats nothing detected and improve detections.",
+            "A SOC depends on knowing its environment: which assets exist, who owns them, which matter most and what normal activity looks like.",
+            "Teams measure themselves with figures such as mean time to detect (MTTD), mean time to respond (MTTR) and the share of alerts that turn out to be false positives.",
+            "MITRE ATT&CK catalogues attacker behaviour as tactics and techniques with IDs, such as T1110 Brute Force, which SOCs use to describe detections and spot gaps in coverage."
+          ]
+        },
+        {
+          "title": "Events, alerts and incidents",
+          "minutes": 10,
+          "objectives": [
+            "Distinguish events, alerts and incidents",
+            "Classify alerts as true positives, false positives and benign true positives"
+          ],
+          "key_points": [
+            "An event is any recorded occurrence, such as a login; an alert is an event or pattern that a detection rule flags for a person to look at; an incident is a confirmed threat or harm that needs a response.",
+            "Detection follows a pipeline: collect logs, parse them into fields, enrich them with context, apply rules, raise alerts, then triage and investigate.",
+            "A true positive is an alert about something really malicious; a false positive flags something harmless; a false negative is an attack nothing flagged; a benign true positive is accurate but expected, such as an approved scan.",
+            "Every rule balances catching attacks against creating noise: too sensitive and analysts drown in false positives, too strict and attacks pass unseen.",
+            "An alert is only as useful as its context: which asset, how important it is, who the user is and what else that address or account has done."
+          ]
+        },
+        {
+          "title": "Operating system and authentication logs",
+          "minutes": 12,
+          "objectives": [
+            "Find authentication events on Linux, Windows and macOS",
+            "Recognise the log lines that matter for account security"
+          ],
+          "key_points": [
+            "Ubuntu and Debian record logins, sudo use and account changes in /var/log/auth.log and the systemd journal (journalctl); Red Hat-based systems use /var/log/secure.",
+            "OpenSSH writes lines such as Failed password for deploy from 198.51.100.23 and Accepted publickey for alice from 192.0.2.10, which give the result, the account, the address and the method.",
+            "Windows records security events in its Security log: 4624 is a successful logon, 4625 a failed one, 4672 a logon with special privileges, 4720 a new user account, 4740 an account lockout and 1102 the log being cleared.",
+            "Repeated failures, logins at unusual times or from new places, and a success after many failures are classic signs of an account under attack.",
+            "Account changes, such as a new user or a user added to the sudo or Administrators group, are high-value events, because intruders use them to keep their access."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Read authentication events on your own computer",
+            "steps": [
+              {
+                "do": "Linux (Ubuntu): show recent SSH logins and failures, and today's sudo use, from the journal.",
+                "code": "journalctl -u ssh --since today\njournalctl _COMM=sudo --since today",
+                "lang": "bash",
+                "see": "Lines from sshd and sudo, or -- No entries -- if nothing happened today. On Red Hat-based systems the SSH unit is sshd."
+              },
+              {
+                "do": "Linux: search the auth log file directly, which is what you'll do with sample logs in the lab.",
+                "code": "sudo grep -E 'Failed password|Accepted' /var/log/auth.log | tail -n 5",
+                "lang": "bash"
+              },
+              {
+                "do": "Windows: in PowerShell run as administrator, list the latest successful and failed logons from the Security log.",
+                "code": "Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4624,4625} -MaxEvents 10 |\n  Select-Object TimeCreated, Id",
+                "lang": "powershell",
+                "see": "Ten events with their times, each 4624 or 4625."
+              },
+              {
+                "do": "macOS: show the last hour of sudo activity from the unified log.",
+                "code": "log show --last 1h --predicate 'process == \"sudo\"'",
+                "lang": "bash"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Find repeated failed logins in an auth log",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Analyse a day of authentication logs from the payments server app02: count the failed logins, find which addresses they came from and which accounts were tried, and flag every address that logged in successfully after failing.",
+        "setup": [
+          "Python 3.10 or later, and a terminal (grep is available on Linux and macOS, and on Windows in Git Bash or WSL)",
+          "The starter files auth.log and failed_logins.py, in one folder"
+        ],
+        "steps": [
+          {
+            "do": "Look at the log's first lines and count the failed passwords.",
+            "code": "head -n 5 auth.log\ngrep -c 'Failed password' auth.log",
+            "lang": "bash",
+            "see": "17"
+          },
+          {
+            "do": "Count the failures by source address, most first.",
+            "code": "grep 'Failed password' auth.log | grep -oE 'from [0-9.]+' | sort | uniq -c | sort -rn",
+            "lang": "bash",
+            "see": "9 from 203.0.113.45, 6 from 198.51.100.23 and 2 from 192.0.2.12."
+          },
+          {
+            "do": "List every successful login, and compare their addresses with the ones above.",
+            "code": "grep 'Accepted' auth.log",
+            "lang": "bash",
+            "see": "Four logins: deploy, alice, carol and bob. deploy's came from an address that had just failed six times."
+          },
+          {
+            "do": "Open failed_logins.py and finish parse(): TODO 1 records each failed password and counts failures per address; TODO 2 records a successful login from an address that has failed before. The regular expressions are written for you."
+          },
+          {
+            "do": "Run it.",
+            "code": "python failed_logins.py auth.log",
+            "lang": "bash",
+            "see": "17 failed logins from 3 addresses, then 203.0.113.45 (9, users admin, root, ubuntu), 198.51.100.23 (6, deploy) and 192.0.2.12 (2, carol), then the logins after failures."
+          },
+          {
+            "do": "Write two or three sentences for each address with failures: what it tried, whether it got in, and how urgent it is. Which one needs action first, and why?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The failure counts are right: 17 in total, from three addresses.",
+            "look_for": [
+              "17 failed logins from 3 addresses"
+            ]
+          },
+          {
+            "text": "Each address is reported with its count and the accounts it tried.",
+            "look_for": [
+              "203.0.113.45      9",
+              "198.51.100.23     6",
+              "admin, root, ubuntu"
+            ]
+          },
+          {
+            "text": "Logins after failures are found with their times.",
+            "look_for": [
+              "2026-10-05T03:22:47  deploy from 198.51.100.23 after 6 failures",
+              "2026-10-05T09:02:13  carol from 192.0.2.12 after 2 failures"
+            ]
+          },
+          {
+            "text": "The analysis picks deploy's login from 198.51.100.23 as the most urgent, and explains why carol's is probably a mistyped password.",
+            "look_for": [
+              "deploy",
+              "carol"
+            ]
+          }
+        ],
+        "submit": "Paste your finished failed_logins.py, its output, the output of the grep count by address, and your sentences about each address.",
+        "files": [
+          {
+            "path": "auth.log",
+            "content": "2026-10-05T00:17:01.000412+00:00 app02 CRON[1021]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T00:17:01.004530+00:00 app02 CRON[1021]: pam_unix(cron:session): session closed for user root\n2026-10-05T01:17:01.000412+00:00 app02 CRON[1188]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T01:17:01.004530+00:00 app02 CRON[1188]: pam_unix(cron:session): session closed for user root\n2026-10-05T02:17:01.000412+00:00 app02 CRON[1342]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T02:17:01.004530+00:00 app02 CRON[1342]: pam_unix(cron:session): session closed for user root\n2026-10-05T02:39:02.118204+00:00 app02 sshd[1401]: Invalid user admin from 203.0.113.45 port 40112\n2026-10-05T02:39:04.330120+00:00 app02 sshd[1401]: Failed password for invalid user admin from 203.0.113.45 port 40112 ssh2\n2026-10-05T02:39:40.551902+00:00 app02 sshd[1405]: Failed password for root from 203.0.113.45 port 40130 ssh2\n2026-10-05T02:39:44.771203+00:00 app02 sshd[1405]: Failed password for root from 203.0.113.45 port 40130 ssh2\n2026-10-05T02:40:10.003311+00:00 app02 sshd[1409]: Invalid user ubuntu from 203.0.113.45 port 40166\n2026-10-05T02:40:12.660145+00:00 app02 sshd[1409]: Failed password for invalid user ubuntu from 203.0.113.45 port 40166 ssh2\n2026-10-05T02:40:31.890321+00:00 app02 sshd[1412]: Failed password for root from 203.0.113.45 port 40180 ssh2\n2026-10-05T02:40:55.412907+00:00 app02 sshd[1415]: Invalid user admin from 203.0.113.45 port 40201\n2026-10-05T02:40:57.009213+00:00 app02 sshd[1415]: Failed password for invalid user admin from 203.0.113.45 port 40201 ssh2\n2026-10-05T02:41:13.300218+00:00 app02 sshd[1418]: Failed password for root from 203.0.113.45 port 40215 ssh2\n2026-10-05T02:41:30.118842+00:00 app02 sshd[1421]: Failed password for invalid user ubuntu from 203.0.113.45 port 40233 ssh2\n2026-10-05T02:41:52.207654+00:00 app02 sshd[1424]: Failed password for invalid user admin from 203.0.113.45 port 40250 ssh2\n2026-10-05T02:41:52.209987+00:00 app02 sshd[1424]: Connection closed by invalid user admin 203.0.113.45 port 40250 [preauth]\n2026-10-05T03:17:01.000412+00:00 app02 CRON[1502]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T03:17:01.004530+00:00 app02 CRON[1502]: pam_unix(cron:session): session closed for user root\n2026-10-05T03:20:01.215502+00:00 app02 sshd[1601]: Failed password for deploy from 198.51.100.23 port 51004 ssh2\n2026-10-05T03:20:19.402233+00:00 app02 sshd[1602]: Failed password for deploy from 198.51.100.23 port 51010 ssh2\n2026-10-05T03:20:44.880412+00:00 app02 sshd[1603]: Failed password for deploy from 198.51.100.23 port 51016 ssh2\n2026-10-05T03:21:15.009876+00:00 app02 sshd[1604]: Failed password for deploy from 198.51.100.23 port 51022 ssh2\n2026-10-05T03:21:58.010442+00:00 app02 sshd[1605]: Failed password for deploy from 198.51.100.23 port 51028 ssh2\n2026-10-05T03:22:30.013377+00:00 app02 sshd[1606]: Failed password for deploy from 198.51.100.23 port 51034 ssh2\n2026-10-05T03:22:47.118204+00:00 app02 sshd[1611]: Accepted password for deploy from 198.51.100.23 port 51122 ssh2\n2026-10-05T03:22:47.124511+00:00 app02 sshd[1611]: pam_unix(sshd:session): session opened for user deploy(uid=1002) by deploy(uid=0)\n2026-10-05T03:25:40.551020+00:00 app02 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/useradd -m -s /bin/bash sysbackup\n2026-10-05T03:25:40.560311+00:00 app02 useradd[1630]: new group: name=sysbackup, GID=1004\n2026-10-05T03:25:40.561870+00:00 app02 useradd[1630]: new user: name=sysbackup, UID=1004, GID=1004, home=/home/sysbackup, shell=/bin/bash, from=/dev/pts/0\n2026-10-05T03:25:52.207654+00:00 app02 sudo:   deploy : TTY=pts/0 ; PWD=/home/deploy ; USER=root ; COMMAND=/usr/sbin/usermod -aG sudo sysbackup\n2026-10-05T03:25:52.215502+00:00 app02 usermod[1633]: add 'sysbackup' to group 'sudo'\n2026-10-05T03:25:52.215990+00:00 app02 usermod[1633]: add 'sysbackup' to shadow group 'sudo'\n2026-10-05T03:31:40.009876+00:00 app02 sshd[1611]: Received disconnect from 198.51.100.23 port 51122:11: disconnected by user\n2026-10-05T03:31:40.010442+00:00 app02 sshd[1611]: Disconnected from user deploy 198.51.100.23 port 51122\n2026-10-05T03:31:40.013377+00:00 app02 sshd[1611]: pam_unix(sshd:session): session closed for user deploy\n2026-10-05T04:17:01.000412+00:00 app02 CRON[1702]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T04:17:01.004530+00:00 app02 CRON[1702]: pam_unix(cron:session): session closed for user root\n2026-10-05T08:14:07.630184+00:00 app02 sshd[2101]: Accepted publickey for alice from 192.0.2.10 port 61022 ssh2: ED25519 SHA256:Yt5nK2wq8fZ0bR4mJ7cX1vL9sD3hG6pA0eU2iO8kTqM\n2026-10-05T08:14:07.636902+00:00 app02 sshd[2101]: pam_unix(sshd:session): session opened for user alice(uid=1001) by alice(uid=0)\n2026-10-05T08:20:33.118054+00:00 app02 sudo:   alice : TTY=pts/1 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/systemctl restart payments-api\n2026-10-05T09:01:40.330927+00:00 app02 sshd[2240]: Failed password for carol from 192.0.2.12 port 52010 ssh2\n2026-10-05T09:01:52.551873+00:00 app02 sshd[2240]: Failed password for carol from 192.0.2.12 port 52010 ssh2\n2026-10-05T09:02:13.207118+00:00 app02 sshd[2240]: Accepted password for carol from 192.0.2.12 port 52010 ssh2\n2026-10-05T09:02:13.212004+00:00 app02 sshd[2240]: pam_unix(sshd:session): session opened for user carol(uid=1003) by carol(uid=0)\n2026-10-05T10:17:01.000412+00:00 app02 CRON[2402]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T10:17:01.004530+00:00 app02 CRON[2402]: pam_unix(cron:session): session closed for user root\n2026-10-05T11:05:22.880913+00:00 app02 sshd[2555]: Accepted publickey for bob from 192.0.2.11 port 49822 ssh2: ED25519 SHA256:pR8cW3xL0vN6mQ2tK9bF5sY1hD7jG4aZ3eU8iO2kTwE\n2026-10-05T11:05:22.884107+00:00 app02 sshd[2555]: pam_unix(sshd:session): session opened for user bob(uid=1005) by bob(uid=0)\n2026-10-05T11:17:01.000412+00:00 app02 CRON[2601]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-05T11:17:01.004530+00:00 app02 CRON[2601]: pam_unix(cron:session): session closed for user root\n"
+          },
+          {
+            "path": "failed_logins.py",
+            "content": "\"\"\"Summarise failed SSH logins in an auth.log, and flag addresses that logged in after failing.\n\nUsage: python failed_logins.py auth.log\n\"\"\"\n\nimport re\nimport sys\nfrom collections import Counter, defaultdict\n\nFAILED = re.compile(r\"Failed password for (?:invalid user )?(?P<user>\\S+) from (?P<ip>\\S+) port\")\nACCEPTED = re.compile(r\"^(?P<time>\\S+) \\S+ sshd\\[\\d+\\]: Accepted \\S+ for (?P<user>\\S+) from (?P<ip>\\S+) port\")\n\n\ndef parse(path):\n    \"\"\"Return (failures, successes).\n\n    failures: a list of (ip, user) pairs, one for each failed password.\n    successes: a list of (time, ip, user, n), one for each successful login from an address that had\n    already failed n times (n > 0); time is the line's first 19 characters, such as 2026-10-05T03:22:47.\n    \"\"\"\n    failures, successes = [], []\n    failed_so_far = Counter()\n    with open(path, encoding=\"utf-8\") as f:\n        for line in f:\n            # TODO 1: if FAILED finds a match in the line, append (ip, user) to failures\n            #         and add 1 to failed_so_far[ip]\n            # TODO 2: if ACCEPTED matches the line and failed_so_far[ip] > 0, append\n            #         (time[:19], ip, user, failed_so_far[ip]) to successes\n            pass\n    return failures, successes\n\n\ndef main(path=\"auth.log\"):\n    failures, successes = parse(path)\n    by_ip = Counter(ip for ip, _ in failures)\n    users = defaultdict(set)\n    for ip, user in failures:\n        users[ip].add(user)\n    print(f\"{len(failures)} failed logins from {len(by_ip)} addresses\")\n    for ip, n in by_ip.most_common():\n        print(f\"  {ip:<15} {n:>3}  users tried: {', '.join(sorted(users[ip]))}\")\n    print(\"Logins after failures:\")\n    for time, ip, user, n in successes:\n        print(f\"  {time}  {user} from {ip} after {n} failures\")\n\n\nif __name__ == \"__main__\":\n    main(*sys.argv[1:])\n"
+          }
+        ],
+        "hints": [
+          "FAILED.search(line) finds the pattern anywhere in the line; m['ip'] and m['user'] give the named groups.",
+          "Use continue after recording a failure, so the same line isn't also checked for a success.",
+          "No grep on Windows? Every question can be answered from the Python script's output."
+        ]
+      }
+    },
+    {
+      "title": "Web, firewall and network evidence",
+      "summary": "Read web server access logs and firewall logs, connect them by address and time, and look at network traffic itself with Wireshark.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Web server access logs",
+          "minutes": 10,
+          "objectives": [
+            "Read a combined-format access log line",
+            "Recognise automated probing and password guessing in web logs"
+          ],
+          "key_points": [
+            "Each line of a combined-format access log records the client address, two identity fields (usually -), the [time], the request line in quotes, the status code, the bytes sent, the referrer and the user agent.",
+            "Status codes summarise each outcome: 2xx success, 3xx redirection, 4xx client errors such as 401 (authentication needed), 403 (forbidden) and 404 (not found), and 5xx server errors.",
+            "Many 404s from one address within seconds, for pages the site has never had, usually mean an automated tool is probing the site rather than a person browsing it.",
+            "Repeated 401 responses to a login page from one address suggest password guessing, just as repeated failed SSH logins do.",
+            "The user agent is whatever the client chose to send, so it helps group activity but proves nothing on its own; a burst of 5xx errors in the error log can be the first sign of an attack or an outage."
+          ]
+        },
+        {
+          "title": "Firewall logs and network flows",
+          "minutes": 10,
+          "objectives": [
+            "Read a ufw firewall log line",
+            "Explain what flow records show and what they leave out"
+          ],
+          "key_points": [
+            "Ubuntu's ufw writes blocked connections to /var/log/ufw.log, marked [UFW BLOCK], with fields such as IN (the interface), SRC and DST (the addresses), PROTO, SPT and DPT (the ports) and TCP flags such as SYN.",
+            "One address trying many different destination ports within seconds is the signature of a port scan; a firewall that blocks it has done its job, but the address is worth watching in other logs.",
+            "Blocked traffic shows what didn't get in; allowed traffic and flows show what did, so an investigation needs both.",
+            "Flow records, such as NetFlow, IPFIX and cloud VPC flow logs, summarise each connection's addresses, ports, protocol, start and end times and bytes, without its content.",
+            "Any public address receives unsolicited probes all day, so the useful questions are whether activity is aimed at you specifically and whether any of it succeeded."
+          ]
+        },
+        {
+          "title": "Looking at traffic with Wireshark",
+          "minutes": 12,
+          "objectives": [
+            "Capture and filter your own network traffic in Wireshark",
+            "Explain what encrypted traffic still reveals to a defender"
+          ],
+          "key_points": [
+            "Wireshark captures packets from a network interface and decodes every layer, from Ethernet and IP up to DNS, HTTP and TLS.",
+            "Capture only on networks you own or have permission to monitor: captures can hold personal data, so store them securely and delete them when you're done.",
+            "Display filters narrow what's shown without discarding packets, for example dns, ip.addr == 192.0.2.10, tcp.port == 443, or tcp.flags.syn == 1 && tcp.flags.ack == 0 for new connection attempts.",
+            "Capture filters, set before a capture starts, use a different syntax (BPF), such as port 53, and decide what's saved at all.",
+            "Most traffic is encrypted with TLS, but DNS lookups and the server name in the TLS Client Hello (tls.handshake.extensions_server_name) usually still show which sites a device talks to, unless Encrypted Client Hello is in use.",
+            "Statistics | Conversations lists who talked to whom and how much, which quickly shows the busiest or most unusual connections."
+          ],
+          "walkthrough": {
+            "tool": "Wireshark",
+            "title": "Capture and filter your own traffic",
+            "steps": [
+              {
+                "do": "Open Wireshark and double-click your active interface (Wi-Fi or Ethernet): the one whose sparkline is moving.",
+                "see": "Packets start to scroll past."
+              },
+              {
+                "do": "In a browser, open https://example.com, then stop the capture: Capture | Stop, or the red square in the toolbar."
+              },
+              {
+                "do": "Type a display filter in the filter bar and press Enter to see the DNS lookup and its answer.",
+                "code": "dns.qry.name == \"example.com\"",
+                "lang": "text",
+                "see": "A query and a response; the response's Answers section lists the site's addresses."
+              },
+              {
+                "do": "Show only new TCP connections: packets with SYN set and ACK not set.",
+                "code": "tcp.flags.syn == 1 && tcp.flags.ack == 0",
+                "lang": "text"
+              },
+              {
+                "do": "Show TLS Client Hellos, then expand one: Transport Layer Security | Handshake Protocol: Client Hello | Extension: server_name. Right-click the Server Name field and choose Apply as Column.",
+                "code": "tls.handshake.type == 1",
+                "lang": "text",
+                "see": "A Server Name column showing example.com and the other sites the browser contacted."
+              },
+              {
+                "do": "Open Statistics | Conversations, choose the IPv4 tab and sort by Bytes to see the largest conversations."
+              },
+              {
+                "do": "Open Statistics | Protocol Hierarchy to see which protocols made up the capture."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Investigate web, firewall and network evidence",
+        "tool": "Python and Wireshark",
+        "minutes": 60,
+        "goal": "Finish a script that reports 404s by address from app02's web access log and blocked connections by address from its firewall log, find the addresses that appear in both, then practise the same habits on your own traffic in Wireshark.",
+        "setup": [
+          "Python 3.10 or later",
+          "Wireshark (on Windows the installer adds Npcap, which it needs to capture)",
+          "The starter files access.log, ufw.log and web_fw_report.py, in one folder"
+        ],
+        "steps": [
+          {
+            "do": "Look at a line of each log and identify every field: in access.log the address, time, request, status and size; in ufw.log SRC, DST, PROTO and DPT.",
+            "code": "head -n 3 access.log\nhead -n 3 ufw.log",
+            "lang": "bash"
+          },
+          {
+            "do": "In web_fw_report.py, do TODO 1: count 404 responses per client address with the ACCESS pattern."
+          },
+          {
+            "do": "Do TODO 2: for each [UFW BLOCK] line, count attempts per source address and collect the destination ports it tried."
+          },
+          {
+            "do": "Do TODO 3: print the addresses that appear in both reports, sorted, on one line."
+          },
+          {
+            "do": "Run the report.",
+            "code": "python web_fw_report.py access.log ufw.log",
+            "lang": "bash",
+            "see": "203.0.113.45 with 9 404s, 198.51.100.23 with 2 and 192.0.2.33 with 1; then 198.51.100.23 blocked 12 times on 12 ports (POSSIBLE PORT SCAN), 203.0.113.45 4 times on 2 ports, 10.0.0.23 3 times on 2 ports; then In both logs: 198.51.100.23, 203.0.113.45."
+          },
+          {
+            "do": "Read the lines for 198.51.100.23 in both logs in time order. What did it do first, and what next? (Its address also appears in the module 1 auth log.)",
+            "code": "grep -h '198.51.100.23' ufw.log access.log | cut -c1-120",
+            "lang": "bash"
+          },
+          {
+            "do": "In Wireshark, capture your own traffic while you open https://example.com and one other site, then stop the capture."
+          },
+          {
+            "do": "Apply these display filters in turn and note what each shows: the DNS lookups, new TCP connections, and TLS Client Hellos with a Server Name column.",
+            "code": "dns.qry.name == \"example.com\"\ntcp.flags.syn == 1 && tcp.flags.ack == 0\ntls.handshake.type == 1",
+            "lang": "text"
+          },
+          {
+            "do": "Open Statistics | Conversations (IPv4 tab, sorted by Bytes) and note your largest conversation: its addresses and size."
+          }
+        ],
+        "checks": [
+          {
+            "text": "404s are counted by address correctly.",
+            "look_for": [
+              "203.0.113.45      9",
+              "198.51.100.23     2"
+            ]
+          },
+          {
+            "text": "Blocked connections are counted by address, with 198.51.100.23 flagged as a possible port scan.",
+            "look_for": [
+              "12 attempts, 12 ports  POSSIBLE PORT SCAN",
+              "4 attempts,  2 ports"
+            ]
+          },
+          {
+            "text": "The addresses in both logs are found.",
+            "look_for": [
+              "In both logs: 198.51.100.23, 203.0.113.45"
+            ]
+          },
+          {
+            "text": "198.51.100.23's activity is put in order: blocked ports from 03:12, then web requests from 03:15, including two failed logins (401).",
+            "look_for": [
+              "03:12",
+              "03:15",
+              "401"
+            ]
+          },
+          {
+            "text": "The Wireshark filters are used on the learner's own capture, with what each showed and the largest conversation.",
+            "look_for": [
+              "dns.qry.name",
+              "tls.handshake.type == 1",
+              "Conversations"
+            ]
+          }
+        ],
+        "submit": "Paste your finished web_fw_report.py and its output, your account of 198.51.100.23's activity, and your Wireshark notes: each filter, what it showed (site names, not personal details) and your largest conversation.",
+        "files": [
+          {
+            "path": "access.log",
+            "content": "192.0.2.200 - - [05/Oct/2026:02:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:02:05:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:02:10:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:02:15:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:02:20:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n203.0.113.45 - - [05/Oct/2026:02:20:10 +0000] \"GET /old/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:13 +0000] \"GET /test/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:16 +0000] \"GET /index2.html HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:19 +0000] \"GET /home.php HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:22 +0000] \"GET /site/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:25 +0000] \"GET /v1/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:28 +0000] \"GET /beta/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:31 +0000] \"GET /temp/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.45 - - [05/Oct/2026:02:20:34 +0000] \"GET /new/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n192.0.2.200 - - [05/Oct/2026:02:25:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:02:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:03:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:03:05:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:03:10:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [05/Oct/2026:03:15:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n198.51.100.23 - - [05/Oct/2026:03:15:02 +0000] \"GET /admin/ HTTP/1.1\" 404 153 \"-\" \"curl/8.5.0\"\n198.51.100.23 - - [05/Oct/2026:03:15:09 +0000] \"GET /login HTTP/1.1\" 200 2311 \"-\" \"curl/8.5.0\"\n198.51.100.23 - - [05/Oct/2026:03:15:20 +0000] \"POST /login HTTP/1.1\" 401 61 \"-\" \"curl/8.5.0\"\n198.51.100.23 - - [05/Oct/2026:03:15:31 +0000] \"POST /login HTTP/1.1\" 401 61 \"-\" \"curl/8.5.0\"\n198.51.100.23 - - [05/Oct/2026:03:15:44 +0000] \"GET /old/ HTTP/1.1\" 404 153 \"-\" \"curl/8.5.0\"\n192.0.2.33 - - [05/Oct/2026:08:31:12 +0000] \"GET / HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.33 - - [05/Oct/2026:08:31:13 +0000] \"GET /static/app.css HTTP/1.1\" 200 8811 \"https://pay.example.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.33 - - [05/Oct/2026:08:31:13 +0000] \"GET /favicon.ico HTTP/1.1\" 404 153 \"https://pay.example.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.33 - - [05/Oct/2026:08:31:40 +0000] \"POST /login HTTP/1.1\" 302 0 \"https://pay.example.com/login\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.33 - - [05/Oct/2026:08:31:41 +0000] \"GET /dashboard HTTP/1.1\" 200 14022 \"https://pay.example.com/login\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n198.51.100.14 - - [05/Oct/2026:09:12:05 +0000] \"GET /pricing HTTP/1.1\" 200 6402 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n198.51.100.14 - - [05/Oct/2026:09:12:06 +0000] \"GET /static/app.css HTTP/1.1\" 304 0 \"https://pay.example.com/pricing\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n192.0.2.44 - - [05/Oct/2026:10:47:51 +0000] \"GET /docs/api HTTP/1.1\" 200 22051 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.44 - - [05/Oct/2026:10:47:52 +0000] \"GET /static/app.css HTTP/1.1\" 200 8811 \"https://pay.example.com/docs/api\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n"
+          },
+          {
+            "path": "ufw.log",
+            "content": "2026-10-05T01:52:10.118204+00:00 app02 kernel: [93112.551238] [UFW BLOCK] IN=eth1 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=10.0.0.23 DST=10.0.0.255 LEN=78 TOS=0x00 PREC=0x00 TTL=128 ID=40211 PROTO=UDP SPT=137 DPT=137 LEN=58\n2026-10-05T01:52:10.120411+00:00 app02 kernel: [93112.553420] [UFW BLOCK] IN=eth1 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=10.0.0.23 DST=10.0.0.255 LEN=78 TOS=0x00 PREC=0x00 TTL=128 ID=40212 PROTO=UDP SPT=138 DPT=138 LEN=58\n2026-10-05T02:30:41.330120+00:00 app02 kernel: [95024.762101] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=203.0.113.45 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=244 ID=29123 PROTO=TCP SPT=48211 DPT=23 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T02:30:44.551902+00:00 app02 kernel: [95027.983377] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=203.0.113.45 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=244 ID=29188 PROTO=TCP SPT=48219 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T02:35:41.771203+00:00 app02 kernel: [95325.202655] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=203.0.113.45 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=244 ID=30711 PROTO=TCP SPT=48311 DPT=23 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T02:35:44.003311+00:00 app02 kernel: [95327.434781] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=203.0.113.45 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=244 ID=30790 PROTO=TCP SPT=48322 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:05.101211+00:00 app02 kernel: [97528.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1000 PROTO=TCP SPT=55100 DPT=21 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:06.238211+00:00 app02 kernel: [97529.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1017 PROTO=TCP SPT=55101 DPT=23 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:07.375211+00:00 app02 kernel: [97530.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1034 PROTO=TCP SPT=55102 DPT=25 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:08.512211+00:00 app02 kernel: [97531.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1051 PROTO=TCP SPT=55103 DPT=110 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:09.649211+00:00 app02 kernel: [97532.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1068 PROTO=TCP SPT=55104 DPT=143 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:10.786211+00:00 app02 kernel: [97533.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1085 PROTO=TCP SPT=55105 DPT=445 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:11.923211+00:00 app02 kernel: [97534.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1102 PROTO=TCP SPT=55106 DPT=1433 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:12.060211+00:00 app02 kernel: [97535.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1119 PROTO=TCP SPT=55107 DPT=3306 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:13.197211+00:00 app02 kernel: [97536.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1136 PROTO=TCP SPT=55108 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:14.334211+00:00 app02 kernel: [97537.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1153 PROTO=TCP SPT=55109 DPT=5432 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:15.471211+00:00 app02 kernel: [97538.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1170 PROTO=TCP SPT=55110 DPT=5900 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T03:12:16.608211+00:00 app02 kernel: [97539.100000] [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=198.51.100.23 DST=192.0.2.80 LEN=44 TOS=0x00 PREC=0x00 TTL=52 ID=1187 PROTO=TCP SPT=55111 DPT=8080 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-05T09:30:10.660145+00:00 app02 kernel: [118554.091422] [UFW BLOCK] IN=eth1 OUT= MAC=52:54:00:12:34:56:52:54:00:65:43:21:08:00 SRC=10.0.0.23 DST=10.0.0.255 LEN=78 TOS=0x00 PREC=0x00 TTL=128 ID=51102 PROTO=UDP SPT=137 DPT=137 LEN=58\n"
+          },
+          {
+            "path": "web_fw_report.py",
+            "content": "\"\"\"Report on a web server's access log and its firewall (ufw) log.\n\nUsage: python web_fw_report.py access.log ufw.log\n\"\"\"\n\nimport re\nimport sys\nfrom collections import Counter, defaultdict\n\n# client identity user [time] \"request\" status size \"referrer\" \"user agent\"\nACCESS = re.compile(r'^(?P<ip>\\S+) \\S+ \\S+ \\[(?P<time>[^\\]]+)\\] \"(?P<request>[^\"]*)\" (?P<status>\\d{3}) (?P<size>\\S+)')\nUFW = re.compile(r\"\\[UFW (?P<action>\\w+)\\].* SRC=(?P<src>\\S+) DST=(?P<dst>\\S+) .* PROTO=(?P<proto>\\w+) SPT=(?P<spt>\\d+) DPT=(?P<dpt>\\d+)\")\nSCAN_PORTS = 5  # distinct destination ports from one address that suggest a port scan\n\n\ndef not_found_by_ip(path):\n    \"\"\"Count the 404 (Not Found) responses for each client address.\"\"\"\n    counts = Counter()\n    # TODO 1: open the file; for each line that ACCESS matches with status \"404\", add 1 to counts[ip]\n    return counts\n\n\ndef blocked_by_src(path):\n    \"\"\"Return {source address: (attempts, set of destination ports)} for the BLOCK lines in a ufw log.\"\"\"\n    attempts, ports = Counter(), defaultdict(set)\n    # TODO 2: open the file; for each line that UFW matches with action \"BLOCK\",\n    #         add 1 to attempts[src] and add int(dpt) to ports[src]\n    return {src: (attempts[src], ports[src]) for src in attempts}\n\n\ndef main(access=\"access.log\", ufw=\"ufw.log\"):\n    not_found = not_found_by_ip(access)\n    print(\"404s by client address:\")\n    for ip, n in not_found.most_common():\n        print(f\"  {ip:<15} {n:>3}\")\n    blocked = blocked_by_src(ufw)\n    print(\"Blocked by the firewall:\")\n    for src, (n, ports) in sorted(blocked.items(), key=lambda item: -item[1][0]):\n        flag = \"  POSSIBLE PORT SCAN\" if len(ports) >= SCAN_PORTS else \"\"\n        print(f\"  {src:<15} {n:>3} attempts, {len(ports):>2} ports{flag}\")\n    # TODO 3: print the addresses found by both reports, sorted, on one line like:\n    #         In both logs: 192.0.2.1, 192.0.2.2\n\n\nif __name__ == \"__main__\":\n    main(*sys.argv[1:])\n"
+          }
+        ],
+        "hints": [
+          "ACCESS.match(line) returns None for a line that doesn't fit; check for that before reading m['status'].",
+          "The status is text, so compare it with \"404\", not 404.",
+          "No DNS packets in Wireshark? Your browser may use encrypted DNS (DNS over HTTPS); run nslookup example.com in a terminal during the capture instead."
+        ]
+      }
+    },
+    {
+      "title": "Centralising logs and writing detections",
+      "summary": "How SIEMs collect and normalise logs so one search covers every system, how detection rules are designed, and how to test and tune them like code.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Centralising logs and SIEM concepts",
+          "minutes": 12,
+          "objectives": [
+            "Explain why logs are centralised and how they're collected",
+            "Describe what a SIEM does with the logs it receives"
+          ],
+          "key_points": [
+            "Logs kept only on each machine are hard to search together and easy for an intruder to erase, so SOCs forward them to a central store as they're written.",
+            "Collection uses agents on each host, standard protocols such as syslog (port 514 over UDP or TCP, or 6514 over TLS) and APIs for cloud services.",
+            "Parsing turns each line into named fields (time, source address, user, action, result); normalising maps every product's names onto one schema, such as the Elastic Common Schema or OCSF, so one search covers all sources.",
+            "Times should be stored in UTC, with every system's clock kept in step by NTP, or events from different machines won't line up.",
+            "A SIEM (security information and event management) system collects, normalises, stores and searches logs, runs detection rules across them and raises alerts and cases; examples include Splunk, Microsoft Sentinel, Elastic Security and the open-source Wazuh.",
+            "Retention balances cost against need: keep enough history to investigate an incident discovered weeks later and to meet legal requirements."
+          ]
+        },
+        {
+          "title": "Writing detection rules",
+          "minutes": 12,
+          "objectives": [
+            "Describe the parts of a detection rule",
+            "Design threshold and sequence detections"
+          ],
+          "key_points": [
+            "A detection rule states the data it reads, the condition that raises an alert, the alert's severity and what an analyst should check first.",
+            "Common kinds are matching a known-bad value (an indicator), counting past a threshold within a time window, a sequence of events such as failures then a success, and departures from normal behaviour.",
+            "Threshold rules need both a count and a window: five failed logins from one address within two minutes is unusual, while five spread across a day is ordinary.",
+            "Sigma is an open, vendor-neutral format for detection rules written in YAML, with fields for the log source, the detection logic, known false positives and a level; tools convert Sigma rules into each SIEM's query language.",
+            "Linking each rule to the behaviour it detects, such as ATT&CK's T1110 Brute Force or T1078 Valid Accounts, makes gaps in coverage easy to see."
+          ]
+        },
+        {
+          "title": "Testing and tuning detections",
+          "minutes": 10,
+          "objectives": [
+            "Test detection rules with events that must and must not trigger them",
+            "Tune noisy rules without hiding real attacks"
+          ],
+          "key_points": [
+            "Treat detections as code: keep them in version control, review changes and test each rule before it goes live.",
+            "Test with events that must trigger the rule and events that must not, including edge cases such as exactly the threshold or just outside the window.",
+            "Run a new rule over past logs before switching it on, to see how many alerts it would have raised and how many of those were real.",
+            "Tune by narrowing rather than switching off: exclude one approved scanner or service account, record why, and review exclusions regularly so they don't hide an attack.",
+            "Never tune by loosening a rule until real attacks fit underneath it; adding context, such as known office addresses, usually separates the cases better."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Write and test login detections in Python",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Implement two detection rules over normalised login events from app02's SSH and web logs: brute_force (5 failures from one address within 120 seconds) and success_after_failures (a success after 3 or more failures from its address within 15 minutes). Prove them with tests, run them on the day's events, then see what a careless tuning change does.",
+        "setup": [
+          "Python 3.10 or later (pytest is optional)",
+          "The starter files events.jsonl, detect.py and test_detect.py, in one folder"
+        ],
+        "steps": [
+          {
+            "do": "Look at the events: each line is one login event in a common format, made from the SSH log and the web server's login page.",
+            "code": "head -n 3 events.jsonl",
+            "lang": "bash"
+          },
+          {
+            "do": "Run the tests before writing any code, to see what they expect.",
+            "code": "python test_detect.py",
+            "lang": "bash",
+            "see": "An AssertionError: the rules aren't written yet."
+          },
+          {
+            "do": "In detect.py, do TODO 1 and TODO 2: keep a sliding window of each address's recent failures, raise brute_force when it reaches 5 within 120 seconds, then clear it."
+          },
+          {
+            "do": "Do TODO 3: when a login succeeds, count its address's failures in the 15 minutes before; raise success_after_failures at 3 or more."
+          },
+          {
+            "do": "Run the tests until they all pass.",
+            "code": "python test_detect.py",
+            "lang": "bash",
+            "see": "6 tests passed"
+          },
+          {
+            "do": "Run the rules over the day's events.",
+            "code": "python detect.py events.jsonl",
+            "lang": "bash",
+            "see": "Three alerts: brute_force for 203.0.113.45 at 02:40:31, brute_force for 198.51.100.23 at 03:21:58 and success_after_failures for deploy from 198.51.100.23 at 03:22:47 after 8 failures (6 over SSH and 2 on the web login page)."
+          },
+          {
+            "do": "Try a careless tuning change: set SUCCESS_AFTER_COUNT = 2 and run again. Note the new alert, decide whether it's a true or false positive, then set it back to 3.",
+            "see": "A fourth alert, for carol from 192.0.2.12 at 09:02:13 after 2 failures."
+          },
+          {
+            "do": "Write a short rule description for each detection: what it detects, its ATT&CK technique, its likely false positives and what an analyst should check first."
+          }
+        ],
+        "checks": [
+          {
+            "text": "All six tests pass.",
+            "look_for": [
+              "6 tests passed"
+            ]
+          },
+          {
+            "text": "Both brute-force bursts are detected at the right moments.",
+            "look_for": [
+              "02:40:31Z  brute_force",
+              "03:21:58Z  brute_force"
+            ]
+          },
+          {
+            "text": "deploy's login from 198.51.100.23 is detected, counting its failures from both sources.",
+            "look_for": [
+              "deploy after 8 failures"
+            ]
+          },
+          {
+            "text": "The tuning experiment is explained: the alert for carol is a false positive, a mistyped password from her office address, so the threshold stays at 3.",
+            "look_for": [
+              "carol",
+              "false positive"
+            ]
+          },
+          {
+            "text": "Each rule has a description with an ATT&CK technique and likely false positives.",
+            "look_for": [
+              "T1110"
+            ]
+          }
+        ],
+        "submit": "Paste your finished detect.py, the test output, the alerts from events.jsonl, your notes on the tuning experiment and your two rule descriptions.",
+        "files": [
+          {
+            "path": "events.jsonl",
+            "content": "{\"time\": \"2026-10-05T02:39:04Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"admin\"}\n{\"time\": \"2026-10-05T02:39:40Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"root\"}\n{\"time\": \"2026-10-05T02:39:44Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"root\"}\n{\"time\": \"2026-10-05T02:40:12Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"ubuntu\"}\n{\"time\": \"2026-10-05T02:40:31Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"root\"}\n{\"time\": \"2026-10-05T02:40:57Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"admin\"}\n{\"time\": \"2026-10-05T02:41:13Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"root\"}\n{\"time\": \"2026-10-05T02:41:30Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"ubuntu\"}\n{\"time\": \"2026-10-05T02:41:52Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"203.0.113.45\", \"user\": \"admin\"}\n{\"time\": \"2026-10-05T03:15:20Z\", \"source\": \"web\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"\"}\n{\"time\": \"2026-10-05T03:15:31Z\", \"source\": \"web\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"\"}\n{\"time\": \"2026-10-05T03:20:01Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T03:20:19Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T03:20:44Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T03:21:15Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T03:21:58Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T03:22:30Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T03:22:47Z\", \"source\": \"sshd\", \"event\": \"login_success\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n{\"time\": \"2026-10-05T08:14:07Z\", \"source\": \"sshd\", \"event\": \"login_success\", \"src_ip\": \"192.0.2.10\", \"user\": \"alice\"}\n{\"time\": \"2026-10-05T08:31:40Z\", \"source\": \"web\", \"event\": \"login_success\", \"src_ip\": \"192.0.2.33\", \"user\": \"\"}\n{\"time\": \"2026-10-05T09:01:40Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"192.0.2.12\", \"user\": \"carol\"}\n{\"time\": \"2026-10-05T09:01:52Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"192.0.2.12\", \"user\": \"carol\"}\n{\"time\": \"2026-10-05T09:02:13Z\", \"source\": \"sshd\", \"event\": \"login_success\", \"src_ip\": \"192.0.2.12\", \"user\": \"carol\"}\n{\"time\": \"2026-10-05T11:05:22Z\", \"source\": \"sshd\", \"event\": \"login_success\", \"src_ip\": \"192.0.2.11\", \"user\": \"bob\"}\n"
+          },
+          {
+            "path": "detect.py",
+            "content": "\"\"\"Two detection rules over normalised login events: one JSON object per line, such as\n{\"time\": \"2026-10-05T03:20:01Z\", \"source\": \"sshd\", \"event\": \"login_failure\", \"src_ip\": \"198.51.100.23\", \"user\": \"deploy\"}\n\nUsage: python detect.py events.jsonl\n\"\"\"\n\nimport json\nimport sys\nfrom collections import defaultdict, deque\nfrom datetime import datetime, timedelta\n\nBRUTE_FORCE_COUNT = 5                          # this many failures from one address...\nBRUTE_FORCE_WINDOW = timedelta(seconds=120)    # ...within this long raise a brute_force alert\nSUCCESS_AFTER_COUNT = 3                        # a success after this many failures from its address...\nSUCCESS_AFTER_WINDOW = timedelta(minutes=15)   # ...within this long raises success_after_failures\n\n\ndef when(event):\n    return datetime.strptime(event[\"time\"], \"%Y-%m-%dT%H:%M:%SZ\")\n\n\ndef load(path):\n    with open(path, encoding=\"utf-8\") as f:\n        return [json.loads(line) for line in f if line.strip()]\n\n\ndef detect(events):\n    \"\"\"Return alerts as (time, rule, src_ip, detail) tuples, in time order.\"\"\"\n    alerts = []\n    window = defaultdict(deque)   # src_ip -> times of failures not yet part of a brute_force alert\n    failures = defaultdict(list)  # src_ip -> times of all its failures\n    for e in sorted(events, key=when):\n        t, ip = when(e), e[\"src_ip\"]\n        if e[\"event\"] == \"login_failure\":\n            failures[ip].append(t)\n            # TODO 1: add t to window[ip], then drop times from its left that are more than\n            #         BRUTE_FORCE_WINDOW older than t\n            # TODO 2: if window[ip] now holds BRUTE_FORCE_COUNT or more times, append the alert\n            #         (e[\"time\"], \"brute_force\", ip, f\"{len(window[ip])} failures in 120s\")\n            #         and clear window[ip], so the next alert needs fresh failures\n        elif e[\"event\"] == \"login_success\":\n            # TODO 3: count the failures[ip] times within SUCCESS_AFTER_WINDOW before t; if there are\n            #         SUCCESS_AFTER_COUNT or more, append the alert\n            #         (e[\"time\"], \"success_after_failures\", ip, f\"{e['user'] or '(web)'} after {n} failures\")\n            pass\n    return alerts\n\n\ndef main(path=\"events.jsonl\"):\n    alerts = detect(load(path))\n    for time, rule, ip, detail in alerts:\n        print(f\"{time}  {rule:<22}  {ip:<15} {detail}\")\n    print(f\"{len(alerts)} alerts\")\n\n\nif __name__ == \"__main__\":\n    main(*sys.argv[1:])\n"
+          },
+          {
+            "path": "test_detect.py",
+            "content": "\"\"\"Tests for detect.py. Run with: python test_detect.py   (or: python -m pytest test_detect.py)\"\"\"\n\nfrom detect import detect\n\n\ndef ev(time, event, ip=\"203.0.113.9\", user=\"alice\"):\n    return {\"time\": f\"2026-10-05T{time}Z\", \"source\": \"test\", \"event\": event, \"src_ip\": ip, \"user\": user}\n\n\ndef test_four_failures_are_quiet():\n    events = [ev(f\"10:00:{s:02d}\", \"login_failure\") for s in (0, 10, 20, 30)]\n    assert detect(events) == []\n\n\ndef test_fifth_failure_within_two_minutes_alerts_once():\n    events = [ev(f\"10:00:{s:02d}\", \"login_failure\") for s in (0, 10, 20, 30, 40, 50)]\n    assert detect(events) == [(\"2026-10-05T10:00:40Z\", \"brute_force\", \"203.0.113.9\", \"5 failures in 120s\")]\n\n\ndef test_slow_failures_are_quiet():\n    events = [ev(f\"10:{m:02d}:00\", \"login_failure\") for m in (0, 3, 6, 9, 12)]\n    assert detect(events) == []\n\n\ndef test_addresses_are_counted_separately():\n    events = [ev(f\"10:00:0{n}\", \"login_failure\", ip=f\"203.0.113.{n}\") for n in (1, 2, 3, 4, 5)]\n    assert detect(events) == []\n\n\ndef test_success_after_three_failures_alerts():\n    events = [ev(f\"10:0{m}:00\", \"login_failure\") for m in (0, 2, 4)] + [ev(\"10:06:00\", \"login_success\")]\n    assert detect(events) == [(\"2026-10-05T10:06:00Z\", \"success_after_failures\", \"203.0.113.9\", \"alice after 3 failures\")]\n\n\ndef test_success_alone_is_quiet():\n    assert detect([ev(\"10:00:00\", \"login_success\")]) == []\n\n\nif __name__ == \"__main__\":\n    tests = [f for name, f in sorted(globals().items()) if name.startswith(\"test_\")]\n    for test in tests:\n        test()\n    print(f\"{len(tests)} tests passed\")\n"
+          }
+        ],
+        "hints": [
+          "window[ip][0] is the oldest time in the window; pop it from the left while t minus it is more than BRUTE_FORCE_WINDOW.",
+          "t - f gives a timedelta, which compares directly with SUCCESS_AFTER_WINDOW.",
+          "If the deploy alert says 6 failures, the web login failures aren't being counted: count every failure from the address, whatever its source."
+        ]
+      }
+    },
+    {
+      "title": "Alert triage and documenting findings",
+      "summary": "Decide quickly and consistently what each alert means, deal with false positives without blinding the SOC, and write findings that others can act on.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "Triage: from alert to decision",
+          "minutes": 10,
+          "objectives": [
+            "Triage an alert with a consistent method",
+            "Use context to judge an alert's impact"
+          ],
+          "key_points": [
+            "Triage decides quickly whether an alert needs action: confirm what the alert says happened, add context, judge the impact, then close it, escalate it or investigate further.",
+            "Context answers the key questions: how critical the asset is, who the user is and whether this is normal for them, whether the address is known (an office, a partner, an approved scanner) and what else it did.",
+            "Look across sources around the alert's time: one address that was blocked by the firewall, probed the web server and then logged in over SSH tells a story no single alert does.",
+            "Prioritise by impact and confidence: a successful login after failures on a critical server outranks failed attempts that achieved nothing.",
+            "Record every decision with its reason, so the next analyst, and anyone tuning the rules, can learn from it."
+          ]
+        },
+        {
+          "title": "False positives and tuning",
+          "minutes": 10,
+          "objectives": [
+            "Identify common causes of false positives",
+            "Choose the right fix for a noisy alert"
+          ],
+          "key_points": [
+            "Common sources of false positives include vulnerability scanners, backup jobs, administrators' routine work, misconfigured services and people mistyping their passwords.",
+            "Alert fatigue is real: when most alerts are noise, real ones get missed, so fixing noisy rules is part of a SOC's job, not a distraction from it.",
+            "A benign true positive, such as an approved scan inside its scheduled window, is closed as expected, and usually handled with a narrow exception that names the address and the time window.",
+            "Before tuning, decide whether the rule caught real but permitted behaviour or flagged the wrong thing, because the fixes differ.",
+            "Every exception should have an owner, a reason and a review date, so yesterday's approved scanner can't become tomorrow's blind spot."
+          ]
+        },
+        {
+          "title": "Documenting findings and handing over",
+          "minutes": 10,
+          "objectives": [
+            "Write an incident ticket others can act on",
+            "Hand over open cases without losing anything"
+          ],
+          "key_points": [
+            "A good ticket lets someone who wasn't there understand and act: a summary, a UTC timeline, the evidence (log lines and searches), the assessment, actions taken and recommendations.",
+            "Separate facts from conclusions: a login from 198.51.100.23 at 03:22:47 UTC is a fact; the account was compromised is a conclusion, which needs its evidence.",
+            "List indicators of compromise, such as addresses and account names, so they can be searched for on other systems and added to detections.",
+            "Write for the reader: a short summary first for managers, technical detail after it for responders.",
+            "At a shift change, hand over each open case with its status, what's been tried and what comes next, so nothing is dropped."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Triage an alert queue",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Eight alerts from Monday 5 October 2026 are waiting. Finish a helper that adds context to each from the asset list, the scanner allowlist, staff office addresses and approved changes, then decide each alert, group the ones that belong to one incident, and write the incident ticket.",
+        "setup": [
+          "Python 3.10 or later",
+          "The starter files alerts.csv, assets.csv, scanner_allowlist.txt, staff.csv, changes.csv, triage_helper.py and triage.md, in one folder"
+        ],
+        "steps": [
+          {
+            "do": "Read alerts.csv and the four context files, and note what each context file could tell you about an alert."
+          },
+          {
+            "do": "In triage_helper.py, do TODO 1 to TODO 3: add a note when the source address is an allowlisted scanner, when it's a staff member's office address, and when an approved change covers the alert's host and time."
+          },
+          {
+            "do": "Run it.",
+            "code": "python triage_helper.py",
+            "lang": "bash",
+            "see": "Each alert with its notes: A-1006 is the allowlisted weekly scanner, A-1007 comes from carol's office address, and A-1008 falls inside approved change CHG-311."
+          },
+          {
+            "do": "Decide each alert in triage.md: true positive, benign true positive or false positive, with its evidence and action. Use the notes, and the times and addresses the alerts share."
+          },
+          {
+            "do": "Group the alerts that are one incident: one address scanned the server's ports, guessed deploy's password, logged in and added an account to the sudo group. Give it a severity and say why."
+          },
+          {
+            "do": "Write the incident ticket in triage.md: title, severity, a three-sentence summary, a UTC timeline with the alert or log line behind each entry, indicators of compromise, what's known and unknown, and actions."
+          },
+          {
+            "do": "Write two tuning recommendations, each narrow and with a review date."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The helper adds the scanner, office and change notes correctly.",
+            "look_for": [
+              "allowlisted scanner: weekly vulnerability scan",
+              "office address of carol",
+              "approved change CHG-311"
+            ]
+          },
+          {
+            "text": "A-1002, A-1003, A-1004 and A-1005 are recognised as one true-positive incident from 198.51.100.23 and escalated.",
+            "look_for": [
+              "A-1004",
+              "A-1005",
+              "198.51.100.23",
+              "escalat"
+            ]
+          },
+          {
+            "text": "A-1006 and A-1008 are benign true positives (the approved scan and the approved change), and A-1007 is a false positive (carol mistyping her password).",
+            "look_for": [
+              "benign true positive",
+              "A-1007",
+              "false positive"
+            ]
+          },
+          {
+            "text": "A-1001 is a true positive with no impact: the guessing from 203.0.113.45 never succeeded.",
+            "look_for": [
+              "A-1001",
+              "203.0.113.45"
+            ]
+          },
+          {
+            "text": "The ticket has a summary, a UTC timeline, indicators of compromise and actions such as disabling sysbackup and resetting deploy's password.",
+            "look_for": [
+              "sysbackup",
+              "indicators"
+            ]
+          }
+        ],
+        "submit": "Paste your finished triage_helper.py, its output, and your completed triage.md with the decisions, the incident ticket and the tuning recommendations.",
+        "files": [
+          {
+            "path": "alerts.csv",
+            "content": "alert_id,time_utc,rule,severity,src_ip,host,user,details\nA-1001,2026-10-05T02:40:31Z,ssh_brute_force,medium,203.0.113.45,app02,,5 failures in 120s\nA-1002,2026-10-05T03:12:16Z,port_scan,low,198.51.100.23,app02,,12 ports blocked in 12s\nA-1003,2026-10-05T03:21:58Z,ssh_brute_force,medium,198.51.100.23,app02,,5 failures in 120s\nA-1004,2026-10-05T03:22:47Z,success_after_failures,high,198.51.100.23,app02,deploy,deploy after 8 failures\nA-1005,2026-10-05T03:25:52Z,user_added_to_admin_group,high,,app02,sysbackup,sysbackup added to sudo by deploy\nA-1006,2026-10-05T04:02:10Z,port_scan,low,192.0.2.250,app02,,48 ports in 60s\nA-1007,2026-10-05T09:02:13Z,success_after_failures,high,192.0.2.12,app02,carol,carol after 2 failures\nA-1008,2026-10-05T13:15:40Z,user_added_to_admin_group,high,,db01,jdoe,jdoe added to sudo by alice\n"
+          },
+          {
+            "path": "assets.csv",
+            "content": "host,role,owner,criticality\napp02,payments API (internet-facing),payments team,high\ndb01,payments database (internal),data team,high\n"
+          },
+          {
+            "path": "scanner_allowlist.txt",
+            "content": "# Addresses allowed to scan our systems: address, then why\n192.0.2.250 weekly vulnerability scan by the security team, Mondays 04:00-05:00 UTC\n"
+          },
+          {
+            "path": "staff.csv",
+            "content": "user,office_ip\nalice,192.0.2.10\nbob,192.0.2.11\ncarol,192.0.2.12\n"
+          },
+          {
+            "path": "changes.csv",
+            "content": "change_id,host,start_utc,end_utc,description,approved_by\nCHG-311,db01,2026-10-05T13:00:00Z,2026-10-05T14:00:00Z,Add jdoe to the sudo group for database maintenance,head of data\n"
+          },
+          {
+            "path": "triage_helper.py",
+            "content": "\"\"\"Add context to each alert in alerts.csv, from the asset list, the scanner allowlist,\nstaff office addresses and approved changes.\n\nUsage: python triage_helper.py\n\"\"\"\n\nimport csv\n\n\ndef read_csv(path):\n    with open(path, newline=\"\", encoding=\"utf-8\") as f:\n        return list(csv.DictReader(f))\n\n\ndef read_scanners(path):\n    \"\"\"Return {address: reason} from a file of 'address reason' lines (# starts a comment).\"\"\"\n    scanners = {}\n    with open(path, encoding=\"utf-8\") as f:\n        for line in f:\n            line = line.strip()\n            if line and not line.startswith(\"#\"):\n                address, reason = line.split(maxsplit=1)\n                scanners[address] = reason\n    return scanners\n\n\ndef context_for(alert, assets, scanners, office, changes):\n    \"\"\"Return a list of short notes that help an analyst triage the alert.\"\"\"\n    notes = []\n    asset = assets.get(alert[\"host\"])\n    if asset:\n        notes.append(f\"{alert['host']}: {asset['criticality']} criticality, {asset['role']}\")\n    # TODO 1: if alert[\"src_ip\"] is in scanners, add the note  allowlisted scanner: <reason>\n    # TODO 2: if alert[\"src_ip\"] is a staff office address, add the note  office address of <user>\n    # TODO 3: for each change on the alert's host whose start_utc <= alert[\"time_utc\"] <= end_utc,\n    #         add the note  approved change <change_id>: <description>\n    return notes\n\n\ndef main():\n    assets = {a[\"host\"]: a for a in read_csv(\"assets.csv\")}\n    scanners = read_scanners(\"scanner_allowlist.txt\")\n    office = {s[\"office_ip\"]: s[\"user\"] for s in read_csv(\"staff.csv\")}\n    changes = read_csv(\"changes.csv\")\n    for alert in read_csv(\"alerts.csv\"):\n        print(f\"{alert['alert_id']}  {alert['rule']}  {alert['src_ip'] or alert['user']}\")\n        for note in context_for(alert, assets, scanners, office, changes):\n            print(f\"    - {note}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "triage.md",
+            "content": "# Alert triage: app02 and db01, Monday 5 October 2026\n\nFor each alert: your decision (true positive, benign true positive or false positive), the evidence\nfor it, and the action (escalate, close, or close and tune).\n\n| Alert | Decision | Evidence | Action |\n|---|---|---|---|\n| A-1001 |  |  |  |\n| A-1002 |  |  |  |\n| A-1003 |  |  |  |\n| A-1004 |  |  |  |\n| A-1005 |  |  |  |\n| A-1006 |  |  |  |\n| A-1007 |  |  |  |\n| A-1008 |  |  |  |\n\n# Incident ticket\nTitle:\nSeverity, and why:\nSummary (three sentences for a manager):\nTimeline (UTC), with the log line or alert behind each entry:\nIndicators of compromise:\nAssessment (what's known, and what isn't yet):\nActions taken and recommended:\n\n# Tuning recommendations\n"
+          }
+        ],
+        "hints": [
+          "The times in alerts.csv and changes.csv share one format, so comparing them as strings puts them in time order.",
+          "Alerts that share an address and fall within minutes of each other usually describe one incident: triage them together."
+        ]
+      }
+    }
+  ],
+  "project": {
+    "title": "Monitor a day on the shop server",
+    "minutes": 240,
+    "brief": "You're the analyst on duty for shop01, an online shop's internet-facing web and SSH server, for Monday 12 October 2026. You have its authentication log, web access log and firewall log, plus context: the asset list, staff and service accounts, and the scanner allowlist. Build a small monitoring pipeline in Python: parse all three logs into one normalised event format, write at least three detection rules with tests, run them over the day, and triage every alert they raise using the context files. Somewhere in the noise is one real incident. Find it, write it up as an incident ticket, and recommend how to tune any rule that was noisy.",
+    "deliverables": [
+      "Python parsers that turn the three logs into one JSON Lines file of normalised events",
+      "At least three detection rules (for example brute force, success after failures and port scan) with passing tests",
+      "The alerts your rules raise on the day's logs",
+      "A triage decision for every alert, with evidence and action",
+      "An incident ticket for the real incident: summary, UTC timeline, evidence, indicators, assessment and actions",
+      "Two or more tuning recommendations, each narrow and with a review date"
+    ],
+    "rubric": [
+      {
+        "name": "Parsing and normalisation",
+        "points": 20,
+        "description": "All three logs are parsed into consistent fields (UTC time, source, event, address, user), with no lines silently lost."
+      },
+      {
+        "name": "Detections and tests",
+        "points": 20,
+        "description": "At least three rules with clear thresholds and windows; tests cover triggering, not triggering and edge cases, and all pass."
+      },
+      {
+        "name": "Triage",
+        "points": 25,
+        "description": "Every alert is decided correctly with evidence: the authorised scan, the developer's mistyped password and the failed guessing are separated from the real incident."
+      },
+      {
+        "name": "Incident ticket",
+        "points": 25,
+        "description": "The backup account's login from 198.51.100.61 is connected to the earlier port scan and web requests and the archive made with sudo, with a UTC timeline, indicators and sensible actions; facts are kept apart from conclusions."
+      },
+      {
+        "name": "Tuning and clarity",
+        "points": 10,
+        "description": "Tuning is narrow and reviewable, not loosening rules wholesale; the write-up is clear to a manager and a responder."
+      }
+    ],
+    "submit": "Paste your code (parsers, rules and tests), the test output, the alerts, your triage table, the incident ticket and your tuning recommendations, each under its own heading.",
+    "files": [
+      {
+        "path": "logs/auth.log",
+        "content": "2026-10-12T00:17:01.000801+00:00 shop01 CRON[801]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-12T00:17:01.004801+00:00 shop01 CRON[801]: pam_unix(cron:session): session closed for user root\n2026-10-12T01:17:01.000944+00:00 shop01 CRON[944]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-12T01:17:01.004944+00:00 shop01 CRON[944]: pam_unix(cron:session): session closed for user root\n2026-10-12T01:40:03.118204+00:00 shop01 sshd[1170]: Failed password for root from 203.0.113.99 port 38001 ssh2\n2026-10-12T01:41:10.389204+00:00 shop01 sshd[1171]: Invalid user admin from 203.0.113.99 port 38010\n2026-10-12T01:41:10.389204+00:00 shop01 sshd[1171]: Failed password for invalid user admin from 203.0.113.99 port 38010 ssh2\n2026-10-12T01:42:17.660204+00:00 shop01 sshd[1172]: Invalid user test from 203.0.113.99 port 38019\n2026-10-12T01:42:17.660204+00:00 shop01 sshd[1172]: Failed password for invalid user test from 203.0.113.99 port 38019 ssh2\n2026-10-12T01:43:24.931204+00:00 shop01 sshd[1173]: Failed password for root from 203.0.113.99 port 38028 ssh2\n2026-10-12T01:44:31.202204+00:00 shop01 sshd[1174]: Invalid user oracle from 203.0.113.99 port 38037\n2026-10-12T01:44:31.202204+00:00 shop01 sshd[1174]: Failed password for invalid user oracle from 203.0.113.99 port 38037 ssh2\n2026-10-12T01:45:38.473204+00:00 shop01 sshd[1175]: Invalid user admin from 203.0.113.99 port 38046\n2026-10-12T01:45:38.473204+00:00 shop01 sshd[1175]: Failed password for invalid user admin from 203.0.113.99 port 38046 ssh2\n2026-10-12T01:46:45.744204+00:00 shop01 sshd[1176]: Failed password for root from 203.0.113.99 port 38055 ssh2\n2026-10-12T02:17:01.000101+00:00 shop01 CRON[1101]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-12T02:17:01.004101+00:00 shop01 CRON[1101]: pam_unix(cron:session): session closed for user root\n2026-10-12T03:17:01.000240+00:00 shop01 CRON[1240]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-12T03:17:01.004240+00:00 shop01 CRON[1240]: pam_unix(cron:session): session closed for user root\n2026-10-12T04:17:01.000388+00:00 shop01 CRON[1388]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-12T04:17:01.004388+00:00 shop01 CRON[1388]: pam_unix(cron:session): session closed for user root\n2026-10-12T05:17:01.000530+00:00 shop01 CRON[1530]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)\n2026-10-12T05:17:01.004530+00:00 shop01 CRON[1530]: pam_unix(cron:session): session closed for user root\n2026-10-12T07:58:12.330927+00:00 shop01 sshd[2410]: Accepted publickey for alice from 192.0.2.10 port 60122 ssh2: ED25519 SHA256:Yt5nK2wq8fZ0bR4mJ7cX1vL9sD3hG6pA0eU2iO8kTqM\n2026-10-12T07:58:12.336120+00:00 shop01 sshd[2410]: pam_unix(sshd:session): session opened for user alice(uid=1001) by alice(uid=0)\n2026-10-12T09:44:03.551873+00:00 shop01 sshd[2701]: Failed password for dan from 192.0.2.14 port 50330 ssh2\n2026-10-12T09:44:15.207118+00:00 shop01 sshd[2701]: Failed password for dan from 192.0.2.14 port 50330 ssh2\n2026-10-12T09:44:29.880913+00:00 shop01 sshd[2701]: Accepted password for dan from 192.0.2.14 port 50330 ssh2\n2026-10-12T09:44:29.884107+00:00 shop01 sshd[2701]: pam_unix(sshd:session): session opened for user dan(uid=1006) by dan(uid=0)\n2026-10-12T14:02:51.118054+00:00 shop01 sudo:   alice : TTY=pts/0 ; PWD=/home/alice ; USER=root ; COMMAND=/usr/bin/apt upgrade -y\n2026-10-12T23:36:02.207118+00:00 shop01 sshd[4401]: Failed password for backup from 198.51.100.61 port 60110 ssh2\n2026-10-12T23:36:20.520118+00:00 shop01 sshd[4402]: Failed password for backup from 198.51.100.61 port 60114 ssh2\n2026-10-12T23:36:41.833118+00:00 shop01 sshd[4403]: Failed password for backup from 198.51.100.61 port 60118 ssh2\n2026-10-12T23:37:05.146118+00:00 shop01 sshd[4404]: Failed password for backup from 198.51.100.61 port 60122 ssh2\n2026-10-12T23:37:30.459118+00:00 shop01 sshd[4405]: Failed password for backup from 198.51.100.61 port 60126 ssh2\n2026-10-12T23:38:01.772118+00:00 shop01 sshd[4406]: Failed password for backup from 198.51.100.61 port 60130 ssh2\n2026-10-12T23:38:33.085118+00:00 shop01 sshd[4407]: Failed password for backup from 198.51.100.61 port 60134 ssh2\n2026-10-12T23:39:10.398118+00:00 shop01 sshd[4408]: Failed password for backup from 198.51.100.61 port 60138 ssh2\n2026-10-12T23:41:07.402233+00:00 shop01 sshd[4420]: Accepted password for backup from 198.51.100.61 port 60150 ssh2\n2026-10-12T23:41:07.409126+00:00 shop01 sshd[4420]: pam_unix(sshd:session): session opened for user backup(uid=1009) by backup(uid=0)\n2026-10-12T23:43:20.660145+00:00 shop01 sudo:   backup : TTY=pts/0 ; PWD=/home/backup ; USER=root ; COMMAND=/usr/bin/tar czf /tmp/orders.tgz /srv/shop/exports\n2026-10-12T23:49:55.890321+00:00 shop01 sshd[4420]: Received disconnect from 198.51.100.61 port 60150:11: disconnected by user\n2026-10-12T23:49:55.891002+00:00 shop01 sshd[4420]: Disconnected from user backup 198.51.100.61 port 60150\n2026-10-12T23:49:55.893377+00:00 shop01 sshd[4420]: pam_unix(sshd:session): session closed for user backup\n"
+      },
+      {
+        "path": "logs/access.log",
+        "content": "192.0.2.200 - - [12/Oct/2026:00:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:00:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n203.0.113.99 - - [12/Oct/2026:01:30:02 +0000] \"GET /old/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.99 - - [12/Oct/2026:01:30:06 +0000] \"GET /test/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.99 - - [12/Oct/2026:01:30:10 +0000] \"GET /index2.html HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.99 - - [12/Oct/2026:01:30:14 +0000] \"GET /home.php HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.99 - - [12/Oct/2026:01:30:18 +0000] \"GET /site/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n203.0.113.99 - - [12/Oct/2026:01:30:22 +0000] \"GET /beta/ HTTP/1.1\" 404 153 \"-\" \"python-requests/2.32.3\"\n192.0.2.200 - - [12/Oct/2026:03:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:03:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.250 - - [12/Oct/2026:04:00:00 +0000] \"GET /scan-check-01 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:00:11 +0000] \"GET /scan-check-02 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:00:22 +0000] \"GET /scan-check-03 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:00:33 +0000] \"GET /scan-check-04 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:00:44 +0000] \"GET /scan-check-05 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:01:06 +0000] \"GET /scan-check-07 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:01:17 +0000] \"GET /scan-check-08 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:01:28 +0000] \"GET /scan-check-09 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:01:39 +0000] \"GET /scan-check-10 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:01:55 +0000] \"GET /scan-check-06 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:02:01 +0000] \"GET /scan-check-12 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:02:12 +0000] \"GET /scan-check-13 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:02:23 +0000] \"GET /scan-check-14 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.250 - - [12/Oct/2026:04:02:50 +0000] \"GET /scan-check-11 HTTP/1.1\" 404 153 \"-\" \"vulnerability-scanner/5.2 (authorised; security team)\"\n192.0.2.200 - - [12/Oct/2026:06:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:06:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:09:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:09:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.33 - - [12/Oct/2026:10:12:40 +0000] \"GET / HTTP/1.1\" 200 5120 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.33 - - [12/Oct/2026:10:12:41 +0000] \"GET /static/shop.css HTTP/1.1\" 200 9120 \"https://shop.example.com/\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.200 - - [12/Oct/2026:12:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n198.51.100.14 - - [12/Oct/2026:12:20:05 +0000] \"GET /products/18 HTTP/1.1\" 200 6402 \"-\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n198.51.100.14 - - [12/Oct/2026:12:21:30 +0000] \"POST /basket HTTP/1.1\" 302 0 \"https://shop.example.com/products/18\" \"Mozilla/5.0 (iPhone; CPU iPhone OS 17_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Mobile/15E148 Safari/604.1\"\n192.0.2.200 - - [12/Oct/2026:12:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:15:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:15:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.44 - - [12/Oct/2026:16:05:51 +0000] \"GET /contact HTTP/1.1\" 200 3301 \"-\" \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36\"\n192.0.2.200 - - [12/Oct/2026:18:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:18:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:21:00:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n192.0.2.200 - - [12/Oct/2026:21:30:00 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"uptime-checker/1.0\"\n198.51.100.61 - - [12/Oct/2026:23:30:14 +0000] \"GET /exports/ HTTP/1.1\" 403 162 \"-\" \"curl/8.5.0\"\n198.51.100.61 - - [12/Oct/2026:23:30:22 +0000] \"GET /admin/ HTTP/1.1\" 404 153 \"-\" \"curl/8.5.0\"\n"
+      },
+      {
+        "path": "logs/ufw.log",
+        "content": "2026-10-12T00:40:10.118204+00:00 shop01 kernel: [UFW BLOCK] IN=eth1 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=10.0.0.31 DST=10.0.0.255 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=UDP SPT=137 DPT=137 LEN=58\n2026-10-12T01:20:05.330120+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=203.0.113.99 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=41022 DPT=23 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T01:20:09.551902+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=203.0.113.99 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=41030 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T15:10:44.771203+00:00 shop01 kernel: [UFW BLOCK] IN=eth1 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=10.0.0.31 DST=10.0.0.255 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=UDP SPT=138 DPT=138 LEN=58\n2026-10-12T23:20:10.031000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52200 DPT=21 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:11.128000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52201 DPT=23 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:12.225000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52202 DPT=25 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:13.322000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52203 DPT=445 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:14.419000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52204 DPT=1433 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:15.516000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52205 DPT=3306 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:16.613000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52206 DPT=3389 WINDOW=1024 RES=0x00 SYN URGP=0\n2026-10-12T23:20:17.710000+00:00 shop01 kernel: [UFW BLOCK] IN=eth0 OUT= MAC=52:54:00:aa:bb:cc:52:54:00:dd:ee:ff:08:00 SRC=198.51.100.61 DST=192.0.2.90 LEN=44 TOS=0x00 PREC=0x00 TTL=50 ID=0 PROTO=TCP SPT=52207 DPT=5900 WINDOW=1024 RES=0x00 SYN URGP=0\n"
+      },
+      {
+        "path": "context/assets.csv",
+        "content": "host,role,owner,criticality\nshop01,online shop web and SSH server (internet-facing),e-commerce team,high\n"
+      },
+      {
+        "path": "context/staff.csv",
+        "content": "user,office_ip,role\nalice,192.0.2.10,administrator\ndan,192.0.2.14,developer\nbackup,,service account used by the nightly backup job from 192.0.2.30 (key login only, by design)\n"
+      },
+      {
+        "path": "context/scanner_allowlist.txt",
+        "content": "# Addresses allowed to scan our systems: address, then why\n192.0.2.250 weekly vulnerability scan by the security team, Mondays 04:00-05:00 UTC\n"
+      }
+    ]
+  }
+}

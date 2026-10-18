@@ -28,11 +28,11 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 WINDOW_HOURS = 24
-# What each kind of request costs. Mock exams and custom paths ask much more of Claude, so they count double.
+# What each kind of request costs. Mock exams, custom paths and project reviews ask much more of Claude, so they count double.
 COSTS = {"chat": 1, "lesson": 1, "quiz": 1, "exam": 2, "flashcards": 1, "summary": 1, "plan": 1, "path": 2, "post": 1,
          # A companion starting a chat: its idea, not the learner's request, so it costs them nothing (once per chat).
-         "opening": 0}
-NAMES = {"exam": "A mock exam", "path": "A new learning path"}
+         "opening": 0, "lab": 1, "project": 2}
+NAMES = {"exam": "A mock exam", "path": "A new learning path", "project": "A project review"}
 BUSY = "AI Every Time is very busy right now, so new AI requests are paused. Please try again in an hour or so."
 BUSY_UNCONFIRMED = ("AI Every Time is very busy right now, so AI requests are paused for accounts that haven't confirmed "
                     "their email address. Confirm yours from your profile to carry on, or try again in an hour or so.")
