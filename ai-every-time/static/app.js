@@ -3372,7 +3372,7 @@ async function viewTrack(m) {
           : complete ? `<form id="certForm" class="stack cert-form"><div><b>🎉 You've finished every course!</b></div>
               <label>Name on your certificate <input type="text" name="name" value="${esc(state.me.display_name)}" minlength="2" maxlength="80" required></label>
               <div><button class="btn primary">Get my certificate</button></div></form>`
-          : `<p class="muted" style="margin:0">Earn the certificate for each of its ${t.total} courses to get the ${esc(t.kind)} certificate.</p>`}
+          : `<p class="muted" style="margin:0">Earn the certificate for each of its ${t.total} courses to get the ${esc(/certificate$/i.test(t.kind) ? t.kind : `${t.kind} certificate`)}.</p>`}
       </div>
     </div>
     <h2 class="section">${t.total} courses in this ${esc(t.kind)}</h2>
