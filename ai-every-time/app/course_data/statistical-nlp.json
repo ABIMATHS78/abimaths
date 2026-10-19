@@ -1,0 +1,971 @@
+{
+ "slug": "statistical-nlp",
+ "title": "Statistical NLP: Models, Parsing and Information Retrieval",
+ "subtitle": "Classify text with Naive Bayes and logistic regression, build word vectors from counts, tag with hidden Markov models, parse with probabilistic grammars, and rank documents with TF-IDF and BM25.",
+ "category": "Machine Learning",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "ravi-chandrasekharan",
+  "yildize-demirel"
+ ],
+ "skills": [
+  "Text classification",
+  "Naive Bayes",
+  "Logistic regression",
+  "Vector semantics",
+  "N-gram language models",
+  "Hidden Markov models",
+  "Viterbi algorithm",
+  "Probabilistic parsing",
+  "Information retrieval",
+  "Evaluation and error analysis"
+ ],
+ "tools": [
+  "Python 3",
+  "NLTK",
+  "NumPy",
+  "SciPy",
+  "scikit-learn"
+ ],
+ "outcomes": [
+  "Train and evaluate Naive Bayes and logistic regression text classifiers, implementing both from scratch",
+  "Build count-based word vectors with PPMI and SVD, and compare words with cosine similarity",
+  "Smooth n-gram language models and implement Viterbi decoding for hidden Markov model POS tagging",
+  "Parse sentences with probabilistic context-free grammars and the CKY algorithm",
+  "Build an inverted index and rank documents with TF-IDF and BM25",
+  "Evaluate statistical NLP models rigorously with precision, recall, F1, MAP and error analysis"
+ ],
+ "prerequisites": "NLP Foundations with Python and Corpora, or the same skills: Python, NLTK corpora, tokenisation and a bigram language model. Conditional probability, Bayes' rule and logarithms help (Statistics for Data Science and AI covers them), as does basic NumPy. You need Python 3.10 or later with NLTK, NumPy, SciPy and scikit-learn; the labs use small NLTK datasets, about 6 MB in all, and give the download commands.",
+ "description": "Before neural networks, the field learned to process language with probability and counting, and those methods still power search engines, baselines and many production systems. This course teaches them by building them. You'll write a Naive Bayes classifier from scratch and train logistic regression by gradient descent on cross-entropy, then represent words by the contexts they occur in, weighting co-occurrence counts with PPMI and compressing them with SVD into dense vectors.\n\nNext come sequences and structure: smoothing n-gram language models properly, hidden Markov models for part-of-speech tagging with Viterbi decoding, and probabilistic context-free grammars parsed with the CKY algorithm and the inside algorithm. The last module builds the heart of a search engine: an inverted index, Boolean queries, ranking with TF-IDF and BM25, and the precision, recall and mean average precision that tell you whether it works. Every module has a lab on real data, such as the Penn Treebank sample, the Brown corpus and movie-review snippets, with exact expected output, and the capstone combines your tagger and a classifier to test, honestly, whether part-of-speech tags help tell opinion from fact. It builds on NLP Foundations with Python and Corpora and prepares you for Transformers and Large Language Models.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Text classification",
+   "summary": "Classify documents with two classic models: Naive Bayes, which models how each class generates words, and logistic regression, which learns feature weights directly by minimising cross-entropy, and evaluate both properly.",
+   "instructor": "ravi-chandrasekharan",
+   "lessons": [
+    {
+     "title": "Generative and discriminative classifiers",
+     "minutes": 12,
+     "objectives": [
+      "Explain the difference between generative and discriminative classifiers",
+      "Apply Bayes' rule to text classification"
+     ],
+     "key_points": [
+      "Text classification assigns a label to a whole document, such as positive or negative, spam or not, or a topic; it's supervised learning from labelled examples, with features extracted from the text.",
+      "A generative classifier models how each class produces documents, P(document | class), and the class prior P(class), then picks the class with the highest P(class) × P(document | class); Naive Bayes is one.",
+      "A discriminative classifier models P(class | document) directly, learning which features separate the classes without modelling how documents are generated; logistic regression is one.",
+      "Bayes' rule gives P(c | d) = P(d | c) P(c) / P(d), and because P(d) is the same for every class, the decision only needs P(d | c) P(c).",
+      "Generative models train fast and cope with little data, but their independence assumptions make them overconfident when features are correlated. A classic comparison (Ng and Jordan, 2001) found Naive Bayes often nears its best accuracy with fewer examples, while logistic regression reaches lower error with more data."
+     ]
+    },
+    {
+     "title": "Multinomial Naive Bayes for text",
+     "minutes": 14,
+     "objectives": [
+      "Train a multinomial Naive Bayes classifier from word counts",
+      "Classify a document in log space with add-one smoothing"
+     ],
+     "key_points": [
+      "Naive Bayes represents a document as a bag of words and assumes that each word occurrence is independent of the others given the class, so P(document | c) is the product of P(word | c) over the document's words.",
+      "Training is counting: the prior P(c) is the share of training documents in class c, and with add-one smoothing P(w | c) = (count(w, c) + 1) / (total words in c + |V|), where V is the training vocabulary.",
+      "Without smoothing, a single word never seen in a class gives that class probability zero for any document containing it, whatever the other words say.",
+      "Classify in log space: choose the class with the highest log P(c) + Σ log P(w | c), skipping test words that aren't in the training vocabulary.",
+      "Binary multinomial Naive Bayes counts each word at most once per document, which often helps sentiment analysis, where whether a word occurs matters more than how often.",
+      "On NLTK's sentence_polarity movie snippets, a from-scratch multinomial Naive Bayes and scikit-learn's MultinomialNB(alpha=1.0) make identical predictions, 76.7% of them right, because they compute the same smoothed estimates."
+     ]
+    },
+    {
+     "title": "Logistic regression: features, weights and the sigmoid",
+     "minutes": 12,
+     "objectives": [
+      "Represent a document as a feature vector for logistic regression",
+      "Turn a weighted sum into a probability with the sigmoid or softmax"
+     ],
+     "key_points": [
+      "Logistic regression computes a score z = w · x + b from a feature vector x, such as word counts, binary indicators, n-grams or counts of words from a sentiment lexicon, and learned weights w and bias b.",
+      "The sigmoid σ(z) = 1 / (1 + e^-z) turns the score into a probability between 0 and 1; predicting the positive class when σ(z) > 0.5 is the same as predicting it when z > 0.",
+      "Each weight says how strongly its feature pushes towards the positive class, so the largest positive and negative weights show what the model has learned, and features may overlap or correlate without breaking the model.",
+      "For more than two classes, multinomial logistic regression (softmax regression) keeps a weight vector per class and turns the scores into probabilities with softmax: exp(z_k) / Σ_j exp(z_j).",
+      "Regularisation keeps weights small to reduce overfitting: L2 adds the sum of squared weights to the loss and L1 the sum of their absolute values. In scikit-learn, C is the inverse of the regularisation strength, so a smaller C regularises more."
+     ]
+    },
+    {
+     "title": "Training with cross-entropy, and evaluating classifiers",
+     "minutes": 14,
+     "objectives": [
+      "Explain the cross-entropy loss and its gradient",
+      "Train logistic regression with gradient descent",
+      "Evaluate a classifier with a confusion matrix, precision, recall and F1"
+     ],
+     "key_points": [
+      "Cross-entropy loss measures how well predicted probabilities match the labels: for one example L = -[y log ŷ + (1 - y) log(1 - ŷ)], which is small when the model gives the true class a high probability.",
+      "Its gradient with respect to the weights is (ŷ - y) x, the error times the features, so gradient descent repeatedly moves w by -η times the average of (ŷ - y) x over the training data, where η is the learning rate.",
+      "The loss is convex, so gradient descent with a suitable learning rate approaches the single best solution; stochastic and mini-batch gradient descent update from one example or a small batch at a time, which is faster on large data.",
+      "Starting from zero weights every prediction is 0.5 and the loss is ln 2 ≈ 0.6931. On the movie snippets, 300 steps of batch gradient descent bring it down to 0.5021, but scikit-learn's optimiser, run to convergence, reaches the higher test accuracy.",
+      "A confusion matrix counts predictions by true and predicted class. Precision is the share of predicted positives that are right, recall the share of true positives found and F1 their harmonic mean; with several classes, macro-averaging weights classes equally and micro-averaging weights examples.",
+      "Tune on a development set, touch the test set once, and read the misclassified examples: in sentiment data they're often negation, sarcasm or mixed opinions that a bag of words can't capture."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "One gradient descent step by hand",
+      "steps": [
+       {
+        "do": "Score one positive example with zero weights.",
+        "code": "import math\nimport numpy as np\nfrom scipy.special import expit  # the sigmoid\n\nx, y = np.array([1.0, 2.0]), 1.0\nw, b = np.zeros(2), 0.0\np = expit(x @ w + b)\np, -math.log(p)",
+        "lang": "python",
+        "see": "(0.5, 0.6931...): a coin toss, and a loss of ln 2."
+       },
+       {
+        "do": "Compute the gradient, error times features.",
+        "code": "grad = (p - y) * x\ngrad",
+        "lang": "python",
+        "see": "array([-0.5, -1. ])"
+       },
+       {
+        "do": "Take one step with learning rate 0.1, updating the bias too.",
+        "code": "w = w - 0.1 * grad\nb = b - 0.1 * (p - y)\nw, b",
+        "lang": "python",
+        "see": "(array([0.05, 0.1 ]), 0.05)"
+       },
+       {
+        "do": "Score the example again.",
+        "code": "p = expit(x @ w + b)\nround(p, 4), round(-math.log(p), 4)",
+        "lang": "python",
+        "see": "(0.5744, 0.5544): the true class is more probable and the loss has fallen."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Naive Bayes from scratch, then logistic regression",
+    "tool": "Python 3, NLTK and scikit-learn",
+    "minutes": 60,
+    "goal": "Classify movie-review snippets as positive or negative with a Naive Bayes classifier you write yourself, check it against scikit-learn, then train logistic regression by gradient descent on cross-entropy, compare the models and read the errors.",
+    "setup": [
+     "Python 3.10 or later with NLTK, NumPy, SciPy and scikit-learn",
+     "The sentence polarity dataset (about 0.5 MB), downloaded once: python -c \"import nltk; [nltk.download(r) for r in ('sentence_polarity',)]\"",
+     "The starter file classify.py"
+    ],
+    "steps": [
+     {
+      "do": "Read load(): it shuffles the 10,662 snippets with a fixed seed and keeps 80% for training."
+     },
+     {
+      "do": "Write NaiveBayes.fit() (TODO 1): count the words of each class, then set the vocabulary, the log priors and each class's total word count."
+     },
+     {
+      "do": "Write log_likelihood() with add-alpha smoothing and predict() in log space (TODOs 2 and 3), then run the script. The logistic regression part keeps its weights at zero until TODO 4.",
+      "code": "python classify.py",
+      "lang": "bash",
+      "see": "Train 8529, test 2133, positive share in test 0.504; Our Naive Bayes: accuracy 0.7670, vocabulary 19044; binary 0.7661; scikit-learn MultinomialNB: accuracy 0.7670, the same as yours."
+     },
+     {
+      "do": "Look at the words with the most negative and most positive log likelihood ratios.",
+      "see": "['routine', 'unfunny', 'badly', '90', 'flat', 'disguise'] and ['gem', 'riveting', 'lively', 'wonderfully', 'wonderful', 'chilling']"
+     },
+     {
+      "do": "Write the gradient descent update (TODO 4) and run the whole script.",
+      "see": "The loss falls from 0.6931 at epoch 0 to 0.5795, 0.5335 and 0.5021; your logistic regression scores 0.7445 and scikit-learn's 0.7712, with the confusion matrix [[820, 237], [251, 825]]."
+     },
+     {
+      "do": "Print 10 misclassified snippets, not just the first, and sort them into causes such as negation, sarcasm, mixed opinion or rare words. Write two or three sentences starting Errors:."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Naive Bayes is written from scratch with add-one smoothing and matches scikit-learn.",
+      "look_for": [
+       "Our Naive Bayes: accuracy 0.7670",
+       "scikit-learn MultinomialNB: accuracy 0.7670"
+      ]
+     },
+     {
+      "text": "Binary Naive Bayes is compared.",
+      "look_for": [
+       "Our binary Naive Bayes: accuracy 0.7661"
+      ]
+     },
+     {
+      "text": "The most informative words are listed.",
+      "look_for": [
+       "'unfunny'",
+       "'riveting'"
+      ]
+     },
+     {
+      "text": "Gradient descent lowers the cross-entropy loss.",
+      "look_for": [
+       "epoch 0: loss 0.6931",
+       "epoch 300: loss 0.5021"
+      ]
+     },
+     {
+      "text": "Both logistic regressions are evaluated, with a confusion matrix.",
+      "look_for": [
+       "Our logistic regression: accuracy 0.7445",
+       "scikit-learn LogisticRegression: accuracy 0.7712",
+       "[[820, 237], [251, 825]]"
+      ]
+     },
+     {
+      "text": "Misclassified snippets are sorted into causes.",
+      "look_for": [
+       "Errors:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished classify.py, everything it printed, and your Errors: analysis.",
+    "files": [
+     {
+      "path": "classify.py",
+      "content": "\"\"\"Naive Bayes from scratch, then logistic regression, on movie-review snippets.\n\nFirst, once:  python -c \"import nltk; nltk.download('sentence_polarity')\"\n\"\"\"\n\nimport math\nimport random\nfrom collections import Counter\n\nimport numpy as np\nfrom nltk.corpus import sentence_polarity\nfrom scipy.special import expit\nfrom sklearn.feature_extraction.text import CountVectorizer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import confusion_matrix\nfrom sklearn.naive_bayes import MultinomialNB\n\n\ndef load(seed=42):\n    \"\"\"(tokens, label) pairs, shuffled and split 80/20. The snippets are already tokenised and lowercased.\"\"\"\n    docs = [(sent, label) for label in (\"neg\", \"pos\") for sent in sentence_polarity.sents(categories=label)]\n    random.Random(seed).shuffle(docs)\n    cut = int(0.8 * len(docs))\n    return docs[:cut], docs[cut:]\n\n\nclass NaiveBayes:\n    \"\"\"Multinomial Naive Bayes with add-alpha smoothing; binary=True counts each word once per document.\"\"\"\n\n    def __init__(self, alpha=1.0, binary=False):\n        self.alpha, self.binary = alpha, binary\n\n    def _words(self, tokens):\n        return set(tokens) if self.binary else tokens\n\n    def fit(self, docs):\n        self.classes = sorted({label for _, label in docs})\n        self.word_counts = {c: Counter() for c in self.classes}\n        # TODO 1: count the words of each class (self._words(tokens) handles binary=True), then set\n        #   self.vocab      every word seen in training\n        #   self.log_prior  {class: log(share of training documents in that class)}\n        #   self.total      {class: total word count of that class}\n        return self\n\n    def log_likelihood(self, word, c):\n        # TODO 2: log((count(word, c) + alpha) / (total count of c + alpha * |V|))\n        pass\n\n    def predict(self, tokens):\n        # TODO 3: for each class, log prior + the log likelihoods of the document's known words\n        #         (ignore words not in self.vocab); return the class with the highest score\n        pass\n\n\ndef accuracy(model, docs):\n    return sum(model.predict(tokens) == label for tokens, label in docs) / len(docs)\n\n\ndef train_logistic_regression(X, y, lr=1.0, epochs=300, l2=1e-4):\n    \"\"\"Batch gradient descent on the mean cross-entropy loss (plus an L2 penalty).\"\"\"\n    w, b = np.zeros(X.shape[1]), 0.0\n    for epoch in range(epochs + 1):\n        p = expit(X @ w + b)  # sigmoid\n        if epoch % 100 == 0:\n            eps = 1e-12\n            loss = -np.mean(y * np.log(p + eps) + (1 - y) * np.log(1 - p + eps)) + l2 / 2 * w @ w\n            print(f\"  epoch {epoch}: loss {loss:.4f}\")\n        # TODO 4: error = p - y is the gradient of the loss with respect to z = Xw + b, so\n        #         w moves by -lr * (X.T @ error / n + l2 * w) and b by -lr * mean(error)\n        pass\n    return w, b\n\n\ndef main():\n    train, test = load()\n    print(f\"Train {len(train)}, test {len(test)}, positive share in test {sum(l == 'pos' for _, l in test) / len(test):.3f}\")\n\n    nb = NaiveBayes().fit(train)\n    print(f\"Our Naive Bayes: accuracy {accuracy(nb, test):.4f}, vocabulary {len(nb.vocab)}\")\n    nb_bin = NaiveBayes(binary=True).fit(train)\n    print(f\"Our binary Naive Bayes: accuracy {accuracy(nb_bin, test):.4f}\")\n\n    ratio = {w: nb.log_likelihood(w, \"pos\") - nb.log_likelihood(w, \"neg\")\n             for w in nb.vocab if nb.word_counts[\"pos\"][w] + nb.word_counts[\"neg\"][w] >= 10}\n    ranked = sorted(ratio, key=lambda w: (ratio[w], w))\n    print(\"Most negative words:\", ranked[:6])\n    print(\"Most positive words:\", ranked[-6:][::-1])\n\n    vectoriser = CountVectorizer(analyzer=lambda tokens: tokens)  # the documents are token lists already\n    X_train = vectoriser.fit_transform([t for t, _ in train])\n    X_test = vectoriser.transform([t for t, _ in test])\n    y_train = np.array([l == \"pos\" for _, l in train], dtype=float)\n    y_test = np.array([l == \"pos\" for _, l in test], dtype=float)\n    sk_nb = MultinomialNB(alpha=1.0).fit(X_train, y_train)\n    print(f\"scikit-learn MultinomialNB: accuracy {(sk_nb.predict(X_test) == y_test).mean():.4f}\")\n\n    print(\"Logistic regression by gradient descent:\")\n    w, b = train_logistic_regression(X_train, y_train)\n    ours = ((X_test @ w + b) > 0).astype(float)\n    print(f\"Our logistic regression: accuracy {(ours == y_test).mean():.4f}\")\n    sk_lr = LogisticRegression(C=1.0, max_iter=1000).fit(X_train, y_train)\n    pred = sk_lr.predict(X_test)\n    print(f\"scikit-learn LogisticRegression: accuracy {(pred == y_test).mean():.4f}\")\n\n    print(\"Confusion matrix (rows: true neg, pos):\", confusion_matrix(y_test, pred).tolist())\n    wrong = [\" \".join(tokens) for (tokens, _), p, t in zip(test, pred, y_test) if p != t]\n    print(\"First misclassified:\", wrong[0])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "self.total[c] is the sum of all the word counts in class c, not the number of distinct words.",
+     "If your accuracy differs slightly from scikit-learn's, check that unknown test words are skipped and that |V| is the size of the whole training vocabulary, not one class's.",
+     "Your logistic regression is less accurate than scikit-learn's because 300 steps of plain gradient descent haven't converged; try more epochs and watch the loss."
+    ]
+   }
+  },
+  {
+   "title": "Vector semantics and embeddings",
+   "summary": "Represent words by the company they keep: build term-document and word-context matrices, weight them with PPMI, compare words with cosine similarity, and compress the counts into dense vectors with SVD, the bridge to learned embeddings.",
+   "instructor": "yildize-demirel",
+   "lessons": [
+    {
+     "title": "The distributional hypothesis and co-occurrence matrices",
+     "minutes": 12,
+     "objectives": [
+      "State the distributional hypothesis",
+      "Build term-document and word-context co-occurrence matrices"
+     ],
+     "key_points": [
+      "The distributional hypothesis says that words occurring in similar contexts tend to have similar meanings; the linguist J. R. Firth put it as 'You shall know a word by the company it keeps' (1957).",
+      "A term-document matrix has a row per word and a column per document, each cell counting the word in that document; documents are compared by their columns (the basis of the vector space model in search) and words by their rows.",
+      "A word-context matrix counts how often each context word appears within a window, such as ±2 words, around each target word; small windows capture close, often syntactic similarity and larger ones topical relatedness.",
+      "These matrices are sparse: with the 5,000 most frequent Brown corpus words as both rows and contexts and a ±2-word window, only 2.8% of the 25 million cells are non-zero, so they're stored in sparse formats such as SciPy's CSR.",
+      "Raw counts are dominated by frequent function words: nearly every noun co-occurs with 'the' and 'of', so raw-count vectors make words look alike for uninformative reasons."
+     ]
+    },
+    {
+     "title": "Weighting with PMI and PPMI",
+     "minutes": 12,
+     "objectives": [
+      "Calculate pointwise mutual information from co-occurrence counts",
+      "Explain why PPMI and context smoothing are used"
+     ],
+     "key_points": [
+      "Pointwise mutual information compares how often a word and a context occur together with how often they would by chance: PMI(w, c) = log2(P(w, c) / (P(w) P(c))), with the probabilities estimated from the co-occurrence counts.",
+      "PMI is positive when a pair occurs more often than chance, zero at chance and negative when less often; negative values need enormous corpora to estimate reliably, so positive PMI (PPMI) replaces them with zero.",
+      "PMI is biased towards rare events: a rare context seen once with a rare word scores very high. Raising context counts to the power 0.75 before normalising them, or adding k to every count, reduces the bias.",
+      "Weighting changes the neighbours: in the Brown corpus, raw counts make 'wife' look closest to 'chest' and 'hat', while PPMI gives 'mother', 'husband' and 'daughter'.",
+      "TF-IDF is the corresponding weighting for term-document matrices: it favours words that are frequent in a document but rare across documents, as the information retrieval module shows."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "PMI by hand, then PPMI for a whole matrix",
+      "steps": [
+       {
+        "do": "A word seen 20 times and a context seen 25 times co-occur 10 times in 1,000 pairs.",
+        "code": "import math\nmath.log2((10 / 1000) / ((20 / 1000) * (25 / 1000)))",
+        "lang": "python",
+        "see": "4.3219...: they co-occur 20 times more often than chance."
+       },
+       {
+        "do": "Compute PPMI for a small 3 x 3 count matrix with NumPy.",
+        "code": "import numpy as np\nM = np.array([[2, 0, 1], [0, 3, 1], [1, 1, 0]], dtype=float)\nP = M / M.sum()\npw, pc = P.sum(1, keepdims=True), P.sum(0, keepdims=True)\nwith np.errstate(divide='ignore'):\n    pmi = np.log2(P / (pw * pc))\nnp.round(np.maximum(pmi, 0), 3)",
+        "lang": "python",
+        "see": "[[1. 0. 0.585] [0. 0.755 0.17] [0.585 0.17 0.]]: zero counts give -inf, which PPMI turns into 0."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Cosine similarity and nearest neighbours",
+     "minutes": 12,
+     "objectives": [
+      "Compute cosine similarity between word vectors",
+      "Find and evaluate a word's nearest neighbours"
+     ],
+     "key_points": [
+      "The dot product of two vectors grows with their lengths, which favours frequent words; cosine similarity divides by both lengths, cos(a, b) = a · b / (|a| |b|), so it measures only the angle between them.",
+      "Cosine ranges from -1 to 1, and from 0 to 1 for non-negative vectors such as counts or PPMI; after normalising every row to length 1, one matrix product gives a word's cosine with every other word.",
+      "A word's nearest neighbours are the words with the highest cosine to it; they show what a representation has captured and are the usual first check of a vector space.",
+      "Count vectors capture second-order similarity: two words can be close without ever occurring together because they share contexts, as 'tuesday' and 'wednesday' do.",
+      "Vector spaces are evaluated intrinsically, by correlating their similarities with human ratings of word pairs (Spearman correlation on datasets such as WordSim-353 and SimLex-999), and extrinsically, by how much they help a downstream task."
+     ]
+    },
+    {
+     "title": "Dense vectors from counts: SVD and latent semantic analysis",
+     "minutes": 12,
+     "objectives": [
+      "Reduce a sparse co-occurrence matrix to dense vectors with truncated SVD",
+      "Relate count-based vectors to learned word embeddings"
+     ],
+     "key_points": [
+      "Singular value decomposition factors a matrix M into U Σ V^T; keeping only the k largest singular values gives the best rank-k approximation of M in the least-squares sense.",
+      "Truncated SVD of a PPMI or TF-IDF matrix gives each word a dense vector of k numbers, typically 100 to 300; scikit-learn's TruncatedSVD works directly on sparse matrices.",
+      "Applied to term-document matrices for search, this is latent semantic analysis (LSA, also called latent semantic indexing): dimensions that blend related words let documents match queries that use synonyms.",
+      "Dense vectors generalise better than sparse ones because they smooth over contexts a word happened not to occur in: in the lab, 100 SVD dimensions of the Brown PPMI matrix make 'red' closest to 'white', 'black', 'yellow', 'blue' and 'pink'.",
+      "Predictive methods such as word2vec learn dense vectors directly, and its skip-gram with negative sampling has been shown to implicitly factorise a shifted PMI matrix (Levy and Goldberg, 2014), so count-based and predictive embeddings are close relatives."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Word vectors from co-occurrence counts",
+    "tool": "Python 3, NumPy, SciPy and scikit-learn",
+    "minutes": 55,
+    "goal": "Build a word-context matrix for the 5,000 commonest words of the Brown corpus, weight it with PPMI, compress it with truncated SVD, and compare the nearest neighbours each representation gives.",
+    "setup": [
+     "Python 3.10 or later with NLTK, NumPy, SciPy and scikit-learn",
+     "The Brown corpus, downloaded once: python -c \"import nltk; [nltk.download(r) for r in ('brown',)]\"",
+     "The starter file vectors.py"
+    ],
+    "steps": [
+     {
+      "do": "Write the co-occurrence loop (TODO 1): for each vocabulary word, count the vocabulary words up to two positions either side of it in the same sentence. Comment out the PPMI and SVD lines in main() and run the script.",
+      "code": "python vectors.py",
+      "lang": "bash",
+      "see": "Matrix 5000 x 5000, 707721 non-zero cells (2.8% full), 2773502 co-occurrences, and raw-count neighbours such as wife: chest 0.91, hat 0.90, brother 0.88."
+     },
+     {
+      "do": "Write ppmi() (TODO 2) with the 0.75 context smoothing, restore the lines in main(), and run it again.",
+      "see": "PPMI keeps 592593 positive cells; SVD: 100 dimensions explain 13.1% of the variance."
+     },
+     {
+      "do": "Compare the three neighbour lists for each probe word.",
+      "see": "week: counts year 0.93, month 0.91, ...; PPMI year 0.26, month 0.25, day 0.24; SVD day 0.83, month 0.80, year 0.79. wife: PPMI mother 0.21, husband 0.20; SVD mother 0.84, father 0.81."
+     },
+     {
+      "do": "Experiment: set WINDOW = 5, or alpha=1.0 in ppmi(), and rerun. Note how the neighbours of school and red change."
+     },
+     {
+      "do": "Write two or three sentences starting Comparison: on which representation gives the best neighbours, and why raw counts fail."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The co-occurrence matrix is built with a ±2-word window inside sentences.",
+      "look_for": [
+       "707721 non-zero cells",
+       "2773502 co-occurrences"
+      ]
+     },
+     {
+      "text": "PPMI uses context smoothing and keeps only positive values.",
+      "look_for": [
+       "PPMI keeps 592593 positive cells"
+      ]
+     },
+     {
+      "text": "Truncated SVD gives 100-dimensional vectors.",
+      "look_for": [
+       "13.1% of the variance"
+      ]
+     },
+     {
+      "text": "Neighbours are compared across the three representations.",
+      "look_for": [
+       "chest 0.91",
+       "mother 0.21",
+       "mother 0.84"
+      ]
+     },
+     {
+      "text": "The experiment is reported and the representations compared.",
+      "look_for": [
+       "Comparison:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished vectors.py, everything it printed with the window of 2, what changed in your experiment, and your Comparison:.",
+    "files": [
+     {
+      "path": "vectors.py",
+      "content": "\"\"\"Word vectors from co-occurrence counts in the Brown corpus: raw counts, PPMI and SVD.\n\nFirst, once:  python -c \"import nltk; nltk.download('brown')\"\n\"\"\"\n\nfrom collections import Counter\n\nimport numpy as np\nimport scipy.sparse as sp\nfrom nltk.corpus import brown\nfrom sklearn.decomposition import TruncatedSVD\nfrom sklearn.preprocessing import normalize\n\nVOCAB_SIZE, WINDOW = 5000, 2\nPROBES = [\"week\", \"tuesday\", \"school\", \"wife\", \"red\"]\n\n\ndef cooccurrence(sents, vocab, window=WINDOW):\n    \"\"\"A word-by-context count matrix: how often each context word is within `window` words, in the same sentence.\"\"\"\n    index = {w: i for i, w in enumerate(vocab)}\n    rows, cols = [], []\n    for sent in sents:\n        ids = [index.get(w) for w in sent]  # None for words outside the vocabulary\n        # TODO 1: for every position i with a vocabulary word, and every other position j at most `window`\n        #         away in the same sentence that also holds a vocabulary word, append ids[i] to rows and ids[j] to cols\n        pass\n    n = len(vocab)\n    return sp.coo_matrix((np.ones(len(rows)), (rows, cols)), shape=(n, n)).tocsr()  # duplicates are summed\n\n\ndef ppmi(counts, alpha=0.75):\n    \"\"\"Positive pointwise mutual information, with the context distribution raised to alpha (smoothing).\"\"\"\n    total = counts.sum()\n    p_word = np.asarray(counts.sum(axis=1)).ravel() / total\n    context = np.asarray(counts.sum(axis=0)).ravel() ** alpha\n    p_context = context / context.sum()\n    m = counts.tocoo()  # m.row, m.col and m.data list the non-zero cells\n    # TODO 2: pmi = log2(P(w, c) / (P(w) * P(c))) for each non-zero cell, with P(w, c) = m.data / total;\n    #         keep only the positive values and return them as a csr_matrix of the same shape\n    pass\n\n\ndef neighbours(matrix, vocab, word, k=5):\n    unit = normalize(matrix)  # rows of length 1, so dot products are cosines\n    i = vocab.index(word)\n    sims = unit @ unit[i].T\n    sims = np.asarray(sims.todense()).ravel() if sp.issparse(sims) else np.asarray(sims).ravel()\n    sims[i] = -1  # leave the word itself out\n    best = np.argsort(-sims, kind=\"stable\")[:k]\n    return [f\"{vocab[j]} {sims[j]:.2f}\" for j in best]\n\n\ndef main():\n    sents = [[w.lower() for w in s if w.isalpha()] for s in brown.sents()]\n    freq = Counter(w for s in sents for w in s)\n    vocab = [w for w, _ in freq.most_common(VOCAB_SIZE)]\n    counts = cooccurrence(sents, vocab)\n    print(f\"Matrix {counts.shape[0]} x {counts.shape[1]}, {counts.nnz} non-zero cells \"\n          f\"({counts.nnz / counts.shape[0] ** 2:.1%} full), {int(counts.sum())} co-occurrences\")\n\n    weighted = ppmi(counts)\n    print(f\"PPMI keeps {weighted.nnz} positive cells\")\n    svd = TruncatedSVD(n_components=100, random_state=0)\n    dense = svd.fit_transform(weighted)\n    print(f\"SVD: 100 dimensions explain {svd.explained_variance_ratio_.sum():.1%} of the variance\")\n\n    for word in PROBES:\n        print(f\"{word}\")\n        print(\"  counts:\", neighbours(counts, vocab, word))\n        print(\"  PPMI:  \", neighbours(weighted, vocab, word))\n        print(\"  SVD:   \", neighbours(dense, vocab, word))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "range(max(0, i - window), min(len(ids), i + window + 1)) covers the window around position i; skip j == i and positions holding None.",
+     "m.row and m.col index the non-zero cells, so p_word[m.row] and p_context[m.col] line up with m.data.",
+     "If PPMI keeps every cell, the logarithm or the smoothing is wrong: about one non-zero cell in six has a PMI of zero or less."
+    ]
+   }
+  },
+  {
+   "title": "Markov models and POS tagging",
+   "summary": "Model sequences with the Markov assumption: smooth n-gram language models properly, then build hidden Markov models for part-of-speech tagging, decode them with the Viterbi algorithm and handle words never seen in training.",
+   "instructor": "yildize-demirel",
+   "lessons": [
+    {
+     "title": "N-gram language models and smoothing",
+     "minutes": 14,
+     "objectives": [
+      "State the Markov assumption behind n-gram models",
+      "Compare add-k, interpolation, backoff and Kneser-Ney smoothing"
+     ],
+     "key_points": [
+      "The Markov assumption approximates the probability of a word given its whole history by its probability given only the last n - 1 words: a bigram model uses one word of history and a trigram model two.",
+      "Maximum likelihood estimates give zero to every n-gram missing from the training data, and the higher n is, the more of any test text is unseen, so higher-order models need smoothing even more.",
+      "Add-one smoothing, met in NLP Foundations with Python and Corpora, moves too much probability to unseen events; add-k with a small k tuned on held-out data does better, but still treats every unseen word alike.",
+      "Interpolation mixes orders, P = λ3 P(w | u, v) + λ2 P(w | v) + λ1 P(w), with the λs summing to 1 and tuned on held-out data; backoff uses the highest order that has counts, and Katz backoff discounts it so the probabilities still sum to 1.",
+      "Kneser-Ney smoothing subtracts a fixed discount from each count and gives the freed probability to a continuation distribution, based on how many different words a word follows: 'Francisco' is frequent but follows almost only 'San', so it gets little probability after other words.",
+      "Very large systems have used 'stupid backoff', which multiplies a lower-order score by a constant such as 0.4 and gives scores rather than true probabilities but scales well. Compare perplexities only between models with the same vocabulary."
+     ]
+    },
+    {
+     "title": "Hidden Markov models: transitions and emissions",
+     "minutes": 12,
+     "objectives": [
+      "Describe part-of-speech tagging and common tagsets",
+      "Estimate an HMM's transition and emission probabilities from a tagged corpus"
+     ],
+     "key_points": [
+      "Part-of-speech tagging labels every token with its word class. The Penn Treebank tagset has 45 tags, such as NN, VBD and JJ, while coarse universal tagsets have about a dozen, such as NLTK's 12-tag universal tagset.",
+      "Tagging is hard because many common words are ambiguous: 'back' can be a noun, a verb, an adjective, an adverb or a particle, and only the context says which.",
+      "A hidden Markov model treats tags as hidden states and words as observations, with transition probabilities P(tag | previous tag), emission probabilities P(word | tag), and a start distribution (transitions from <s>).",
+      "It makes two assumptions: each tag depends only on the previous tag (a first-order Markov chain), and each word depends only on its own tag.",
+      "Training from a tagged corpus is counting, P(t_i | t_i-1) = count(t_i-1, t_i) / count(t_i-1) and P(w | t) = count(t, w) / count(t), smoothed so unseen pairs aren't impossible. In the Penn Treebank sample, P(NOUN | DET) is 0.637 and P(VERB | DET) only 0.078."
+     ]
+    },
+    {
+     "title": "Viterbi decoding",
+     "minutes": 14,
+     "objectives": [
+      "Explain why the best tag sequence can't be found by trying them all",
+      "Decode the best tag sequence with the Viterbi algorithm"
+     ],
+     "key_points": [
+      "Tagging looks for the tag sequence that maximises P(tags | words), which for an HMM is proportional to the product over positions of P(t_i | t_i-1) × P(w_i | t_i).",
+      "Trying every sequence is hopeless, with T^N sequences for T tags and N words, but the Markov assumption means the best path to a tag at one position depends only on the best paths to each tag at the position before.",
+      "Viterbi fills a table v[i][t], the probability of the best path ending in tag t at word i: v[i][t] = max over t' of v[i-1][t'] × P(t | t') × P(w_i | t), with the winning t' stored as a backpointer.",
+      "At the end it takes the best final tag, including the transition to </s>, and follows the backpointers from right to left to recover the sequence, in time proportional to N × T².",
+      "Work in log space, adding log probabilities instead of multiplying, to avoid underflow on long sentences; the same dynamic programme with sums instead of maxima is the forward algorithm, which gives the total probability of the words."
+     ]
+    },
+    {
+     "title": "Unknown words and evaluating taggers",
+     "minutes": 12,
+     "objectives": [
+      "Handle words never seen in training",
+      "Evaluate a tagger against a baseline and analyse its errors"
+     ],
+     "key_points": [
+      "A word never seen in training has emission probability zero under every tag, which wrecks every path through it, and unknown words account for a large share of a tagger's errors.",
+      "One fix replaces rare training words, such as those seen once, with shape classes like <-ing>, <-ed>, <CAP> or <NUM>, and maps unseen test words to the same classes, so suffixes and capital letters give clues to the tag.",
+      "Morphologically rich languages such as Turkish and Finnish produce far more unseen word forms, so taggers for them lean on morphological analysis or subword features.",
+      "Report token accuracy against a baseline that gives each word its most frequent training tag. On the Penn Treebank sample with universal tags that baseline scores 92.6% and the lab's HMM 94.7%: 96.0% on known words but 83.3% on unknown ones.",
+      "A confusion matrix of gold against predicted tags shows where a tagger fails: noun-adjective and noun-verb confusions are the commonest, and garden-path sentences such as 'The old man the boats' defeat a bigram HMM."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "An HMM part-of-speech tagger with Viterbi",
+    "tool": "Python 3, NLTK and NumPy",
+    "minutes": 75,
+    "goal": "Train a hidden Markov model tagger on 3,000 sentences of the Penn Treebank sample with universal tags, write Viterbi decoding in log space, and evaluate it against a most-frequent-tag baseline on known and unknown words.",
+    "setup": [
+     "Python 3.10 or later with NLTK and NumPy",
+     "The treebank sample and the tag mapping, downloaded once: python -c \"import nltk; [nltk.download(r) for r in ('treebank', 'universal_tagset')]\"",
+     "The starter file hmm_tagger.py"
+    ],
+    "steps": [
+     {
+      "do": "Run the starter: training and evaluation work, but viterbi() tags every word as a noun.",
+      "code": "python hmm_tagger.py",
+      "lang": "bash",
+      "see": "Train 3000 sentences (72422 tokens), test 914 (21662 tokens), the 12 tags, P(NOUN | DET) = 0.637, and HMM accuracy 0.3162 from the all-noun placeholder."
+     },
+     {
+      "do": "Read fit(): words seen once become shape classes, and the transition matrix has an extra row for <s> and an extra column for </s>."
+     },
+     {
+      "do": "Write viterbi(): start from <s>, fill v and back with NumPy (scores = v[i - 1][:, None] + self.log_a[:n, :n] holds every previous tag and tag pair), add the transition to </s>, and follow the backpointers."
+     },
+     {
+      "do": "Run it again.",
+      "see": "Investors/NOUN snapped/VERB up/PRT shares/NOUN of/ADP Glorbex/NOUN yesterday/NOUN ./., the baseline 0.9256, and HMM accuracy 0.9472: known words 0.9602, unknown words 0.8325 (2203 unknown tokens)."
+     },
+     {
+      "do": "Look at the garden-path sentence and the commonest errors.",
+      "see": "The/DET old/ADJ man/NOUN the/DET boats/NOUN ./. and errors led by (('NOUN', 'ADJ'), 224) and (('VERB', 'NOUN'), 147)."
+     },
+     {
+      "do": "Experiment: change k from 0.1 to 1.0 or 0.01, or remove a suffix class from shape(), and rerun. Write two or three sentences starting Analysis: on what changed and why unknown words are harder."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The tagger is trained on 3,000 sentences without the treebank's empty elements.",
+      "look_for": [
+       "Train 3000 sentences (72422 tokens)",
+       "P(NOUN | DET) = 0.637"
+      ]
+     },
+     {
+      "text": "Viterbi decoding tags new sentences, including an unknown word.",
+      "look_for": [
+       "Investors/NOUN snapped/VERB up/PRT shares/NOUN of/ADP Glorbex/NOUN"
+      ]
+     },
+     {
+      "text": "The HMM beats the most-frequent-tag baseline.",
+      "look_for": [
+       "Most-frequent-tag baseline: 0.9256",
+       "HMM accuracy 0.9472"
+      ]
+     },
+     {
+      "text": "Accuracy is reported separately for known and unknown words.",
+      "look_for": [
+       "known words 0.9602",
+       "unknown words 0.8325"
+      ]
+     },
+     {
+      "text": "The commonest errors are listed and an experiment is analysed.",
+      "look_for": [
+       "(('NOUN', 'ADJ'), 224)",
+       "Analysis:"
+      ]
+     }
+    ],
+    "submit": "Paste your viterbi() method, everything the script printed, the results of your experiment, and your Analysis:.",
+    "files": [
+     {
+      "path": "hmm_tagger.py",
+      "content": "\"\"\"A hidden Markov model part-of-speech tagger with Viterbi decoding, on the Penn Treebank sample.\n\nFirst, once:  python -c \"import nltk; [nltk.download(r) for r in ('treebank', 'universal_tagset')]\"\n\"\"\"\n\nimport math\nfrom collections import Counter, defaultdict\n\nimport numpy as np\nfrom nltk.corpus import treebank\nfrom nltk.tag.mapping import map_tag\n\nSTART, END = \"<s>\", \"</s>\"\n\n\ndef load():\n    \"\"\"Tagged sentences with universal tags, without the treebank's empty elements (tag -NONE-).\"\"\"\n    sents = [[(w, map_tag(\"en-ptb\", \"universal\", t)) for w, t in s if t != \"-NONE-\"]\n             for s in treebank.tagged_sents()]\n    return sents[:3000], sents[3000:]\n\n\ndef shape(word):\n    \"\"\"A pseudo-word for words seen at most once: it keeps clues to the tag, such as a suffix or a capital.\"\"\"\n    if any(c.isdigit() for c in word):\n        return \"<NUM>\"\n    if \"-\" in word:\n        return \"<HYPHEN>\"\n    for suffix in (\"ing\", \"ed\", \"ly\", \"ion\", \"s\"):\n        if word.lower().endswith(suffix):\n            return f\"<-{suffix}>\"\n    if word[0].isupper():\n        return \"<CAP>\"\n    return \"<UNK>\"\n\n\nclass HMMTagger:\n    def __init__(self, k=0.1):\n        self.k = k  # add-k smoothing for transitions and emissions\n\n    def fit(self, sents):\n        freq = Counter(w for s in sents for w, _ in s)\n        self.known = {w for w, c in freq.items() if c > 1}  # hapaxes become shape classes, to learn unknown words\n        self.tags = sorted({t for s in sents for _, t in s})\n        trans, emit = Counter(), defaultdict(Counter)\n        for s in sents:\n            tags = [START] + [t for _, t in s] + [END]\n            trans.update(zip(tags, tags[1:]))\n            for w, t in s:\n                emit[t][self.word(w)] += 1\n        self.vocab = sorted({w for t in emit for w in emit[t]})\n        n, v = len(self.tags), len(self.vocab)\n        index = {t: i for i, t in enumerate(self.tags)}\n        self.windex = {w: i for i, w in enumerate(self.vocab)}\n        a = np.full((n + 1, n + 1), self.k)  # rows: previous tag (last row is START); columns: tag (last is END)\n        for (prev, t), c in trans.items():\n            a[n if prev == START else index[prev], n if t == END else index[t]] += c\n        a[:n + 1, :] /= a.sum(axis=1, keepdims=True)\n        b = np.full((n, v), self.k)\n        for t in emit:\n            for w, c in emit[t].items():\n                b[index[t], self.windex[w]] += c\n        b /= b.sum(axis=1, keepdims=True)\n        self.log_a, self.log_b = np.log(a), np.log(b)\n        return self\n\n    def word(self, w):\n        return w if w in self.known else shape(w)\n\n    def viterbi(self, words):\n        n, T = len(self.tags), len(words)\n        obs = [self.windex.get(self.word(w), self.windex.get(\"<UNK>\")) for w in words]\n        v = np.zeros((T, n))\n        back = np.zeros((T, n), dtype=int)\n        # TODO: fill v (best log probability of any path ending in each tag) and back (the previous tag on it):\n        #   v[0] = log P(tag | START) + log P(word 0 | tag)          -> self.log_a[n, :n] + self.log_b[:, obs[0]]\n        #   v[i][t] = max over prev of (v[i-1][prev] + log P(t | prev)) + log P(word i | t)\n        #             (self.log_a[:n, :n][prev, t]; NumPy: scores = v[i - 1][:, None] + self.log_a[:n, :n])\n        #   back[i][t] = the argmax prev\n        # Then add log P(END | tag), self.log_a[:n, n], to v[-1], take the best last tag and follow back to the start.\n        return [\"NOUN\"] * T\n\n\ndef evaluate(tagger, train, test):\n    seen = {w for s in train for w, _ in s}\n    right = Counter()\n    total = Counter()\n    errors = Counter()\n    for s in test:\n        words = [w for w, _ in s]\n        for (w, gold), pred in zip(s, tagger.viterbi(words)):\n            kind = \"known\" if w in seen else \"unknown\"\n            total[kind] += 1\n            right[kind] += gold == pred\n            if gold != pred:\n                errors[(gold, pred)] += 1\n    acc = (right[\"known\"] + right[\"unknown\"]) / (total[\"known\"] + total[\"unknown\"])\n    return acc, right, total, errors\n\n\ndef baseline(train, test):\n    \"\"\"Each word's most frequent training tag; NOUN for unknown words.\"\"\"\n    best = {}\n    by_word = defaultdict(Counter)\n    for s in train:\n        for w, t in s:\n            by_word[w][t] += 1\n    for w, c in by_word.items():\n        best[w] = c.most_common(1)[0][0]\n    pairs = [(t, best.get(w, \"NOUN\")) for s in test for w, t in s]\n    return sum(g == p for g, p in pairs) / len(pairs)\n\n\ndef main():\n    train, test = load()\n    print(f\"Train {len(train)} sentences ({sum(map(len, train))} tokens), test {len(test)} ({sum(map(len, test))} tokens)\")\n    tagger = HMMTagger().fit(train)\n    print(f\"{len(tagger.tags)} tags: {' '.join(tagger.tags)}\")\n    print(f\"P(NOUN | DET) = {math.exp(tagger.log_a[tagger.tags.index('DET'), tagger.tags.index('NOUN')]):.3f}, \"\n          f\"P(VERB | DET) = {math.exp(tagger.log_a[tagger.tags.index('DET'), tagger.tags.index('VERB')]):.3f}\")\n    for sentence in [\"Investors snapped up shares of Glorbex yesterday .\", \"The old man the boats .\"]:\n        words = sentence.split()\n        print(\"Tagged:\", \" \".join(f\"{w}/{t}\" for w, t in zip(words, tagger.viterbi(words))))\n    print(f\"Most-frequent-tag baseline: {baseline(train, test):.4f}\")\n    acc, right, total, errors = evaluate(tagger, train, test)\n    print(f\"HMM accuracy {acc:.4f}: known words {right['known'] / total['known']:.4f}, \"\n          f\"unknown words {right['unknown'] / total['unknown']:.4f} ({total['unknown']} unknown tokens)\")\n    print(\"Commonest errors (gold, predicted):\", errors.most_common(4))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "self.log_a[n, :n] is the row for <s>, and self.log_a[:n, n] the column for </s>.",
+     "scores.argmax(axis=0) gives, for each tag, the previous tag on its best path.",
+     "Collect the path backwards from the best last tag, then reverse it; an accuracy near 0.3 means viterbi() still returns the placeholder."
+    ]
+   }
+  },
+  {
+   "title": "PCFGs and probabilistic parsing",
+   "summary": "Describe sentence structure with context-free grammars, parse efficiently with the CKY algorithm, choose between ambiguous parses with probabilistic grammars, and see how the inside-outside algorithm learns rule probabilities.",
+   "instructor": "ravi-chandrasekharan",
+   "lessons": [
+    {
+     "title": "Context-free grammars and constituency",
+     "minutes": 12,
+     "objectives": [
+      "Write context-free grammar rules for simple English sentences",
+      "Explain constituency, parse trees and structural ambiguity"
+     ],
+     "key_points": [
+      "A constituent is a group of words that behaves as a unit, such as a noun phrase ('the old man') or a prepositional phrase ('with the telescope'): it can be moved, replaced by a pronoun or used alone to answer a question.",
+      "A context-free grammar has non-terminal symbols (S, NP, VP), terminal symbols (the words), a start symbol S and rules such as S -> NP VP, each rewriting one non-terminal as a sequence of symbols.",
+      "A parse tree shows how the rules derive a sentence from S; treebanks such as the Penn Treebank are corpora of sentences annotated with such trees, written in brackets like (S (NP I) (VP (V saw) ...)).",
+      "Structural ambiguity gives one sentence several trees: in 'I saw the man with the telescope' the prepositional phrase can attach to the verb phrase (I used the telescope) or to the noun phrase (the man had it).",
+      "nltk.CFG.fromstring() reads a grammar written as text, and parsers such as nltk.ChartParser return every tree the grammar allows, which can be very many for a long sentence."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Two trees for one sentence",
+      "steps": [
+       {
+        "do": "Write a small grammar.",
+        "code": "import nltk\ncfg = nltk.CFG.fromstring(\"\"\"\nS -> NP VP\nNP -> Det N | NP PP | 'I'\nVP -> V NP | VP PP\nPP -> P NP\nDet -> 'the'\nN -> 'man' | 'telescope'\nV -> 'saw'\nP -> 'with'\n\"\"\")",
+        "lang": "python"
+       },
+       {
+        "do": "Parse the ambiguous sentence and count the trees.",
+        "code": "trees = list(nltk.ChartParser(cfg).parse('I saw the man with the telescope'.split()))\nlen(trees)",
+        "lang": "python",
+        "see": "2"
+       },
+       {
+        "do": "Print both trees.",
+        "code": "for tree in trees:\n    print(tree)",
+        "lang": "python",
+        "see": "One attaches (PP (P with) ...) to the VP; the other puts it inside (NP (NP (Det the) (N man)) (PP ...))."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Chomsky normal form and the CKY algorithm",
+     "minutes": 14,
+     "objectives": [
+      "Convert a grammar to Chomsky normal form",
+      "Recognise and parse sentences with the CKY algorithm"
+     ],
+     "key_points": [
+      "A grammar in Chomsky normal form (CNF) has only rules of the form A -> B C (two non-terminals) or A -> w (one word); any context-free grammar without empty rules can be converted to an equivalent CNF grammar.",
+      "Conversion binarises long rules with new symbols (VP -> V NP PP becomes VP -> V X1 and X1 -> NP PP), replaces words inside longer rules with pre-terminals, and removes unit rules such as NP -> N by copying their expansions upwards.",
+      "CKY fills a table whose cell (i, j) holds every non-terminal that can derive words i to j: one-word cells come from the lexical rules, and longer spans combine two adjacent smaller spans with an A -> B C rule, at every split point.",
+      "Spans are filled in order of increasing length, so both halves of every split are ready when needed, and the sentence is grammatical if S is in the cell covering all of it.",
+      "CKY takes time proportional to n³ times the size of the grammar for n words; backpointers in each cell recover the trees, although an ambiguous sentence can have exponentially many."
+     ]
+    },
+    {
+     "title": "Probabilistic CFGs: choosing the best parse",
+     "minutes": 12,
+     "objectives": [
+      "Compute the probability of a parse tree under a PCFG",
+      "Find the most probable parse with probabilistic CKY, and recognise the limits of PCFGs"
+     ],
+     "key_points": [
+      "A probabilistic CFG gives each rule a probability, and the rules for each left-hand side sum to 1; the probability of a tree is the product of the probabilities of the rules it uses.",
+      "Rule probabilities are estimated from a treebank by counting: P(A -> β) = count(A -> β) / count(A).",
+      "Probabilistic CKY keeps, in each cell, the highest probability for each non-terminal with a backpointer, so the best tree comes out in the same O(n³) time; NLTK's ViterbiParser does this for nltk.PCFG grammars.",
+      "With the lab's toy grammar, the verb-attachment parse of 'I saw the man with the telescope' has probability 0.00040824 and the noun-attachment parse 0.00027216, so the parser prefers the first only because VP -> VP PP (0.3) outweighs NP -> NP PP (0.2).",
+      "Plain PCFGs ignore the words when choosing structure, so they misattach phrases whenever the words should decide; lexicalised PCFGs, parent annotation and neural parsers address this. Parsers are scored with labelled precision, recall and F1 over constituents (PARSEVAL)."
+     ]
+    },
+    {
+     "title": "The inside-outside algorithm, in outline",
+     "minutes": 12,
+     "objectives": [
+      "Compute a sentence's total probability with the inside algorithm",
+      "Describe how inside-outside re-estimates rule probabilities without a treebank"
+     ],
+     "key_points": [
+      "The inside probability β(A, i, j) is the total probability that A derives words i to j, summed over all its subtrees; it's computed exactly like probabilistic CKY, with sums in place of maxima.",
+      "β(S, 0, n) is the probability of the whole sentence, summed over all its parses: 0.00068040 for the lab's ambiguous sentence, of which the best parse holds 60%.",
+      "The outside probability α(A, i, j) covers everything outside the span: the probability of generating the words before i and after j with an A filling the gap.",
+      "α × β divided by the sentence probability is the expected number of times that constituent appears, and summing these gives the expected count of every rule over a corpus that has no trees.",
+      "The inside-outside algorithm is expectation-maximisation: re-estimate rule probabilities from the expected counts and repeat. No round lowers the corpus likelihood, but it can stop at a local maximum, just as the forward-backward algorithm can for HMMs."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Probabilistic CKY parsing",
+    "tool": "Python 3 and NLTK",
+    "minutes": 60,
+    "goal": "Implement probabilistic CKY with backpointers for a small grammar in Chomsky normal form, parse an ambiguous sentence, compute its inside probability, and check your parser against NLTK's ViterbiParser.",
+    "setup": [
+     "Python 3.10 or later with NLTK (no data downloads needed)",
+     "The starter file cky.py"
+    ],
+    "steps": [
+     {
+      "do": "Read GRAMMAR and load_rules(): each left-hand side's rules sum to 1, and every rule is binary or lexical. Run the starter.",
+      "code": "python cky.py",
+      "lang": "bash",
+      "see": "15 rules, in CNF: True, then a KeyError for 'S', because cky() doesn't fill the longer spans yet."
+     },
+     {
+      "do": "Write the span loop in cky() (TODO 1): spans of increasing length, every split point and every rule A -> B C, keeping the most probable A with its backpointer. Run it.",
+      "see": "Cell (2, 4), 'the man': {'NP': 0.18}, Cell (1, 7): {'VP': 0.004082}, and the best parse, p = 0.00040824: (S (NP I) (VP (VP (V saw) (NP (Det the) (N man))) (PP (P with) ...)))"
+     },
+     {
+      "do": "Work out by hand the probability of the other parse, in which the man has the telescope, and check that it's lower."
+     },
+     {
+      "do": "Write inside() (TODO 2): the same loops, summing instead of keeping the maximum.",
+      "see": "Inside probability of the sentence: 0.00068040; the best parse has 60.0% of it"
+     },
+     {
+      "do": "Run the whole script to compare with NLTK and to parse three more sentences.",
+      "see": "NLTK ViterbiParser agrees: True, p = 0.00040824; 'the dog saw a man': p = 0.006048; 'the man saw telescopes with the dog': p = 0.000272; 'saw the man': no parse"
+     },
+     {
+      "do": "Change NP -> Det N to 0.4 and NP -> NP PP to 0.4, so NP's rules still sum to 1, and rerun. Write two sentences starting Attachment: on which parse wins now and why a PCFG can't let the words decide.",
+      "see": "The noun-attachment parse wins, with p = 0.00024192."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The grammar is in CNF and the chart is filled from short spans to long.",
+      "look_for": [
+       "15 rules, in CNF: True",
+       "{'NP': 0.18}"
+      ]
+     },
+     {
+      "text": "Probabilistic CKY finds the verb-attachment parse.",
+      "look_for": [
+       "p = 0.00040824",
+       "(VP (VP (V saw) (NP (Det the) (N man))) (PP (P with)"
+      ]
+     },
+     {
+      "text": "The inside algorithm sums over both parses.",
+      "look_for": [
+       "0.00068040",
+       "60.0%"
+      ]
+     },
+     {
+      "text": "The parser agrees with NLTK's ViterbiParser and rejects an ungrammatical string.",
+      "look_for": [
+       "NLTK ViterbiParser agrees: True",
+       "'saw the man': no parse"
+      ]
+     },
+     {
+      "text": "The changed probabilities and their effect on attachment are explained.",
+      "look_for": [
+       "0.00024192",
+       "Attachment:"
+      ]
+     }
+    ],
+    "submit": "Paste your cky() and inside() functions, everything the script printed, your hand calculation of the other parse, and your Attachment: answer.",
+    "files": [
+     {
+      "path": "cky.py",
+      "content": "\"\"\"Probabilistic CKY parsing with a small PCFG in Chomsky normal form, checked against NLTK.\n\nNeeds only NLTK itself (no data downloads).\n\"\"\"\n\nimport math\nfrom collections import defaultdict\n\nimport nltk\n\nGRAMMAR = \"\"\"\nS -> NP VP [1.0]\nNP -> Det N [0.6] | NP PP [0.2] | 'I' [0.1] | 'telescopes' [0.1]\nVP -> V NP [0.7] | VP PP [0.3]\nPP -> P NP [1.0]\nDet -> 'the' [0.6] | 'a' [0.4]\nN -> 'man' [0.5] | 'dog' [0.2] | 'telescope' [0.3]\nV -> 'saw' [1.0]\nP -> 'with' [1.0]\n\"\"\"\n\n\ndef load_rules(text):\n    \"\"\"Binary rules {(B, C): [(A, p)]} and lexical rules {word: [(A, p)]} from a PCFG in CNF.\"\"\"\n    grammar = nltk.PCFG.fromstring(text)\n    binary, lexical = defaultdict(list), defaultdict(list)\n    for prod in grammar.productions():\n        rhs = prod.rhs()\n        if len(rhs) == 2:\n            binary[(rhs[0].symbol(), rhs[1].symbol())].append((prod.lhs().symbol(), prod.prob()))\n        else:\n            lexical[rhs[0]].append((prod.lhs().symbol(), prod.prob()))\n    return grammar, binary, lexical\n\n\ndef cky(words, binary, lexical):\n    \"\"\"best[(i, j)][A] = (probability, backpointer) of the likeliest A spanning words[i:j].\"\"\"\n    n = len(words)\n    best = defaultdict(dict)\n    for i, w in enumerate(words):\n        for a, p in lexical.get(w, []):\n            best[(i, i + 1)][a] = (p, w)\n    # TODO 1: for each span length from 2 to n (shorter spans first), each start i (j = i + length) and each\n    #         split point k: for every B in best[(i, k)] and C in best[(k, j)] and every rule A -> B C in\n    #         binary[(B, C)], keep A in best[(i, j)] if p(rule) * p(B) * p(C) beats what is there,\n    #         storing (probability, (k, B, C)) as its backpointer\n    return best\n\n\ndef inside(words, binary, lexical):\n    \"\"\"beta[(i, j)][A] = total probability of all A subtrees over words[i:j]: CKY with sums instead of max.\"\"\"\n    n = len(words)\n    beta = defaultdict(lambda: defaultdict(float))\n    for i, w in enumerate(words):\n        for a, p in lexical.get(w, []):\n            beta[(i, i + 1)][a] += p\n    # TODO 2: the same loops as cky(), but add p(rule) * beta(B) * beta(C) to beta[(i, j)][A] instead of keeping the max\n    return beta\n\n\ndef build_tree(best, i, j, label):\n    prob, back = best[(i, j)][label]\n    if isinstance(back, str):\n        return nltk.Tree(label, [back])\n    k, b, c = back\n    return nltk.Tree(label, [build_tree(best, i, k, b), build_tree(best, k, j, c)])\n\n\ndef main():\n    grammar, binary, lexical = load_rules(GRAMMAR)\n    print(f\"{len(grammar.productions())} rules, in CNF: {grammar.is_chomsky_normal_form()}\")\n    words = \"I saw the man with the telescope\".split()\n\n    best = cky(words, binary, lexical)\n    print(\"Cell (2, 4), 'the man':\", {a: round(p, 4) for a, (p, _) in best[(2, 4)].items()})\n    print(\"Cell (1, 7), 'saw ... telescope':\", {a: round(p, 6) for a, (p, _) in best[(1, 7)].items()})\n    tree = build_tree(best, 0, len(words), \"S\")\n    p_best = best[(0, len(words))][\"S\"][0]\n    print(f\"Best parse, p = {p_best:.8f}:\")\n    print(\" \", tree.pformat(margin=200))\n\n    beta = inside(words, binary, lexical)\n    total = beta[(0, len(words))][\"S\"]\n    print(f\"Inside probability of the sentence: {total:.8f}; the best parse has {p_best / total:.1%} of it\")\n\n    parser = nltk.ViterbiParser(grammar)\n    nltk_tree = next(parser.parse(words))\n    print(f\"NLTK ViterbiParser agrees: {nltk_tree.pformat(margin=200) == tree.pformat(margin=200)}, \"\n          f\"p = {nltk_tree.prob():.8f}\")\n    print(f\"Log probability of the best parse: {math.log(p_best):.4f}\")\n    for sentence in [\"the dog saw a man\", \"the man saw telescopes with the dog\", \"saw the man\"]:\n        chart = cky(sentence.split(), binary, lexical)\n        s = chart[(0, len(sentence.split()))].get(\"S\")\n        print(f\"{sentence!r}: {'p = %.6f' % s[0] if s else 'no parse'}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "best[(i, k)] and best[(k, j)] are dicts of {non-terminal: (probability, backpointer)}; the rule's probability multiplies the two child probabilities.",
+     "The other parse uses VP -> V NP (0.7) and NP -> NP PP (0.2) where the best one uses VP -> VP PP (0.3) and VP -> V NP (0.7); everything else is shared.",
+     "nltk.PCFG.fromstring() raises ValueError ('Productions for NP do not sum to 1') if a left-hand side's probabilities don't add up."
+    ]
+   }
+  },
+  {
+   "title": "Information retrieval foundations",
+   "summary": "Build the core of a search engine: an inverted index for Boolean queries, ranked retrieval with TF-IDF in the vector space model and with BM25, and the measures that tell you whether the results are any good.",
+   "instructor": "ravi-chandrasekharan",
+   "lessons": [
+    {
+     "title": "Boolean retrieval and the inverted index",
+     "minutes": 12,
+     "objectives": [
+      "Build an inverted index of terms and postings lists",
+      "Answer Boolean queries by merging postings lists"
+     ],
+     "key_points": [
+      "An inverted index maps each term to its postings list, the sorted IDs of the documents that contain it, often with the term's frequency and positions; it's built once, so queries never scan the documents.",
+      "Documents and queries must go through the same analysis (tokenising, lowercasing, stop-word removal, stemming), or a query for 'ferries' won't match a document saying 'ferry'; the Porter stemmer maps both to 'ferri'.",
+      "A Boolean AND intersects postings lists by walking two sorted lists in step and keeping the IDs found in both, in time proportional to their combined length; starting with the rarest term keeps the intermediate results small.",
+      "OR merges lists and NOT takes a difference; a positional index, which records where each term occurs, supports phrase queries such as \"harbour office\".",
+      "Boolean retrieval returns an unranked set, exact but brittle: in the lab's collection, 'swimming AND lessons' finds the adult lessons page and misses the school holidays page about children's swimming."
+     ]
+    },
+    {
+     "title": "Ranked retrieval: TF-IDF and the vector space model",
+     "minutes": 12,
+     "objectives": [
+      "Weight terms with TF-IDF",
+      "Rank documents by cosine similarity to a query"
+     ],
+     "key_points": [
+      "Term frequency tf(t, d) counts a term in a document; log scaling, 1 + log10(tf) for tf > 0, stops a term that occurs ten times from counting ten times as much.",
+      "Document frequency df(t) counts the documents containing a term, and inverse document frequency idf(t) = log10(N / df(t)) is high for rare, discriminating terms and zero for a term in every document.",
+      "A term's TF-IDF weight is its tf weight times its idf. In the lab's 24 documents 'ferri' occurs in 5, so its idf is log10(24/5) ≈ 0.681, while 'swim', in 3, has 0.903.",
+      "In the vector space model, documents and queries are vectors of term weights, and documents are ranked by their cosine similarity to the query, which normalises away document length.",
+      "Variants are named by their tf, idf and normalisation choices, in SMART notation such as lnc.ltc; whatever you choose, analyse queries and documents the same way."
+     ]
+    },
+    {
+     "title": "BM25: a better term weighting",
+     "minutes": 12,
+     "objectives": [
+      "Explain BM25's term-frequency saturation and length normalisation",
+      "Choose and tune BM25's k1 and b parameters"
+     ],
+     "key_points": [
+      "BM25 scores a document by summing, over the query terms, idf(t) × tf × (k1 + 1) / (tf + k1 × (1 - b + b × dl / avgdl)), where dl is the document's length and avgdl the average length.",
+      "The tf part saturates: it rises quickly at first and levels off towards k1 + 1, so the tenth occurrence of a term adds far less than the first; k1, usually between 1.2 and 2.0, sets how quickly it saturates.",
+      "b, usually 0.75, controls length normalisation: b = 1 scales tf fully by relative length and b = 0 ignores length, so long documents don't win just by repeating terms.",
+      "A common idf for BM25 is ln(1 + (N - df + 0.5) / (df + 0.5)), the form Lucene uses, which stays positive even for terms in most documents.",
+      "BM25 has been a strong baseline for decades and is the default ranking in Lucene, Elasticsearch and OpenSearch; on short documents of similar length, like the lab's, it ranks much as TF-IDF does."
+     ]
+    },
+    {
+     "title": "Evaluating search: precision, recall, F1 and ranked metrics",
+     "minutes": 14,
+     "objectives": [
+      "Evaluate retrieval with precision, recall and F1",
+      "Score rankings with precision at k and mean average precision"
+     ],
+     "key_points": [
+      "Evaluation needs a test collection: documents, queries and relevance judgments (qrels) made by people saying which documents are relevant to each query; large collections judge only a pool of the top results from several systems.",
+      "For a set of results, precision is the share of retrieved documents that are relevant and recall the share of relevant documents retrieved, and F1 = 2PR / (P + R) balances them; in the lab, 'swimming AND lessons' scores 0.5 on all three.",
+      "Precision at k (P@k) looks only at the top k results, which matches what users see, but ignores the order within them and every relevant document further down.",
+      "Average precision (AP) averages the precision at each rank where a relevant document appears, counting relevant documents never retrieved as zero; mean average precision (MAP) is its mean over queries.",
+      "Other measures weigh other things: reciprocal rank looks only at the first relevant result, and nDCG rewards putting highly relevant documents first when judgments are graded rather than yes or no.",
+      "Compare systems on the same queries and judgments, and read individual queries: in the lab, TF-IDF and BM25 both reach a MAP of 0.917, and both rank the train timetable above the storm warning for 'ferry timetable in winter'."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build and evaluate a small search engine",
+    "tool": "Python 3 and NLTK",
+    "minutes": 60,
+    "goal": "Index 24 council help pages, answer a Boolean query by merging postings lists, rank results with TF-IDF and BM25, and evaluate both rankings with precision at 3 and mean average precision against relevance judgments.",
+    "setup": [
+     "Python 3.10 or later with NLTK (only its Porter stemmer is used, so nothing to download)",
+     "The starter files search.py, docs.tsv and queries.tsv, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read docs.tsv and queries.tsv (each query lists the documents judged relevant to it), then analyse() and Index.__init__(). Run the starter.",
+      "code": "python search.py",
+      "lang": "bash",
+      "see": "24 documents, 166 terms, average length 13.79 terms; Postings for 'ferri': [('d01', 3), ('d02', 3), ('d03', 1), ('d18', 1), ('d20', 1)]; idf(ferri) = 0.681, idf(swim) = 0.903; MAP 0.000 until you finish."
+     },
+     {
+      "do": "Write the merge in boolean_and() (TODO 1), without sets.",
+      "see": "Boolean 'swimming AND lessons': ['d13', 'd14']; precision 0.50, recall 0.50, F1 0.50"
+     },
+     {
+      "do": "Write bm25() (TODO 2) and average_precision() (TODO 3), then run the script.",
+      "see": "The top 3 of each model for each query, with P@3 and AP; q6 'swimming lessons for children' has AP 0.83 for both; MAP tfidf: 0.917 and MAP bm25: 0.917."
+     },
+     {
+      "do": "Look at q1: why does d19, the train timetable, come second? Rerun BM25 with b=0, then with k1=2.0, and note what changes."
+     },
+     {
+      "do": "Write a query of your own with relevance judgments, add it to queries.tsv and rerun. Then write two or three sentences starting Evaluation: on what your query and q1 show about matching terms."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The index is built with the same analysis as the queries.",
+      "look_for": [
+       "24 documents, 166 terms",
+       "('d01', 3), ('d02', 3)"
+      ]
+     },
+     {
+      "text": "Boolean AND merges postings lists and is scored as a set.",
+      "look_for": [
+       "['d13', 'd14']; precision 0.50, recall 0.50, F1 0.50"
+      ]
+     },
+     {
+      "text": "TF-IDF and BM25 rank the collection for each query.",
+      "look_for": [
+       "tfidf top 3 ['d01', 'd19', 'd02']",
+       "bm25 top 3 ['d07', 'd21', 'd08']"
+      ]
+     },
+     {
+      "text": "Average precision and MAP are computed.",
+      "look_for": [
+       "AP 0.83",
+       "MAP tfidf: 0.917",
+       "MAP bm25: 0.917"
+      ]
+     },
+     {
+      "text": "A new query is judged and the results are discussed.",
+      "look_for": [
+       "Evaluation:"
+      ]
+     }
+    ],
+    "submit": "Paste your boolean_and(), bm25() and average_precision(), everything the script printed with your own query added, and your Evaluation:.",
+    "files": [
+     {
+      "path": "search.py",
+      "content": "\"\"\"A small search engine: an inverted index, Boolean queries, TF-IDF and BM25 ranking, and evaluation.\n\nNeeds only NLTK itself (for the Porter stemmer); no data downloads.\n\"\"\"\n\nimport math\nimport re\nfrom collections import Counter, defaultdict\n\nfrom nltk.stem import PorterStemmer\n\nSTOP = {\"a\", \"an\", \"and\", \"are\", \"at\", \"by\", \"for\", \"from\", \"in\", \"is\", \"it\", \"of\", \"on\", \"or\", \"the\", \"to\", \"you\"}\nSTEM = PorterStemmer().stem\n\n\ndef analyse(text):\n    \"\"\"The same steps for documents and queries: lowercase, words only, drop stop words, stem.\"\"\"\n    return [STEM(w) for w in re.findall(r\"[a-z]+\", text.lower()) if w not in STOP]\n\n\ndef load(docs_path=\"docs.tsv\", queries_path=\"queries.tsv\"):\n    docs = dict(line.rstrip(\"\\n\").split(\"\\t\") for line in open(docs_path, encoding=\"utf-8\"))\n    queries = []\n    for line in open(queries_path, encoding=\"utf-8\"):\n        qid, text, relevant = line.rstrip(\"\\n\").split(\"\\t\")\n        queries.append((qid, text, set(relevant.split())))\n    return docs, queries\n\n\nclass Index:\n    def __init__(self, docs):\n        self.postings = defaultdict(list)  # term -> [(doc_id, tf)] in doc_id order\n        self.length = {}\n        for doc_id in sorted(docs):\n            terms = analyse(docs[doc_id])\n            self.length[doc_id] = len(terms)\n            for term, tf in sorted(Counter(terms).items()):\n                self.postings[term].append((doc_id, tf))\n        self.n = len(docs)\n        self.avgdl = sum(self.length.values()) / self.n\n\n    def docs_with(self, term):\n        return [d for d, _ in self.postings.get(term, [])]\n\n    def boolean_and(self, query):\n        \"\"\"Intersect the postings lists, rarest term first, by walking two sorted lists in step.\"\"\"\n        lists = sorted((self.docs_with(t) for t in set(analyse(query))), key=len)\n        result = lists[0] if lists else []\n        # TODO 1: for each other list, walk it and result together with two positions i and j: keep a doc id when\n        #         both lists have it, otherwise move on in whichever list has the smaller id. Don't use set().\n        return result\n\n    def idf(self, term):\n        return math.log10(self.n / len(self.postings[term]))\n\n    def tfidf(self, query):\n        \"\"\"Cosine similarity of log-tf x idf vectors (documents normalised by their own vector length).\"\"\"\n        q = Counter(t for t in analyse(query) if t in self.postings)\n        q_vec = {t: (1 + math.log10(tf)) * self.idf(t) for t, tf in q.items()}\n        scores, norms = defaultdict(float), defaultdict(float)\n        for term, plist in self.postings.items():\n            for doc_id, tf in plist:\n                w = (1 + math.log10(tf)) * self.idf(term)\n                norms[doc_id] += w * w\n                if term in q_vec:\n                    scores[doc_id] += w * q_vec[term]\n        q_norm = math.sqrt(sum(w * w for w in q_vec.values())) or 1.0\n        return rank({d: s / (math.sqrt(norms[d]) * q_norm) for d, s in scores.items()})\n\n    def bm25(self, query, k1=1.2, b=0.75):\n        scores = defaultdict(float)\n        # TODO 2: for each query term in the index, idf = ln(1 + (N - df + 0.5) / (df + 0.5)), and for each\n        #         (doc_id, tf) in its postings add idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * dl / avgdl))\n        return rank(scores)\n\n\ndef rank(scores):\n    return sorted(scores, key=lambda d: (-scores[d], d))  # ties broken by doc id, so runs are repeatable\n\n\ndef precision_at(ranking, relevant, k):\n    return sum(d in relevant for d in ranking[:k]) / k\n\n\ndef average_precision(ranking, relevant):\n    # TODO 3: the mean, over the relevant documents, of the precision at the rank where each is found\n    #         (a relevant document that is never retrieved adds 0)\n    return 0.0\n\n\ndef main():\n    docs, queries = load()\n    index = Index(docs)\n    print(f\"{index.n} documents, {len(index.postings)} terms, average length {index.avgdl:.2f} terms\")\n    print(\"Postings for 'ferri':\", index.postings[\"ferri\"])\n    print(f\"idf(ferri) = {index.idf('ferri'):.3f}, idf(swim) = {index.idf('swim'):.3f}\")\n\n    found = index.boolean_and(\"swimming lessons\")\n    relevant = queries[5][2]\n    tp = len(set(found) & relevant)\n    p, r = tp / len(found), tp / len(relevant)\n    print(f\"Boolean 'swimming AND lessons': {found}; precision {p:.2f}, recall {r:.2f}, F1 {2 * p * r / (p + r):.2f}\")\n\n    totals = Counter()\n    for qid, text, relevant in queries:\n        line = [f\"{qid} {text!r}\"]\n        for name in (\"tfidf\", \"bm25\"):\n            ranking = getattr(index, name)(text)\n            ap = average_precision(ranking, relevant)\n            totals[name] += ap\n            line.append(f\"{name} top 3 {ranking[:3]} P@3 {precision_at(ranking, relevant, 3):.2f} AP {ap:.2f}\")\n        print(\"\\n  \".join(line))\n    for name in (\"tfidf\", \"bm25\"):\n        print(f\"MAP {name}: {totals[name] / len(queries):.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "docs.tsv",
+      "content": "d01\tFerry timetable. The ferry to the island leaves the harbour every hour from 7am. In winter the timetable changes and the last ferry leaves at 6pm.\nd02\tFerry fares. Single ferry tickets cost 4 euro and returns cost 7 euro. Children travel free on the ferry at weekends.\nd03\tStorm warnings. When a storm warning is issued, ferry crossings may be cancelled. Check the notice board at the harbour office before you travel.\nd04\tStation parking. Bicycle parking at the central station is free and covered. Car parking at the station costs 8 euro a day.\nd05\tBicycle hire. Hire a bicycle from the kiosk at the station for 10 euro a day. A helmet comes with every bicycle.\nd06\tBus routes. Bus route 5 runs from the station to the hospital every 15 minutes. Night buses run on Fridays and Saturdays.\nd07\tLibrary opening hours. The central library opens at 9am and closes at 8pm on weekdays. On Sundays the library is closed.\nd08\tLibrary cards. Library cards are free for residents. Bring proof of your address to the library desk to join.\nd09\tStory time. Story time for children runs every Saturday morning in the children's room of the library.\nd10\tGlass recycling. Glass bottles and jars go in the green recycling bank. Please rinse them and remove the lids.\nd11\tRecycling collection. Paper, card and plastic recycling is collected every second Tuesday. Put the recycling bin out by 7am.\nd12\tGarden waste. Garden waste is collected monthly from April to October. Grass and leaves go in the brown bin, not the recycling bin.\nd13\tSwimming pool. The swimming pool opens at 6am for lane swimming. Swimming lessons for children run on weekday afternoons.\nd14\tAdult swimming lessons. Swimming lessons for adult beginners run on Tuesday and Thursday evenings at the pool.\nd15\tParking permits. Residents can apply for a parking permit online. A permit lets you park on your street without a time limit.\nd16\tIcy weather. In icy weather the council grits main roads and bus routes first. Pavements near schools are gritted next.\nd17\tFlood warnings. During a flood warning the harbour road may close. Sandbags are available from the council depot.\nd18\tHarbour office. The harbour office sells ferry tickets and answers questions about moorings and boat licences.\nd19\tTrain timetable. Trains to the city leave the central station every 30 minutes. The winter timetable adds an early train at 5am.\nd20\tLost property. Things lost on buses and ferries are kept at the harbour office for one month.\nd21\tHospital visiting. Visiting hours at the hospital are from 2pm to 8pm. The hospital car park is free for the first hour.\nd22\tSchool holidays. During the school holidays the library and the swimming pool run extra activities for children.\nd23\tElectric cars. Charging points for electric cars are in the station car park and the library car park.\nd24\tNoise complaints. Report noise from parties or building work to the council online or by phone.\n"
+     },
+     {
+      "path": "queries.tsv",
+      "content": "q1\tferry timetable in winter\td01 d03\nq2\tbicycle parking at the station\td04 d05\nq3\tlibrary opening hours\td07\nq4\trecycling glass bottles\td10 d11\nq5\tstorm or flood warning for the harbour\td03 d17\nq6\tswimming lessons for children\td13 d22\n"
+     }
+    ],
+    "hints": [
+     "In the merge, compare result[i] with other[j]: if they're equal keep the ID and move both on; otherwise move on in the list with the smaller ID.",
+     "Queries go through analyse() too, so 'swimming' becomes 'swim' and 'lessons' becomes 'lesson'.",
+     "Average precision divides by the number of relevant documents, not the number retrieved, so a relevant document that's never found lowers it."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Build Naive Bayes and logistic regression text classifiers and evaluate them with confusion matrices, precision and recall.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Build co-occurrence matrices, weight them with PPMI and compress them with SVD to find similar words.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Smooth n-gram models, then build a hidden Markov model tagger and decode it with Viterbi.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Parse with CKY and a probabilistic grammar, and compute inside probabilities.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Build an inverted index, rank with TF-IDF and BM25, and evaluate with precision, recall and MAP.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Start the capstone: train the tagger on the treebank sample, tag the subjectivity data and build the three feature sets.",
+   "modules": []
+  },
+  {
+   "week": 7,
+   "focus": "Finish the classifiers, the error analysis and the report, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Integrated POS tagger and text classifier",
+  "minutes": 720,
+  "brief": "Build a two-stage NLP system and find out honestly whether the first stage helps the second. Train your hidden Markov model tagger, with smoothing, unknown-word classes and Viterbi decoding, on the Penn Treebank sample with universal tags, and report its accuracy on held-out sentences. Then tag every sentence of NLTK's subjectivity dataset (5,000 subjective review snippets and 5,000 objective plot sentences; nltk.download('subjectivity')) and train logistic regression classifiers to tell the two apart with three feature sets: words only, part-of-speech unigrams and bigrams only, and both. Compare them on one stratified test split with accuracy, precision, recall, F1 and confusion matrices, then analyse the errors: which sentences does each model get wrong, and do the tags capture anything the words don't, such as adjectives, first- and second-person pronouns or past-tense narration? In a reference run with an 80/20 split, words alone reached about 91% accuracy, tags alone about 73% and the combination no better than words, so don't assume the tags will help: a clear answer backed by evidence is what earns the marks.",
+  "deliverables": [
+   "tagger.py: the HMM tagger with its accuracy on held-out treebank sentences, overall and for known and unknown words",
+   "classify.py: loading and tagging the subjectivity data, the three feature sets, and logistic regression trained and evaluated on one stratified 80/20 split with a fixed seed",
+   "A results table of accuracy, precision, recall and F1 for each feature set, with a confusion matrix for each",
+   "An error analysis of at least 20 misclassified sentences, grouped by cause, with examples where the tags helped or hurt",
+   "A one- to two-page report that answers the question with evidence and says what you'd try next"
+  ],
+  "rubric": [
+   {
+    "name": "HMM tagger",
+    "points": 25,
+    "description": "Transitions and emissions are estimated with smoothing, unknown words are handled, Viterbi decoding is correct, and accuracy is reported on held-out sentences for known and unknown words."
+   },
+   {
+    "name": "Features and classifiers",
+    "points": 20,
+    "description": "The three feature sets are built correctly from the tagger's output, the classifiers are fitted on the training split only, and every comparison uses the same test split."
+   },
+   {
+    "name": "Evaluation",
+    "points": 20,
+    "description": "Accuracy, precision, recall, F1 and the confusion matrices are correct and clearly tabulated, with a simple baseline for comparison."
+   },
+   {
+    "name": "Error analysis",
+    "points": 20,
+    "description": "At least 20 errors are examined and grouped by cause with concrete examples, including how tagging mistakes flow into classification mistakes."
+   },
+   {
+    "name": "Report and code",
+    "points": 15,
+    "description": "The report answers the question with evidence and is honest about its limits; the code is organised into functions, runs end to end from one command and fixes its random seeds."
+   }
+  ],
+  "submit": "Paste tagger.py and classify.py (or a link to a repository), the tagger's accuracy output, your results table with the confusion matrices, your error analysis and your report."
+ }
+}

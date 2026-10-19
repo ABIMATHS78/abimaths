@@ -1,0 +1,1107 @@
+{
+  "slug": "llms-on-kubernetes",
+  "title": "Operationalising LLMs on Kubernetes",
+  "subtitle": "Deploy, scale, observe and upgrade open large language models on Kubernetes: inference servers, model storage, GPU scheduling, queue-based autoscaling and safe rollouts.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "abderrahman-bensoussan",
+    "carlos-ramirez"
+  ],
+  "skills": [
+    "LLM serving",
+    "vLLM",
+    "GPU scheduling",
+    "Kubernetes autoscaling",
+    "KEDA",
+    "LLM observability",
+    "Model storage",
+    "Canary releases",
+    "Capacity and cost planning"
+  ],
+  "tools": [
+    "Kubernetes",
+    "kind",
+    "Helm",
+    "vLLM",
+    "Ollama",
+    "KEDA",
+    "Prometheus",
+    "Grafana"
+  ],
+  "outcomes": [
+    "Deploy open LLMs on Kubernetes with vLLM or Ollama, with model weights pre-loaded onto persistent volumes",
+    "Configure GPU requests, node selection, taints and GPU sharing for inference workloads",
+    "Autoscale LLM servers on queue length with KEDA and custom metrics, and plan GPU node capacity and cost",
+    "Monitor tokens per second, time to first token and saturation with Prometheus, Grafana and tested alerts",
+    "Use affinity, topology spread and disruption budgets to survive drains and failures, and upgrade models safely"
+  ],
+  "prerequisites": "Kubernetes experience as taught in Containerisation and Orchestration with Docker and Kubernetes (Deployments, Services, probes, kubectl); Generative AI Design Patterns helps. You need Docker with 8 GB of memory or more for it (16 GB in the computer), kind, kubectl, Helm and Python 3.10 or later. A GPU cluster is optional: every lab has a CPU path.",
+  "description": "Running a large language model in production is mostly an operations problem: weights of many gigabytes to deliver, scarce and expensive GPUs to schedule, load that comes in bursts, and users who notice every extra second before the first token. This advanced course teaches you to run open models on Kubernetes the way platform teams do. You'll compare inference servers (vLLM, TGI and Ollama), containerise them, and pre-load weights onto persistent volumes so start-ups are fast and predictable; request GPUs through the NVIDIA device plugin with node selectors, taints and tolerations, and share them with time-slicing, MPS or MIG.\n\nThen you'll autoscale on what matters for LLMs, the queue of waiting requests, with KEDA and custom metrics, and see where a cluster autoscaler and cost planning come in; build dashboards and unit-tested alerts for tokens per second, time to first token and KV cache use; trace requests and aggregate logs; and keep models serving through drains, node failures and version upgrades with topology spread, disruption budgets, rolling updates and canaries. Every lab runs on a laptop: a real small model served by Ollama, and llm-sim, a lightweight stand-in that speaks vLLM's API and metrics, on a kind cluster with a simulated GPU pool. Where you have a GPU cluster, each lab also has steps for vLLM on real GPUs. The capstone puts a fine-tuned open model into production on Kubernetes, with autoscaling on queue length.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Inference Servers and Model Data",
+      "summary": "What an LLM inference server does and how vLLM, TGI and Ollama compare, how to containerise one, and how to store, deliver and load model weights in Kubernetes without slow or fragile start-ups.",
+      "instructor": "abderrahman-bensoussan",
+      "lessons": [
+        {
+          "title": "What an inference server does: vLLM, TGI and Ollama",
+          "minutes": 13,
+          "objectives": [
+            "Explain what an LLM inference server adds beyond running a model",
+            "Compare vLLM, TGI and Ollama, and choose one for a workload"
+          ],
+          "key_points": [
+            "An inference server loads a model's weights into accelerator memory, batches many users' requests together, manages the KV cache that stores each sequence's attention state, and streams tokens back through an HTTP API, usually one compatible with OpenAI's.",
+            "vLLM is a widely used open-source server built for throughput: PagedAttention stores the KV cache in fixed-size blocks, like pages of virtual memory, and continuous batching lets requests join and leave the running batch at every step instead of waiting for a whole batch to finish.",
+            "vllm serve starts vLLM's OpenAI-compatible server on port 8000, with /v1/chat/completions, /v1/models, /health and a Prometheus /metrics endpoint; the vllm/vllm-openai image runs it in a container.",
+            "Hugging Face's Text Generation Inference (TGI) pioneered many of these techniques, but is now in maintenance mode: Hugging Face recommends vLLM or SGLang for new deployments, and llama.cpp or MLX for local use.",
+            "Ollama, built on llama.cpp, runs quantised models in the GGUF format on a CPU or GPU, pulls them from its library with ollama pull, and also serves an OpenAI-compatible API under /v1. It's simple and light, but built for convenience more than for many users at once.",
+            "Choose by hardware and load: vLLM (or SGLang) for production GPUs and many concurrent users, Ollama for laptops, CPUs, development and the edge. Because they share the OpenAI-style API, clients don't change when the server does."
+          ]
+        },
+        {
+          "title": "Containerising an LLM server",
+          "minutes": 12,
+          "objectives": [
+            "Describe what a GPU inference container needs from its image and its node",
+            "Configure an inference server container for Kubernetes"
+          ],
+          "key_points": [
+            "GPU images carry the CUDA user-space libraries and the server, so they're large (gigabytes); the GPU driver comes from the node, through the NVIDIA Container Toolkit, and must be new enough for the CUDA version the image was built with.",
+            "Pin the server image to a version tag, such as vllm/vllm-openai:v0.32.0, because flags, defaults and metric names change between releases; vLLM hides deprecated metrics a release before removing them.",
+            "Keep the weights out of the image for all but small models: a model update shouldn't mean rebuilding and pushing gigabytes of image, and nodes shouldn't pull them again for every new tag.",
+            "Configure the server through arguments: --max-model-len caps the context length, --gpu-memory-utilization sets the share of GPU memory vLLM may take (0.9 by default) and --max-num-seqs caps the number of sequences in a batch.",
+            "Tensor parallelism across GPUs uses shared memory, so mount an emptyDir with medium: Memory at /dev/shm; and give the container generous host memory, because weights pass through RAM while they load."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Run an inference server in a container",
+            "steps": [
+              {
+                "do": "CPU path: start Ollama with a named volume for its models, then pull a small model into it.",
+                "code": "docker run -d --name ollama -p 11434:11434 -v ollama:/root/.ollama ollama/ollama:0.40.6\ndocker exec ollama ollama pull qwen2.5:0.5b",
+                "lang": "bash"
+              },
+              {
+                "do": "Ask it a question through the OpenAI-compatible endpoint.",
+                "code": "curl -s localhost:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\": \"qwen2.5:0.5b\", \"messages\": [{\"role\": \"user\", \"content\": \"Name three planets.\"}]}'",
+                "lang": "bash",
+                "see": "A JSON chat.completion with the answer in choices[0].message.content."
+              },
+              {
+                "do": "GPU path, on a machine with an NVIDIA GPU and the container toolkit: vLLM downloads the model into the mounted Hugging Face cache and serves it on port 8000.",
+                "code": "docker run --rm --gpus all -p 8000:8000 --ipc=host -v ~/.cache/huggingface:/root/.cache/huggingface vllm/vllm-openai:v0.32.0 Qwen/Qwen2.5-0.5B-Instruct",
+                "lang": "bash",
+                "see": "Logs of the weights loading, then Application startup complete."
+              },
+              {
+                "do": "Remove the Ollama container (the ollama volume keeps the model).",
+                "code": "docker rm -f ollama",
+                "lang": "bash"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Model weights: PVCs, object storage and images",
+          "minutes": 13,
+          "objectives": [
+            "Estimate how much storage and memory a model's weights need",
+            "Choose how to store and deliver weights to serving Pods"
+          ],
+          "key_points": [
+            "Weights take parameters times bytes per parameter: 2 bytes at 16-bit precision, 1 at 8-bit and about 0.5 at 4-bit, so a 7-billion-parameter model needs about 14 GB at 16-bit before any KV cache.",
+            "Downloading from the Hugging Face Hub at every start-up is slow, depends on an outside service and multiplies traffic as you scale. Pre-load the weights once into a PersistentVolumeClaim with a Job, then start the server with HF_HUB_OFFLINE=1 so it never downloads.",
+            "A ReadWriteOnce volume ties the model to one node at a time; to share one copy between replicas on many nodes, use ReadOnlyMany or ReadWriteMany storage such as NFS or a cloud file service, mounted read-only by the servers.",
+            "Object storage (S3, GCS, Azure Blob or MinIO) is a common source of truth: an init container copies the model to fast local disk before the server starts, and some servers can stream weights from it directly.",
+            "Kubernetes 1.36 made image volumes stable: a Pod can mount an OCI image or artifact read-only, so weights can be versioned and pulled through a registry like code. Baking weights into the server image is simplest for small models.",
+            "Pin the model's revision (a commit hash on the Hub, or a versioned object path) and keep tokens for gated models in a Secret read through HF_TOKEN, so the model can't change underneath you and credentials stay out of manifests."
+          ]
+        },
+        {
+          "title": "Loading models faster",
+          "minutes": 11,
+          "objectives": [
+            "Identify the stages that make an LLM Pod slow to start",
+            "Configure probes and caching so slow starts are safe"
+          ],
+          "key_points": [
+            "A new replica must pull its image, fetch the weights, load them into GPU memory and warm up, often taking minutes; that start-up time decides how quickly autoscaling and failover can help.",
+            "Store weights as safetensors: the format can't execute code when loaded, unlike Python pickle files, and it can be memory-mapped for fast loading.",
+            "Keep weights and images close to the GPU: local NVMe disks, images pre-pulled onto GPU nodes, and caches that survive Pod restarts, such as vLLM's compile cache in ~/.cache/vllm on a volume.",
+            "Give the server a startup probe on its health endpoint with a generous failureThreshold times periodSeconds, so it isn't killed while loading; readiness then keeps traffic away until the model is ready.",
+            "Some flags trade throughput for start-up time, such as vLLM's --enforce-eager, which skips CUDA graph capture; measure both before choosing."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Serve a small open model on kind",
+        "tool": "kubectl",
+        "minutes": 90,
+        "goal": "Create the course's four-node kind cluster, serve a real small model with Ollama from a pre-loaded volume (the CPU path), and deploy llm-sim, the course's stand-in for vLLM, whose metrics and slow start the later labs use. On a GPU cluster, also serve a model with vLLM.",
+        "setup": [
+          "Docker with at least 8 GB of memory for its VM or host, plus kind, kubectl and Helm",
+          "Python 3.10 or later with httpx (pip install httpx), for loadgen.py",
+          "Download the starter files: the llm-sim folder, kind-config.yaml, ollama.yaml, llm-sim.yaml and gpu/vllm.yaml",
+          "Optional GPU path: a Kubernetes cluster with an NVIDIA GPU node and the device plugin or GPU Operator"
+        ],
+        "steps": [
+          {
+            "do": "Create the cluster: a control plane and three workers.",
+            "code": "kind create cluster --config kind-config.yaml\nkubectl get nodes",
+            "lang": "bash",
+            "see": "Set kubectl context to \"kind-llm\", then llm-control-plane and llm-worker to llm-worker3, all Ready."
+          },
+          {
+            "do": "Build the llm-sim image and load it into the cluster.",
+            "code": "docker build -t llm-sim:1.0.0 llm-sim/\nkind load docker-image llm-sim:1.0.0 --name llm",
+            "lang": "bash"
+          },
+          {
+            "do": "Create the llm namespace, the model volume, the pull Job and the Ollama server, and wait for the model to download (about 400 MB).",
+            "code": "kubectl apply -f ollama.yaml\nkubectl -n llm wait --for=condition=complete job/ollama-pull --timeout=15m\nkubectl -n llm logs job/ollama-pull | tail -n 3\nkubectl -n llm get pvc,pods -o wide",
+            "lang": "bash",
+            "see": "job.batch/ollama-pull condition met, qwen2.5:0.5b in the model list, a Bound PVC, and the ollama Pod on the same node as the Job's."
+          },
+          {
+            "do": "Forward a port to Ollama and chat with the model through its OpenAI-compatible API.",
+            "code": "kubectl -n llm port-forward svc/ollama 11434:11434 &\nsleep 3\ncurl -s localhost:11434/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\": \"qwen2.5:0.5b\", \"messages\": [{\"role\": \"user\", \"content\": \"Say hello in five words.\"}]}'",
+            "lang": "bash",
+            "see": "{\"id\":\"chatcmpl-...\",\"object\":\"chat.completion\",...} with the reply in choices[0].message.content."
+          },
+          {
+            "do": "Measure what users would feel, with two at a time.",
+            "code": "python llm-sim/loadgen.py --url http://localhost:11434 --model qwen2.5:0.5b --concurrency 2 --requests 6 --max-tokens 48",
+            "lang": "bash",
+            "see": "requests: 6 ok, 0 failed, then time to first token, latency and tokens per second on your CPU."
+          },
+          {
+            "do": "Deploy llm-sim. It pretends to load a model for 20 seconds: watch its startup probe hold it back.",
+            "code": "kubectl apply -f llm-sim.yaml\nsleep 10\nkubectl -n llm describe pod -l app=llm-sim | grep -i 'startup probe failed'\nkubectl -n llm rollout status deployment/llm-sim",
+            "lang": "bash",
+            "see": "Startup probe failed: HTTP probe failed with statuscode: 503, then successfully rolled out."
+          },
+          {
+            "do": "Forward a port to llm-sim, load it, and read its vLLM-style metrics.",
+            "code": "kubectl -n llm port-forward svc/llm-sim 8000:8000 &\nsleep 3\npython llm-sim/loadgen.py --url http://localhost:8000 --model sim-small --concurrency 8 --requests 24\ncurl -s localhost:8000/metrics | grep -E '^vllm:(num_requests|generation_tokens|kv_cache)'",
+            "lang": "bash",
+            "see": "requests: 24 ok, 0 failed, with a longer time to first token than with 4 users, because 4 requests run at once and the rest wait; then vllm:num_requests_waiting and the other metrics."
+          },
+          {
+            "do": "Stop the port-forwards.",
+            "code": "kill %1 %2",
+            "lang": "bash"
+          },
+          {
+            "do": "GPU path only: on a GPU cluster, create the llm namespace if needed, download the weights with the Job, then start vLLM from the volume.",
+            "code": "kubectl create namespace llm\nkubectl apply -f gpu/vllm.yaml\nkubectl -n llm wait --for=condition=complete job/model-download --timeout=30m\nkubectl -n llm rollout status deployment/vllm --timeout=15m\nkubectl -n llm exec deploy/vllm -- nvidia-smi",
+            "lang": "bash",
+            "see": "The download Job completes, vLLM rolls out, and nvidia-smi shows its process using the GPU."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The four-node cluster is running.",
+            "look_for": [
+              "kind-llm",
+              "llm-worker3"
+            ]
+          },
+          {
+            "text": "The model is pre-loaded into the volume by the Job.",
+            "look_for": [
+              "job.batch/ollama-pull condition met",
+              "qwen2.5:0.5b"
+            ]
+          },
+          {
+            "text": "Ollama answers through its OpenAI-compatible API, and the load test succeeds.",
+            "look_for": [
+              "\"object\":\"chat.completion\"",
+              "requests: 6 ok, 0 failed"
+            ]
+          },
+          {
+            "text": "The startup probe holds llm-sim back until its model has loaded.",
+            "look_for": [
+              "statuscode: 503"
+            ]
+          },
+          {
+            "text": "llm-sim serves the load test and exposes vLLM's metric names.",
+            "look_for": [
+              "requests: 24 ok, 0 failed",
+              "vllm:num_requests_waiting"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 1 and 3 to 7 (and step 9 if you used a GPU cluster), and a sentence comparing the two load tests' time to first token.",
+        "files": [
+          {
+            "path": "llm-sim/llm_sim.py",
+            "content": "\"\"\"llm-sim: a stand-in for an LLM inference server, for practising Kubernetes operations without a GPU.\n\nIt serves the OpenAI-compatible API that vLLM serves (/v1/models and /v1/chat/completions, streaming or not), and\n/metrics with the same metric names as vLLM, so dashboards, alerts and autoscalers built against it carry over to\nvLLM. It runs no model: it \"generates\" words at a steady rate, and when more than MAX_NUM_SEQS requests are being\nserved at once, the rest wait in a queue, as they do when a real server's batch is full.\n\"\"\"\n\nimport asyncio\nimport json\nimport os\nimport time\nimport uuid\n\nfrom fastapi import FastAPI, Request\nfrom fastapi.responses import JSONResponse, Response, StreamingResponse\nfrom prometheus_client import (CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, disable_created_metrics,\n                               generate_latest)\n\nMODEL = os.environ.get(\"MODEL_NAME\", \"sim-small\")\nVERSION = os.environ.get(\"SIM_VERSION\", \"1.0.0\")\nMAX_NUM_SEQS = int(os.environ.get(\"MAX_NUM_SEQS\", \"4\"))            # requests served at once\nTOKENS_PER_SECOND = float(os.environ.get(\"TOKENS_PER_SECOND\", \"20\"))  # per request being served\nPREFILL_SECONDS = float(os.environ.get(\"PREFILL_SECONDS\", \"0.2\"))   # time to read the prompt\nSTARTUP_SECONDS = float(os.environ.get(\"STARTUP_SECONDS\", \"5\"))     # pretend model loading\nREPLY = (\"This reply comes from llm-sim, a simulator that streams words at a steady pace so that you can \"\n         \"practise running an inference server on Kubernetes without a GPU.\").split()\n\ndisable_created_metrics()\nLABELS = [\"model_name\"]\nRUNNING = Gauge(\"vllm:num_requests_running\", \"Requests being generated now.\", LABELS)\nWAITING = Gauge(\"vllm:num_requests_waiting\", \"Requests waiting for a free slot.\", LABELS)\nKV_CACHE = Gauge(\"vllm:kv_cache_usage_perc\", \"KV cache in use, 0 to 1 (simulated as running / MAX_NUM_SEQS).\",\n                 LABELS)\nPROMPT_TOKENS = Counter(\"vllm:prompt_tokens\", \"Prompt tokens processed.\", LABELS)\nGENERATION_TOKENS = Counter(\"vllm:generation_tokens\", \"Tokens generated.\", LABELS)\nSUCCESS = Counter(\"vllm:request_success\", \"Finished requests, by finish reason.\", LABELS + [\"finished_reason\"])\nLATENCY_BUCKETS = (0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 40.0, 80.0)\nTTFT = Histogram(\"vllm:time_to_first_token_seconds\", \"Time to first token.\", LABELS, buckets=LATENCY_BUCKETS)\nE2E = Histogram(\"vllm:e2e_request_latency_seconds\", \"End-to-end request latency.\", LABELS, buckets=LATENCY_BUCKETS)\nQUEUE_TIME = Histogram(\"vllm:request_queue_time_seconds\", \"Time spent waiting for a slot.\", LABELS,\n                       buckets=LATENCY_BUCKETS)\nfor gauge in (RUNNING, WAITING, KV_CACHE):\n    gauge.labels(MODEL).set(0)  # export zeros from the start, so queries never come back empty\nfor reason in (\"stop\", \"length\"):\n    SUCCESS.labels(MODEL, reason)\n\napp = FastAPI(title=\"llm-sim\")\nslots = asyncio.Semaphore(MAX_NUM_SEQS)\nstarted = time.monotonic()\nstate = {\"running\": 0}\n\n\ndef set_running(delta):\n    state[\"running\"] += delta\n    RUNNING.labels(MODEL).set(state[\"running\"])\n    KV_CACHE.labels(MODEL).set(min(1.0, state[\"running\"] / MAX_NUM_SEQS))\n\n\ndef log(**fields):\n    print(json.dumps({\"ts\": round(time.time(), 3), \"model\": MODEL, \"version\": VERSION, **fields}), flush=True)\n\n\nasync def generate(n_tokens, prompt_tokens, trace_id):\n    \"\"\"Yield n_tokens words, waiting for a slot first; records vLLM-style metrics as it goes.\"\"\"\n    t0 = time.perf_counter()\n    WAITING.labels(MODEL).inc()\n    waiting = True\n    try:\n        async with slots:\n            WAITING.labels(MODEL).dec()\n            waiting = False\n            set_running(+1)\n            QUEUE_TIME.labels(MODEL).observe(time.perf_counter() - t0)\n            try:\n                PROMPT_TOKENS.labels(MODEL).inc(prompt_tokens)\n                await asyncio.sleep(PREFILL_SECONDS)\n                for i in range(n_tokens):\n                    if i == 0:\n                        TTFT.labels(MODEL).observe(time.perf_counter() - t0)\n                    else:\n                        await asyncio.sleep(1 / TOKENS_PER_SECOND)\n                    GENERATION_TOKENS.labels(MODEL).inc()\n                    yield REPLY[i % len(REPLY)]\n            finally:\n                set_running(-1)\n    finally:\n        if waiting:\n            WAITING.labels(MODEL).dec()\n    e2e = time.perf_counter() - t0\n    E2E.labels(MODEL).observe(e2e)\n    log(event=\"request_finished\", trace_id=trace_id, prompt_tokens=prompt_tokens, completion_tokens=n_tokens,\n        e2e_seconds=round(e2e, 3))\n\n\ndef chunk(rid, delta, finish_reason=None):\n    body = {\"id\": rid, \"object\": \"chat.completion.chunk\", \"created\": int(time.time()), \"model\": MODEL,\n            \"system_fingerprint\": f\"llm-sim-{VERSION}\",\n            \"choices\": [{\"index\": 0, \"delta\": delta, \"finish_reason\": finish_reason}]}\n    return f\"data: {json.dumps(body)}\\n\\n\"\n\n\n@app.get(\"/health\")\ndef health():\n    \"\"\"200 once the (pretend) model has loaded; 503 before.\"\"\"\n    if time.monotonic() - started < STARTUP_SECONDS:\n        return Response(status_code=503)\n    return Response(status_code=200)\n\n\n@app.get(\"/version\")\ndef version():\n    return {\"version\": VERSION}\n\n\n@app.get(\"/v1/models\")\ndef models():\n    return {\"object\": \"list\", \"data\": [{\"id\": MODEL, \"object\": \"model\", \"owned_by\": \"llm-sim\"}]}\n\n\n@app.get(\"/metrics\")\ndef metrics():\n    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)\n\n\n@app.post(\"/v1/chat/completions\")\nasync def chat(request: Request):\n    body = await request.json()\n    if body.get(\"model\", MODEL) != MODEL:\n        return JSONResponse({\"error\": {\"message\": f\"model {body.get('model')!r} not found\",\n                                       \"type\": \"NotFoundError\"}}, status_code=404)\n    prompt = \" \".join(str(m.get(\"content\", \"\")) for m in body.get(\"messages\", []))\n    prompt_tokens = max(1, len(prompt.split()))\n    max_tokens = int(body.get(\"max_tokens\") or 48)\n    n_tokens = min(max_tokens, 48)\n    finish_reason = \"length\" if max_tokens <= 48 else \"stop\"\n    trace_id = (request.headers.get(\"traceparent\", \"\").split(\"-\") + [\"\", \"\"])[1] or None\n    rid = f\"chatcmpl-{uuid.uuid4().hex[:16]}\"\n\n    if body.get(\"stream\"):\n        async def events():\n            yield chunk(rid, {\"role\": \"assistant\", \"content\": \"\"})\n            async for word in generate(n_tokens, prompt_tokens, trace_id):\n                yield chunk(rid, {\"content\": word + \" \"})\n            SUCCESS.labels(MODEL, finish_reason).inc()\n            yield chunk(rid, {}, finish_reason)\n            yield \"data: [DONE]\\n\\n\"\n        return StreamingResponse(events(), media_type=\"text/event-stream\")\n\n    words = [word async for word in generate(n_tokens, prompt_tokens, trace_id)]\n    SUCCESS.labels(MODEL, finish_reason).inc()\n    return {\"id\": rid, \"object\": \"chat.completion\", \"created\": int(time.time()), \"model\": MODEL,\n            \"system_fingerprint\": f\"llm-sim-{VERSION}\",\n            \"choices\": [{\"index\": 0, \"message\": {\"role\": \"assistant\", \"content\": \" \".join(words)},\n                         \"finish_reason\": finish_reason}],\n            \"usage\": {\"prompt_tokens\": prompt_tokens, \"completion_tokens\": n_tokens,\n                      \"total_tokens\": prompt_tokens + n_tokens}}\n"
+          },
+          {
+            "path": "llm-sim/loadgen.py",
+            "content": "\"\"\"Send concurrent streaming chat requests to an OpenAI-compatible server and report what users would feel.\n\n    python loadgen.py --url http://localhost:8000 --model sim-small --concurrency 8 --requests 40\n\nWorks against llm-sim, vLLM and Ollama (whose OpenAI-compatible API is under the same /v1 path).\nIt counts streamed chunks as tokens: vLLM, Ollama and llm-sim send about one token per chunk.\n\"\"\"\n\nimport argparse\nimport asyncio\nimport collections\nimport json\nimport os\nimport statistics\nimport time\n\nimport httpx\n\n\ndef pct(values, q):\n    \"\"\"The q-th percentile (0-100) of a non-empty list, by the nearest-rank method.\"\"\"\n    ordered = sorted(values)\n    rank = max(1, round(q / 100 * len(ordered)))\n    return ordered[min(rank, len(ordered)) - 1]\n\n\nasync def one_request(client, args, results):\n    trace_id = os.urandom(16).hex()\n    headers = {\"traceparent\": f\"00-{trace_id}-{os.urandom(8).hex()}-01\"}\n    payload = {\"model\": args.model, \"stream\": True, \"max_tokens\": args.max_tokens,\n               \"messages\": [{\"role\": \"user\", \"content\": args.prompt}]}\n    t0 = time.perf_counter()\n    first = None\n    tokens = 0\n    fingerprint = \"unknown\"\n    try:\n        async with client.stream(\"POST\", f\"{args.url}/v1/chat/completions\", json=payload, headers=headers) as resp:\n            resp.raise_for_status()\n            async for line in resp.aiter_lines():\n                if not line.startswith(\"data: \") or line == \"data: [DONE]\":\n                    continue\n                data = json.loads(line[6:])\n                fingerprint = data.get(\"system_fingerprint\") or fingerprint\n                choices = data.get(\"choices\") or [{}]\n                if choices[0].get(\"delta\", {}).get(\"content\"):\n                    tokens += 1\n                    if first is None:\n                        first = time.perf_counter() - t0\n        results[\"ok\"].append((first or 0.0, time.perf_counter() - t0, tokens, fingerprint))\n    except (httpx.HTTPError, json.JSONDecodeError) as e:\n        results[\"failed\"].append(type(e).__name__)\n\n\nasync def main(args):\n    results = {\"ok\": [], \"failed\": []}\n    queue = asyncio.Queue()\n    for _ in range(args.requests):\n        queue.put_nowait(None)\n\n    async def user(client):\n        while not queue.empty():\n            queue.get_nowait()\n            await one_request(client, args, results)\n\n    t0 = time.perf_counter()\n    # Kubernetes Services balance connections, not requests: without keep-alive, every request opens a new\n    # connection, so new replicas get their share as soon as they're ready.\n    limits = httpx.Limits(max_keepalive_connections=0 if args.no_keepalive else 20)\n    async with httpx.AsyncClient(timeout=httpx.Timeout(args.timeout), limits=limits) as client:\n        await asyncio.gather(*(user(client) for _ in range(args.concurrency)))\n    elapsed = time.perf_counter() - t0\n\n    ok, failed = results[\"ok\"], results[\"failed\"]\n    print(f\"requests: {len(ok)} ok, {len(failed)} failed, in {elapsed:.1f} s at concurrency {args.concurrency}\")\n    if failed:\n        print(\"failures:\", dict(collections.Counter(failed)))\n    if ok:\n        ttft = [r[0] for r in ok]\n        e2e = [r[1] for r in ok]\n        tokens = sum(r[2] for r in ok)\n        print(f\"time to first token: p50 {pct(ttft, 50):.2f} s, p95 {pct(ttft, 95):.2f} s\")\n        print(f\"end-to-end latency: p50 {pct(e2e, 50):.2f} s, p95 {pct(e2e, 95):.2f} s\")\n        print(f\"output tokens: {tokens} in {elapsed:.1f} s = {tokens / elapsed:.1f} tokens/s overall, \"\n              f\"{statistics.mean(r[2] / r[1] for r in ok):.1f} tokens/s per request\")\n        served = collections.Counter(r[3] for r in ok)\n        print(\"served by:\", \", \".join(f\"{k} x {v}\" for k, v in sorted(served.items())))\n\n\nif __name__ == \"__main__\":\n    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])\n    p.add_argument(\"--url\", default=\"http://localhost:8000\")\n    p.add_argument(\"--model\", default=\"sim-small\")\n    p.add_argument(\"--concurrency\", type=int, default=8)\n    p.add_argument(\"--requests\", type=int, default=40)\n    p.add_argument(\"--max-tokens\", type=int, default=32)\n    p.add_argument(\"--prompt\", default=\"Explain in two sentences why GPUs suit language models.\")\n    p.add_argument(\"--timeout\", type=float, default=120)\n    p.add_argument(\"--no-keepalive\", action=\"store_true\", help=\"open a new connection for every request\")\n    asyncio.run(main(p.parse_args()))\n"
+          },
+          {
+            "path": "llm-sim/requirements.txt",
+            "content": "fastapi==0.146.0\nuvicorn==0.54.0\nprometheus-client==0.26.0\nhttpx==0.28.1\n"
+          },
+          {
+            "path": "llm-sim/Dockerfile",
+            "content": "FROM python:3.13-slim-trixie\nENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\nRUN useradd --uid 10001 --no-create-home sim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY llm_sim.py loadgen.py ./\nUSER 10001\nEXPOSE 8000\nCMD [\"uvicorn\", \"llm_sim:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n"
+          },
+          {
+            "path": "kind-config.yaml",
+            "content": "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: llm\nnodes:\n  - role: control-plane\n  - role: worker     # CPU pool\n  - role: worker     # becomes a simulated GPU node in module 2\n  - role: worker     # becomes a simulated GPU node in module 2\n"
+          },
+          {
+            "path": "ollama.yaml",
+            "content": "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: llm\n---\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: ollama-models\n  namespace: llm\nspec:\n  accessModes: [\"ReadWriteOnce\"]\n  resources:\n    requests:\n      storage: 5Gi\n---\n# Pulls the model into the volume once, so the server never downloads at start-up.\napiVersion: batch/v1\nkind: Job\nmetadata:\n  name: ollama-pull\n  namespace: llm\nspec:\n  backoffLimit: 3\n  template:\n    spec:\n      restartPolicy: OnFailure\n      containers:\n        - name: pull\n          image: ollama/ollama:0.40.6\n          command: [\"/bin/sh\", \"-c\"]\n          args:\n            - ollama serve > /tmp/serve.log 2>&1 & sleep 5 && ollama pull qwen2.5:0.5b && ollama list\n          volumeMounts:\n            - name: models\n              mountPath: /root/.ollama\n      volumes:\n        - name: models\n          persistentVolumeClaim:\n            claimName: ollama-models\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: ollama\n  namespace: llm\n  labels:\n    app: ollama\nspec:\n  replicas: 1\n  strategy:\n    type: Recreate   # the ReadWriteOnce volume can't be shared with a second Pod on another node\n  selector:\n    matchLabels:\n      app: ollama\n  template:\n    metadata:\n      labels:\n        app: ollama\n    spec:\n      containers:\n        - name: ollama\n          image: ollama/ollama:0.40.6\n          env:\n            - name: OLLAMA_HOST\n              value: \"0.0.0.0:11434\"\n            - name: OLLAMA_KEEP_ALIVE\n              value: \"24h\"   # keep the model in memory between requests\n          ports:\n            - name: http\n              containerPort: 11434\n          readinessProbe:\n            httpGet:\n              path: /\n              port: http\n            periodSeconds: 10\n          resources:\n            requests:\n              cpu: \"1\"\n              memory: 1Gi\n            limits:\n              memory: 3Gi\n          volumeMounts:\n            - name: models\n              mountPath: /root/.ollama\n      volumes:\n        - name: models\n          persistentVolumeClaim:\n            claimName: ollama-models\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: ollama\n  namespace: llm\nspec:\n  selector:\n    app: ollama\n  ports:\n    - name: http\n      port: 11434\n      targetPort: http\n"
+          },
+          {
+            "path": "llm-sim.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: llm-sim\n  namespace: llm\n  labels:\n    app: llm-sim\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: llm-sim\n      track: stable\n  template:\n    metadata:\n      labels:\n        app: llm-sim\n        track: stable\n    spec:\n      containers:\n        - name: llm-sim\n          image: llm-sim:1.0.0\n          env:\n            - name: MODEL_NAME\n              value: sim-small\n            - name: SIM_VERSION\n              value: \"1.0.0\"\n            - name: MAX_NUM_SEQS\n              value: \"4\"\n            - name: TOKENS_PER_SECOND\n              value: \"20\"\n            - name: STARTUP_SECONDS\n              value: \"20\"   # pretend model loading time\n          ports:\n            - name: http\n              containerPort: 8000\n          startupProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n            failureThreshold: 60   # allow up to 5 minutes to load a model\n          readinessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n          livenessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 15\n            failureThreshold: 4\n          resources:\n            requests:\n              cpu: 100m\n              memory: 128Mi\n            limits:\n              memory: 256Mi\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: llm-sim\n  namespace: llm\nspec:\n  selector:\n    app: llm-sim\n  ports:\n    - name: http\n      port: 8000\n      targetPort: http\n"
+          },
+          {
+            "path": "gpu/vllm.yaml",
+            "content": "# GPU path only: needs a cluster with NVIDIA GPU nodes, drivers and the device plugin (or the GPU Operator).\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: models\n  namespace: llm\nspec:\n  accessModes: [\"ReadWriteOnce\"]   # use ReadWriteMany storage if several nodes must share it\n  resources:\n    requests:\n      storage: 20Gi\n---\n# Downloads the weights once; the server then starts from the volume with downloads switched off.\napiVersion: batch/v1\nkind: Job\nmetadata:\n  name: model-download\n  namespace: llm\nspec:\n  backoffLimit: 2\n  template:\n    spec:\n      restartPolicy: OnFailure\n      containers:\n        - name: download\n          image: python:3.13-slim-trixie\n          command: [\"/bin/sh\", \"-c\"]\n          args:\n            - >-\n              pip install --no-cache-dir huggingface_hub &&\n              python -c \"from huggingface_hub import snapshot_download;\n              snapshot_download('Qwen/Qwen2.5-1.5B-Instruct', local_dir='/models/qwen2.5-1.5b-instruct')\"\n          env:\n            - name: HF_TOKEN   # only needed for gated models\n              valueFrom:\n                secretKeyRef:\n                  name: hf-token\n                  key: token\n                  optional: true\n          volumeMounts:\n            - name: models\n              mountPath: /models\n      volumes:\n        - name: models\n          persistentVolumeClaim:\n            claimName: models\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: vllm\n  namespace: llm\n  labels:\n    app: vllm\nspec:\n  replicas: 1\n  strategy:\n    type: Recreate\n  selector:\n    matchLabels:\n      app: vllm\n  template:\n    metadata:\n      labels:\n        app: vllm\n    spec:\n      nodeSelector:\n        nvidia.com/gpu.present: \"true\"\n      tolerations:\n        - key: nvidia.com/gpu\n          operator: Exists\n          effect: NoSchedule\n      containers:\n        - name: vllm\n          image: vllm/vllm-openai:v0.32.0\n          command: [\"vllm\", \"serve\"]\n          args:\n            - /models/qwen2.5-1.5b-instruct\n            - --served-model-name\n            - qwen2.5-1.5b-instruct\n            - --max-model-len\n            - \"4096\"\n            - --gpu-memory-utilization\n            - \"0.90\"\n            - --max-num-seqs\n            - \"32\"\n          env:\n            - name: HF_HUB_OFFLINE\n              value: \"1\"\n          ports:\n            - name: http\n              containerPort: 8000\n          startupProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 10\n            failureThreshold: 60   # up to 10 minutes to load weights and warm up\n          readinessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n          livenessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 15\n            failureThreshold: 4\n          resources:\n            requests:\n              cpu: \"2\"\n              memory: 8Gi\n            limits:\n              memory: 16Gi\n              nvidia.com/gpu: 1\n          volumeMounts:\n            - name: models\n              mountPath: /models\n              readOnly: true\n            - name: shm\n              mountPath: /dev/shm\n      volumes:\n        - name: models\n          persistentVolumeClaim:\n            claimName: models\n        - name: shm\n          emptyDir:\n            medium: Memory\n            sizeLimit: 2Gi\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: vllm\n  namespace: llm\nspec:\n  selector:\n    app: vllm\n  ports:\n    - name: http\n      port: 8000\n      targetPort: http\n"
+          }
+        ],
+        "hints": [
+          "If the pull Job fails, read kubectl -n llm logs job/ollama-pull: the nodes need internet access to reach the Ollama library.",
+          "If the ollama Pod stays Pending with a volume node affinity conflict, it can't reach the node that holds the volume: kind's local-path volumes live on one node.",
+          "A slow first answer from Ollama is the model loading into memory; OLLAMA_KEEP_ALIVE keeps it loaded afterwards.",
+          "If port 8000 or 11434 is busy on your computer, forward another local port, such as 18000:8000."
+        ]
+      }
+    },
+    {
+      "title": "GPU Management in Kubernetes",
+      "summary": "How GPUs become schedulable resources through drivers, the container toolkit and the NVIDIA device plugin, how Pods request them, how one GPU can be shared, and how to watch GPU use.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "How Kubernetes sees GPUs: drivers, the toolkit and the device plugin",
+          "minutes": 13,
+          "objectives": [
+            "Describe the software a node needs before Pods can use its GPUs",
+            "Explain how the device plugin advertises and assigns GPUs"
+          ],
+          "key_points": [
+            "A GPU node needs the NVIDIA driver, the NVIDIA Container Toolkit (which configures the container runtime to expose GPUs to containers) and the NVIDIA device plugin, a DaemonSet that tells the kubelet about the GPUs.",
+            "The device plugin registers the extended resource nvidia.com/gpu with the kubelet, which reports it in the node's capacity and allocatable; when a Pod is placed, the kubelet asks the plugin to allocate particular GPUs to its container.",
+            "The NVIDIA GPU Operator installs and upgrades all of it as containers: driver, toolkit, device plugin, GPU Feature Discovery, the DCGM exporter for metrics and the MIG manager; managed Kubernetes services often provide GPU nodes with much of it preinstalled.",
+            "GPU Feature Discovery labels nodes with what they have, such as nvidia.com/gpu.product, nvidia.com/gpu.memory and nvidia.com/gpu.count, so Pods can select a GPU type; the GPU Operator marks GPU nodes with nvidia.com/gpu.present=true.",
+            "Dynamic Resource Allocation (DRA), now a stable Kubernetes feature, is a newer way to request devices: Pods refer to ResourceClaims, matched against DeviceClasses with CEL expressions on device attributes; it needs a DRA driver from the vendor, and the device plugin remains widely used."
+          ]
+        },
+        {
+          "title": "Requesting GPUs: limits, labels and taints",
+          "minutes": 12,
+          "objectives": [
+            "Request GPUs for a container correctly",
+            "Keep GPU nodes for GPU workloads with taints, tolerations and node selectors"
+          ],
+          "key_points": [
+            "Request GPUs under resources.limits, as nvidia.com/gpu: 1. Extended resources are whole numbers, can't be overcommitted or shared between containers, and if you also set requests they must equal the limits.",
+            "A Pod asking for more GPUs than any node has free stays Pending, and its events say Insufficient nvidia.com/gpu; a cluster autoscaler can react to exactly that by adding a GPU node.",
+            "Taint GPU nodes, for example nvidia.com/gpu=present:NoSchedule, so ordinary Pods don't take the CPU and memory that GPU Pods need; GPU Pods carry a matching toleration, and managed services often add such a taint themselves.",
+            "A toleration only allows a Pod onto a tainted node; to send it there, add a nodeSelector or node affinity on a label such as nvidia.com/gpu.product, which also picks the right GPU model when a cluster has several.",
+            "Set CPU and memory requests for GPU Pods too: the server needs CPU to tokenise and schedule, host memory to load weights and shared memory for multi-GPU work, and an under-sized Pod wastes the expensive GPU beside it."
+          ]
+        },
+        {
+          "title": "Sharing GPUs: time-slicing, MPS and MIG",
+          "minutes": 13,
+          "objectives": [
+            "Compare the ways one physical GPU can serve several workloads",
+            "Choose a sharing method for small models, development and production"
+          ],
+          "key_points": [
+            "By default each nvidia.com/gpu is one whole GPU given to one container, which wastes most of a large GPU on a small model or a quiet development endpoint.",
+            "Time-slicing makes the device plugin advertise each GPU several times (replicas in its configuration); the workloads take turns on the GPU with no memory isolation and a shared fault domain, so one can starve or crash the others.",
+            "MPS (CUDA Multi-Process Service) runs workloads side by side with each one's share of memory and compute limited; time-slicing and MPS can't be combined, and either one applies to every GPU on a node.",
+            "MIG (Multi-Instance GPU) splits supported data-centre GPUs, such as the A100 and H100, in hardware into up to seven instances, each with its own memory and compute; the mixed strategy advertises them as resources such as nvidia.com/mig-1g.10gb.",
+            "vLLM claims a share of GPU memory set by --gpu-memory-utilization when it starts, so on a shared GPU lower it to leave room for the others; production serving usually prefers whole GPUs or MIG instances, for predictable latency."
+          ]
+        },
+        {
+          "title": "Monitoring GPU utilisation",
+          "minutes": 11,
+          "objectives": [
+            "Read the main GPU metrics from the DCGM exporter",
+            "Explain why GPU utilisation alone misleads about LLM capacity"
+          ],
+          "key_points": [
+            "NVIDIA's DCGM exporter publishes GPU metrics for Prometheus, among them DCGM_FI_DEV_GPU_UTIL (utilisation, %), DCGM_FI_DEV_FB_USED and DCGM_FI_DEV_FB_FREE (memory, MiB), DCGM_FI_DEV_GPU_TEMP, DCGM_FI_DEV_POWER_USAGE and DCGM_FI_DEV_XID_ERRORS.",
+            "In Kubernetes the exporter can label each GPU's metrics with the Pod and namespace using it, so you can tell which workload is busy or idle.",
+            "GPU utilisation measures the share of time any kernel was running, not how much of the GPU's compute was used, so a GPU can show 100% and still have room; profiling metrics such as DCGM_FI_PROF_GR_ENGINE_ACTIVE say more.",
+            "Memory used looks full on any vLLM GPU, because vLLM reserves its share for the KV cache at start-up; the server's own vllm:kv_cache_usage_perc shows how much of that cache is in use.",
+            "For quick checks, kubectl exec into a GPU Pod and run nvidia-smi; for capacity planning, combine GPU metrics with the server's queue length and latency."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Schedule onto a simulated GPU pool",
+        "tool": "kubectl",
+        "minutes": 75,
+        "goal": "Turn two kind workers into a pretend GPU pool, with labels, a taint and two advertised nvidia.com/gpu each, and practise GPU scheduling: Pending Pods and why, tolerations, node selection and running out of GPUs. No GPU is involved: the scheduler only counts the advertised resource. The GPU path adds real time-slicing.",
+        "setup": [
+          "The kind cluster and llm-sim image from the module 1 lab",
+          "Download the starter files: gpu-sim-setup.sh, gpu-test-pod.yaml, llm-sim-gpu.yaml and gpu/time-slicing.yaml",
+          "Optional GPU path: a GPU cluster where you may install the NVIDIA device plugin with Helm"
+        ],
+        "steps": [
+          {
+            "do": "Read gpu-sim-setup.sh, then run it: it labels the workers into a cpu pool and a gpu pool across two zones, taints the GPU nodes and advertises 2 GPUs on each.",
+            "code": "bash gpu-sim-setup.sh",
+            "lang": "bash",
+            "see": "A table in which llm-worker2 and llm-worker3 are in the gpu pool, in zone-a and zone-b, with GPUS 2."
+          },
+          {
+            "do": "Create a Pod that asks for a GPU but doesn't tolerate the taint, and read why it can't be placed.",
+            "code": "kubectl apply -f gpu-test-pod.yaml\nsleep 5\nkubectl -n llm get pod gpu-test\nkubectl -n llm describe pod gpu-test | grep -A 3 FailedScheduling",
+            "lang": "bash",
+            "see": "Pending, and a message counting nodes with Insufficient nvidia.com/gpu and nodes with an untolerated taint."
+          },
+          {
+            "do": "Uncomment the toleration in gpu-test-pod.yaml, recreate the Pod and see where it runs.",
+            "code": "kubectl -n llm delete pod gpu-test\nkubectl apply -f gpu-test-pod.yaml\nsleep 5\nkubectl -n llm get pod gpu-test -o wide\nkubectl -n llm logs gpu-test",
+            "lang": "bash",
+            "see": "Running on llm-worker2 or llm-worker3, and running on a GPU node in its log."
+          },
+          {
+            "do": "Ask for 3 GPUs, more than any one node has: change nvidia.com/gpu to 3, recreate the Pod and read the event, then delete it.",
+            "code": "kubectl -n llm delete pod gpu-test\nkubectl apply -f gpu-test-pod.yaml\nsleep 5\nkubectl -n llm describe pod gpu-test | grep -A 3 FailedScheduling\nkubectl -n llm delete pod gpu-test",
+            "lang": "bash",
+            "see": "Insufficient nvidia.com/gpu on every GPU node: GPUs are counted per node, never pooled across nodes."
+          },
+          {
+            "do": "Move llm-sim onto the GPU pool, one GPU per replica, and scale it to 5 replicas.",
+            "code": "kubectl apply -f llm-sim-gpu.yaml\nkubectl -n llm scale deployment llm-sim --replicas=5\nsleep 30\nkubectl -n llm get pods -l app=llm-sim -o wide",
+            "lang": "bash",
+            "see": "Four Pods Running on llm-worker2 and llm-worker3 and one Pending: the pool has 4 GPUs."
+          },
+          {
+            "do": "See the GPU accounting on a node, then scale back to one replica.",
+            "code": "kubectl describe node llm-worker2 | grep -A 9 'Allocated resources'\nkubectl -n llm scale deployment llm-sim --replicas=1",
+            "lang": "bash",
+            "see": "nvidia.com/gpu with 2 requested and 2 limits: the node is full."
+          },
+          {
+            "do": "GPU path only: install the NVIDIA device plugin with a time-slicing configuration that advertises each GPU 4 times, and check the node's new count.",
+            "code": "helm repo add nvdp https://nvidia.github.io/k8s-device-plugin\nhelm upgrade -i nvdp nvdp/nvidia-device-plugin -n nvidia-device-plugin --create-namespace --set-file config.map.config=gpu/time-slicing.yaml\nkubectl get nodes -o custom-columns='NAME:.metadata.name,GPUS:.status.allocatable.nvidia\\.com/gpu'",
+            "lang": "bash",
+            "see": "Four times as many nvidia.com/gpu on each GPU node as it has GPUs."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The simulated GPU pool advertises GPUs on two tainted nodes in different zones.",
+            "look_for": [
+              "llm-worker2",
+              "llm-worker3",
+              "zone-b"
+            ]
+          },
+          {
+            "text": "A GPU Pod without the toleration is Pending, and the reasons are read from its events.",
+            "look_for": [
+              "Insufficient nvidia.com/gpu",
+              "untolerated taint"
+            ]
+          },
+          {
+            "text": "With the toleration, the Pod runs on a GPU node.",
+            "look_for": [
+              "running on a GPU node"
+            ]
+          },
+          {
+            "text": "Five one-GPU replicas don't fit in a four-GPU pool: one stays Pending.",
+            "look_for": [
+              "Pending"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 1 to 6 (and step 7 on a GPU cluster), and two sentences: why is a toleration not enough to send a Pod to the GPU nodes, and what would a cluster autoscaler do with the Pending replica?",
+        "files": [
+          {
+            "path": "gpu-sim-setup.sh",
+            "content": "#!/usr/bin/env bash\n# Simulate a GPU node pool on the kind cluster \"llm\": labels, a taint and two pretend GPUs per node.\n# No GPU is attached: the scheduler just counts the nvidia.com/gpu resource the nodes advertise.\nset -euo pipefail\n\nkubectl label node llm-worker pool=cpu topology.kubernetes.io/zone=zone-a --overwrite\nkubectl label node llm-worker2 pool=gpu nvidia.com/gpu.present=true topology.kubernetes.io/zone=zone-a --overwrite\nkubectl label node llm-worker3 pool=gpu nvidia.com/gpu.present=true topology.kubernetes.io/zone=zone-b --overwrite\n\nfor node in llm-worker2 llm-worker3; do\n  kubectl taint node \"$node\" nvidia.com/gpu=present:NoSchedule --overwrite\n  kubectl patch node \"$node\" --subresource=status --type=json \\\n    -p '[{\"op\": \"add\", \"path\": \"/status/capacity/nvidia.com~1gpu\", \"value\": \"2\"}]'\ndone\n\nsleep 15   # the kubelet copies capacity into allocatable on its next status update\nkubectl get nodes -L pool,topology.kubernetes.io/zone \\\n  -o custom-columns='NAME:.metadata.name,POOL:.metadata.labels.pool,ZONE:.metadata.labels.topology\\.kubernetes\\.io/zone,GPUS:.status.allocatable.nvidia\\.com/gpu'\n"
+          },
+          {
+            "path": "gpu-test-pod.yaml",
+            "content": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-test\n  namespace: llm\nspec:\n  restartPolicy: Never\n  # Step 4: uncomment these four lines, so the Pod tolerates the GPU nodes' taint.\n  # tolerations:\n  #   - key: nvidia.com/gpu\n  #     operator: Exists\n  #     effect: NoSchedule\n  containers:\n    - name: test\n      image: busybox:1.37\n      command: [\"sh\", \"-c\", \"echo running on a GPU node; sleep 3600\"]\n      resources:\n        limits:\n          nvidia.com/gpu: 1\n"
+          },
+          {
+            "path": "llm-sim-gpu.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: llm-sim\n  namespace: llm\n  labels:\n    app: llm-sim\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: llm-sim\n      track: stable\n  template:\n    metadata:\n      labels:\n        app: llm-sim\n        track: stable\n    spec:\n      nodeSelector:\n        pool: gpu\n      tolerations:\n        - key: nvidia.com/gpu\n          operator: Exists\n          effect: NoSchedule\n      containers:\n        - name: llm-sim\n          image: llm-sim:1.0.0\n          env:\n            - name: MODEL_NAME\n              value: sim-small\n            - name: SIM_VERSION\n              value: \"1.0.0\"\n            - name: MAX_NUM_SEQS\n              value: \"4\"\n            - name: TOKENS_PER_SECOND\n              value: \"20\"\n            - name: STARTUP_SECONDS\n              value: \"20\"   # pretend model loading time\n          ports:\n            - name: http\n              containerPort: 8000\n          startupProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n            failureThreshold: 60   # allow up to 5 minutes to load a model\n          readinessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n          livenessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 15\n            failureThreshold: 4\n          resources:\n            requests:\n              cpu: 100m\n              memory: 128Mi\n            limits:\n              memory: 256Mi\n              nvidia.com/gpu: 1\n"
+          },
+          {
+            "path": "gpu/time-slicing.yaml",
+            "content": "# Device plugin configuration: advertise each physical GPU as 4 schedulable nvidia.com/gpu.\n# Time-slicing shares compute in turns with no memory isolation; one workload can starve or crash the others.\nversion: v1\nsharing:\n  timeSlicing:\n    resources:\n      - name: nvidia.com/gpu\n        replicas: 4\n"
+          }
+        ],
+        "hints": [
+          "If the GPUS column stays empty, wait a few seconds and run the last command of the script again: the kubelet copies the advertised capacity into allocatable on its next status update.",
+          "kubectl patch --subresource=status needs kubectl 1.24 or later; kubectl version --client shows yours.",
+          "A Pod's tolerations can only be added after it's created, not removed, which is why the steps delete and recreate it.",
+          "On a real cluster the device plugin keeps nvidia.com/gpu up to date; the patch here is only for practice, and the setup script's labels and taint are what a GPU node pool usually has."
+        ]
+      }
+    },
+    {
+      "title": "Production Autoscaling",
+      "summary": "Scale LLM servers on signals that reflect their load, such as queue length, with the Horizontal Pod Autoscaler, custom metrics and KEDA, and add GPU nodes with a cluster autoscaler while keeping cost in check.",
+      "instructor": "abderrahman-bensoussan",
+      "lessons": [
+        {
+          "title": "What to scale LLM servers on",
+          "minutes": 12,
+          "objectives": [
+            "Explain why CPU utilisation is a poor scaling signal for LLM servers",
+            "Choose a metric that reflects how loaded an inference server is"
+          ],
+          "key_points": [
+            "CPU utilisation barely moves on a GPU server, and GPU utilisation reaches its ceiling long before the server is saturated, so neither tells you when to add replicas.",
+            "Requests per second misleads too: one request may want ten tokens and the next two thousand, so the same rate can mean very different amounts of work.",
+            "Queue length, vLLM's vllm:num_requests_waiting, is a leading signal: requests wait only when the running batch is full, and waiting time goes straight into time to first token.",
+            "Saturation signals help as well: running requests against --max-num-seqs and vllm:kv_cache_usage_perc show how close a replica is to queueing; latency targets such as p95 time to first token describe what users feel but react late.",
+            "Model servers start slowly, so scale up early and fast and scale down slowly, and keep a minimum number of replicas warm for interactive traffic."
+          ]
+        },
+        {
+          "title": "The Horizontal Pod Autoscaler with custom metrics",
+          "minutes": 13,
+          "objectives": [
+            "Configure an autoscaling/v2 autoscaler on a per-Pod custom metric",
+            "Tune scaling behaviour for slow-starting servers"
+          ],
+          "key_points": [
+            "autoscaling/v2 metrics come in types: Resource (CPU, memory), Pods (a per-Pod metric averaged over the Pods), Object (a metric of another object) and External (a metric from outside the cluster).",
+            "Custom and external metrics reach the autoscaler through the metrics APIs (custom.metrics.k8s.io and external.metrics.k8s.io); the Prometheus Adapter serves them from Prometheus using rules that map series such as vllm:num_requests_waiting to Pods.",
+            "With a Pods metric and a target averageValue of 4, the autoscaler aims for an average of four waiting requests per replica: desired replicas are the current count times the current average divided by 4, rounded up.",
+            "The behavior section sets the pace: a short or zero scale-up stabilisation window and policies that allow large steps react quickly, while a scale-down window of several minutes stops it removing replicas that took minutes to start.",
+            "Queue length falls as replicas are added, so a queue-based autoscaler settles once the queue is small; pair it with a saturation or latency alert so you notice when it can't keep up."
+          ]
+        },
+        {
+          "title": "Event-driven autoscaling with KEDA",
+          "minutes": 13,
+          "objectives": [
+            "Scale a Deployment on a Prometheus query with a KEDA ScaledObject",
+            "Decide when scaling to zero is worth its cold start"
+          ],
+          "key_points": [
+            "KEDA (Kubernetes Event-driven Autoscaling) adds a ScaledObject resource: you name the workload and one or more triggers, and KEDA creates and manages an HPA for it, named keda-hpa- followed by the ScaledObject's name.",
+            "The Prometheus trigger runs a PromQL query that must return a single value, such as sum(vllm:num_requests_waiting{model_name=\"...\"}); its threshold becomes the HPA's average target per replica.",
+            "pollingInterval sets how often KEDA checks the triggers (30 seconds by default), minReplicaCount and maxReplicaCount bound the count, and advanced.horizontalPodAutoscalerConfig.behavior passes scaling behaviour to the HPA.",
+            "KEDA can scale to zero: with minReplicaCount 0, activationThreshold decides when to wake the workload and cooldownPeriod how long to wait before removing the last replica. For LLMs a cold start takes minutes, so keep that for development and batch work.",
+            "Let KEDA own the scaling: don't add your own HPA for the same Deployment, and leave replicas out of the Deployment's manifest."
+          ]
+        },
+        {
+          "title": "Cluster autoscaling and cost",
+          "minutes": 13,
+          "objectives": [
+            "Explain how nodes are added and removed for Pending GPU Pods",
+            "Estimate and reduce the cost of serving tokens"
+          ],
+          "key_points": [
+            "Pod autoscaling only helps while nodes have free GPUs. The Cluster Autoscaler adds a node to a node group when Pods are Pending because nothing fits, and removes nodes that stay underused; Karpenter provisions nodes directly from the Pending Pods' requirements.",
+            "A new GPU node can take many minutes to be ready: the machine boots, drivers load, the image and weights arrive. Placeholder Pods with a low PriorityClass can hold spare capacity that real Pods preempt at once.",
+            "GPU time dominates the bill, so cost per token depends on utilisation: an idle replica costs as much as a busy one. Cost per million output tokens is the hourly cost of the replicas divided by the tokens they generate in an hour, times one million.",
+            "The main levers are a smaller or quantised model, the cheapest GPU that meets the latency target, batching enough concurrent requests, scaling in when traffic drops, and spot or preemptible GPUs for work that can survive interruption.",
+            "Kubernetes Services balance connections, not requests: clients that keep connections open stay on old replicas after a scale-up, so put a request-level (layer 7) gateway in front, or avoid long keep-alive connections."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Autoscale on queue length with KEDA",
+        "tool": "kubectl",
+        "minutes": 90,
+        "goal": "Install kube-prometheus-stack and KEDA, have Prometheus scrape llm-sim's vLLM-style metrics, and scale it on the number of waiting requests, watching it grow until the simulated GPU pool runs out, then shrink when the load ends.",
+        "setup": [
+          "The kind cluster from the module 2 lab, with llm-sim on the simulated GPU pool",
+          "Helm (version 3 or 4)",
+          "Download the starter files: podmonitor.yaml, scaledobject.yaml and load-job.yaml"
+        ],
+        "steps": [
+          {
+            "do": "Install kube-prometheus-stack as the release monitoring, letting Prometheus pick up PodMonitors and rules from every namespace.",
+            "code": "helm repo add prometheus-community https://prometheus-community.github.io/helm-charts\nhelm install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace --set prometheus.prometheusSpec.podMonitorSelectorNilUsesHelmValues=false --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false --set prometheus.prometheusSpec.ruleSelectorNilUsesHelmValues=false\nkubectl -n monitoring rollout status deployment/monitoring-grafana --timeout=10m",
+            "lang": "bash"
+          },
+          {
+            "do": "Tell Prometheus to scrape llm-sim, then query the waiting requests through its HTTP API.",
+            "code": "kubectl apply -f podmonitor.yaml\nsleep 60\nkubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 &\nsleep 3\ncurl -s --get localhost:9090/api/v1/query --data-urlencode 'query=sum(vllm:num_requests_waiting{namespace=\"llm\"})'",
+            "lang": "bash",
+            "see": "{\"status\":\"success\",...} with one result whose value is \"0\"."
+          },
+          {
+            "do": "Install KEDA.",
+            "code": "helm repo add kedacore https://kedacore.github.io/charts\nhelm install keda kedacore/keda -n keda --create-namespace\nkubectl -n keda rollout status deployment/keda-operator",
+            "lang": "bash"
+          },
+          {
+            "do": "Create the ScaledObject and look at the HPA that KEDA makes for it.",
+            "code": "kubectl apply -f scaledobject.yaml\nsleep 20\nkubectl -n llm get scaledobject llm-sim\nkubectl -n llm get hpa",
+            "lang": "bash",
+            "see": "scaledobject.keda.sh/llm-sim created, READY True, and an HPA named keda-hpa-llm-sim."
+          },
+          {
+            "do": "Start the load Job (24 concurrent users, 300 requests, a new connection per request), and watch the replicas (Ctrl+C to stop watching).",
+            "code": "kubectl apply -f load-job.yaml\nkubectl -n llm get hpa keda-hpa-llm-sim --watch",
+            "lang": "bash",
+            "see": "The metric climbs well past the target of 4 and REPLICAS rises towards 6."
+          },
+          {
+            "do": "While the load runs, see what happened to the extra replicas.",
+            "code": "kubectl -n llm get pods -l app=llm-sim -o wide\nkubectl -n llm get events --field-selector reason=FailedScheduling | tail -n 2",
+            "lang": "bash",
+            "see": "Four Running on the GPU nodes and the rest Pending with Insufficient nvidia.com/gpu: the point where a cluster autoscaler would add a GPU node."
+          },
+          {
+            "do": "Read the load test's report when the Job finishes, then watch the count fall after the 3-minute scale-down window.",
+            "code": "kubectl -n llm wait --for=condition=complete job/llm-load --timeout=15m\nkubectl -n llm logs job/llm-load\nkubectl -n llm get hpa keda-hpa-llm-sim --watch",
+            "lang": "bash",
+            "see": "requests: 300 ok, 0 failed and the latency figures, then REPLICAS back to 1."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Prometheus scrapes llm-sim and answers the query KEDA uses.",
+            "look_for": [
+              "\"status\":\"success\""
+            ]
+          },
+          {
+            "text": "KEDA manages an HPA for the Deployment.",
+            "look_for": [
+              "scaledobject.keda.sh/llm-sim",
+              "keda-hpa-llm-sim"
+            ]
+          },
+          {
+            "text": "The Deployment scales out under load until the GPU pool is full.",
+            "look_for": [
+              "Pending",
+              "Insufficient nvidia.com/gpu"
+            ]
+          },
+          {
+            "text": "The load test completes without errors, and the replicas scale back in.",
+            "look_for": [
+              "requests: 300 ok, 0 failed"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 2 and 4 to 7 (for the watches, the lines where REPLICAS changes), and a sentence on how long scaling up took and why.",
+        "files": [
+          {
+            "path": "podmonitor.yaml",
+            "content": "apiVersion: monitoring.coreos.com/v1\nkind: PodMonitor\nmetadata:\n  name: llm-sim\n  namespace: llm\nspec:\n  selector:\n    matchLabels:\n      app: llm-sim\n  podMetricsEndpoints:\n    - port: http\n      path: /metrics\n      interval: 15s\n"
+          },
+          {
+            "path": "scaledobject.yaml",
+            "content": "apiVersion: keda.sh/v1alpha1\nkind: ScaledObject\nmetadata:\n  name: llm-sim\n  namespace: llm\nspec:\n  scaleTargetRef:\n    name: llm-sim\n  minReplicaCount: 1\n  maxReplicaCount: 6\n  pollingInterval: 15     # seconds between queries\n  cooldownPeriod: 300     # only used when scaling to zero\n  advanced:\n    horizontalPodAutoscalerConfig:\n      behavior:\n        scaleUp:\n          stabilizationWindowSeconds: 0\n        scaleDown:\n          stabilizationWindowSeconds: 180   # replicas are slow to start, so be slow to remove them\n  triggers:\n    - type: prometheus\n      metadata:\n        serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090\n        query: sum(vllm:num_requests_waiting{namespace=\"llm\", model_name=\"sim-small\"})\n        threshold: \"4\"            # aim for about 4 waiting requests per replica\n        activationThreshold: \"1\"  # only matters when minReplicaCount is 0\n"
+          },
+          {
+            "path": "load-job.yaml",
+            "content": "apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: llm-load\n  namespace: llm\nspec:\n  backoffLimit: 0\n  template:\n    spec:\n      restartPolicy: Never\n      containers:\n        - name: loadgen\n          image: llm-sim:1.0.0\n          command: [\"python\", \"loadgen.py\", \"--url\", \"http://llm-sim:8000\", \"--model\", \"sim-small\",\n                    \"--concurrency\", \"24\", \"--requests\", \"300\", \"--max-tokens\", \"48\", \"--no-keepalive\"]\n"
+          }
+        ],
+        "hints": [
+          "If the query returns an empty result, Prometheus isn't scraping llm-sim yet: open localhost:9090/targets and look for the podMonitor/llm/llm-sim target and its error.",
+          "If the ScaledObject isn't READY, kubectl -n llm describe scaledobject llm-sim and kubectl -n keda logs deploy/keda-operator say why, such as a wrong serverAddress.",
+          "To run the load again, delete the old Job first: kubectl -n llm delete job llm-load.",
+          "kube-prometheus-stack needs a few GB of memory; if its Pods stay Pending, give Docker more memory."
+        ]
+      }
+    },
+    {
+      "title": "Observability and Monitoring",
+      "summary": "Collect and use the signals that matter for LLM serving: Prometheus and Grafana for tokens per second, latency and saturation, alerting rules you can test, distributed tracing, and aggregated logs.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "Prometheus and Grafana for model servers",
+          "minutes": 12,
+          "objectives": [
+            "Set up scraping for model servers with the Prometheus Operator",
+            "Provision Grafana dashboards as code"
+          ],
+          "key_points": [
+            "kube-prometheus-stack installs the Prometheus Operator, Prometheus, Alertmanager, Grafana, node-exporter and kube-state-metrics; you describe what to scrape with ServiceMonitor and PodMonitor resources and alerting rules with PrometheusRule resources.",
+            "By default the chart's Prometheus only selects monitors and rules labelled with its Helm release; set the ...SelectorNilUsesHelmValues values to false, or add the release label, or your PodMonitor is silently ignored.",
+            "vLLM serves Prometheus metrics at /metrics on its API port, labelled with model_name; Prometheus adds namespace, pod and container labels when it scrapes through a PodMonitor.",
+            "Keep dashboards in Git: the chart's Grafana sidecar loads any ConfigMap labelled grafana_dashboard: \"1\" holding dashboard JSON, so a dashboard is reviewed and deployed like the service it watches.",
+            "Watch cardinality: every distinct label combination is a separate series, so never put request IDs, prompts or user IDs in metric labels; they belong in logs and traces."
+          ]
+        },
+        {
+          "title": "LLM metrics: tokens per second, latency and saturation",
+          "minutes": 13,
+          "objectives": [
+            "Write PromQL for throughput, time to first token and saturation",
+            "Choose the metrics that define a healthy LLM service"
+          ],
+          "key_points": [
+            "Throughput is tokens, not requests: sum(rate(vllm:generation_tokens_total[1m])) is output tokens per second, and vllm:prompt_tokens_total counts the input tokens processed.",
+            "Time to first token (vllm:time_to_first_token_seconds) is what interactive users feel first; take percentiles with histogram_quantile(0.95, sum by (le) (rate(..._bucket[5m]))), never by averaging percentiles across replicas.",
+            "Time per output token (vllm:request_time_per_output_token_seconds) and inter-token latency measure streaming speed, and vllm:e2e_request_latency_seconds the whole request; queue time shows how much of it was waiting.",
+            "Saturation shows trouble coming: vllm:num_requests_waiting above zero for long, vllm:num_requests_running at --max-num-seqs, and vllm:kv_cache_usage_perc near 1, where the server starts preempting requests (vllm:num_preemptions_total).",
+            "Errors and outcomes come from vllm:request_success_total by finished_reason (stop, length or abort) and from HTTP status codes at the gateway; alert on symptoms users feel, such as slow first tokens, before causes."
+          ],
+          "walkthrough": {
+            "tool": "Prometheus",
+            "title": "Query LLM serving metrics",
+            "steps": [
+              {
+                "do": "With llm-sim under load (start the load Job from module 3 again), forward Prometheus and open http://localhost:9090 in a browser.",
+                "code": "kubectl -n monitoring port-forward svc/monitoring-kube-prometheus-prometheus 9090:9090 &",
+                "lang": "bash"
+              },
+              {
+                "do": "Output tokens per second across all replicas, as a graph.",
+                "code": "sum(rate(vllm:generation_tokens_total{namespace=\"llm\"}[1m]))",
+                "lang": "promql"
+              },
+              {
+                "do": "p95 time to first token over the last 5 minutes.",
+                "code": "histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{namespace=\"llm\"}[5m])))",
+                "lang": "promql",
+                "see": "A value in seconds that rises while requests queue."
+              },
+              {
+                "do": "Requests waiting, per replica, to see whether the load is even.",
+                "code": "sum by (pod) (vllm:num_requests_waiting{namespace=\"llm\"})",
+                "lang": "promql"
+              },
+              {
+                "do": "Average tokens per request over the last 10 minutes.",
+                "code": "sum(increase(vllm:generation_tokens_total{namespace=\"llm\"}[10m])) / sum(increase(vllm:request_success_total{namespace=\"llm\"}[10m]))",
+                "lang": "promql",
+                "see": "About 48 for the load Job, whose requests ask for 48 tokens."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Distributed tracing for LLM requests",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a trace follows one request through a gateway and a model server",
+            "Configure trace export from an inference server"
+          ],
+          "key_points": [
+            "A trace records one request's path as spans, such as gateway, retrieval, model call and post-processing, with timings and attributes, so you see where a slow answer spent its time.",
+            "Context travels between services in the W3C traceparent header, which carries the trace ID; every service creates its spans under that ID and sends them, usually over OTLP, to an OpenTelemetry Collector.",
+            "vLLM can export OpenTelemetry spans for its requests: --otlp-traces-endpoint sets the OTLP endpoint and --collect-detailed-traces adds finer timings for chosen modules, at some cost in speed; the OpenTelemetry packages must be in the image.",
+            "Sample traces to control cost: keep a fixed share, or use tail sampling in the Collector to keep slow and failed requests; logging the trace ID with each request links logs to traces.",
+            "OpenTelemetry's semantic conventions for generative AI define attribute names such as the model and token counts; they're still evolving, so check the version your libraries implement."
+          ]
+        },
+        {
+          "title": "Log aggregation",
+          "minutes": 11,
+          "objectives": [
+            "Collect container logs from every node into one searchable store",
+            "Decide what an LLM service should log, and what it must not"
+          ],
+          "key_points": [
+            "Containers write logs to standard output and error, the kubelet keeps them in files on the node, and kubectl logs reads them; they're lost when the Pod is deleted, so production clusters ship them elsewhere.",
+            "A log agent runs on every node as a DaemonSet, such as Grafana Alloy, Fluent Bit or the OpenTelemetry Collector's filelog receiver, and sends logs to a store such as Loki, Elasticsearch or a cloud logging service. Grafana has deprecated Promtail in favour of Alloy.",
+            "Log one structured (JSON) line per request with the request ID, trace ID, model, token counts, latency and outcome, so you can filter, count and join logs with traces instead of grepping free text.",
+            "Prompts and outputs can hold personal or confidential data: don't log them by default, or redact, sample and restrict access with a retention period you can justify.",
+            "Logs are costly at volume: keep request logs at info level, debug logs off in production, and use metrics rather than logs for things you count."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Dashboards, alerts and logs for LLM serving",
+        "tool": "Grafana",
+        "minutes": 75,
+        "goal": "Add tested alerting and recording rules for LLM serving, provision a Grafana dashboard from a ConfigMap, watch it during a load test, and follow one request through the logs by its trace ID.",
+        "setup": [
+          "The cluster from the module 3 lab, with kube-prometheus-stack and llm-sim (you can delete the ScaledObject, or keep it)",
+          "Docker, to run promtool from the Prometheus image",
+          "Download the starter files: llm-rules.yaml, llm-rules-test.yaml and dashboard-configmap.yaml"
+        ],
+        "steps": [
+          {
+            "do": "Unit-test the rules before deploying them: the test file feeds made-up series through the rules and checks what fires, and when.",
+            "code": "docker run --rm -v \"$PWD\":/work -w /work --entrypoint promtool prom/prometheus:v3.13.4 check rules llm-rules.yaml\ndocker run --rm -v \"$PWD\":/work -w /work --entrypoint promtool prom/prometheus:v3.13.4 test rules llm-rules-test.yaml",
+            "lang": "bash",
+            "see": "SUCCESS: 7 rules found, then SUCCESS for the tests."
+          },
+          {
+            "do": "Break a test on purpose: change the queue alert's threshold in llm-rules.yaml from 10 to 15, run the tests again and read the failure, then change it back."
+          },
+          {
+            "do": "Wrap the same rules in a PrometheusRule (its spec is the rules file, indented), then deploy it with the dashboard, a ConfigMap for Grafana's sidecar.",
+            "code": "{ printf 'apiVersion: monitoring.coreos.com/v1\\nkind: PrometheusRule\\nmetadata:\\n  name: llm-serving\\n  namespace: llm\\nspec:\\n'; sed 's/^/  /' llm-rules.yaml; } > prometheusrule.yaml\nkubectl apply -f prometheusrule.yaml -f dashboard-configmap.yaml\nkubectl -n llm get prometheusrule",
+            "lang": "bash",
+            "see": "prometheusrule.monitoring.coreos.com/llm-serving created and configmap/llm-serving-dashboard created"
+          },
+          {
+            "do": "Open Grafana: forward its port, read the admin password, and sign in at http://localhost:3000 as admin.",
+            "code": "kubectl -n monitoring port-forward svc/monitoring-grafana 3000:80 &\nkubectl -n monitoring get secret monitoring-grafana -o jsonpath='{.data.admin-password}' | base64 --decode; echo",
+            "lang": "bash"
+          },
+          {
+            "do": "Run the load Job again and watch the LLM serving dashboard (Dashboards, then search for it). Note the peak tokens per second, the highest p95 time to first token and the largest queue.",
+            "code": "kubectl -n llm delete job llm-load --ignore-not-found\nkubectl apply -f load-job.yaml",
+            "lang": "bash"
+          },
+          {
+            "do": "Look at the alerts while the queue is long: in Prometheus (port 9090, Alerts) or in Grafana's Alerting page. Note the state of LLMRequestsQueueing: inactive, pending or firing."
+          },
+          {
+            "do": "Follow one request through the logs: llm-sim writes a JSON line per request with the trace ID loadgen sent. Pick one trace_id and find it again across all replicas.",
+            "code": "kubectl -n llm logs -l app=llm-sim --prefix --tail=2\nkubectl -n llm logs -l app=llm-sim --prefix --tail=-1 | grep TRACE_ID",
+            "lang": "bash",
+            "see": "Lines such as {\"ts\": ..., \"event\": \"request_finished\", \"trace_id\": \"...\", ...}, and the one replica that served your trace."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The rules pass their unit tests.",
+            "look_for": [
+              "SUCCESS"
+            ]
+          },
+          {
+            "text": "The rules and the dashboard are deployed.",
+            "look_for": [
+              "prometheusrule.monitoring.coreos.com/llm-serving",
+              "configmap/llm-serving-dashboard"
+            ]
+          },
+          {
+            "text": "The dashboard's figures under load are reported: peak tokens per second, p95 time to first token, largest queue, and the queue alert's state.",
+            "look_for": [
+              "tokens"
+            ]
+          },
+          {
+            "text": "A request is found in the logs by its trace ID.",
+            "look_for": [
+              "\"event\": \"request_finished\"",
+              "trace_id"
+            ]
+          }
+        ],
+        "submit": "Paste the promtool output (including the failure from step 2), the kubectl output from steps 3 and 7, your figures from steps 5 and 6, and a screenshot description or export of the dashboard under load.",
+        "files": [
+          {
+            "path": "llm-rules.yaml",
+            "content": "groups:\n  - name: llm-serving.rules\n    interval: 30s\n    rules:\n      - record: namespace_model_name:vllm_generation_tokens:rate1m\n        expr: sum by (namespace, model_name) (rate(vllm:generation_tokens_total[1m]))\n      - record: namespace_model_name:vllm_time_to_first_token_seconds:p95_5m\n        expr: >-\n          histogram_quantile(0.95,\n            sum by (namespace, model_name, le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))\n      - record: namespace_model_name:vllm_num_requests_waiting:sum\n        expr: sum by (namespace, model_name) (vllm:num_requests_waiting)\n  - name: llm-serving.alerts\n    interval: 30s\n    rules:\n      - alert: LLMRequestsQueueing\n        expr: namespace_model_name:vllm_num_requests_waiting:sum > 10\n        for: 2m\n        labels:\n          severity: warning\n        annotations:\n          summary: \"{{ $labels.model_name }}: {{ $value }} requests waiting\"\n          description: Requests have queued for 2 minutes. Check that the autoscaler can add replicas and GPU nodes.\n      - alert: LLMTimeToFirstTokenHigh\n        expr: namespace_model_name:vllm_time_to_first_token_seconds:p95_5m > 2\n        for: 5m\n        labels:\n          severity: critical\n        annotations:\n          summary: \"{{ $labels.model_name }}: p95 time to first token is {{ $value | humanizeDuration }}\"\n          description: Users wait more than 2 seconds for the first token. Look at queueing and KV cache use.\n      - alert: LLMKVCacheFull\n        expr: max by (namespace, model_name) (vllm:kv_cache_usage_perc) > 0.95\n        for: 10m\n        labels:\n          severity: warning\n        annotations:\n          summary: \"{{ $labels.model_name }}: KV cache over 95% full\"\n          description: A full KV cache makes the server queue or preempt requests. Add replicas or lower max-num-seqs.\n      - alert: LLMServerDown\n        expr: absent(up{namespace=\"llm\", container=\"llm-sim\"} == 1)\n        for: 2m\n        labels:\n          severity: critical\n        annotations:\n          summary: No llm-sim replica is being scraped successfully\n          description: Prometheus has had no healthy llm-sim target for 2 minutes.\n"
+          },
+          {
+            "path": "llm-rules-test.yaml",
+            "content": "rule_files:\n  - llm-rules.yaml\n\nevaluation_interval: 30s\n\ntests:\n  # Two replicas whose queues fill up for a few minutes.\n  - interval: 30s\n    input_series:\n      - series: 'vllm:num_requests_waiting{namespace=\"llm\", pod=\"llm-sim-a\", model_name=\"sim-small\"}'\n        values: '0 4 8 8 8 8 8 8 8 8 0 0'\n      - series: 'vllm:num_requests_waiting{namespace=\"llm\", pod=\"llm-sim-b\", model_name=\"sim-small\"}'\n        values: '0 2 4 4 4 4 4 4 4 4 0 0'\n    promql_expr_test:\n      - expr: namespace_model_name:vllm_num_requests_waiting:sum\n        eval_time: 2m\n        exp_samples:\n          - labels: 'namespace_model_name:vllm_num_requests_waiting:sum{namespace=\"llm\", model_name=\"sim-small\"}'\n            value: 12\n    alert_rule_test:\n      - eval_time: 2m        # 12 waiting since 1m: pending, not yet firing\n        alertname: LLMRequestsQueueing\n        exp_alerts: []\n      - eval_time: 3m        # still over 10 after 2 minutes: firing\n        alertname: LLMRequestsQueueing\n        exp_alerts:\n          - exp_labels:\n              severity: warning\n              namespace: llm\n              model_name: sim-small\n            exp_annotations:\n              summary: \"sim-small: 12 requests waiting\"\n              description: Requests have queued for 2 minutes. Check that the autoscaler can add replicas and GPU nodes.\n      - eval_time: 5m30s     # the queue has drained\n        alertname: LLMRequestsQueueing\n        exp_alerts: []\n\n  # Every minute 100 requests finish: 50 within 0.5 s, 80 within 1 s, 90 within 2.5 s and all within 5 s.\n  - interval: 1m\n    input_series:\n      - series: 'vllm:time_to_first_token_seconds_bucket{namespace=\"llm\", model_name=\"sim-small\", le=\"0.5\"}'\n        values: '0+50x15'\n      - series: 'vllm:time_to_first_token_seconds_bucket{namespace=\"llm\", model_name=\"sim-small\", le=\"1\"}'\n        values: '0+80x15'\n      - series: 'vllm:time_to_first_token_seconds_bucket{namespace=\"llm\", model_name=\"sim-small\", le=\"2.5\"}'\n        values: '0+90x15'\n      - series: 'vllm:time_to_first_token_seconds_bucket{namespace=\"llm\", model_name=\"sim-small\", le=\"5\"}'\n        values: '0+100x15'\n      - series: 'vllm:time_to_first_token_seconds_bucket{namespace=\"llm\", model_name=\"sim-small\", le=\"+Inf\"}'\n        values: '0+100x15'\n    promql_expr_test:\n      - expr: round(namespace_model_name:vllm_time_to_first_token_seconds:p95_5m, 0.01)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{namespace=\"llm\", model_name=\"sim-small\"}'\n            value: 3.75\n    alert_rule_test:\n      - eval_time: 10m\n        alertname: LLMTimeToFirstTokenHigh\n        exp_alerts:\n          - exp_labels:\n              severity: critical\n              namespace: llm\n              model_name: sim-small\n            exp_annotations:\n              summary: \"sim-small: p95 time to first token is 3.75s\"\n              description: Users wait more than 2 seconds for the first token. Look at queueing and KV cache use.\n\n  # The only replica stops answering scrapes.\n  - interval: 30s\n    input_series:\n      - series: 'up{namespace=\"llm\", pod=\"llm-sim-a\", container=\"llm-sim\"}'\n        values: '1 1 1 0 0 0 0 0 0 0'\n    alert_rule_test:\n      - eval_time: 1m\n        alertname: LLMServerDown\n        exp_alerts: []\n      - eval_time: 4m\n        alertname: LLMServerDown\n        exp_alerts:\n          - exp_labels:\n              severity: critical\n            exp_annotations:\n              summary: No llm-sim replica is being scraped successfully\n              description: Prometheus has had no healthy llm-sim target for 2 minutes.\n"
+          },
+          {
+            "path": "dashboard-configmap.yaml",
+            "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: llm-serving-dashboard\n  namespace: monitoring\n  labels:\n    grafana_dashboard: \"1\"   # Grafana's sidecar loads every ConfigMap with this label\ndata:\n  llm-serving.json: |\n    {\n     \"uid\":\"llm-serving\",\n     \"title\":\"LLM serving\",\n     \"schemaVersion\":39,\n     \"version\":1,\n     \"editable\":true,\n     \"time\":{\"from\":\"now-30m\",\"to\":\"now\"},\n     \"refresh\":\"10s\",\n     \"tags\":[\"llm\"],\n     \"templating\":{\"list\":[{\"name\":\"model\",\"label\":\"Model\",\"type\":\"query\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"query\":{\"query\":\"label_values(vllm:num_requests_running{namespace=\\\"llm\\\"}, model_name)\",\"refId\":\"model\"},\"definition\":\"label_values(vllm:num_requests_running{namespace=\\\"llm\\\"}, model_name)\",\"refresh\":2,\"includeAll\":false,\"multi\":false}]},\n     \"panels\":[\n      {\"id\":1,\"type\":\"timeseries\",\"title\":\"Output tokens per second\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":0,\"y\":0,\"w\":12,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"short\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"sum(rate(vllm:generation_tokens_total{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}[$__rate_interval]))\",\"legendFormat\":\"generated\"},{\"refId\":\"B\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"sum(rate(vllm:prompt_tokens_total{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}[$__rate_interval]))\",\"legendFormat\":\"prompt\"}]},\n      {\"id\":2,\"type\":\"timeseries\",\"title\":\"Time to first token\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":12,\"y\":0,\"w\":12,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"s\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"histogram_quantile(0.5, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}[$__rate_interval])))\",\"legendFormat\":\"p50\"},{\"refId\":\"B\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"histogram_quantile(0.95, sum by (le) (rate(vllm:time_to_first_token_seconds_bucket{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}[$__rate_interval])))\",\"legendFormat\":\"p95\"}]},\n      {\"id\":3,\"type\":\"timeseries\",\"title\":\"Requests running and waiting\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":0,\"y\":8,\"w\":12,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"short\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"sum(vllm:num_requests_running{namespace=\\\"llm\\\", model_name=\\\"$model\\\"})\",\"legendFormat\":\"running\"},{\"refId\":\"B\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"sum(vllm:num_requests_waiting{namespace=\\\"llm\\\", model_name=\\\"$model\\\"})\",\"legendFormat\":\"waiting\"}]},\n      {\"id\":4,\"type\":\"timeseries\",\"title\":\"KV cache use by replica\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":12,\"y\":8,\"w\":12,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"percentunit\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"vllm:kv_cache_usage_perc{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}\",\"legendFormat\":\"{{pod}}\"}]},\n      {\"id\":5,\"type\":\"stat\",\"title\":\"Replicas serving\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":0,\"y\":16,\"w\":6,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"short\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"count(up{namespace=\\\"llm\\\", container=\\\"llm-sim\\\"} == 1)\",\"legendFormat\":\"replicas\"}]},\n      {\"id\":6,\"type\":\"stat\",\"title\":\"End-to-end latency, p95\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":6,\"y\":16,\"w\":6,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"s\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"histogram_quantile(0.95, sum by (le) (rate(vllm:e2e_request_latency_seconds_bucket{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}[$__rate_interval])))\",\"legendFormat\":\"p95\"}]},\n      {\"id\":7,\"type\":\"timeseries\",\"title\":\"Finished requests per second, by reason\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"gridPos\":{\"x\":12,\"y\":16,\"w\":12,\"h\":8},\"fieldConfig\":{\"defaults\":{\"unit\":\"short\"},\"overrides\":[]},\"targets\":[{\"refId\":\"A\",\"datasource\":{\"type\":\"prometheus\",\"uid\":\"prometheus\"},\"expr\":\"sum by (finished_reason) (rate(vllm:request_success_total{namespace=\\\"llm\\\", model_name=\\\"$model\\\"}[$__rate_interval]))\",\"legendFormat\":\"{{finished_reason}}\"}]}\n     ]\n    }\n"
+          }
+        ],
+        "hints": [
+          "If the dashboard doesn't appear, check the ConfigMap's label (grafana_dashboard: \"1\") and read the sidecar's log: kubectl -n monitoring logs deploy/monitoring-grafana -c grafana-sc-dashboard.",
+          "No data in the panels usually means the model variable is empty: pick sim-small at the top of the dashboard, or check that Prometheus still scrapes llm-sim.",
+          "On Windows, run docker with ${PWD} in PowerShell, or use Git Bash, where \"$PWD\" works.",
+          "Recording rules only have data from when they were created: give them a few minutes under load."
+        ]
+      }
+    },
+    {
+      "title": "Advanced Scheduling and Operations",
+      "summary": "Place LLM servers precisely with affinity, taints and topology spread, keep them serving through drains and node failures, and roll out new model versions safely with rolling updates and canaries.",
+      "instructor": "abderrahman-bensoussan",
+      "lessons": [
+        {
+          "title": "Node affinity, taints and tolerations for GPU pools",
+          "minutes": 12,
+          "objectives": [
+            "Combine node affinity, taints and tolerations to place GPU workloads",
+            "Protect important inference Pods with priority"
+          ],
+          "key_points": [
+            "nodeSelector matches exact labels; node affinity adds operators (In, NotIn, Exists, DoesNotExist, Gt, Lt) and has required rules (requiredDuringSchedulingIgnoredDuringExecution) and weighted preferred ones.",
+            "IgnoredDuringExecution means a rule is checked only when the Pod is scheduled: changing a node's labels later doesn't move Pods already running there.",
+            "Taints repel, tolerations permit: NoSchedule keeps new Pods off, PreferNoSchedule tries to, and NoExecute also evicts running Pods that don't tolerate it, after their tolerationSeconds if set.",
+            "To dedicate GPU nodes, use both halves: a taint so other Pods stay away, and node affinity so the GPU Pods go there; either one alone leaves a gap.",
+            "PriorityClasses rank Pods: when resources run out, the scheduler can preempt lower-priority Pods, such as batch or evaluation jobs, to place a higher-priority inference server."
+          ]
+        },
+        {
+          "title": "Topology spread constraints",
+          "minutes": 11,
+          "objectives": [
+            "Spread replicas across zones and nodes",
+            "Predict how spread rules behave during drains and failures"
+          ],
+          "key_points": [
+            "topologySpreadConstraints spread matching Pods across topology domains, named by a node label such as topology.kubernetes.io/zone or kubernetes.io/hostname; maxSkew is the largest allowed difference in Pod count between any two domains.",
+            "whenUnsatisfiable: DoNotSchedule is a hard rule that leaves Pods Pending rather than break it; ScheduleAnyway is a preference the scheduler weighs against everything else.",
+            "nodeAffinityPolicy and nodeTaintsPolicy (default since Kubernetes 1.26) decide which nodes count as domains; with nodeTaintsPolicy: Honor, nodes whose taints the Pod doesn't tolerate, such as a cordoned or failed node, aren't counted.",
+            "Spreading LLM replicas across zones survives a zone outage, but GPUs are scarce and unevenly spread, so a hard rule can strand replicas; minDomains and ScheduleAnyway soften it.",
+            "Pod anti-affinity (do not run two of these on one node) is the older tool for spreading, and is costlier for the scheduler to evaluate in large clusters."
+          ]
+        },
+        {
+          "title": "Handling node failures",
+          "minutes": 12,
+          "objectives": [
+            "Describe what Kubernetes does when a node stops responding",
+            "Tune and prepare LLM workloads to recover quickly"
+          ],
+          "key_points": [
+            "When a node stops reporting, the node controller marks it NotReady or Unknown and adds the NoExecute taints node.kubernetes.io/not-ready or node.kubernetes.io/unreachable.",
+            "By default Pods tolerate those taints for 300 seconds, so their replacements start five minutes after the failure; set a shorter tolerationSeconds on inference Pods when a quick move is worth more than waiting.",
+            "A replacement still needs a free GPU and the model load time, so keep spare capacity (N+1 replicas) for critical models; a PodDisruptionBudget covers drains and other voluntary disruptions only.",
+            "GPUs fail too: the device plugin's health checks mark a failing GPU unhealthy, which lowers the node's allocatable nvidia.com/gpu, and DCGM's XID error metric records the driver's error codes.",
+            "Make shutdown graceful: on spot reclaims and drains, a preStop hook and terminationGracePeriodSeconds give the server time to leave the Service's endpoints and finish in-flight requests."
+          ]
+        },
+        {
+          "title": "Upgrading model versions safely",
+          "minutes": 13,
+          "objectives": [
+            "Plan a model upgrade as a release with a tested rollback",
+            "Run rolling and canary upgrades of an LLM server"
+          ],
+          "key_points": [
+            "Version the model like code: pin the weights' revision, the server image and its arguments together, so every replica runs the same thing and a rollback restores all three.",
+            "A rolling update needs spare GPUs to surge; with none, use maxSurge: 0 and maxUnavailable: 1, which replaces one replica at a time at the cost of some capacity during the update.",
+            "A canary sends a small share of traffic to the new version first: a second Deployment behind the same Service gets a share in proportion to its replicas, and Gateway API HTTPRoute weights or a service mesh split traffic by percentage.",
+            "Promote only on evidence: compare the canary's time to first token, errors and evaluation results with the stable version; tools such as Argo Rollouts and Flagger automate the analysis and the rollback.",
+            "Keep the old weights cached and its Deployment revision available until the new version has proved itself, so a rollback (kubectl rollout undo, or deleting the canary) takes seconds, not a fresh download."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Spread, drain, fail and upgrade",
+        "tool": "kubectl",
+        "minutes": 90,
+        "goal": "Run llm-sim across two zones of the simulated GPU pool, keep it serving through a node drain and a node failure, then upgrade it with a one-at-a-time rolling update and try a new version as a canary.",
+        "setup": [
+          "The kind cluster from the earlier labs, with the simulated GPU pool",
+          "load-job.yaml from the module 3 lab",
+          "Download the starter files: llm-sim-ha.yaml and llm-sim-canary.yaml"
+        ],
+        "steps": [
+          {
+            "do": "Remove the ScaledObject so it doesn't fight the fixed replica count, then apply the highly available version: 2 replicas spread across zones, faster failover tolerations and a PodDisruptionBudget.",
+            "code": "kubectl -n llm delete scaledobject llm-sim --ignore-not-found\nkubectl apply -f llm-sim-ha.yaml\nkubectl -n llm rollout status deployment/llm-sim\nkubectl -n llm get pods -l app=llm-sim -o wide",
+            "lang": "bash",
+            "see": "One Pod on llm-worker2 (zone-a) and one on llm-worker3 (zone-b)."
+          },
+          {
+            "do": "Drain llm-worker2 as if for maintenance. The PodDisruptionBudget lets one replica go, and the replacement lands in zone-b, because the cordoned node no longer counts.",
+            "code": "kubectl drain llm-worker2 --ignore-daemonsets --delete-emptydir-data\nkubectl -n llm get pods -l app=llm-sim -o wide",
+            "lang": "bash",
+            "see": "node/llm-worker2 cordoned, an eviction, node/llm-worker2 drained, and both Pods on llm-worker3."
+          },
+          {
+            "do": "Bring the node back and spread the replicas again with a restart.",
+            "code": "kubectl uncordon llm-worker2\nkubectl -n llm rollout restart deployment/llm-sim\nkubectl -n llm rollout status deployment/llm-sim\nkubectl -n llm get pods -l app=llm-sim -o wide",
+            "lang": "bash"
+          },
+          {
+            "do": "Simulate a node failure by stopping the node's container. Watch the node go NotReady and, 30 seconds later, its Pod being replaced (Ctrl+C to stop watching).",
+            "code": "docker stop llm-worker3\nkubectl get nodes --watch",
+            "lang": "bash",
+            "see": "llm-worker3 NotReady within a minute or so."
+          },
+          {
+            "do": "Look at the Pods, then start the node again.",
+            "code": "kubectl -n llm get pods -l app=llm-sim -o wide\ndocker start llm-worker3\nsleep 60\nkubectl get nodes",
+            "lang": "bash",
+            "see": "The old Pod Terminating on llm-worker3 and a new one Running on llm-worker2, then all nodes Ready."
+          },
+          {
+            "do": "Upgrade to version 1.1.0 one replica at a time (maxSurge 0, maxUnavailable 1), and check the version.",
+            "code": "kubectl -n llm set env deployment/llm-sim SIM_VERSION=1.1.0\nkubectl -n llm rollout status deployment/llm-sim\nkubectl -n llm exec deploy/llm-sim -- python -c \"import urllib.request; print(urllib.request.urlopen('http://localhost:8000/version').read().decode())\"",
+            "lang": "bash",
+            "see": "deployment \"llm-sim\" successfully rolled out, and {\"version\":\"1.1.0\"}"
+          },
+          {
+            "do": "Add a canary of version 2.0.0 behind the same Service, then run the in-cluster load Job from module 3, which opens a new connection through the Service for every request, and see who answered.",
+            "code": "kubectl apply -f llm-sim-canary.yaml\nkubectl -n llm rollout status deployment/llm-sim-canary\nkubectl -n llm delete job llm-load --ignore-not-found\nkubectl apply -f load-job.yaml\nkubectl -n llm wait --for=condition=complete job/llm-load --timeout=15m\nkubectl -n llm logs job/llm-load | tail -n 1",
+            "lang": "bash",
+            "see": "served by: llm-sim-1.1.0 x ..., llm-sim-2.0.0 x ...: about a third from the canary, which has one of the three replicas."
+          },
+          {
+            "do": "Decide: roll the canary back by deleting it, and write down which metrics you'd compare before promoting a real one.",
+            "code": "kubectl -n llm delete deployment llm-sim-canary",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The replicas are spread across zones and survive the drain.",
+            "look_for": [
+              "node/llm-worker2 drained",
+              "llm-worker3"
+            ]
+          },
+          {
+            "text": "The stopped node goes NotReady and its Pod is replaced on another node.",
+            "look_for": [
+              "NotReady",
+              "Terminating"
+            ]
+          },
+          {
+            "text": "The one-at-a-time upgrade completes.",
+            "look_for": [
+              "successfully rolled out",
+              "{\"version\":\"1.1.0\"}"
+            ]
+          },
+          {
+            "text": "The canary takes a share of the requests, and the rollback criteria are written down.",
+            "look_for": [
+              "llm-sim-2.0.0"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 1 to 7, and your list of metrics and thresholds for promoting or rolling back a canary.",
+        "files": [
+          {
+            "path": "llm-sim-ha.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: llm-sim\n  namespace: llm\n  labels:\n    app: llm-sim\nspec:\n  replicas: 2\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 0         # no spare GPU for an extra Pod...\n      maxUnavailable: 1   # ...so replace one Pod at a time\n  selector:\n    matchLabels:\n      app: llm-sim\n      track: stable\n  template:\n    metadata:\n      labels:\n        app: llm-sim\n        track: stable\n    spec:\n      nodeSelector:\n        pool: gpu\n      tolerations:\n        - key: nvidia.com/gpu\n          operator: Exists\n          effect: NoSchedule\n        # Leave a failed node after 30 seconds instead of the default 300.\n        - key: node.kubernetes.io/unreachable\n          operator: Exists\n          effect: NoExecute\n          tolerationSeconds: 30\n        - key: node.kubernetes.io/not-ready\n          operator: Exists\n          effect: NoExecute\n          tolerationSeconds: 30\n      topologySpreadConstraints:\n        - maxSkew: 1\n          topologyKey: topology.kubernetes.io/zone\n          whenUnsatisfiable: DoNotSchedule\n          nodeTaintsPolicy: Honor   # don't count cordoned or failed nodes as places to spread to\n          labelSelector:\n            matchLabels:\n              app: llm-sim\n      terminationGracePeriodSeconds: 30\n      containers:\n        - name: llm-sim\n          image: llm-sim:1.0.0\n          env:\n            - name: MODEL_NAME\n              value: sim-small\n            - name: SIM_VERSION\n              value: \"1.0.0\"\n            - name: MAX_NUM_SEQS\n              value: \"4\"\n            - name: TOKENS_PER_SECOND\n              value: \"20\"\n            - name: STARTUP_SECONDS\n              value: \"20\"   # pretend model loading time\n          ports:\n            - name: http\n              containerPort: 8000\n          startupProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n            failureThreshold: 60   # allow up to 5 minutes to load a model\n          readinessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n          livenessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 15\n            failureThreshold: 4\n          resources:\n            requests:\n              cpu: 100m\n              memory: 128Mi\n            limits:\n              memory: 256Mi\n              nvidia.com/gpu: 1\n---\napiVersion: policy/v1\nkind: PodDisruptionBudget\nmetadata:\n  name: llm-sim\n  namespace: llm\nspec:\n  minAvailable: 1\n  selector:\n    matchLabels:\n      app: llm-sim\n"
+          },
+          {
+            "path": "llm-sim-canary.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: llm-sim-canary\n  namespace: llm\n  labels:\n    app: llm-sim\nspec:\n  replicas: 1\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 0         # no spare GPU for an extra Pod...\n      maxUnavailable: 1   # ...so replace one Pod at a time\n  selector:\n    matchLabels:\n      app: llm-sim\n      track: canary\n  template:\n    metadata:\n      labels:\n        app: llm-sim\n        track: canary\n    spec:\n      nodeSelector:\n        pool: gpu\n      tolerations:\n        - key: nvidia.com/gpu\n          operator: Exists\n          effect: NoSchedule\n        # Leave a failed node after 30 seconds instead of the default 300.\n        - key: node.kubernetes.io/unreachable\n          operator: Exists\n          effect: NoExecute\n          tolerationSeconds: 30\n        - key: node.kubernetes.io/not-ready\n          operator: Exists\n          effect: NoExecute\n          tolerationSeconds: 30\n      topologySpreadConstraints:\n        - maxSkew: 1\n          topologyKey: topology.kubernetes.io/zone\n          whenUnsatisfiable: DoNotSchedule\n          nodeTaintsPolicy: Honor   # don't count cordoned or failed nodes as places to spread to\n          labelSelector:\n            matchLabels:\n              app: llm-sim\n      terminationGracePeriodSeconds: 30\n      containers:\n        - name: llm-sim\n          image: llm-sim:1.0.0\n          env:\n            - name: MODEL_NAME\n              value: sim-small\n            - name: SIM_VERSION\n              value: \"2.0.0\"\n            - name: MAX_NUM_SEQS\n              value: \"4\"\n            - name: TOKENS_PER_SECOND\n              value: \"20\"\n            - name: STARTUP_SECONDS\n              value: \"20\"   # pretend model loading time\n          ports:\n            - name: http\n              containerPort: 8000\n          startupProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n            failureThreshold: 60   # allow up to 5 minutes to load a model\n          readinessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n          livenessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 15\n            failureThreshold: 4\n          resources:\n            requests:\n              cpu: 100m\n              memory: 128Mi\n            limits:\n              memory: 256Mi\n              nvidia.com/gpu: 1\n"
+          }
+        ],
+        "hints": [
+          "If the drain hangs, it's waiting for the PodDisruptionBudget: kubectl -n llm get pdb shows how many disruptions are allowed right now.",
+          "If the evicted Pod stays Pending, check that llm-worker3 still has a free simulated GPU: kubectl describe node llm-worker3 | grep -A 9 'Allocated resources'.",
+          "Ollama's Pod may run on a node you drain or stop; its local volume can't follow it, so it waits for that node to come back. That's expected here.",
+          "If docker stop asks for a container name, docker ps --filter name=llm-worker lists the node containers."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Compare inference servers and learn how to containerise one; set up the four-node kind cluster.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Store and load model weights well, and finish the module 1 lab: Ollama from a pre-loaded volume, and llm-sim.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Learn how GPUs are advertised, requested and shared, and schedule onto the simulated GPU pool.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Choose scaling signals for LLM servers and learn the HPA with custom metrics.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Autoscale on queue length with KEDA, and study cluster autoscaling and cost.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build dashboards and tested alerts for tokens, latency and saturation, and trace and log requests.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 7,
+      "focus": "Practise affinity, topology spread, drains, node failures and safe model upgrades.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 8,
+      "focus": "Build and submit the capstone, and review with the mock exam and flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Put a fine-tuned open model into production on Kubernetes",
+    "minutes": 720,
+    "brief": "Your team has a fine-tuned open model (one of your own, for example from Fine-Tuning Open Language Models with LoRA, or a public fine-tuned instruct model) and wants it served on Kubernetes. On a GPU cluster, serve it with vLLM; on a laptop, serve a small model with Ollama for real answers and use llm-sim for everything that needs many replicas. Deliver: the weights pre-loaded onto a PersistentVolumeClaim by a Job, with the revision pinned; a server Deployment with GPU requests (real or simulated), node selection, tolerations, startup, readiness and liveness probes and /dev/shm; autoscaling on inference queue length with a KEDA ScaledObject; Prometheus scraping, a Grafana dashboard and alerting rules with promtool unit tests; topology spread, a PodDisruptionBudget and tuned failover tolerations; a canary upgrade plan; and a cost estimate from your own load-test measurements and your provider's GPU price. Prove each part with outputs.",
+    "deliverables": [
+      "A manifests folder: namespace, PVC and download Job, server Deployment and Service, PodMonitor, ScaledObject, PodDisruptionBudget and PrometheusRule",
+      "The Grafana dashboard JSON and the promtool test file, with promtool's SUCCESS output",
+      "Load-test results from loadgen.py before and during a scale-up, with the replica counts the autoscaler chose",
+      "Evidence of resilience: a drain and a simulated node failure with the service still answering",
+      "A canary runbook: how traffic is split, the metrics and thresholds for promotion, and the rollback commands",
+      "A cost estimate from cost_estimate.py using your measured tokens per second, with your assumptions",
+      "README.md: the architecture, how to deploy it on a GPU cluster and on kind, and what you'd change for production"
+    ],
+    "rubric": [
+      {
+        "name": "Serving and model data",
+        "points": 20,
+        "description": "The model is pre-loaded and pinned, the server starts without downloading, probes reflect model loading, and the configuration (context length, memory share, batch size) is justified."
+      },
+      {
+        "name": "GPU scheduling",
+        "points": 15,
+        "description": "GPU requests, node selection and tolerations are correct and dedicate the GPU pool; Pending behaviour and capacity limits are understood and explained."
+      },
+      {
+        "name": "Autoscaling",
+        "points": 20,
+        "description": "The ScaledObject scales on queue length with sensible thresholds and behaviour; the load test shows scaling out and back in, and node capacity limits are addressed."
+      },
+      {
+        "name": "Observability",
+        "points": 15,
+        "description": "The dashboard shows tokens per second, time to first token, queue and KV cache; the alerts are meaningful and pass their unit tests."
+      },
+      {
+        "name": "Resilience and upgrades",
+        "points": 15,
+        "description": "Replicas survive a drain and a node failure; the canary runbook has clear promotion criteria and a fast rollback."
+      },
+      {
+        "name": "Cost and documentation",
+        "points": 15,
+        "description": "The cost estimate uses measured throughput and stated prices, and the README lets another engineer deploy and operate the service."
+      }
+    ],
+    "submit": "Paste your manifests, dashboard JSON, rules and tests, then the outputs listed in the deliverables, your canary runbook, your cost estimate and README.md.",
+    "files": [
+      {
+        "path": "cost_estimate.py",
+        "content": "\"\"\"Estimate serving cost per million output tokens from your own measurements and your provider's price.\n\n    python cost_estimate.py --gpu-hour-price PRICE --gpus-per-replica 1 --replicas 2 \\\n        --tokens-per-second TPS --busy 0.6\n\nPRICE is what one GPU costs per hour where you run (on-demand, reserved or spot: use the one you'll pay).\nTPS is the output tokens per second one replica sustains at your latency target, measured with loadgen.py.\n--busy is the share of time the replicas actually run at that rate; idle capacity still costs money.\n\"\"\"\n\nimport argparse\n\np = argparse.ArgumentParser(description=__doc__.splitlines()[0])\np.add_argument(\"--gpu-hour-price\", type=float, required=True)\np.add_argument(\"--gpus-per-replica\", type=int, default=1)\np.add_argument(\"--replicas\", type=float, required=True, help=\"average number of replicas running\")\np.add_argument(\"--tokens-per-second\", type=float, required=True, help=\"per replica, at your latency target\")\np.add_argument(\"--busy\", type=float, default=1.0, help=\"share of time at that rate, from 0 to 1\")\na = p.parse_args()\n\nhourly = a.gpu_hour_price * a.gpus_per_replica * a.replicas\ntokens_per_hour = a.tokens_per_second * a.replicas * a.busy * 3600\nprint(f\"cost per hour: {hourly:.2f} for {a.replicas:g} replica(s) of {a.gpus_per_replica} GPU(s)\")\nprint(f\"output tokens per hour: {tokens_per_hour:,.0f} at {a.busy:.0%} busy\")\nprint(f\"cost per million output tokens: {hourly / tokens_per_hour * 1e6:.4f}\")\nfull = a.gpu_hour_price * a.gpus_per_replica / (a.tokens_per_second * 3600) * 1e6\nprint(f\"floor, if every replica were busy all the time: {full:.4f} per million output tokens\")\n"
+      }
+    ]
+  }
+}
