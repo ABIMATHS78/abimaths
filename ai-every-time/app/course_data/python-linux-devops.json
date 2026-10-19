@@ -1,0 +1,1554 @@
+{
+ "slug": "python-linux-devops",
+ "title": "Python Scripting and Linux for DevOps",
+ "subtitle": "Automate Linux servers with Python: scripts that manage files and run commands safely, command-line tools built with argparse and click, packages installed by script, and jobs scheduled with cron and systemd.",
+ "category": "Cloud & DevOps",
+ "kind": "course",
+ "level": "beginner",
+ "instructors": [
+  "carlos-ramirez",
+  "ismaile-rahimovi"
+ ],
+ "skills": [
+  "Python scripting",
+  "Linux system administration",
+  "Command-line tools (argparse, click)",
+  "subprocess and shell integration",
+  "Log analysis with grep, awk and sed",
+  "Package management (apt, dnf)",
+  "Idempotent provisioning",
+  "cron and systemd timers",
+  "Logging"
+ ],
+ "tools": [
+  "Python 3",
+  "Bash",
+  "click",
+  "apt",
+  "dnf",
+  "systemd",
+  "cron"
+ ],
+ "outcomes": [
+  "Write Python scripts that manage files, update configuration safely and run Linux commands with subprocess, failing with clear messages and exit statuses",
+  "Build command-line tools with argparse and click, with subcommands, help text, validated input and tests",
+  "Investigate a server with grep, awk, sed, find and the monitoring tools, and write Python filters that work in pipelines",
+  "Manage packages with apt and dnf, and automate installs so a script can be run again safely",
+  "Schedule and supervise Python automation with cron and systemd timers, configured by environment variables and recorded with logging"
+ ],
+ "prerequisites": "Linux Command Line Essentials, or the same comfort in a Linux shell (files, permissions, pipes and simple scripts), and basic Python: variables, functions, loops, lists and dictionaries, as in Python Programming with PyCharm. You need a Linux machine where you can use sudo, such as Ubuntu 24.04 on WSL, in a virtual machine or on a cloud server, with Python 3.11 or later and python3-venv. Docker is optional, for trying installs in a throwaway container.",
+ "description": "DevOps work is full of small jobs that come round again and again: tidy the logs, check the disks, install the same packages on every new server, find out what went wrong at 09:14. This course teaches you to automate them with Python on Linux, building on the shell skills from Linux Command Line Essentials. You'll write scripts that manage files and configuration safely and run commands with subprocess; turn them into proper command-line tools with argparse and click, with help, validation and tests; investigate a disk-space incident with grep, awk, sed, find and the monitoring tools, adding your own Python filters to the pipeline; script package installs with apt and dnf so they can be run again safely; and leave your automation running with cron and systemd timers, configured by environment variables and recorded with logging.\n\nEvery module ends with a hands-on lab on files that come with the course, with the exact output a correct solution prints, and the course ends with devsetup, a click tool you build to set up a developer machine from a profile: packages, folders and configuration files, safely and repeatably.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Python Scripting for SysAdmins",
+   "summary": "Use Python for the jobs that outgrow a shell script: files and directories with pathlib and shutil, configuration files read and written safely, Linux commands run with subprocess, and errors reported with clear messages and exit statuses.",
+   "instructor": "carlos-ramirez",
+   "lessons": [
+    {
+     "title": "From shell scripts to Python scripts",
+     "minutes": 10,
+     "objectives": [
+      "Decide when a task has outgrown a shell script and belongs in Python",
+      "Write a Python script that runs like any Linux command, with a shebang, arguments and an exit status"
+     ],
+     "key_points": [
+      "Bash is good at gluing a few commands together. Move to Python when a task needs data structures, parsing JSON or CSV, careful error handling, tests, or the same behaviour on several systems.",
+      "A script runs like a command when its first line is #!/usr/bin/env python3 and it's executable (chmod +x tool.py). Putting the work in main() under if __name__ == \"__main__\": stops it running when another module imports the file.",
+      "sys.argv is the list of command-line arguments, with the script's own name first. sys.stdin, sys.stdout and sys.stderr are the three standard streams: print(message, file=sys.stderr) writes an error message.",
+      "sys.exit(0) ends with success and any other number means failure; sys.exit(\"message\") prints the message to standard error and exits with status 1. Shells, cron, systemd and CI pipelines all judge a script by this status.",
+      "On Ubuntu 23.04 and later and on Debian 12, pip refuses to install into the system Python (externally-managed-environment). Give each tool a virtual environment: python3 -m venv .venv, from the python3-venv package."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Make a Python script behave like a command",
+      "steps": [
+       {
+        "do": "Install the venv module (Ubuntu and Debian package it separately), check your Python, and make a folder for the course.",
+        "code": "sudo apt install -y python3-venv\npython3 --version\nmkdir -p ~/devops-lab/m1 && cd ~/devops-lab/m1",
+        "lang": "bash",
+        "see": "Python 3.11 or later; Ubuntu 24.04 has 3.12."
+       },
+       {
+        "do": "Create sysinfo.py in your editor (nano sysinfo.py works). It prints a one-line summary of the machine and refuses arguments it doesn't expect.",
+        "code": "#!/usr/bin/env python3\n\"\"\"Print a one-line summary of this machine.\"\"\"\nimport os\nimport platform\nimport sys\n\n\ndef main() -> int:\n    if len(sys.argv) > 1:\n        print(f\"usage: {sys.argv[0]}  (takes no arguments)\", file=sys.stderr)\n        return 2\n    load1, _, _ = os.getloadavg()\n    print(f\"{platform.node()} {platform.system()} {platform.release()} \"\n          f\"cpus={os.cpu_count()} load={load1:.2f}\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+        "lang": "python"
+       },
+       {
+        "do": "Make it executable, run it like any other command, and print its exit status.",
+        "code": "chmod +x sysinfo.py\n./sysinfo.py\necho \"exit status: $?\"",
+        "lang": "bash",
+        "see": "Your machine's name, Linux, the kernel version, cpus= and load=, then exit status: 0."
+       },
+       {
+        "do": "Give it an argument it doesn't accept.",
+        "code": "./sysinfo.py --verbose\necho \"exit status: $?\"",
+        "lang": "bash",
+        "see": "usage: ./sysinfo.py  (takes no arguments), then exit status: 2."
+       },
+       {
+        "do": "Redirect its output to a file. The summary goes into the file, but the usage message still reaches the screen, because it's written to standard error.",
+        "code": "./sysinfo.py > summary.txt\ncat summary.txt\n./sysinfo.py --verbose > summary.txt",
+        "lang": "bash",
+        "see": "The summary from the file, then the usage message on screen despite the redirect."
+       },
+       {
+        "do": "Make a virtual environment for the course and activate it: pip now installs into it, not into the system Python.",
+        "code": "python3 -m venv ~/devops-lab/.venv\nsource ~/devops-lab/.venv/bin/activate\nwhich python\npip --version",
+        "lang": "bash",
+        "see": "which python shows the .venv/bin/python inside your devops-lab folder."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Files and directories with pathlib, os and shutil",
+     "minutes": 12,
+     "objectives": [
+      "Inspect, create and find files and directories with pathlib",
+      "Copy, move and delete files safely with shutil",
+      "Build paths that work wherever a script is started from"
+     ],
+     "key_points": [
+      "pathlib.Path treats a path as an object: Path(\"/var/log\") / \"nginx\" / \"access.log\" joins the parts, and .name, .stem, .suffix and .parent take a path apart, so there's no fragile string joining.",
+      "Path methods do the everyday jobs: .exists(), .is_file(), .is_dir(), .mkdir(parents=True, exist_ok=True), which is safe to run twice, .glob(\"*.log\") in one directory and .rglob(\"*.log\") through a whole tree.",
+      ".stat() gives a file's size in bytes (st_size) and its last modification time (st_mtime, in seconds since 1970); compare st_mtime with time.time() to find files older than a number of days.",
+      "shutil.copy2 copies a file with its timestamps and permissions, shutil.copytree copies a directory, shutil.move moves across file systems, and shutil.rmtree deletes a whole tree, with no undo.",
+      "Prefer Python's own functions to parsing command output: shutil.disk_usage(\"/\") gives total, used and free bytes, and shutil.which(\"nginx\") gives a program's path on PATH, or None.",
+      "Relative paths are resolved against the current working directory, which is your home directory under cron and / for a systemd system service. Build paths from absolute ones or from Path(__file__).resolve().parent."
+     ]
+    },
+    {
+     "title": "Reading and updating configuration files",
+     "minutes": 12,
+     "objectives": [
+      "Read and update INI, JSON and TOML configuration from Python",
+      "Write configuration files atomically and idempotently, so a crash or a second run does no harm"
+     ],
+     "key_points": [
+      "Open text files in a with block with an explicit encoding: open(path, encoding=\"utf-8\"). Mode \"w\" empties the file first, \"a\" appends, and \"x\" creates a new file but fails if one already exists.",
+      "configparser reads INI files: config[\"server\"][\"port\"] is always a string, so use getint(), getfloat() or getboolean() to convert it, with fallback= for a default. It doesn't keep comments when it writes a file back.",
+      "json.load and json.dump(data, f, indent=2) read and write JSON. tomllib (Python 3.11+) reads TOML from a file opened in binary mode (\"rb\") but can't write it. For YAML, use PyYAML's yaml.safe_load, never yaml.load, on files you didn't write.",
+      "Write configuration atomically: write the new content to a temporary file in the same directory, then os.replace() it over the old one, so readers see the old file or the new one, never half of each.",
+      "tempfile.mkstemp creates its file with 600 permissions, so copy the original's mode with shutil.copymode before the replace, or a world-readable config quietly becomes private.",
+      "Make changes idempotent: compare the new content with what's there and write only when it differs, so running the script twice changes nothing the second time, and says so."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Change a setting safely, twice",
+      "steps": [
+       {
+        "do": "Create a small INI file for an imaginary web app.",
+        "code": "cd ~/devops-lab/m1\nprintf '[server]\\nhost = 0.0.0.0\\nport = 8080\\nworkers = 2\\n\\n[logging]\\nlevel = INFO\\n' > app.ini\nchmod 644 app.ini\ncat app.ini",
+        "lang": "bash"
+       },
+       {
+        "do": "Read values from Python: they come back as strings unless you convert them.",
+        "code": "python3 -c \"import configparser; c = configparser.ConfigParser(); c.read('app.ini'); print(repr(c['server']['port']), c.getint('server', 'port'), c.getboolean('server', 'debug', fallback=False))\"",
+        "lang": "bash",
+        "see": "'8080' 8080 False"
+       },
+       {
+        "do": "Create set_option.py: it changes one option, writes the file atomically, and skips the write when nothing would change.",
+        "code": "#!/usr/bin/env python3\n\"\"\"Set one option in an INI file, safely: ./set_option.py FILE SECTION OPTION VALUE\"\"\"\nimport configparser\nimport io\nimport os\nimport shutil\nimport sys\nimport tempfile\nfrom pathlib import Path\n\n\ndef write_atomic(path: Path, text: str) -> None:\n    \"\"\"Write text to a temporary file next to path, then rename it over path in one step.\"\"\"\n    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f\".{path.name}.\")\n    with os.fdopen(fd, \"w\", encoding=\"utf-8\") as f:\n        f.write(text)\n    shutil.copymode(path, tmp)  # mkstemp makes the file 600; keep the original's permissions\n    os.replace(tmp, path)\n\n\ndef main() -> int:\n    if len(sys.argv) != 5:\n        print(f\"usage: {sys.argv[0]} FILE SECTION OPTION VALUE\", file=sys.stderr)\n        return 2\n    path, section, option, value = Path(sys.argv[1]), *sys.argv[2:]\n    config = configparser.ConfigParser()\n    config.read(path, encoding=\"utf-8\")\n    if config.get(section, option, fallback=None) == value:\n        print(f\"no change: {section}.{option} is already {value}\")\n        return 0\n    if not config.has_section(section):\n        config.add_section(section)\n    config[section][option] = value\n    buffer = io.StringIO()\n    config.write(buffer)\n    write_atomic(path, buffer.getvalue())\n    print(f\"updated {path}: {section}.{option} = {value}\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+        "lang": "python"
+       },
+       {
+        "do": "Change the number of workers, then run exactly the same command again.",
+        "code": "chmod +x set_option.py\n./set_option.py app.ini server workers 4\n./set_option.py app.ini server workers 4",
+        "lang": "bash",
+        "see": "updated app.ini: server.workers = 4, then no change: server.workers is already 4"
+       },
+       {
+        "do": "Check the result: the file still has permissions 644, and no temporary file was left behind.",
+        "code": "cat app.ini\nstat -c '%a %n' app.ini\nls -a",
+        "lang": "bash",
+        "see": "workers = 4 under [server], 644 app.ini, and no .app.ini.* file."
+       },
+       {
+        "do": "See why tomllib needs binary mode.",
+        "code": "python3 -c \"import tomllib; tomllib.load(open('app.ini'))\"",
+        "lang": "bash",
+        "see": "The traceback ends: TypeError: File must be opened in binary mode, e.g. use `open('foo.toml', 'rb')`"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Running commands with subprocess, and handling errors",
+     "minutes": 14,
+     "objectives": [
+      "Run Linux commands from Python and use their output and exit status",
+      "Handle the errors automation meets with try and except, and report them clearly"
+     ],
+     "key_points": [
+      "subprocess.run([\"df\", \"-h\", \"/\"], capture_output=True, text=True) runs a command and returns a CompletedProcess with returncode, stdout and stderr; text=True gives strings instead of bytes.",
+      "Pass the command as a list of arguments. A string with shell=True goes through a shell, so a file name containing spaces or ; can break the command or run another one; shlex.split() turns a command line into a safe list.",
+      "check=True raises CalledProcessError when the command exits non-zero, timeout=30 raises TimeoutExpired if it hangs, and a program that isn't installed raises FileNotFoundError.",
+      "Catch the specific exceptions you can handle, such as FileNotFoundError, PermissionError or CalledProcessError; use else for code that runs only on success and finally for clean-up. A bare except: hides real bugs.",
+      "A good automation script says what failed on standard error and exits non-zero, so cron, systemd and pipelines see the failure instead of a traceback or a silent success."
+     ],
+     "walkthrough": {
+      "tool": "Python REPL",
+      "title": "Run commands and meet their errors",
+      "steps": [
+       {
+        "do": "In python3, run a command and look at what comes back.",
+        "code": "import subprocess\nr = subprocess.run([\"df\", \"-h\", \"/\"], capture_output=True, text=True, check=True)\nr.returncode\nprint(r.stdout)",
+        "lang": "python",
+        "see": "0, then df's table: Filesystem, Size, Used, Avail, Use% and Mounted on."
+       },
+       {
+        "do": "Run a command that fails, without check=True: nothing is raised, so your code has to look at returncode.",
+        "code": "r = subprocess.run([\"ls\", \"/nope\"], capture_output=True, text=True)\nr.returncode, r.stderr",
+        "lang": "python",
+        "see": "(2, \"ls: cannot access '/nope': No such file or directory\\n\")"
+       },
+       {
+        "do": "With check=True the failure becomes an exception that can't be ignored by accident.",
+        "code": "subprocess.run([\"ls\", \"/nope\"], capture_output=True, check=True)",
+        "lang": "python",
+        "see": "CalledProcessError: Command '['ls', '/nope']' returned non-zero exit status 2."
+       },
+       {
+        "do": "A missing program and a command that hangs raise different exceptions.",
+        "code": "subprocess.run([\"nosuchcmd\"])\nsubprocess.run([\"sleep\", \"5\"], timeout=1)",
+        "lang": "python",
+        "see": "FileNotFoundError: [Errno 2] No such file or directory: 'nosuchcmd', then TimeoutExpired: Command '['sleep', '5']' timed out after 1 seconds"
+       },
+       {
+        "do": "Turn a command line into a safe list, and see what quoting does to a dangerous file name.",
+        "code": "import shlex\nshlex.split(\"grep -c 'disk full' /var/log/syslog\")\nshlex.quote(\"my file; rm -rf ~\")",
+        "lang": "python",
+        "see": "['grep', '-c', 'disk full', '/var/log/syslog'], then the name in single quotes: a shell would treat it as one harmless argument."
+       },
+       {
+        "do": "Handle the errors you expect and let everything else surface.",
+        "code": "def disk_report(path):\n    try:\n        r = subprocess.run([\"df\", \"-h\", path], capture_output=True, text=True, check=True, timeout=10)\n    except FileNotFoundError:\n        return \"df is not installed\"\n    except subprocess.CalledProcessError as e:\n        return f\"df failed ({e.returncode}): {e.stderr.strip()}\"\n    else:\n        return r.stdout.splitlines()[1]\n\ndisk_report(\"/\")\ndisk_report(\"/nope\")",
+        "lang": "python",
+        "see": "df's line for /, then 'df failed (1): df: /nope: No such file or directory'"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Build a log housekeeping script",
+    "tool": "Python 3",
+    "minutes": 45,
+    "goal": "Finish a Python script that reads its settings from an INI file, compresses rotated logs older than a set age into an archive folder, tests each archive with gzip, and reports problems with clear messages and exit statuses.",
+    "setup": [
+     "Your Linux machine with Python 3.11 or later",
+     "A folder for the lab, such as ~/devops-lab/m1, with the starter files make_sample.py, housekeeping.ini, broken.ini and housekeeping.py"
+    ],
+    "steps": [
+     {
+      "do": "Create the sample log folder: seven files of known sizes and ages. Run it again whenever you want to start over.",
+      "code": "cd ~/devops-lab/m1\npython3 make_sample.py\nfind sample -type f | sort",
+      "lang": "bash",
+      "see": "Created 7 files in sample/var/log/shop, then app.log, app.log.1, app.log.2, app.log.3, notes.txt, worker.log and worker.log.1."
+     },
+     {
+      "do": "Look at their sizes and dates: app.log.2, app.log.3 and worker.log.1 are more than seven days old.",
+      "code": "ls -l --time-style=+%F sample/var/log/shop",
+      "lang": "bash"
+     },
+     {
+      "do": "Open housekeeping.py. Complete TODO 1 (read max_age_days with getint) and TODO 2 (list the old files, oldest first)."
+     },
+     {
+      "do": "Complete TODO 3 (test each archive with gzip -t, then delete the original) and TODO 4 (catch the errors load_config raises and return the right exit statuses)."
+     },
+     {
+      "do": "Make the script executable and run it.",
+      "code": "chmod +x housekeeping.py\n./housekeeping.py housekeeping.ini\necho \"exit status: $?\"",
+      "lang": "bash",
+      "see": "Found 3 log(s) older than 7 days in sample/var/log/shop, three archived lines starting with app.log.3 (the oldest), Archived 3 file(s), 20,480 bytes before compression, Disk free: and a percentage, then exit status: 0."
+     },
+     {
+      "do": "Run it again: nothing is old enough any more, so nothing changes.",
+      "code": "./housekeeping.py housekeeping.ini",
+      "lang": "bash",
+      "see": "Found 0 log(s) older than 7 days in sample/var/log/shop, then Nothing to archive."
+     },
+     {
+      "do": "Check the archives: valid gzip files that keep the original content.",
+      "code": "ls sample/archive\nzcat sample/archive/app.log.2.gz | head -n 2",
+      "lang": "bash",
+      "see": "app.log.2.gz app.log.3.gz worker.log.1.gz, then two sample lines."
+     },
+     {
+      "do": "Try the failure cases and note each exit status.",
+      "code": "./housekeeping.py; echo \"exit status: $?\"\n./housekeeping.py nope.ini; echo \"exit status: $?\"\n./housekeeping.py broken.ini; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "usage: ./housekeeping.py CONFIG_FILE and exit status: 2; error: config file not found: nope.ini and exit status: 2; error: log directory does not exist: sample/var/log/missing and exit status: 1."
+     },
+     {
+      "do": "Run it from another folder. Paths in the config are relative to the config file, not to where you are, so it still finds the logs.",
+      "code": "cd /tmp\n~/devops-lab/m1/housekeeping.py ~/devops-lab/m1/housekeeping.ini\ncd ~/devops-lab/m1",
+      "lang": "bash",
+      "see": "Found 0 log(s) older than 7 days, with the folder shown relative to /tmp."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The first run archives the three old logs, oldest first, and reports their total size.",
+      "look_for": [
+       "archived app.log.3 -> sample/archive/app.log.3.gz",
+       "Archived 3 file(s), 20,480 bytes before compression"
+      ]
+     },
+     {
+      "text": "Running it again changes nothing.",
+      "look_for": [
+       "Found 0 log(s) older than 7 days",
+       "Nothing to archive"
+      ]
+     },
+     {
+      "text": "A missing config file gives a clear message and exit status 2.",
+      "look_for": [
+       "error: config file not found: nope.ini",
+       "exit status: 2"
+      ]
+     },
+     {
+      "text": "A missing log folder is reported with exit status 1.",
+      "look_for": [
+       "error: log directory does not exist: sample/var/log/missing",
+       "exit status: 1"
+      ]
+     },
+     {
+      "text": "Each archive is tested by running gzip -t through subprocess.run with check=True.",
+      "look_for": [
+       "subprocess.run",
+       "-t",
+       "check=True"
+      ]
+     },
+     {
+      "text": "Ages come from st_mtime and the setting is read with getint.",
+      "look_for": [
+       "getint",
+       "st_mtime"
+      ]
+     }
+    ],
+    "submit": "Paste your finished housekeeping.py and the output of steps 5, 6 and 8.",
+    "files": [
+     {
+      "path": "make_sample.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Create a sample log folder for the housekeeping lab: python3 make_sample.py\n\nIt (re)creates sample/var/log/shop/ with log files of known sizes and ages, so you can\nrun the lab as often as you like and always start from the same state.\n\"\"\"\nimport os\nimport shutil\nimport time\nfrom pathlib import Path\n\nLOG_DIR = Path(\"sample/var/log/shop\")\nDAY = 24 * 60 * 60\n\n# file name: (age in days, size in KiB)\nFILES = {\n    \"app.log\": (0, 12),\n    \"app.log.1\": (2, 10),\n    \"app.log.2\": (9, 8),\n    \"app.log.3\": (16, 8),\n    \"worker.log\": (0, 6),\n    \"worker.log.1\": (12, 4),\n    \"notes.txt\": (30, 1),\n}\n\n\ndef main() -> None:\n    shutil.rmtree(\"sample\", ignore_errors=True)\n    LOG_DIR.mkdir(parents=True)\n    now = time.time()\n    for name, (age_days, size_kib) in FILES.items():\n        path = LOG_DIR / name\n        line = f\"2025-06-01T08:00:00Z INFO {name} sample line\\n\"\n        size = size_kib * 1024\n        path.write_text((line * (size // len(line) + 1))[:size], encoding=\"utf-8\")\n        mtime = now - age_days * DAY - 60  # a minute in the past\n        os.utime(path, (mtime, mtime))\n    print(f\"Created {len(FILES)} files in {LOG_DIR}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "housekeeping.ini",
+      "content": "[housekeeping]\n# Paths are relative to this file's folder (or absolute).\nlog_dir = sample/var/log/shop\narchive_dir = sample/archive\n# Rotated logs are named like app.log.1, app.log.2 ...\npattern = *.log.*\n# Archive rotated logs older than this many days.\nmax_age_days = 7\n"
+     },
+     {
+      "path": "broken.ini",
+      "content": "[housekeeping]\nlog_dir = sample/var/log/missing\narchive_dir = sample/archive\npattern = *.log.*\nmax_age_days = 7\n"
+     },
+     {
+      "path": "housekeeping.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Archive old rotated logs: compress each into an archive folder, test it, then remove the original.\n\nUsage: ./housekeeping.py CONFIG_FILE\n\"\"\"\nimport configparser\nimport gzip\nimport os\nimport shutil\nimport subprocess\nimport sys\nimport time\nfrom pathlib import Path\n\nDAY = 24 * 60 * 60\n\n\ndef show(path: Path) -> str:\n    \"\"\"A path as messages show it: relative to the current directory.\"\"\"\n    return os.path.relpath(path)\n\n\ndef load_config(path: Path) -> dict:\n    \"\"\"Read the [housekeeping] section. Paths in it are relative to the config file's folder.\"\"\"\n    if not path.is_file():\n        raise FileNotFoundError(f\"config file not found: {path}\")\n    parser = configparser.ConfigParser()\n    parser.read(path, encoding=\"utf-8\")\n    section = parser[\"housekeeping\"]\n    base = path.resolve().parent\n    # TODO 1: read max_age_days as a whole number with section.getint(), with a fallback of 7\n    max_age_days = 7\n    return {\n        \"log_dir\": base / section[\"log_dir\"],\n        \"archive_dir\": base / section[\"archive_dir\"],\n        \"pattern\": section.get(\"pattern\", \"*.log.*\"),\n        \"max_age_days\": max_age_days,\n    }\n\n\ndef find_old_logs(log_dir: Path, pattern: str, max_age_days: int) -> list[Path]:\n    \"\"\"The files in log_dir that match pattern and are older than max_age_days, oldest first.\"\"\"\n    cutoff = time.time() - max_age_days * DAY\n    # TODO 2: list the files in log_dir.glob(pattern) whose .stat().st_mtime is older than cutoff\n    #         (skip anything that isn't a file), and return them sorted by st_mtime, oldest first\n    old = []\n    return old\n\n\ndef archive(path: Path, archive_dir: Path) -> Path:\n    \"\"\"Compress path into archive_dir as NAME.gz, test the archive with gzip -t, then delete the original.\"\"\"\n    archive_dir.mkdir(parents=True, exist_ok=True)\n    target = archive_dir / (path.name + \".gz\")\n    with path.open(\"rb\") as src, gzip.open(target, \"wb\") as dst:\n        shutil.copyfileobj(src, dst)\n    # TODO 3: test the archive with the command  gzip -t TARGET  using subprocess.run: pass the command as a\n    #         list, with check=True, capture_output=True, text=True and timeout=60. Then delete the original.\n    return target\n\n\ndef main() -> int:\n    if len(sys.argv) != 2:\n        print(f\"usage: {sys.argv[0]} CONFIG_FILE\", file=sys.stderr)\n        return 2\n    # TODO 4: put the next line in a try block. On FileNotFoundError, print \"error: \" and the exception to\n    #         standard error and return 2; on KeyError or ValueError, print \"error: bad config: \" and the\n    #         exception to standard error and return 2.\n    cfg = load_config(Path(sys.argv[1]))\n\n    log_dir = cfg[\"log_dir\"]\n    if not log_dir.is_dir():\n        print(f\"error: log directory does not exist: {show(log_dir)}\", file=sys.stderr)\n        return 1\n\n    old = find_old_logs(log_dir, cfg[\"pattern\"], cfg[\"max_age_days\"])\n    print(f\"Found {len(old)} log(s) older than {cfg['max_age_days']} days in {show(log_dir)}\")\n    total = 0\n    for path in old:\n        size = path.stat().st_size\n        try:\n            target = archive(path, cfg[\"archive_dir\"])\n        except (OSError, subprocess.SubprocessError) as e:\n            print(f\"error: could not archive {path.name}: {e}\", file=sys.stderr)\n            return 1\n        total += size\n        print(f\"archived {path.name} -> {show(target)}\")\n    if old:\n        print(f\"Archived {len(old)} file(s), {total:,} bytes before compression\")\n    else:\n        print(\"Nothing to archive\")\n    usage = shutil.disk_usage(log_dir)\n    print(f\"Disk free: {usage.free / usage.total:.0%}\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+     }
+    ],
+    "hints": [
+     "If every run finds 0 logs, check TODO 2: a file is old when its st_mtime is less than (earlier than) the cutoff.",
+     "sorted(old, key=lambda p: p.stat().st_mtime) puts the oldest file first.",
+     "If gzip -t fails, print e.stderr from the CalledProcessError to see why.",
+     "Run python3 make_sample.py at any time to start again with fresh sample files."
+    ]
+   }
+  },
+  {
+   "title": "Building Robust CLI Tools",
+   "summary": "Turn scripts into tools other people can rely on: arguments, options and subcommands with argparse and click, help that explains itself, validation that rejects bad input before anything changes, tests with CliRunner, and installing the tool as a command.",
+   "instructor": "carlos-ramirez",
+   "lessons": [
+    {
+     "title": "Command-line interfaces with argparse",
+     "minutes": 13,
+     "objectives": [
+      "Define positional arguments, options and flags with argparse",
+      "Let types, choices and defaults validate input for you",
+      "Organise a bigger tool into subcommands"
+     ],
+     "key_points": [
+      "argparse, in the standard library, turns sys.argv into named values: add_argument(\"paths\", nargs=\"+\") adds a required positional argument taking one or more values, and add_argument(\"--warn\", type=int, default=90) an optional one.",
+      "type= converts and checks a value (type=int rejects \"abc\"), choices= limits it to a list, action=\"store_true\" makes a flag such as --dry-run, and metavar= and help= control how it appears in the help.",
+      "argparse writes -h/--help from your help= texts; on bad input it prints the usage line and an error to standard error and exits with status 2, the usual status for wrong usage.",
+      "Check what types can't, such as a range or a combination of options, after parsing, and report it with parser.error(\"...\"), which prints the usage and exits with status 2, like argparse's own errors.",
+      "Subcommands, like git commit and git push, come from parser.add_subparsers(dest=\"command\", required=True); each subparser gets its own arguments, and set_defaults(func=...) picks the function to run."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Build diskcheck with argparse",
+      "steps": [
+       {
+        "do": "In ~/devops-lab/m1, create diskcheck.py. It checks how full one or more file systems are.",
+        "code": "#!/usr/bin/env python3\n\"\"\"Warn when file systems are fuller than a limit.\"\"\"\nimport argparse\nimport json\nimport shutil\nimport sys\n\n\ndef parse_args(argv=None):\n    parser = argparse.ArgumentParser(\n        description=\"Check how full file systems are.\",\n        epilog=\"Example: ./diskcheck.py / /home --warn 80\",\n    )\n    parser.add_argument(\"paths\", nargs=\"+\", help=\"mount points or directories to check\")\n    parser.add_argument(\"--warn\", type=int, default=90, metavar=\"PERCENT\",\n                        help=\"warn when more than this percentage is used (default: %(default)s)\")\n    parser.add_argument(\"--format\", choices=[\"text\", \"json\"], default=\"text\", help=\"output format\")\n    parser.add_argument(\"-q\", \"--quiet\", action=\"store_true\", help=\"print only problems\")\n    args = parser.parse_args(argv)\n    if not 1 <= args.warn <= 100:\n        parser.error(\"--warn must be between 1 and 100\")\n    return args\n\n\ndef main() -> int:\n    args = parse_args()\n    results = []\n    for path in args.paths:\n        usage = shutil.disk_usage(path)\n        percent = round(usage.used / usage.total * 100)\n        results.append({\"path\": path, \"used_percent\": percent, \"ok\": percent <= args.warn})\n    if args.format == \"json\":\n        print(json.dumps(results))\n    else:\n        for r in results:\n            if not (args.quiet and r[\"ok\"]):\n                print(f\"{'OK  ' if r['ok'] else 'FULL'} {r['path']}: {r['used_percent']}% used\")\n    return 0 if all(r[\"ok\"] for r in results) else 1\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+        "lang": "python"
+       },
+       {
+        "do": "Read the help argparse wrote for you.",
+        "code": "chmod +x diskcheck.py\n./diskcheck.py --help",
+        "lang": "bash",
+        "see": "usage: diskcheck.py [-h] [--warn PERCENT] [--format {text,json}] [-q] paths [paths ...], the description, each option's help with its default, and the example at the end."
+       },
+       {
+        "do": "Check two file systems, then set a limit low enough to fail.",
+        "code": "./diskcheck.py / /tmp; echo \"exit status: $?\"\n./diskcheck.py / --warn 1; echo \"exit status: $?\"",
+        "lang": "bash",
+        "see": "OK lines with the percentage used and exit status: 0; then a FULL line and exit status: 1."
+       },
+       {
+        "do": "Ask for JSON, for another program to read.",
+        "code": "./diskcheck.py / --format json",
+        "lang": "bash",
+        "see": "[{\"path\": \"/\", \"used_percent\": ..., \"ok\": true}]"
+       },
+       {
+        "do": "Give it bad input. Each mistake gets the usage line, a precise error and status 2.",
+        "code": "./diskcheck.py --warn abc /; echo \"exit status: $?\"\n./diskcheck.py; echo \"exit status: $?\"\n./diskcheck.py / --warn 150; echo \"exit status: $?\"",
+        "lang": "bash",
+        "see": "error: argument --warn: invalid int value: 'abc'; error: the following arguments are required: paths; error: --warn must be between 1 and 100; each followed by exit status: 2."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Building tools with click",
+     "minutes": 13,
+     "objectives": [
+      "Build a click command with options, arguments and subcommands",
+      "Validate input with click's parameter types and report errors cleanly"
+     ],
+     "key_points": [
+      "click builds a command-line interface from decorators: @click.command() makes a function a command, and @click.option(\"--days\", default=7, show_default=True) and @click.argument(\"directory\") declare inputs that arrive as the function's arguments.",
+      "Parameter types validate before your code runs: click.IntRange(1, 365), click.Choice([\"text\", \"json\"]) and click.Path(exists=True, file_okay=False, path_type=Path) for a directory that must exist.",
+      "is_flag=True makes an on/off option, envvar=\"LOGTOOL_DIR\" lets an environment variable supply a value, and prompt=True with hide_input=True asks for a secret without showing it.",
+      "@click.group() makes a command with subcommands: each function decorated with @cli.command() becomes one, as in logs old and logs size, and --help lists them all.",
+      "click.echo() prints, with err=True for standard error. Raising click.ClickException(\"message\") prints Error: message and exits with status 1; bad usage exits with status 2.",
+      "click is a third-party package (pip install click), while argparse needs nothing installed, so argparse suits small scripts that must run on any machine with Python."
+     ]
+    },
+    {
+     "title": "Help, validation, tests and installing your tool",
+     "minutes": 12,
+     "objectives": [
+      "Write help and error messages that make a tool easy to use correctly",
+      "Test a click command with CliRunner",
+      "Package a tool so pip installs it as a command"
+     ],
+     "key_points": [
+      "Good help says what the tool does and shows an example, and every option has a one-line help text and a visible default; in click, the function's docstring becomes the command's help.",
+      "Validate early and fail fast: check every input before changing anything, say what was wrong and how to fix it, and exit non-zero. A --dry-run option that shows what would happen makes risky tools safer.",
+      "click.testing.CliRunner runs a command in-process: result = CliRunner().invoke(cli, [\"slow\", \"app.log\", \"--limit\", \"3\"]) gives result.exit_code, result.output and, from click 8.2, result.stdout and result.stderr separately.",
+      "A pyproject.toml with [project.scripts] logtool = \"logtool.cli:cli\" makes pip install create a logtool command; pip install -e . (editable) runs your source folder, so changes apply without reinstalling.",
+      "pipx installs each command-line tool into its own virtual environment and puts the command on your PATH, so tools never clash with each other or with the system's Python (sudo apt install pipx)."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build logtool, a log-search command with click",
+    "tool": "Python 3 and click",
+    "minutes": 60,
+    "goal": "Finish logtool, a click command with three subcommands that answer questions about an online shop's application logs, test it with CliRunner, and install it as a command with pip.",
+    "setup": [
+     "The course's virtual environment (~/devops-lab/.venv), or a new one made with python3 -m venv .venv",
+     "A folder ~/devops-lab/m2 with the starter files make_logs.py, pyproject.toml, logtool/__init__.py, logtool/parse.py, logtool/cli.py and tests/test_cli.py"
+    ],
+    "steps": [
+     {
+      "do": "Make the sample logs: two days of the shop's application log, the same for everyone.",
+      "code": "cd ~/devops-lab/m2\npython3 make_logs.py\nhead -n 2 logs/shop-2025-06-01.log",
+      "lang": "bash",
+      "see": "wrote logs/shop-2025-06-01.log and wrote logs/shop-2025-06-02.log, then lines such as 2025-06-01T08:00:10Z INFO auth method=GET path=/api/login status=200 duration_ms=65 user=chen@example.com"
+     },
+     {
+      "do": "Install the project in editable mode, with its test extra. pip creates the logtool command from [project.scripts].",
+      "code": "source ~/devops-lab/.venv/bin/activate\npip install -e \".[test]\"\nlogtool --help",
+      "lang": "bash",
+      "see": "Usage: logtool [OPTIONS] COMMAND [ARGS]... and the commands errors, levels and slow."
+     },
+     {
+      "do": "Count the lines at each level, which already works.",
+      "code": "logtool levels logs/*.log",
+      "lang": "bash",
+      "see": "ERROR      13, WARNING    26 and INFO      261"
+     },
+     {
+      "do": "Complete TODO 1 in logtool/cli.py, the body of slow: keep the requests with a duration_ms of at least min_ms, sort them slowest first, print up to limit of them, and print the count to standard error."
+     },
+     {
+      "do": "Run slow with its defaults, then with your own limits.",
+      "code": "logtool slow logs/*.log\nlogtool slow logs/*.log --min-ms 2500 --limit 3",
+      "lang": "bash",
+      "see": "Five lines starting  2923 ms  2025-06-01T08:23:45Z  catalog  /api/products, and 25 request(s) took 1000 ms or more; then three lines and 5 request(s) took 2500 ms or more."
+     },
+     {
+      "do": "Complete TODO 2: give errors a --format option that accepts only text or json, defaulting to text. Then try both formats.",
+      "code": "logtool errors logs/*.log --service payments\nlogtool errors logs/shop-2025-06-02.log --format json | head -n 7",
+      "lang": "bash",
+      "see": "Three payments errors, all 503, and 3 error(s); then the first JSON object: an orders error with \"status\": 500."
+     },
+     {
+      "do": "Check how it handles bad input.",
+      "code": "logtool slow logs/*.log --limit 0; echo \"exit status: $?\"\nlogtool levels pyproject.toml; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "Error: Invalid value for '--limit': 0 is not in the range 1<=x<=100. and exit status: 2; then Error: no log lines found in pyproject.toml and exit status: 1."
+     },
+     {
+      "do": "Complete TODO 3 in tests/test_cli.py by adding the two tests it describes, then run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "6 passed"
+     },
+     {
+      "do": "See where the command lives: inside the virtual environment, which is why it's on your PATH only while the environment is active.",
+      "code": "which logtool",
+      "lang": "bash",
+      "see": "A path ending in .venv/bin/logtool"
+     }
+    ],
+    "checks": [
+     {
+      "text": "logtool is installed and counts the lines at each level.",
+      "look_for": [
+       "ERROR      13",
+       "WARNING    26",
+       "INFO      261"
+      ]
+     },
+     {
+      "text": "slow lists the slowest requests and reports how many there were on standard error.",
+      "look_for": [
+       "2923 ms",
+       "25 request(s) took 1000 ms or more"
+      ]
+     },
+     {
+      "text": "errors filters by service and prints JSON on request.",
+      "look_for": [
+       "3 error(s)",
+       "\"status\": 500"
+      ]
+     },
+     {
+      "text": "Bad input gets a clear error and the right exit status.",
+      "look_for": [
+       "0 is not in the range 1<=x<=100",
+       "exit status: 2",
+       "no log lines found in pyproject.toml",
+       "exit status: 1"
+      ]
+     },
+     {
+      "text": "--format is limited to text and json with click.Choice.",
+      "look_for": [
+       "click.Choice"
+      ]
+     },
+     {
+      "text": "All six tests pass.",
+      "look_for": [
+       "6 passed"
+      ]
+     }
+    ],
+    "submit": "Paste your slow function, your --format option, your two new tests, and the output of steps 3, 5, 6, 7 and 8.",
+    "files": [
+     {
+      "path": "make_logs.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Write two days of sample application logs to logs/: python3 make_logs.py\n\nThe logs are the same every time (a fixed random seed), so your answers can be checked.\nEach line looks like this:\n2025-06-01T08:00:31Z INFO orders method=GET path=/api/orders status=200 duration_ms=87 user=ana@example.com\n\"\"\"\nimport random\nfrom pathlib import Path\n\nSERVICES = [\"orders\", \"payments\", \"catalog\", \"auth\"]\nPATHS = {\"orders\": \"/api/orders\", \"payments\": \"/api/payments\", \"catalog\": \"/api/products\", \"auth\": \"/api/login\"}\nUSERS = [\"ana\", \"bilal\", \"chen\", \"dara\", \"emeka\", \"farah\"]\n\n\ndef pick(rng: random.Random, items: list):\n    return items[int(rng.random() * len(items))]\n\n\ndef make_day(day: str, seed: int, count: int) -> list[str]:\n    rng = random.Random(seed)\n    lines = []\n    seconds = 8 * 3600  # the first line is just after 08:00\n    for _ in range(count):\n        seconds += 5 + int(rng.random() * 40)\n        hh, mm, ss = seconds // 3600, seconds // 60 % 60, seconds % 60\n        service = pick(rng, SERVICES)\n        method = \"POST\" if service != \"catalog\" and rng.random() < 0.4 else \"GET\"\n        duration = 20 + int(rng.random() * 180)\n        status, level = 200, \"INFO\"\n        roll = rng.random()\n        if roll < 0.06:\n            status, level = pick(rng, [500, 503]), \"ERROR\"\n        elif roll < 0.14:\n            duration, level = 900 + int(rng.random() * 2100), \"WARNING\"\n        elif roll < 0.20:\n            status = pick(rng, [400, 401, 404])\n        user = pick(rng, USERS)\n        lines.append(f\"{day}T{hh:02d}:{mm:02d}:{ss:02d}Z {level} {service} method={method} \"\n                     f\"path={PATHS[service]} status={status} duration_ms={duration} user={user}@example.com\")\n    return lines\n\n\ndef main() -> None:\n    out = Path(\"logs\")\n    out.mkdir(exist_ok=True)\n    for day, seed in [(\"2025-06-01\", 1), (\"2025-06-02\", 2)]:\n        path = out / f\"shop-{day}.log\"\n        path.write_text(\"\\n\".join(make_day(day, seed, 150)) + \"\\n\", encoding=\"utf-8\")\n        print(f\"wrote {path}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "pyproject.toml",
+      "content": "[build-system]\nrequires = [\"setuptools>=61\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"logtool\"\nversion = \"0.1.0\"\ndescription = \"Answer common questions about the shop's application logs\"\nrequires-python = \">=3.10\"\ndependencies = [\"click>=8.2\"]\n\n[project.optional-dependencies]\ntest = [\"pytest\"]\n\n[project.scripts]\nlogtool = \"logtool.cli:cli\"\n\n[tool.setuptools]\npackages = [\"logtool\"]\n"
+     },
+     {
+      "path": "logtool/__init__.py",
+      "content": "\"\"\"logtool: answer common questions about the shop's application logs.\"\"\"\n"
+     },
+     {
+      "path": "logtool/parse.py",
+      "content": "\"\"\"Read the shop's log lines: TIME LEVEL SERVICE key=value key=value ...\"\"\"\nfrom collections.abc import Iterable, Iterator\nfrom dataclasses import dataclass, field\nfrom pathlib import Path\n\nLEVELS = {\"DEBUG\", \"INFO\", \"WARNING\", \"ERROR\", \"CRITICAL\"}\n\n\n@dataclass\nclass Entry:\n    time: str\n    level: str\n    service: str\n    fields: dict[str, str] = field(default_factory=dict)\n\n    @property\n    def duration_ms(self) -> int:\n        return int(self.fields.get(\"duration_ms\", \"0\"))\n\n\ndef parse_line(line: str) -> Entry | None:\n    \"\"\"Turn one log line into an Entry, or None if it isn't a log line.\"\"\"\n    parts = line.split()\n    if len(parts) < 3 or parts[1] not in LEVELS:\n        return None\n    time, level, service, *rest = parts\n    fields = dict(item.split(\"=\", 1) for item in rest if \"=\" in item)\n    return Entry(time, level, service, fields)\n\n\ndef read_entries(paths: Iterable[Path]) -> Iterator[Entry]:\n    \"\"\"Every log entry in the files, in order; lines that aren't log lines are skipped.\"\"\"\n    for path in paths:\n        with Path(path).open(encoding=\"utf-8\") as f:\n            for line in f:\n                entry = parse_line(line)\n                if entry is not None:\n                    yield entry\n"
+     },
+     {
+      "path": "logtool/cli.py",
+      "content": "\"\"\"The logtool command: levels, slow and errors.\"\"\"\nimport json\nfrom collections import Counter\nfrom pathlib import Path\n\nimport click\n\nfrom logtool.parse import read_entries\n\nLEVELS = [\"ERROR\", \"WARNING\", \"INFO\"]\n\n\ndef log_files(f):\n    \"\"\"The FILES argument every command takes: one or more existing files.\"\"\"\n    return click.argument(\"files\", nargs=-1, required=True,\n                          type=click.Path(exists=True, dir_okay=False, path_type=Path))(f)\n\n\n@click.group()\n@click.version_option(\"0.1.0\", prog_name=\"logtool\")\ndef cli():\n    \"\"\"Answer common questions about the shop's application logs.\"\"\"\n\n\n@cli.command()\n@log_files\ndef levels(files: tuple[Path, ...]) -> None:\n    \"\"\"Count the lines at each level in FILES.\"\"\"\n    counts = Counter(e.level for e in read_entries(files))\n    if not counts:\n        raise click.ClickException(\"no log lines found in \" + \", \".join(f.name for f in files))\n    for level in LEVELS:\n        click.echo(f\"{level:<8}{counts.get(level, 0):>5}\")\n\n\n@cli.command()\n@log_files\n@click.option(\"--min-ms\", type=click.IntRange(min=0), default=1000, show_default=True,\n              help=\"Only requests that took at least this long.\")\n@click.option(\"--limit\", type=click.IntRange(1, 100), default=5, show_default=True,\n              help=\"How many requests to list.\")\ndef slow(files: tuple[Path, ...], min_ms: int, limit: int) -> None:\n    \"\"\"List the slowest requests in FILES, slowest first.\"\"\"\n    # TODO 1: keep the entries from read_entries(files) whose duration_ms is at least min_ms, sort them\n    #         slowest first, and click.echo up to limit of them, each in this format:\n    #             f\"{e.duration_ms:>5} ms  {e.time}  {e.service:<9}{e.fields.get('path', '-')}\"\n    #         Then echo f\"{len(found)} request(s) took {min_ms} ms or more\" to standard error (err=True).\n    raise click.ClickException(\"slow isn't written yet\")\n\n\n@cli.command()\n@log_files\n@click.option(\"--service\", help=\"Only this service, such as payments.\")\n# TODO 2: add a --format option, passed to the function as fmt, that accepts only \"text\" or \"json\"\n#         (click.Choice), defaults to \"text\" and shows its default in --help.\ndef errors(files: tuple[Path, ...], service: str | None, fmt: str = \"text\") -> None:\n    \"\"\"Show the ERROR lines in FILES.\"\"\"\n    found = [e for e in read_entries(files)\n             if e.level == \"ERROR\" and (service is None or e.service == service)]\n    if fmt == \"json\":\n        click.echo(json.dumps([{\"time\": e.time, \"service\": e.service, \"status\": int(e.fields[\"status\"]),\n                                \"path\": e.fields[\"path\"]} for e in found], indent=2))\n    else:\n        for e in found:\n            click.echo(f\"{e.time}  {e.service:<9}{e.fields['status']}  {e.fields['path']}\")\n        click.echo(f\"{len(found)} error(s)\", err=True)\n"
+     },
+     {
+      "path": "tests/test_cli.py",
+      "content": "import json\n\nfrom click.testing import CliRunner\n\nfrom logtool.cli import cli\n\nLINES = [\n    \"2025-06-01T08:00:05Z INFO orders method=GET path=/api/orders status=200 duration_ms=40 user=ana@example.com\",\n    \"2025-06-01T08:00:09Z ERROR payments method=POST path=/api/payments status=503 duration_ms=120 user=chen@example.com\",\n    \"2025-06-01T08:00:15Z WARNING catalog method=GET path=/api/products status=200 duration_ms=1500 user=dara@example.com\",\n    \"2025-06-01T08:00:20Z ERROR orders method=POST path=/api/orders status=500 duration_ms=80 user=ana@example.com\",\n]\n\n\ndef make_log(tmp_path):\n    path = tmp_path / \"shop.log\"\n    path.write_text(\"\\n\".join(LINES) + \"\\n\", encoding=\"utf-8\")\n    return str(path)\n\n\ndef test_levels_counts_each_level(tmp_path):\n    result = CliRunner().invoke(cli, [\"levels\", make_log(tmp_path)])\n    assert result.exit_code == 0\n    assert result.output.splitlines() == [\"ERROR       2\", \"WARNING     1\", \"INFO        1\"]\n\n\ndef test_slow_lists_only_requests_over_the_limit(tmp_path):\n    result = CliRunner().invoke(cli, [\"slow\", make_log(tmp_path), \"--min-ms\", \"100\"])\n    assert result.exit_code == 0\n    assert result.stdout.splitlines()[0].startswith(\" 1500 ms\")\n    assert \"2 request(s) took 100 ms or more\" in result.stderr\n\n\ndef test_errors_can_filter_by_service(tmp_path):\n    result = CliRunner().invoke(cli, [\"errors\", make_log(tmp_path), \"--service\", \"payments\"])\n    assert result.exit_code == 0\n    assert \"503\" in result.stdout\n    assert \"orders\" not in result.stdout\n\n\ndef test_a_missing_file_is_a_usage_error(tmp_path):\n    result = CliRunner().invoke(cli, [\"levels\", str(tmp_path / \"nope.log\")])\n    assert result.exit_code == 2\n    assert \"does not exist\" in result.output\n\n\n# TODO 3: add two tests:\n#   test_limit_must_be_at_least_one: slow with --limit 0 must exit with status 2\n#   test_errors_as_json: errors --format json must print a JSON list whose statuses are [503, 500]\n"
+     }
+    ],
+    "hints": [
+     "If logtool isn't found, activate the virtual environment you installed it into, or reinstall with pip install -e \".[test]\".",
+     "found.sort(key=lambda e: e.duration_ms, reverse=True) sorts slowest first, and found[:limit] keeps the first limit entries.",
+     "Options go above the function, as decorators: @click.option(\"--format\", \"fmt\", type=click.Choice([...]), ...) names the parameter fmt.",
+     "In a test, json.loads(result.stdout) turns the JSON output back into a list you can check."
+    ]
+   }
+  },
+  {
+   "title": "Core Linux Utilities",
+   "summary": "The utilities DevOps engineers reach for every day, used for operations work: searching and reshaping logs with grep, awk and sed, finding files with find, xargs and locate, reading a system's health with top, htop and friends, and Python filters that fit into pipelines. It builds on the basics in Linux Command Line Essentials.",
+   "instructor": "ismaile-rahimovi",
+   "lessons": [
+    {
+     "title": "grep, awk and sed for operations work",
+     "minutes": 13,
+     "objectives": [
+      "Search many logs at once, including rotated and compressed ones, with grep's recursive and context options",
+      "Summarise and rewrite log lines with awk and sed"
+     ],
+     "key_points": [
+      "grep -r searches a whole directory tree, -l lists only the names of matching files, -o prints only the matching part of each line, and -A 2, -B 2 or -C 2 add lines after, before or around each match, such as the lines leading up to an error.",
+      "grep -F treats the pattern as fixed text, so dots and brackets aren't special; -w matches whole words only; -m 1 stops at the first match; and zgrep searches gzip-compressed rotated logs, and plain ones, without unpacking them.",
+      "awk's associative arrays total by key in one pass: awk '{n[$3]++} END {for (s in n) print s, n[s]}' counts the lines for each value of the third field, and printf \"%-10s %5d\\n\" prints aligned columns.",
+      "For key=value fields, split() pulls out the value: awk '{split($7, d, \"=\"); total += d[2]} END {print total / NR}' averages the duration_ms field over all lines.",
+      "sed -E 's/user=[^@ ]+@/user=***@/' rewrites part of every line with an extended regular expression, and sed -n '/T08:10:/,/T08:12:/p' prints the lines from one match to the next.",
+      "When a pipeline grows past a few stages, or needs dates, JSON or error handling, move it into a Python script, which is easier to read, test and change."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Question the shop's logs",
+      "steps": [
+       {
+        "do": "Work in the module 2 lab folder, where make_logs.py wrote two days of logs. Which files mention a 503, and how many ERROR lines does each have?",
+        "code": "cd ~/devops-lab/m2\ngrep -rl 'status=503' logs/\ngrep -c ' ERROR ' logs/*.log",
+        "lang": "bash",
+        "see": "Both log files; then logs/shop-2025-06-01.log:6 and logs/shop-2025-06-02.log:7"
+       },
+       {
+        "do": "Show the first 503 with line numbers and the two lines before it.",
+        "code": "grep -n -m 1 -B 2 'status=503' logs/shop-2025-06-01.log",
+        "lang": "bash",
+        "see": "Lines 14 and 15 marked with -, then line 16 marked with :, a catalog ERROR with status=503."
+       },
+       {
+        "do": "Count requests per endpoint: -o keeps only the text that matched.",
+        "code": "grep -oh 'path=[^ ]*' logs/*.log | sort | uniq -c | sort -rn",
+        "lang": "bash",
+        "see": "80 path=/api/products, 80 path=/api/orders, 78 path=/api/login, 62 path=/api/payments"
+       },
+       {
+        "do": "Count lines per service, then the average duration per service, with awk.",
+        "code": "awk '{n[$3]++} END {for (s in n) printf \"%-10s %4d\\n\", s, n[s]}' logs/*.log | sort\nawk '{split($7, d, \"=\"); total[$3] += d[2]; n[$3]++} END {for (s in total) printf \"%-10s %6.1f ms\\n\", s, total[s] / n[s]}' logs/*.log | sort",
+        "lang": "bash",
+        "see": "auth 78, catalog 80, orders 80, payments 62; then averages from auth 231.0 ms to payments 373.1 ms."
+       },
+       {
+        "do": "Mask user names before sharing an excerpt, and count the lines in a time range.",
+        "code": "sed -E 's/user=[^@ ]+@/user=***@/' logs/shop-2025-06-01.log | head -n 2\nsed -n '/T08:10:/,/T08:12:/p' logs/shop-2025-06-01.log | wc -l",
+        "lang": "bash",
+        "see": "Both lines end user=***@example.com; then 5."
+       },
+       {
+        "do": "Search a compressed copy without unpacking it.",
+        "code": "gzip -k logs/shop-2025-06-01.log\nzgrep -c ' ERROR ' logs/shop-2025-06-01.log.gz\nrm logs/shop-2025-06-01.log.gz",
+        "lang": "bash",
+        "see": "6"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Finding files: find, xargs and locate",
+     "minutes": 11,
+     "objectives": [
+      "Find files by name, type, size, age and permissions with find",
+      "Act on many files safely with -exec, -delete and xargs",
+      "Choose between find and locate"
+     ],
+     "key_points": [
+      "find combines tests: find /var/log -type f -name '*.gz' -mtime +30 finds compressed logs last changed more than 30 days ago; -size +100M finds big files, -perm -o+w world-writable ones, -newer ref files changed after ref, and -maxdepth 1 stops it descending.",
+      "-mtime counts whole days and drops the fraction, so -mtime +7 matches files at least eight days old and -mtime -1 files changed in the last 24 hours; -mmin works in minutes. -size rounds up to whole units, so -size +8k skips a file of exactly 8 KiB.",
+      "-exec cmd {} + runs the command once with many file names, -exec cmd {} \\; once per file, and -delete removes what was found. Run the same find without the action first, to see exactly what it will touch.",
+      "find ... -print0 | xargs -0 cmd separates names with null characters, so names containing spaces, or even newlines, are handled safely; xargs -P 4 runs four commands at a time.",
+      "locate (plocate on recent Ubuntu) searches a prebuilt index of file names, so it's much faster than find, but it only knows what existed when updatedb last ran, usually once a day, and it can't test sizes or dates."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Find and act on old logs",
+      "steps": [
+       {
+        "do": "In the module 1 lab folder, recreate the samples and find rotated logs more than seven days old.",
+        "code": "cd ~/devops-lab/m1\npython3 make_sample.py\nfind sample -type f -name '*.log*' -mtime +7 | sort",
+        "lang": "bash",
+        "see": "sample/var/log/shop/app.log.2, app.log.3 and worker.log.1"
+       },
+       {
+        "do": "Files changed in the last day, and files bigger than 8 KiB.",
+        "code": "find sample -type f -mtime -1 | sort\nfind sample -type f -size +8k | sort",
+        "lang": "bash",
+        "see": "app.log and worker.log; then app.log and app.log.1 (app.log.2 is exactly 8 KiB, so it doesn't count)."
+       },
+       {
+        "do": "Run one ls for all the old files with -exec ... {} +.",
+        "code": "find sample -name '*.log.*' -mtime +7 -exec ls -l {} +",
+        "lang": "bash",
+        "see": "Three long-format lines: 8192 bytes for app.log.2 and app.log.3, 4096 for worker.log.1."
+       },
+       {
+        "do": "Compress them through xargs, which is safe for any file name. gzip keeps each file's modification time, so the .gz files still count as old.",
+        "code": "find sample -name '*.log.*' -mtime +7 -print0 | xargs -0 gzip\nfind sample -name '*.gz' -mtime +7 | sort",
+        "lang": "bash",
+        "see": "app.log.2.gz, app.log.3.gz and worker.log.1.gz"
+       },
+       {
+        "do": "Delete compressed logs older than 14 days: preview first, then delete.",
+        "code": "find sample -name '*.gz' -mtime +14 -print\nfind sample -name '*.gz' -mtime +14 -delete",
+        "lang": "bash",
+        "see": "sample/var/log/shop/app.log.3.gz, which is 16 days old; then nothing, as -delete is silent."
+       },
+       {
+        "do": "Try locate, which searches an index instead of the disk.",
+        "code": "sudo apt install -y plocate\nsudo updatedb\nlocate -b shop | head -n 5",
+        "lang": "bash",
+        "see": "Paths whose last part contains shop; anything created after updatedb ran is missing."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Watching the system: top, htop and the monitoring toolkit",
+     "minutes": 12,
+     "objectives": [
+      "Read load, CPU, memory and disk figures from top, htop, free, df and du",
+      "Collect the same figures in scripts with batch modes and /proc"
+     ],
+     "key_points": [
+      "top shows processes live, busiest first. Its header has the load averages, task counts, CPU time split into us (user), sy (system), id (idle) and wa (waiting for I/O), and memory; P sorts by CPU, M by memory and q quits. htop adds colour, scrolling and a tree view (F5).",
+      "The load average is the average number of processes running or waiting to run over the last 1, 5 and 15 minutes; on Linux it also counts processes waiting for disk I/O. Compare it with the number of CPU cores, from nproc.",
+      "free -h shows memory. Read the available column, not free: Linux uses spare memory as a disk cache and gives it back when programs need it, so low free memory on its own isn't a problem.",
+      "df -h shows the space on each file system and df -i its inodes (file slots), because a disk can fill up with many small files; du -sh /var/log/* | sort -h shows what's using the space.",
+      "Deleting a log file that a running program still has open doesn't free its space until the program closes it. Empty it with truncate -s 0 instead, or restart the program; lsof +L1 lists deleted files that are still open.",
+      "For scripts, use the non-interactive forms: top -b -n 1 prints one snapshot, ps -eo pid,user,%cpu,%mem,comm --sort=-%cpu lists the busiest processes, and /proc/loadavg and /proc/meminfo hold the raw numbers."
+     ]
+    },
+    {
+     "title": "Pipes, redirection and Python in the pipeline",
+     "minutes": 12,
+     "objectives": [
+      "Write Python filters that read standard input and write standard output, so they slot into pipelines",
+      "Use redirection and exit statuses correctly when Python and shell tools work together"
+     ],
+     "key_points": [
+      "A Python filter reads lines from sys.stdin and prints its results, so it works anywhere in a pipeline: grep ' payments ' app.log | python3 durations.py | tee summary.txt.",
+      "Put data on standard output and messages on standard error. Then > and | carry only the data and the user still sees the warnings, while 2> errors.txt or 2>&1 decides where the messages go.",
+      "fileinput.input() reads the files named on the command line or, when there are none, standard input, the way grep, sort and awk behave.",
+      "When output is piped into head, the reader may close the pipe early and Python raises BrokenPipeError; a well-behaved filter catches it and exits quietly instead of printing a traceback.",
+      "A pipeline's exit status is its last command's; set -o pipefail in Bash makes any failing stage fail the whole pipeline. From Python, subprocess.run(cmd, input=text, capture_output=True, text=True) feeds a command without a shell."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Write a filter and use it in pipelines",
+      "steps": [
+       {
+        "do": "In the module 2 lab folder, create durations.py. It reads log lines on standard input and summarises their duration_ms values.",
+        "code": "#!/usr/bin/env python3\n\"\"\"Summarise request durations from log lines on standard input.\"\"\"\nimport statistics\nimport sys\n\n\ndef main() -> int:\n    durations = []\n    for line in sys.stdin:\n        for field in line.split():\n            if field.startswith(\"duration_ms=\"):\n                durations.append(int(field.removeprefix(\"duration_ms=\")))\n    if not durations:\n        print(\"no durations found\", file=sys.stderr)\n        return 1\n    p95 = statistics.quantiles(durations, n=20)[-1]\n    print(f\"requests={len(durations)} mean={statistics.mean(durations):.0f}ms \"\n          f\"p95={p95:.0f}ms max={max(durations)}ms\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n",
+        "lang": "python"
+       },
+       {
+        "do": "Feed it all the logs, then only payments, then one file through < redirection.",
+        "code": "cd ~/devops-lab/m2\ncat logs/*.log | python3 durations.py\ngrep -h ' payments ' logs/*.log | python3 durations.py\npython3 durations.py < logs/shop-2025-06-02.log",
+        "lang": "bash",
+        "see": "requests=300 mean=259ms p95=1725ms max=2923ms; requests=62 mean=373ms p95=2522ms max=2585ms; requests=150 mean=195ms p95=1013ms max=2585ms"
+       },
+       {
+        "do": "With no input it says so on standard error and exits with 1, so a script can tell.",
+        "code": "python3 durations.py < /dev/null; echo \"exit status: $?\"",
+        "lang": "bash",
+        "see": "no durations found, then exit status: 1"
+       },
+       {
+        "do": "Keep the data and the messages apart.",
+        "code": "grep -h ' payments ' logs/*.log | python3 durations.py > summary.txt 2> errors.txt\ncat summary.txt",
+        "lang": "bash",
+        "see": "The payments summary; errors.txt stays empty."
+       },
+       {
+        "do": "See what pipefail changes.",
+        "code": "bash -c 'false | true; echo \"without pipefail: $?\"; set -o pipefail; false | true; echo \"with pipefail: $?\"'",
+        "lang": "bash",
+        "see": "without pipefail: 0, then with pipefail: 1"
+       },
+       {
+        "do": "Feed a command's standard input from Python, without a shell.",
+        "code": "python3 -c \"import subprocess; print(subprocess.run(['sort', '-r'], input='b\\na\\nc\\n', capture_output=True, text=True).stdout)\"",
+        "lang": "bash",
+        "see": "c, b and a, one per line."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Investigate a disk-space alert",
+    "tool": "Bash and Python 3",
+    "minutes": 50,
+    "goal": "Work through a disk-space alert on a copy of a server's files: find what's filling the disk, find out what went wrong in the application at the same time, clean up safely, and write a short incident note.",
+    "setup": [
+     "Your Linux terminal",
+     "A folder ~/devops-lab/m3 with the starter files make_incident.py and errors_per_minute.py"
+    ],
+    "steps": [
+     {
+      "do": "Build the incident folder and record how much it holds before you clean anything.",
+      "code": "cd ~/devops-lab/m3\npython3 make_incident.py\nbefore=$(find incident -type f -printf '%s\\n' | awk '{s += $1} END {print s}')\necho \"before: $before bytes\"",
+      "lang": "bash",
+      "see": "Created 16 files in incident/, then before: and a byte count of about 16 million."
+     },
+     {
+      "do": "Which files are biggest?",
+      "code": "find incident -type f -size +1M -printf '%s\\t%p\\n' | sort -rn",
+      "lang": "bash",
+      "see": "6240000 for incident/var/log/shop/debug-trace.log, then four release archives of 2099200 bytes."
+     },
+     {
+      "do": "Which files changed in the last hour, and what's in the big one?",
+      "code": "find incident -type f -mmin -60 -printf '%s\\t%p\\n' | sort -rn\nhead -n 2 incident/var/log/shop/debug-trace.log\nawk '{print $2, $3}' incident/var/log/shop/debug-trace.log | sort | uniq -c",
+      "lang": "bash",
+      "see": "debug-trace.log and shop.log; DEBUG lines from payments; 80000 DEBUG payments, so debug logging was left on."
+     },
+     {
+      "do": "Find old temporary uploads (one name contains a space, which -print0 and xargs -0 handle) and the releases more than 30 days old; the two newest releases stay.",
+      "code": "find incident/var/tmp -type f -mtime +14 -print0 | xargs -0 du -cb | tail -n 1\nfind incident/home/deploy/releases -name 'shop-*.tar' -mtime +30 -printf '%f\\n' | sort",
+      "lang": "bash",
+      "see": "1331200 total, then shop-1.4.0.tar and shop-1.5.0.tar."
+     },
+     {
+      "do": "Now the application: count ERROR lines in every log, compressed ones included, then see which services today's come from.",
+      "code": "zgrep -c ' ERROR ' incident/var/log/shop/shop.log*\nawk '$2 == \"ERROR\" {n[$3]++} END {for (s in n) printf \"%-10s %3d\\n\", s, n[s]}' incident/var/log/shop/shop.log | sort -k2,2nr",
+      "lang": "bash",
+      "see": "shop.log:70 against single figures for the older logs; then payments 51, orders 14, catalog 3 and auth 2."
+     },
+     {
+      "do": "Complete the TODO in errors_per_minute.py, then find when the errors happened.",
+      "code": "chmod +x errors_per_minute.py\ngrep -h ' ERROR ' incident/var/log/shop/shop.log | ./errors_per_minute.py --top 3",
+      "lang": "bash",
+      "see": "2025-06-03T09:14   18, 2025-06-03T09:13   14 and 2025-06-03T09:15   14"
+     },
+     {
+      "do": "Look at the first retry with the lines before it, then make an excerpt with the users masked, for the incident note.",
+      "code": "grep -n -m 1 -B 2 'retry=1' incident/var/log/shop/shop.log\ngrep 'retry=1' incident/var/log/shop/shop.log | sed -E 's/user=[^ ]+/user=REDACTED/' | head -n 2",
+      "lang": "bash",
+      "see": "Line 219 at 09:12:24: a payments 503 and its first retry; then two lines with user=REDACTED."
+     },
+     {
+      "do": "Clean up. Preview, then delete the old uploads and releases. Keep an excerpt of the debug trace for the developers, then empty the file with truncate, which frees the space even while a program still has the file open.",
+      "code": "find incident/var/tmp -type f -mtime +14 -print\nfind incident/var/tmp -type f -mtime +14 -delete\nfind incident/home/deploy/releases -name 'shop-*.tar' -mtime +30 -print -delete\nhead -n 1000 incident/var/log/shop/debug-trace.log > debug-excerpt.log\ntruncate -s 0 incident/var/log/shop/debug-trace.log",
+      "lang": "bash",
+      "see": "The five old temporary files, one of them report final.tmp, then the two old releases."
+     },
+     {
+      "do": "Measure what you freed. (Run this in the same terminal as step 1, so $before is still set.)",
+      "code": "after=$(find incident -type f -printf '%s\\n' | awk '{s += $1} END {print s}')\necho \"freed $((before - after)) bytes\"",
+      "lang": "bash",
+      "see": "freed 11769600 bytes"
+     },
+     {
+      "do": "Finish with a snapshot of the real machine you're on, as you would attach to an incident ticket.",
+      "code": "top -b -n 1 | head -n 5\nfree -h\ndf -h /",
+      "lang": "bash",
+      "see": "The load averages, memory with its available column, and how full / is."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The biggest files are found and the debug trace is identified as the cause.",
+      "look_for": [
+       "6240000",
+       "debug-trace.log",
+       "80000 DEBUG payments"
+      ]
+     },
+     {
+      "text": "The old temporary files are totalled safely, including the one with a space in its name.",
+      "look_for": [
+       "1331200",
+       "total"
+      ]
+     },
+     {
+      "text": "Errors are counted across the current and compressed logs, and by service.",
+      "look_for": [
+       "shop.log:70",
+       "payments    51"
+      ]
+     },
+     {
+      "text": "The Python filter finds the minutes when the errors happened.",
+      "look_for": [
+       "2025-06-03T09:14   18",
+       "2025-06-03T09:13   14"
+      ]
+     },
+     {
+      "text": "User names are masked in the excerpt.",
+      "look_for": [
+       "user=REDACTED"
+      ]
+     },
+     {
+      "text": "The clean-up frees the expected space.",
+      "look_for": [
+       "freed 11769600 bytes"
+      ]
+     },
+     {
+      "text": "The incident note names the cause of the alert and when the payment errors happened.",
+      "look_for": [
+       "debug",
+       "09:1"
+      ]
+     }
+    ],
+    "submit": "Paste the output of steps 2 to 9, your finished loop from errors_per_minute.py, and an incident note of three to five sentences: what filled the disk, what you removed or emptied and why that was safe, and what went wrong in the application, and when.",
+    "files": [
+     {
+      "path": "make_incident.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Build the incident/ folder for the module 3 lab: python3 make_incident.py\n\nIt recreates a small copy of a server's disk the morning a disk-space alert fired:\nlogs (current, rotated and compressed), temporary uploads and old release archives.\nEverything is the same every time you run it, except that file ages count back from now.\n\"\"\"\nimport gzip\nimport io\nimport os\nimport random\nimport shutil\nimport tarfile\nimport time\nfrom pathlib import Path\n\nROOT = Path(\"incident\")\nDAY = 24 * 60 * 60\nSERVICES = [\"orders\", \"payments\", \"catalog\", \"auth\"]\nPATHS = {\"orders\": \"/api/orders\", \"payments\": \"/api/payments\", \"catalog\": \"/api/products\", \"auth\": \"/api/login\"}\nUSERS = [\"ana\", \"bilal\", \"chen\", \"dara\", \"emeka\", \"farah\"]\n\n\ndef pick(rng, items):\n    return items[int(rng.random() * len(items))]\n\n\ndef log_lines(day: str, seed: int, count: int, burst: bool = False) -> list[str]:\n    \"\"\"count log lines from 08:00. With burst, payments fails from 09:12 to 09:16, orders with it,\n    and every failed payment is retried twice.\"\"\"\n    rng = random.Random(seed)\n    lines = []\n    seconds = 8 * 3600\n    for _ in range(count):\n        in_burst = burst and 9 * 3600 + 12 * 60 <= seconds < 9 * 3600 + 16 * 60\n        seconds += (3 + int(rng.random() * 6)) if in_burst else (5 + int(rng.random() * 30))\n        hh, mm, ss = seconds // 3600, seconds // 60 % 60, seconds % 60\n        service = pick(rng, SERVICES)\n        method = \"POST\" if service != \"catalog\" and rng.random() < 0.4 else \"GET\"\n        duration = 20 + int(rng.random() * 180)\n        status, level = 200, \"INFO\"\n        roll = rng.random()\n        if in_burst and service in (\"payments\", \"orders\"):\n            status, level, duration = 503, \"ERROR\", 3000 + int(rng.random() * 2000)\n        elif roll < 0.04:\n            status, level = pick(rng, [500, 503]), \"ERROR\"\n        elif roll < 0.10:\n            duration, level = 900 + int(rng.random() * 2100), \"WARNING\"\n        user = pick(rng, USERS)\n        lines.append(f\"{day}T{hh:02d}:{mm:02d}:{ss:02d}Z {level} {service} method={method} \"\n                     f\"path={PATHS[service]} status={status} duration_ms={duration} user={user}@example.com\")\n        if in_burst and service == \"payments\":\n            for retry in (1, 2):\n                lines.append(f\"{day}T{hh:02d}:{mm:02d}:{ss:02d}Z ERROR payments method=POST path=/api/payments \"\n                             f\"status=503 duration_ms=3000 user={user}@example.com retry={retry}\")\n    return lines\n\n\ndef write(path: Path, data: bytes, age_days: float) -> None:\n    path.parent.mkdir(parents=True, exist_ok=True)\n    path.write_bytes(data)\n    mtime = time.time() - age_days * DAY\n    os.utime(path, (mtime, mtime))\n\n\ndef tar_bytes(name: str, size: int) -> bytes:\n    \"\"\"A real (uncompressed) tar archive holding one file of the given size.\"\"\"\n    buffer = io.BytesIO()\n    with tarfile.open(fileobj=buffer, mode=\"w\", format=tarfile.USTAR_FORMAT) as tar:\n        info = tarfile.TarInfo(f\"{name}/app.bin\")\n        info.size, info.mtime = size, 1717200000\n        tar.addfile(info, io.BytesIO(bytes(range(256)) * (size // 256)))\n    return buffer.getvalue()\n\n\ndef main() -> None:\n    shutil.rmtree(ROOT, ignore_errors=True)\n    logs = ROOT / \"var/log/shop\"\n    text = lambda lines: (\"\\n\".join(lines) + \"\\n\").encode()\n    write(logs / \"shop.log\", text(log_lines(\"2025-06-03\", 3, 260, burst=True)), 0.01)\n    write(logs / \"shop.log.1\", text(log_lines(\"2025-06-02\", 2, 200)), 1)\n    for n, (day, seed) in enumerate([(\"2025-06-01\", 1), (\"2025-05-31\", 31), (\"2025-05-30\", 30)], start=2):\n        write(logs / f\"shop.log.{n}.gz\", gzip.compress(text(log_lines(day, seed, 200)), mtime=0), n)\n    debug = \"\".join(f\"2025-06-03T09:{i // 4000 % 60:02d}:00Z DEBUG payments cache lookup key=basket:{i:07d} hit=false\\n\"\n                    for i in range(80000))\n    write(logs / \"debug-trace.log\", debug.encode(), 0.01)\n    for i, age in enumerate([40, 35, 30, 21, 3]):\n        write(ROOT / f\"var/tmp/upload-{i + 1}.tmp\", bytes(300 * 1024), age)\n    write(ROOT / \"var/tmp/report final.tmp\", bytes(100 * 1024), 25)\n    for version, age in [(\"1.4.0\", 60), (\"1.5.0\", 45), (\"1.6.0\", 20), (\"1.7.0\", 1)]:\n        write(ROOT / f\"home/deploy/releases/shop-{version}.tar\", tar_bytes(f\"shop-{version}\", 2 * 1024 * 1024), age)\n    count = sum(1 for p in ROOT.rglob(\"*\") if p.is_file())\n    print(f\"Created {count} files in {ROOT}/\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "errors_per_minute.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Count ERROR lines per minute, busiest minutes first.\n\nReads the log files you name, or standard input if you name none, so it works in a pipeline:\n  grep -h ' ERROR ' shop.log | ./errors_per_minute.py --top 3\n  zcat shop.log.*.gz | ./errors_per_minute.py\n\"\"\"\nimport argparse\nimport fileinput\nimport os\nimport sys\nfrom collections import Counter\n\n\ndef main() -> int:\n    parser = argparse.ArgumentParser(description=\"Count ERROR lines per minute, busiest first.\")\n    parser.add_argument(\"files\", nargs=\"*\", help=\"log files to read (default: standard input)\")\n    parser.add_argument(\"--top\", type=int, default=5, help=\"how many minutes to show (default: %(default)s)\")\n    args = parser.parse_args()\n\n    counts: Counter[str] = Counter()\n    skipped = 0\n    for line in fileinput.input(args.files, encoding=\"utf-8\"):\n        # TODO: split the line into fields. If there are fewer than 3, add 1 to skipped and move on.\n        #       If the second field is ERROR, add 1 to counts for the line's minute: the first\n        #       16 characters of the first field, such as 2025-06-03T09:14.\n        pass\n    for minute, n in counts.most_common(args.top):\n        print(f\"{minute}  {n:>3}\")\n    if skipped:\n        print(f\"skipped {skipped} line(s) that weren't log lines\", file=sys.stderr)\n    return 0\n\n\nif __name__ == \"__main__\":\n    try:\n        sys.exit(main())\n    except BrokenPipeError:\n        # The reader, such as head, stopped early. Exit quietly, without a traceback.\n        devnull = os.open(os.devnull, os.O_WRONLY)\n        os.dup2(devnull, sys.stdout.fileno())\n        sys.exit(1)\n"
+     }
+    ],
+    "hints": [
+     "Run python3 make_incident.py again to start over: it deletes and rebuilds incident/.",
+     "The minute of a line is the first 16 characters of its first field: line.split()[0][:16].",
+     "zgrep reads plain and compressed files alike, which is why shop.log* covers all five logs.",
+     "If step 9 prints a negative or odd number, $before was set in another terminal: rebuild the folder and do steps 1 and 8 to 9 in one terminal."
+    ]
+   }
+  },
+  {
+   "title": "Package Management in DevOps",
+   "summary": "How Linux package managers install software, resolve dependencies and decide which repositories to trust; apt and dnf side by side; and provisioning by script, so every fresh server gets the right packages the same way. It goes beyond the apt basics in Linux Command Line Essentials.",
+   "instructor": "ismaile-rahimovi",
+   "lessons": [
+    {
+     "title": "Packages, dependencies and repositories",
+     "minutes": 12,
+     "objectives": [
+      "Explain what a package manager does, from repositories and signatures to dependency resolution",
+      "Find out where a package comes from, what it depends on and which files it installed"
+     ],
+     "key_points": [
+      "A package bundles a program's files with metadata: its name, version, dependencies and scripts to run on install. Debian and Ubuntu use .deb packages; Red Hat Enterprise Linux, Fedora, Rocky Linux and AlmaLinux use .rpm.",
+      "Low-level tools install single package files and query what's installed (dpkg for .deb, rpm for .rpm); high-level managers, apt and dnf, download from repositories and resolve dependencies, installing whatever else a package needs.",
+      "A repository is a server holding packages and a signed index of them. apt reads its sources from /etc/apt/sources.list.d/ (Ubuntu 24.04 uses ubuntu.sources, in the deb822 format) and dnf from /etc/yum.repos.d/*.repo.",
+      "Repositories sign their indexes, and the package manager rejects data that doesn't match a trusted key. Add a third-party repository with its key in /etc/apt/keyrings and a signed-by option; apt-key is deprecated.",
+      "Look before you install: apt-cache policy nginx (dnf info nginx) shows the installed and candidate versions and their repositories, apt-cache depends nginx (dnf repoquery --requires nginx) the dependencies, and dpkg -L or rpm -ql a package's files."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Inspect packages and repositories",
+      "steps": [
+       {
+        "do": "Which version of coreutils is installed, which would be installed, and from which repository?",
+        "code": "apt-cache policy coreutils",
+        "lang": "bash",
+        "see": "Installed:, Candidate: and a version table naming the Ubuntu archive it comes from."
+       },
+       {
+        "do": "What does it depend on, which files did it install, and which package owns a file?",
+        "code": "apt-cache depends coreutils\ndpkg -L coreutils | head\ndpkg -S /usr/bin/ls",
+        "lang": "bash",
+        "see": "Its Depends: and PreDepends: lines, the first of its files, then coreutils: /usr/bin/ls"
+       },
+       {
+        "do": "Where do packages come from?",
+        "code": "ls /etc/apt/sources.list.d/\ncat /etc/apt/sources.list.d/ubuntu.sources",
+        "lang": "bash",
+        "see": "On Ubuntu 24.04, ubuntu.sources with Types:, URIs:, Suites:, Components: and Signed-By: lines."
+       },
+       {
+        "do": "Which keys does apt trust?",
+        "code": "ls /usr/share/keyrings/ /etc/apt/keyrings/ 2>/dev/null",
+        "lang": "bash",
+        "see": "ubuntu-archive-keyring.gpg, and any keys that third-party repositories added."
+       },
+       {
+        "do": "Simulate an install to see what apt would do, without changing anything.",
+        "code": "apt-get install -s tree",
+        "lang": "bash",
+        "see": "NOTE: This is only a simulation!, then Inst and Conf lines, or a note that tree is already the newest version."
+       }
+      ]
+     }
+    },
+    {
+     "title": "apt and dnf side by side",
+     "minutes": 12,
+     "objectives": [
+      "Carry out everyday package tasks with apt and with dnf",
+      "Choose package commands that are safe to use in scripts"
+     ],
+     "key_points": [
+      "The same jobs, two tools: sudo apt update or sudo dnf check-update refreshes the package lists (dnf also refreshes when its cached copy expires), apt install or dnf install adds packages, apt remove or dnf remove uninstalls, and apt upgrade or dnf upgrade applies updates.",
+      "On RHEL 8 and later, Fedora and rebuilds such as Rocky Linux and AlmaLinux, yum is an alias for dnf, so older yum commands and scripts still work.",
+      "In scripts, use apt-get and apt-cache rather than apt, whose output may change between versions (it warns about this when its output isn't a terminal). Add -y to answer yes, and run apt-get update before installing on a fresh machine.",
+      "Set DEBIAN_FRONTEND=noninteractive so no configuration prompt waits for an answer. sudo resets the environment, so pass it with sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y ..., or run as root.",
+      "Ask the package database rather than parsing friendly output: dpkg-query -W -f='${Status}' curl prints install ok installed for an installed package, and rpm -q curl exits with status 0 only when it's installed.",
+      "Pin what you depend on: apt-get install nginx=VERSION installs an exact version, apt-mark hold nginx stops upgrades changing it (apt-mark unhold releases it), and dnf's versionlock plugin does the same on Red Hat-family systems."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Package commands for scripts",
+      "steps": [
+       {
+        "do": "Is a package installed? dpkg-query answers, and exits non-zero for a package it doesn't know.",
+        "code": "dpkg-query -W -f='${Status}\\n' bash\ndpkg-query -W -f='${Status}\\n' no-such-package; echo \"exit status: $?\"",
+        "lang": "bash",
+        "see": "install ok installed, then dpkg-query: no packages found matching no-such-package and exit status: 1"
+       },
+       {
+        "do": "See why apt is for people and apt-get for scripts: piped, apt warns you.",
+        "code": "apt list --installed 2>&1 | head -n 3",
+        "lang": "bash",
+        "see": "WARNING: apt does not have a stable CLI interface. Use with caution in scripts."
+       },
+       {
+        "do": "Install the way a script should: refresh, then install without prompts or optional extras.",
+        "code": "sudo apt-get update -q\nsudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tree",
+        "lang": "bash"
+       },
+       {
+        "do": "Hold the package at its version, check the hold, then release it.",
+        "code": "sudo apt-mark hold tree\napt-mark showhold\nsudo apt-mark unhold tree",
+        "lang": "bash",
+        "see": "tree set on hold., then tree, then Canceled hold on tree."
+       },
+       {
+        "do": "The dnf equivalents, on a Red Hat-family machine or a container such as rockylinux:9.",
+        "code": "sudo dnf check-update\nsudo dnf install -y tree\nrpm -q tree; echo \"exit status: $?\"\ndnf info tree",
+        "lang": "bash",
+        "see": "tree's name and version from rpm -q, exit status: 0, then its details."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Automating installs: idempotent provisioning",
+     "minutes": 12,
+     "objectives": [
+      "Write a provisioning script that installs only what's missing and is safe to run again",
+      "Detect the distribution to choose the right package manager",
+      "Install Python tools without breaking the system Python"
+     ],
+     "key_points": [
+      "Provisioning takes a fresh machine to a known state by script. An idempotent script checks the current state first and changes only what differs, so running it twice is safe and the second run has nothing to do.",
+      "Check, then act: query each package, install all the missing ones in a single apt-get install call, then check again and report what changed, failing loudly if anything is still missing.",
+      "/etc/os-release identifies the distribution: ID (such as ubuntu or rocky) and ID_LIKE (debian; rhel centos fedora) tell a script whether to use apt-get or dnf. Python's platform.freedesktop_os_release() reads the file for you.",
+      "Python tools belong in virtual environments: pip inside a venv for a project's libraries, pipx for command-line tools, and system Python packages (python3-requests and the like) only through apt or dnf. Pin versions in requirements.txt.",
+      "Configuration management tools such as Ansible apply the same check-then-act idea across many machines; a script like this is enough for one machine, and for container images the Dockerfile's RUN lines do the installing.",
+      "Keep systems patched without waiting for you: unattended-upgrades installs security updates on Debian and Ubuntu, and dnf-automatic does the same on Red Hat-family systems."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Write an idempotent package provisioner",
+    "tool": "Python 3 and apt",
+    "minutes": 50,
+    "goal": "Finish provision.py, which detects the distribution, checks which packages from a list are installed and installs only the missing ones, so it can be run any number of times with the same result.",
+    "setup": [
+     "An Ubuntu or Debian machine where you can use sudo, or a throwaway container: docker run --rm -it -v \"$PWD\":/lab -w /lab ubuntu:24.04 bash, then apt-get update && apt-get install -y python3 (you're root there, so the script won't use sudo)",
+     "A folder ~/devops-lab/m4 with the starter files provision.py, packages.txt and the samples folder"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 in package_manager(). Then try detection on your machine and on the sample os-release files.",
+      "code": "cd ~/devops-lab/m4\npython3 provision.py detect\nfor f in samples/*.txt; do python3 provision.py detect --os-release \"$f\"; done",
+      "lang": "bash",
+      "see": "Your own system (ubuntu 24.04: apt on Ubuntu 24.04), then error: unsupported distribution: Alpine Linux v3.20, debian 12: apt, rocky 9.4: dnf and ubuntu 24.04: apt."
+     },
+     {
+      "do": "Complete TODO 2 in is_installed(), then check the package list.",
+      "code": "cat packages.txt\npython3 provision.py check packages.txt; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "Each package marked installed or missing; if any is missing, N of 4 package(s) missing and exit status: 1."
+     },
+     {
+      "do": "Complete TODO 3 in apply(), then preview the install.",
+      "code": "python3 provision.py apply packages.txt --dry-run",
+      "lang": "bash",
+      "see": "Missing N of 4 package(s): ..., then would run: sudo apt-get -q update and would run: sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends and the missing packages (no sudo in a container)."
+     },
+     {
+      "do": "Install for real. apt-get shows its progress, then the script checks again.",
+      "code": "python3 provision.py apply packages.txt; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "Installed: and the packages that were missing, then exit status: 0."
+     },
+     {
+      "do": "Run it again, and check: nothing is missing now, so nothing is done.",
+      "code": "python3 provision.py apply packages.txt; echo \"exit status: $?\"\npython3 provision.py check packages.txt; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "Nothing to do: all 4 packages are installed and exit status: 0; then all four marked installed, all 4 packages installed and exit status: 0."
+     },
+     {
+      "do": "See how a missing package list is reported.",
+      "code": "python3 provision.py check nope.txt; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "error: no such file: nope.txt and exit status: 2"
+     },
+     {
+      "do": "Hold a package at its version, as you might before a risky upgrade, then release it.",
+      "code": "apt-cache policy jq | head -n 3\nsudo apt-mark hold jq\napt-mark showhold\nsudo apt-mark unhold jq",
+      "lang": "bash",
+      "see": "jq's installed and candidate versions, jq set on hold., jq, then Canceled hold on jq."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Detection chooses the right package manager and rejects systems it doesn't support.",
+      "look_for": [
+       "rocky 9.4: dnf",
+       "debian 12: apt",
+       "error: unsupported distribution: Alpine Linux v3.20"
+      ]
+     },
+     {
+      "text": "The dry run shows the commands without running them.",
+      "look_for": [
+       "would run:",
+       "DEBIAN_FRONTEND=noninteractive apt-get install -y"
+      ]
+     },
+     {
+      "text": "The second run finds nothing to do.",
+      "look_for": [
+       "Nothing to do: all 4 packages are installed",
+       "all 4 packages installed"
+      ]
+     },
+     {
+      "text": "is_installed asks dpkg-query, not apt's human-readable output.",
+      "look_for": [
+       "dpkg-query",
+       "install ok installed"
+      ]
+     },
+     {
+      "text": "A missing list file is reported with exit status 2.",
+      "look_for": [
+       "error: no such file: nope.txt",
+       "exit status: 2"
+      ]
+     },
+     {
+      "text": "A package is held and released again.",
+      "look_for": [
+       "set on hold",
+       "Canceled hold on jq"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed functions and the output of steps 1 to 7.",
+    "files": [
+     {
+      "path": "provision.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Install the packages a machine needs, and only the ones that are missing.\n\n  ./provision.py detect [--os-release FILE]      which distribution and package manager\n  ./provision.py check PACKAGES_FILE             what's installed and what's missing\n  ./provision.py apply PACKAGES_FILE [--dry-run] install what's missing (safe to run again)\n\"\"\"\nimport argparse\nimport os\nimport shlex\nimport subprocess\nimport sys\nfrom pathlib import Path\n\n\ndef read_os_release(path: Path) -> dict[str, str]:\n    \"\"\"Parse an os-release file: KEY=value lines, with the value optionally in quotes.\"\"\"\n    info = {}\n    for line in path.read_text(encoding=\"utf-8\").splitlines():\n        line = line.strip()\n        if line and not line.startswith(\"#\") and \"=\" in line:\n            key, value = line.split(\"=\", 1)\n            info[key] = value.strip(\"\\\"'\")\n    return info\n\n\ndef package_manager(info: dict[str, str]) -> str:\n    \"\"\"apt for the Debian family (Debian, Ubuntu...), dnf for the Red Hat family (RHEL, Fedora, Rocky...).\"\"\"\n    family = {info.get(\"ID\", \"\")} | set(info.get(\"ID_LIKE\", \"\").split())\n    # TODO 1: return \"apt\" if family includes debian or ubuntu, and \"dnf\" if it includes rhel, fedora\n    #         or centos (sets have & for intersection). Otherwise fall through to the error below.\n    raise ValueError(f\"unsupported distribution: {info.get('PRETTY_NAME', info.get('ID', 'unknown'))}\")\n\n\ndef read_packages(path: Path) -> list[str]:\n    \"\"\"One package name per line; blank lines and # comments are ignored.\"\"\"\n    names = []\n    for line in path.read_text(encoding=\"utf-8\").splitlines():\n        name = line.split(\"#\", 1)[0].strip()\n        if name:\n            names.append(name)\n    return names\n\n\ndef is_installed(package: str, manager: str) -> bool:\n    \"\"\"Ask the package database, not the human-readable output of apt or dnf.\"\"\"\n    if manager == \"apt\":\n        # TODO 2: run  dpkg-query -W -f=${Status} PACKAGE  (as a list, capturing text output, timeout=30)\n        #         and return True only if it exits with 0 and prints exactly: install ok installed\n        return False\n    result = subprocess.run([\"rpm\", \"-q\", package], capture_output=True, text=True, timeout=30)\n    return result.returncode == 0\n\n\ndef as_root(cmd: list[str]) -> list[str]:\n    \"\"\"Run with sudo unless we're root already (as in a container).\"\"\"\n    return cmd if os.geteuid() == 0 else [\"sudo\", *cmd]\n\n\ndef install_commands(missing: list[str], manager: str) -> list[list[str]]:\n    if manager == \"apt\":\n        # sudo resets the environment, so pass DEBIAN_FRONTEND through env.\n        return [as_root([\"apt-get\", \"-q\", \"update\"]),\n                as_root([\"env\", \"DEBIAN_FRONTEND=noninteractive\", \"apt-get\", \"install\", \"-y\",\n                         \"--no-install-recommends\", *missing])]\n    return [as_root([\"dnf\", \"install\", \"-y\", *missing])]\n\n\ndef detect(args) -> int:\n    info = read_os_release(args.os_release)\n    print(f\"{info.get('ID', '?')} {info.get('VERSION_ID', '?')}: {package_manager(info)}\")\n    return 0\n\n\ndef check(args) -> int:\n    manager = package_manager(read_os_release(Path(\"/etc/os-release\")))\n    packages = read_packages(args.packages)\n    missing = [p for p in packages if not is_installed(p, manager)]\n    for p in packages:\n        print(f\"{p:<12}{'missing' if p in missing else 'installed'}\")\n    if missing:\n        print(f\"{len(missing)} of {len(packages)} package(s) missing\")\n        return 1\n    print(f\"all {len(packages)} packages installed\")\n    return 0\n\n\ndef apply(args) -> int:\n    manager = package_manager(read_os_release(Path(\"/etc/os-release\")))\n    packages = read_packages(args.packages)\n    # TODO 3: make the list of missing packages. If nothing is missing, print\n    #         \"Nothing to do: all N packages are installed\" (N is how many there are) and return 0.\n    missing = packages\n    print(f\"Missing {len(missing)} of {len(packages)} package(s): {' '.join(missing)}\")\n    for cmd in install_commands(missing, manager):\n        if args.dry_run:\n            print(f\"would run: {shlex.join(cmd)}\")\n        else:\n            subprocess.run(cmd, check=True, timeout=1800)\n    if not args.dry_run:\n        still = [p for p in missing if not is_installed(p, manager)]\n        if still:\n            print(f\"error: still missing after install: {' '.join(still)}\", file=sys.stderr)\n            return 1\n        print(f\"Installed: {' '.join(missing)}\")\n    return 0\n\n\ndef main() -> int:\n    parser = argparse.ArgumentParser(description=\"Install the packages a machine needs, only if missing.\")\n    sub = parser.add_subparsers(dest=\"command\", required=True)\n    p = sub.add_parser(\"detect\", help=\"show the distribution and its package manager\")\n    p.add_argument(\"--os-release\", type=Path, default=Path(\"/etc/os-release\"), help=\"os-release file to read\")\n    p.set_defaults(func=detect)\n    for name, func, text in [(\"check\", check, \"show which packages are installed\"),\n                             (\"apply\", apply, \"install the missing packages\")]:\n        p = sub.add_parser(name, help=text)\n        p.add_argument(\"packages\", type=Path, help=\"file listing one package per line\")\n        p.set_defaults(func=func)\n        if name == \"apply\":\n            p.add_argument(\"--dry-run\", action=\"store_true\", help=\"show the commands without running them\")\n    args = parser.parse_args()\n    try:\n        return args.func(args)\n    except FileNotFoundError as e:\n        print(f\"error: no such file: {e.filename}\", file=sys.stderr)\n        return 2\n    except ValueError as e:\n        print(f\"error: {e}\", file=sys.stderr)\n        return 2\n    except subprocess.CalledProcessError as e:\n        print(f\"error: {shlex.join(e.cmd)} failed with exit status {e.returncode}\", file=sys.stderr)\n        return 1\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+     },
+     {
+      "path": "packages.txt",
+      "content": "# Packages every shop server needs, one per line\ncurl\ngit\njq\ntree   # to show folder structures\n"
+     },
+     {
+      "path": "samples/ubuntu-24.04.txt",
+      "content": "PRETTY_NAME=\"Ubuntu 24.04.1 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nID=ubuntu\nID_LIKE=debian\n"
+     },
+     {
+      "path": "samples/debian-12.txt",
+      "content": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nID=debian\n"
+     },
+     {
+      "path": "samples/rocky-9.txt",
+      "content": "NAME=\"Rocky Linux\"\nVERSION_ID=\"9.4\"\nID=\"rocky\"\nID_LIKE=\"rhel centos fedora\"\nPRETTY_NAME=\"Rocky Linux 9.4 (Blue Onyx)\"\n"
+     },
+     {
+      "path": "samples/alpine-3.20.txt",
+      "content": "NAME=\"Alpine Linux\"\nID=alpine\nVERSION_ID=3.20.0\nPRETTY_NAME=\"Alpine Linux v3.20\"\n"
+     }
+    ],
+    "hints": [
+     "Sets make the family test short: {\"rocky\", \"rhel\", \"centos\", \"fedora\"} & {\"rhel\", \"fedora\", \"centos\"} isn't empty, so Rocky Linux uses dnf.",
+     "dpkg-query exits with status 1 for a package it has never heard of: treat that as not installed, not as an error.",
+     "In a Docker container you're root, so the commands run without sudo; on WSL or a VM, sudo asks for your password once.",
+     "To practise again, remove a package with sudo apt-get remove -y tree and rerun apply."
+    ]
+   }
+  },
+  {
+   "title": "Integrating Python and Linux",
+   "summary": "Bring Python and Linux together into automation you can leave running: wrappers around system commands, configuration from environment variables, logging an operator can rely on, and schedules with cron and systemd timers.",
+   "instructor": "carlos-ramirez",
+   "lessons": [
+    {
+     "title": "Wrapping Linux commands in Python",
+     "minutes": 12,
+     "objectives": [
+      "Wrap a command-line tool in a Python function with a clean interface",
+      "Get reliable data from commands by preferring machine-readable output"
+     ],
+     "key_points": [
+      "Wrap each command in a small function that builds the argument list, runs it with a timeout, checks the result and returns plain Python data, so the rest of the script never handles raw text or exit codes.",
+      "Prefer machine-readable output where a tool offers it: ip -json addr, lsblk --json, findmnt --json, df --output=pcent,target and systemctl show nginx --property=ActiveState --value are far easier to parse than the default tables.",
+      "Some commands answer with their exit status: systemctl is-active --quiet nginx exits 0 only if the unit is active, and grep -q exits 0 if anything matched, so a returncode == 0 test is the whole answer.",
+      "When there's no structured output, parse defensively: skip header lines, split with a maximum number of fields, and raise a clear error if the format isn't what you expect, rather than return wrong numbers.",
+      "Check that a command exists before relying on it: shutil.which(\"systemctl\") is None in many containers and on WSL without systemd, so the script can say what's missing instead of crashing."
+     ],
+     "walkthrough": {
+      "tool": "Python REPL",
+      "title": "Wrap commands that speak JSON",
+      "steps": [
+       {
+        "do": "In python3, write a helper that runs a command and parses its JSON output, then list your block devices.",
+        "code": "import json, shutil, subprocess\n\ndef run(cmd):\n    \"\"\"Run a command and return its standard output; raise if it fails.\"\"\"\n    return subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10).stdout\n\ndef run_json(cmd):\n    return json.loads(run(cmd))\n\ndisks = run_json([\"lsblk\", \"--json\", \"-o\", \"NAME,SIZE,TYPE,MOUNTPOINTS\"])\n[(d[\"name\"], d[\"size\"], d[\"type\"]) for d in disks[\"blockdevices\"]]",
+        "lang": "python",
+        "see": "Each disk and partition with its size and type, such as ('sda', '256G', 'disk')."
+       },
+       {
+        "do": "Parse df's machine-friendly columns, skipping the header line.",
+        "code": "def disk_percent(mount):\n    \"\"\"How full a mount point is, from df's machine-friendly columns.\"\"\"\n    header, line = run([\"df\", \"--output=pcent,target\", mount]).splitlines()\n    percent, target = line.split(maxsplit=1)\n    return int(percent.rstrip(\"%\")), target\n\ndisk_percent(\"/\")",
+        "lang": "python",
+        "see": "A tuple such as (82, '/'): how full / is, as a number."
+       },
+       {
+        "do": "Use an exit status as the answer, after checking that the command exists.",
+        "code": "def unit_active(unit):\n    if shutil.which(\"systemctl\") is None:\n        raise RuntimeError(\"systemctl not found: a container, or WSL without systemd?\")\n    return subprocess.run([\"systemctl\", \"is-active\", \"--quiet\", unit], timeout=10).returncode == 0\n\nunit_active(\"cron\"), unit_active(\"no-such-unit\")",
+        "lang": "python",
+        "see": "(True, False) on a machine where cron runs under systemd; a RuntimeError in a container."
+       },
+       {
+        "do": "Look at mounted file systems as JSON too.",
+        "code": "mounts = run_json([\"findmnt\", \"--json\", \"/\"])\nmounts[\"filesystems\"][0][\"fstype\"]",
+        "lang": "python",
+        "see": "The type of your root file system, such as 'ext4'."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Environment variables and configuration",
+     "minutes": 11,
+     "objectives": [
+      "Read, validate and change environment variables from Python, including for child processes",
+      "Configure a tool from the environment, with sensible defaults and precedence"
+     ],
+     "key_points": [
+      "os.environ maps variable names to strings: os.environ[\"HOME\"] raises KeyError when a variable is missing, while os.environ.get(\"LOG_LEVEL\", \"INFO\") returns a default instead.",
+      "Changing os.environ affects the running script and any processes it starts afterwards, never the shell that started it: a child process can't change its parent's environment.",
+      "subprocess.run(cmd, env={**os.environ, \"LC_ALL\": \"C\"}) gives one child a modified copy of the environment; LC_ALL=C makes command output predictable, with no translated messages or local number formats.",
+      "Environment variables are always strings: convert and validate them, as in int(os.environ.get(\"MAX_AGE_DAYS\", \"7\")), and stop with a clear message when one is invalid. A common precedence is command-line option, then environment variable, then config file, then default.",
+      "Keep secrets such as API tokens out of code and out of command-line arguments, which other users can see with ps; pass them in environment variables or in files with 600 permissions, and never write them to logs."
+     ]
+    },
+    {
+     "title": "Logging for automation scripts",
+     "minutes": 12,
+     "objectives": [
+      "Replace print statements with the logging module, at the right levels",
+      "Configure where logs go: standard error, a rotating file or the systemd journal"
+     ],
+     "key_points": [
+      "logging gives each message a level, DEBUG, INFO, WARNING, ERROR or CRITICAL, and the configured level decides which are recorded; logging.getLogger(__name__) gives each module its own named logger.",
+      "logging.basicConfig(level=logging.INFO, format=\"%(asctime)s %(levelname)s %(name)s: %(message)s\") is enough for most scripts. It writes to standard error, which cron can redirect to a file and systemd sends to the journal.",
+      "Pass values as arguments, as in log.info(\"archived %s\", path), so they're formatted only if the message is recorded; inside an except block, log.exception(\"...\") logs at ERROR level with the full traceback.",
+      "RotatingFileHandler(path, maxBytes=1_000_000, backupCount=3) caps a log file's size by rotating it; a service run by systemd can simply log to standard error and let the journal store and rotate it.",
+      "Log what an operator needs when something breaks at 3 a.m.: what started, what changed, what failed and why, with identifiers such as file names, but never passwords, tokens or personal data."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "From print to logging",
+      "steps": [
+       {
+        "do": "Create levels_demo.py.",
+        "code": "import logging\n\nlog = logging.getLogger(\"demo\")\nlogging.basicConfig(level=logging.INFO, format=\"%(levelname)s %(name)s: %(message)s\")\n\nlog.debug(\"not shown at INFO level\")\nlog.info(\"archived %s\", \"app.log.2\")\nlog.warning(\"disk %d%% full\", 91)\ntry:\n    1 / 0\nexcept ZeroDivisionError:\n    log.exception(\"report failed\")",
+        "lang": "python"
+       },
+       {
+        "do": "Run it. The DEBUG message is filtered out, and the exception comes with its traceback.",
+        "code": "python3 levels_demo.py",
+        "lang": "bash",
+        "see": "INFO demo: archived app.log.2, WARNING demo: disk 91% full, ERROR demo: report failed, then the ZeroDivisionError traceback."
+       },
+       {
+        "do": "Everything went to standard error, so redirecting standard output catches nothing, while 2> catches it all.",
+        "code": "python3 levels_demo.py > out.txt\nwc -c out.txt\npython3 levels_demo.py 2> demo.log\nwc -l demo.log",
+        "lang": "bash",
+        "see": "0 out.txt, then demo.log holding every line."
+       },
+       {
+        "do": "Change the level to DEBUG in the basicConfig line and run it again: now the debug message appears too.",
+        "code": "python3 levels_demo.py 2>&1 | head -n 1",
+        "lang": "bash",
+        "see": "DEBUG demo: not shown at INFO level"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Scheduling with cron and systemd timers",
+     "minutes": 14,
+     "objectives": [
+      "Schedule a Python script with cron and with a systemd timer",
+      "Find out why a scheduled job that works by hand fails on schedule"
+     ],
+     "key_points": [
+      "A crontab line has five time fields, minute, hour, day of month, month and day of week, then the command: 30 2 * * * runs at 02:30 every day and */15 * * * * every 15 minutes. Edit with crontab -e and list with crontab -l.",
+      "cron runs jobs from your home directory with a minimal environment (PATH is often just /usr/bin:/bin), so use absolute paths to the script and to the virtual environment's python, and redirect the output, as in >> ~/job.log 2>&1.",
+      "In a crontab, % ends the command and starts its standard input, so write date +\\%F; and flock -n /tmp/job.lock command skips a run while the previous one is still going.",
+      "A systemd timer pairs a .timer unit (OnCalendar=*:0/5 for every five minutes, Persistent=true to catch up on runs missed while the machine was off) with a .service unit of Type=oneshot that runs the script.",
+      "systemctl enable --now name.timer starts a timer; systemctl list-timers shows its last and next runs, systemctl status name.service the last result, journalctl -u name.service the output, and systemd-analyze calendar checks an OnCalendar expression.",
+      "A long-running Python program becomes a service with ExecStart= using absolute paths, User= a non-root account, Restart=on-failure, and Environment= or EnvironmentFile= for its settings."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Schedule a health check with cron and systemd",
+    "tool": "Python 3, cron and systemd",
+    "minutes": 60,
+    "goal": "Finish a health-check script that's configured by environment variables and records its results with logging, then run it on a schedule twice over: from cron, and from a systemd timer whose results you read in the journal.",
+    "setup": [
+     "A Linux machine with systemd and sudo: Ubuntu in a VM or on a server, or WSL with systemd turned on (see the hints)",
+     "A folder ~/healthcheck with the starter files healthcheck.py, units/healthcheck.service and units/healthcheck.timer"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 (setting_int), TODO 2 (the logging set-up) and TODO 3 (check_unit) in healthcheck.py, then run it.",
+      "code": "cd ~/healthcheck\nchmod +x healthcheck.py\n./healthcheck.py; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "Four INFO lines: disk / is ...% full (limit 90%), memory: ... MB available, command python3 found at /usr/bin/python3 and all 3 checks passed; then exit status: 0."
+     },
+     {
+      "do": "Make a check fail, then give it an invalid setting.",
+      "code": "HC_DISK_WARN=1 ./healthcheck.py; echo \"exit status: $?\"\nHC_DISK_WARN=abc ./healthcheck.py; echo \"exit status: $?\"",
+      "lang": "bash",
+      "see": "A WARNING for disk / (limit 1%), ERROR healthcheck: 1 of 3 checks failed and exit status: 1; then HC_DISK_WARN must be a whole number from 1 to 100, got 'abc' and exit status: 2."
+     },
+     {
+      "do": "Check a command that doesn't exist and a systemd unit, with debug messages on.",
+      "code": "HC_COMMANDS=\"python3 no-such-tool\" HC_UNITS=cron HC_LOG_LEVEL=DEBUG ./healthcheck.py",
+      "lang": "bash",
+      "see": "DEBUG healthcheck: settings: ..., WARNING ... command no-such-tool not found on PATH, unit cron: active (if cron is running), then 1 of 5 checks failed."
+     },
+     {
+      "do": "Log to a file as well, and confirm that standard output stays empty: every message is on standard error.",
+      "code": "HC_LOG_FILE=$HOME/healthcheck/healthcheck.log ./healthcheck.py 2>/dev/null\ntail -n 2 ~/healthcheck/healthcheck.log",
+      "lang": "bash",
+      "see": "Nothing on screen; then the file's last two lines, ending all 3 checks passed."
+     },
+     {
+      "do": "Schedule it with cron every five minutes: install cron if needed, open your crontab with crontab -e, add the line below and save. Then list your crontab.",
+      "code": "sudo apt install -y cron\ncrontab -e\n# the line to add:\n*/5 * * * * /usr/bin/flock -n /tmp/healthcheck.lock /usr/bin/python3 $HOME/healthcheck/healthcheck.py >> $HOME/healthcheck/cron.log 2>&1\ncrontab -l",
+      "lang": "bash",
+      "see": "crontab -l prints your line."
+     },
+     {
+      "do": "After five minutes or so, read what cron recorded.",
+      "code": "tail -n 4 ~/healthcheck/cron.log",
+      "lang": "bash",
+      "see": "One run's four lines, ending all 3 checks passed."
+     },
+     {
+      "do": "Now the systemd way. Install the script, put your user name in the service file, install the units and check them.",
+      "code": "sudo install -D -m 755 healthcheck.py /opt/healthcheck/healthcheck.py\nsed -i \"s/^User=.*/User=$USER/\" units/healthcheck.service\nsudo cp units/healthcheck.service units/healthcheck.timer /etc/systemd/system/\nsudo systemd-analyze verify /etc/systemd/system/healthcheck.service /etc/systemd/system/healthcheck.timer",
+      "lang": "bash",
+      "see": "No output from systemd-analyze verify: the units are valid."
+     },
+     {
+      "do": "Start the timer and look at its schedule.",
+      "code": "sudo systemctl daemon-reload\nsudo systemctl enable --now healthcheck.timer\nsystemctl list-timers healthcheck.timer",
+      "lang": "bash",
+      "see": "A row with NEXT, LEFT, LAST, PASSED, UNIT healthcheck.timer and ACTIVATES healthcheck.service."
+     },
+     {
+      "do": "Run the service once now, then read its result and its output.",
+      "code": "sudo systemctl start healthcheck.service\nsystemctl status healthcheck.service --no-pager\njournalctl -u healthcheck.service -n 6 --no-pager",
+      "lang": "bash",
+      "see": "status shows the process exited with status=0/SUCCESS; the journal has the script's lines, ending all 4 checks passed (the service also checks git)."
+     },
+     {
+      "do": "Remove the cron line with crontab -e, so the check doesn't run twice, and confirm.",
+      "code": "crontab -l",
+      "lang": "bash",
+      "see": "no crontab for your user, or a crontab without the health check."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The script passes on a healthy machine.",
+      "look_for": [
+       "all 3 checks passed",
+       "exit status: 0"
+      ]
+     },
+     {
+      "text": "A failing check exits with 1 and an invalid setting with 2.",
+      "look_for": [
+       "(limit 1%)",
+       "1 of 3 checks failed",
+       "exit status: 1",
+       "must be a whole number from 1 to 100",
+       "exit status: 2"
+      ]
+     },
+     {
+      "text": "Missing commands and unit states are reported.",
+      "look_for": [
+       "command no-such-tool not found on PATH",
+       "unit cron:"
+      ]
+     },
+     {
+      "text": "The cron line uses absolute paths, flock and redirection.",
+      "look_for": [
+       "*/5 * * * *",
+       "flock -n",
+       "2>&1"
+      ]
+     },
+     {
+      "text": "The timer is scheduled and the service ran successfully under systemd.",
+      "look_for": [
+       "healthcheck.timer",
+       "healthcheck.service",
+       "status=0/SUCCESS"
+      ]
+     },
+     {
+      "text": "The journal holds the script's log lines.",
+      "look_for": [
+       "checks passed"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed functions, the output of steps 1 to 4, your crontab line with the lines cron.log recorded, and the output of steps 8 and 9.",
+    "files": [
+     {
+      "path": "healthcheck.py",
+      "content": "#!/usr/bin/env python3\n\"\"\"Check disk space, memory, commands and services; log the results; exit 1 if anything is wrong.\n\nSettings come from environment variables:\n  HC_PATHS        mount points to check, separated by spaces (default: /)\n  HC_DISK_WARN    the percentage used that counts as a problem, 1-100 (default: 90)\n  HC_MEM_MIN_MB   the least available memory that's acceptable, in MB (default: 200)\n  HC_COMMANDS     commands that must be installed, separated by spaces (default: python3)\n  HC_UNITS        systemd units that must be active, separated by spaces (default: none)\n  HC_LOG_FILE     also log to this file, rotated at 1 MB (default: standard error only)\n  HC_LOG_LEVEL    DEBUG, INFO, WARNING or ERROR (default: INFO)\nExit status: 0 all checks passed, 1 a check failed, 2 a setting is invalid.\n\"\"\"\nimport logging\nimport os\nimport shutil\nimport subprocess\nimport sys\nfrom logging.handlers import RotatingFileHandler\n\nlog = logging.getLogger(\"healthcheck\")\n\n\ndef setting_int(name: str, default: int, low: int, high: int) -> int:\n    \"\"\"A whole-number setting from the environment, checked against a range.\"\"\"\n    # TODO 1: read the variable called name from os.environ, using str(default) if it isn't set.\n    #         Convert it with int(). If that fails, or the number isn't from low to high, raise\n    #         ValueError(f\"{name} must be a whole number from {low} to {high}, got {raw!r}\")\n    return default\n\n\ndef setup_logging() -> None:\n    level = os.environ.get(\"HC_LOG_LEVEL\", \"INFO\").upper()\n    if level not in (\"DEBUG\", \"INFO\", \"WARNING\", \"ERROR\"):\n        raise ValueError(f\"HC_LOG_LEVEL must be DEBUG, INFO, WARNING or ERROR, got {level!r}\")\n    handlers: list[logging.Handler] = [logging.StreamHandler()]  # standard error\n    # TODO 2: if HC_LOG_FILE is set, add a RotatingFileHandler for that file to handlers\n    #         (maxBytes=1_000_000, backupCount=3). Then call logging.basicConfig with level=level,\n    #         handlers=handlers and format=\"%(asctime)s %(levelname)s %(name)s: %(message)s\"\n\n\ndef check_disk(path: str, limit: int) -> bool:\n    usage = shutil.disk_usage(path)\n    percent = round(usage.used / usage.total * 100)\n    ok = percent < limit\n    log.log(logging.INFO if ok else logging.WARNING, \"disk %s is %d%% full (limit %d%%)\", path, percent, limit)\n    return ok\n\n\ndef available_memory_mb() -> int:\n    \"\"\"MemAvailable from /proc/meminfo: what new programs can use without swapping.\"\"\"\n    with open(\"/proc/meminfo\", encoding=\"utf-8\") as f:\n        for line in f:\n            if line.startswith(\"MemAvailable:\"):\n                return int(line.split()[1]) // 1024  # the file gives kB\n    raise RuntimeError(\"MemAvailable not found in /proc/meminfo\")\n\n\ndef check_memory(minimum: int) -> bool:\n    available = available_memory_mb()\n    ok = available >= minimum\n    log.log(logging.INFO if ok else logging.WARNING, \"memory: %d MB available (minimum %d MB)\", available, minimum)\n    return ok\n\n\ndef check_command(name: str) -> bool:\n    path = shutil.which(name)\n    if path:\n        log.info(\"command %s found at %s\", name, path)\n    else:\n        log.warning(\"command %s not found on PATH\", name)\n    return path is not None\n\n\ndef check_unit(unit: str) -> bool:\n    \"\"\"Ask systemd whether a unit is active: systemctl is-active exits 0 only when it is.\"\"\"\n    if shutil.which(\"systemctl\") is None:\n        log.warning(\"cannot check %s: systemctl not found\", unit)\n        return False\n    # TODO 3: run  systemctl is-active UNIT  with subprocess.run (a list; capture text output;\n    #         timeout=10). Log \"unit %s: %s\" with the unit and the first line it printed, at INFO\n    #         if it exited with 0 and at WARNING otherwise, and return True only for exit status 0.\n    return False\n\n\ndef main() -> int:\n    try:\n        setup_logging()\n        limit = setting_int(\"HC_DISK_WARN\", 90, 1, 100)\n        min_mb = setting_int(\"HC_MEM_MIN_MB\", 200, 0, 1_000_000)\n    except ValueError as e:\n        logging.basicConfig(format=\"%(levelname)s %(name)s: %(message)s\")\n        log.error(\"%s\", e)\n        return 2\n    log.debug(\"settings: disk limit %d%%, memory minimum %d MB\", limit, min_mb)\n\n    results = [check_disk(p, limit) for p in os.environ.get(\"HC_PATHS\", \"/\").split()]\n    results.append(check_memory(min_mb))\n    results += [check_command(c) for c in os.environ.get(\"HC_COMMANDS\", \"python3\").split()]\n    results += [check_unit(u) for u in os.environ.get(\"HC_UNITS\", \"\").split()]\n\n    failed = results.count(False)\n    if failed:\n        log.error(\"%d of %d checks failed\", failed, len(results))\n        return 1\n    log.info(\"all %d checks passed\", len(results))\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+     },
+     {
+      "path": "units/healthcheck.service",
+      "content": "[Unit]\nDescription=Server health check (disk, memory, commands, services)\n\n[Service]\nType=oneshot\nUser=deploy\nEnvironment=HC_DISK_WARN=85\nEnvironment=\"HC_COMMANDS=python3 git\"\nExecStart=/usr/bin/python3 /opt/healthcheck/healthcheck.py\n"
+     },
+     {
+      "path": "units/healthcheck.timer",
+      "content": "[Unit]\nDescription=Run the server health check every 5 minutes\n\n[Timer]\nOnCalendar=*:0/5\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n"
+     }
+    ],
+    "hints": [
+     "On WSL, systemd only runs if /etc/wsl.conf contains [boot] and systemd=true: add those two lines, run wsl --shutdown from Windows, and reopen Ubuntu.",
+     "If cron.log stays empty, check that cron is running (systemctl status cron) and that every path in your line is absolute.",
+     "If the service fails, journalctl -u healthcheck.service shows the traceback; a wrong User= name is a common cause.",
+     "Between runs, a oneshot service shows inactive (dead): that's normal. Read the status= part of its process line."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Python for system administration: files, configuration files and subprocess; finish the housekeeping lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Build command-line tools with argparse and click, then put the core Linux utilities to work in the incident lab.",
+   "modules": [
+    2,
+    3
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Package management and provisioning, then environment variables, logging, cron and systemd timers; finish both labs.",
+   "modules": [
+    4,
+    5
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Build and test the devsetup capstone on a fresh machine, then review the course with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "devsetup: automate a developer machine with click",
+  "minutes": 420,
+  "brief": "Your team spends half a day setting up each new developer's Linux machine by following a wiki page. Replace the page with devsetup, a click command that reads a profile (profile.toml) and makes the machine match it: it installs the listed packages with apt-get, creates the directory structure under a base folder, and writes starter configuration files such as ~/.editorconfig. devsetup plan shows what would change without changing anything; devsetup apply makes the changes and is safe to run any number of times (a second run reports nothing to do, and an existing file that differs is replaced only with --force, keeping a .bak copy); devsetup check exits with 0 when the machine matches the profile and 1 when it doesn't. It detects the distribution from /etc/os-release and refuses one it doesn't support, logs what it does to the screen and to a file under ~/.local/state/devsetup/, uses exit statuses consistently, and installs as a command with pip or pipx. The starter files give you a profile, a pyproject.toml, a first plan command and three tests to build on. Prove it on a fresh Ubuntu 24.04 machine or container: plan, apply, apply again, check.",
+  "deliverables": [
+   "The devsetup package: a pyproject.toml with a [project.scripts] entry, and code split into modules (for example cli.py, profile.py, packages.py and files.py)",
+   "A profile.toml for your team, with at least five packages, four directories and two files",
+   "At least eight pytest tests using CliRunner, tmp_path and monkeypatch, so no test installs anything or touches your real home folder",
+   "A README.md: what devsetup does, how to install and run it, its exit statuses, and how to run the tests",
+   "A transcript from a fresh Ubuntu 24.04 machine or container: plan, apply, apply again, check with its exit status, and the log file"
+  ],
+  "rubric": [
+   {
+    "name": "Works end to end",
+    "points": 20,
+    "description": "On a fresh Ubuntu machine or container, apply installs the packages, creates the directories and writes the files the profile lists, and check then exits with 0."
+   },
+   {
+    "name": "Safe and idempotent",
+    "points": 20,
+    "description": "plan changes nothing; a second apply reports nothing to do; a file that differs is replaced only with --force, keeping a .bak copy; sudo is used only for apt-get."
+   },
+   {
+    "name": "Command-line design",
+    "points": 15,
+    "description": "A click group with plan, apply and check; clear help with defaults; validated options; consistent exit statuses (0 done, 1 failed or different, 2 bad usage) and messages on standard error."
+   },
+   {
+    "name": "Linux integration",
+    "points": 15,
+    "description": "The distribution is detected from /etc/os-release; packages are checked with dpkg-query and installed in one non-interactive apt-get call; commands run as lists, with check and a timeout."
+   },
+   {
+    "name": "Logging and errors",
+    "points": 10,
+    "description": "The logging module at sensible levels, to the screen and a log file; a missing or broken profile, a failed install or a permission problem ends with a clear message, not a traceback."
+   },
+   {
+    "name": "Tests, packaging and README",
+    "points": 20,
+    "description": "At least eight meaningful tests that pass without installing anything; installable with pip install . or pipx install .; a README that someone else could follow."
+   }
+  ],
+  "submit": "Paste your code (each file with its name), profile.toml, your tests with the pytest summary, your README, and the transcript from a fresh machine: devsetup plan, devsetup apply, devsetup apply again, devsetup check with its exit status, and the log file. A link to a repository is welcome too.",
+  "files": [
+   {
+    "path": "profile.toml",
+    "content": "# What a new developer machine needs. devsetup reads this file.\n\n[packages]\napt = [\"git\", \"curl\", \"jq\", \"tree\", \"python3-venv\", \"make\"]\n\n[directories]\nbase = \"~/work\"\ncreate = [\"projects\", \"scratch\", \"notes\", \"bin\"]\n\n[[files]]\npath = \"~/.editorconfig\"\ncontent = \"\"\"\nroot = true\n\n[*]\nindent_style = space\nindent_size = 4\nend_of_line = lf\ninsert_final_newline = true\n\"\"\"\n\n[[files]]\npath = \"~/work/notes/README.md\"\ncontent = \"# Notes\\n\\nWorking notes, one file per topic.\\n\"\n"
+   },
+   {
+    "path": "pyproject.toml",
+    "content": "[build-system]\nrequires = [\"setuptools>=61\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"devsetup\"\nversion = \"0.1.0\"\ndescription = \"Set up a developer machine from a profile, safely and repeatably\"\nrequires-python = \">=3.11\"\ndependencies = [\"click>=8.2\"]\n\n[project.optional-dependencies]\ntest = [\"pytest\"]\n\n[project.scripts]\ndevsetup = \"devsetup.cli:cli\"\n\n[tool.setuptools]\npackages = [\"devsetup\"]\n"
+   },
+   {
+    "path": "devsetup/__init__.py",
+    "content": "\"\"\"devsetup: set up a developer machine from a profile, safely and repeatably.\"\"\"\n"
+   },
+   {
+    "path": "devsetup/cli.py",
+    "content": "\"\"\"The devsetup command: plan, apply and check a developer machine against a profile.\"\"\"\nimport logging\nimport tomllib\nfrom dataclasses import dataclass\nfrom pathlib import Path\n\nimport click\n\nlog = logging.getLogger(\"devsetup\")\n\n\n@dataclass\nclass Profile:\n    packages: list[str]\n    directories: list[Path]\n    files: dict[Path, str]\n\n\ndef load_profile(path: Path) -> Profile:\n    \"\"\"Read a profile. ~ in its paths means the user's home folder.\"\"\"\n    try:\n        with path.open(\"rb\") as f:\n            data = tomllib.load(f)\n        base = Path(data[\"directories\"][\"base\"]).expanduser()\n        return Profile(\n            packages=list(data.get(\"packages\", {}).get(\"apt\", [])),\n            directories=[base / name for name in data[\"directories\"].get(\"create\", [])],\n            files={Path(item[\"path\"]).expanduser(): item[\"content\"] for item in data.get(\"files\", [])},\n        )\n    except FileNotFoundError:\n        raise click.ClickException(f\"profile not found: {path}\")\n    except (KeyError, tomllib.TOMLDecodeError) as e:\n        raise click.ClickException(f\"bad profile {path}: {e}\")\n\n\n@click.group()\n@click.version_option(\"0.1.0\", prog_name=\"devsetup\")\n@click.option(\"--profile\", \"profile_path\", type=click.Path(dir_okay=False, path_type=Path),\n              default=\"profile.toml\", show_default=True, envvar=\"DEVSETUP_PROFILE\",\n              help=\"The profile to use (or set DEVSETUP_PROFILE).\")\n@click.option(\"-v\", \"--verbose\", is_flag=True, help=\"Show debug messages too.\")\n@click.pass_context\ndef cli(ctx: click.Context, profile_path: Path, verbose: bool) -> None:\n    \"\"\"Set up a developer machine from a profile, safely and repeatably.\"\"\"\n    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,\n                        format=\"%(levelname)s %(name)s: %(message)s\")\n    ctx.obj = profile_path\n\n\n@cli.command()\n@click.pass_obj\ndef plan(profile_path: Path) -> None:\n    \"\"\"Show what apply would change, without changing anything.\"\"\"\n    profile = load_profile(profile_path)\n    for directory in profile.directories:\n        if not directory.is_dir():\n            click.echo(f\"create directory {directory}\")\n    # TODO: also list the packages that aren't installed (ask dpkg-query, as in module 4)\n    #       and the files that are missing or differ from the profile\n\n\n@cli.command()\n@click.option(\"--force\", is_flag=True, help=\"Replace files that differ from the profile, keeping a .bak copy.\")\n@click.pass_obj\ndef apply(profile_path: Path, force: bool) -> None:\n    \"\"\"Make the machine match the profile. Safe to run again.\"\"\"\n    raise click.ClickException(\"apply isn't written yet\")  # TODO\n\n\n@cli.command()\n@click.pass_obj\ndef check(profile_path: Path) -> None:\n    \"\"\"Exit with status 0 if the machine matches the profile, 1 if it doesn't.\"\"\"\n    raise click.ClickException(\"check isn't written yet\")  # TODO\n"
+   },
+   {
+    "path": "tests/test_cli.py",
+    "content": "from click.testing import CliRunner\n\nfrom devsetup.cli import cli\n\nPROFILE = \"\"\"\n[packages]\napt = []\n\n[directories]\nbase = \"{base}\"\ncreate = [\"projects\", \"notes\"]\n\"\"\"\n\n\ndef write_profile(tmp_path):\n    path = tmp_path / \"profile.toml\"\n    path.write_text(PROFILE.format(base=tmp_path / \"work\"), encoding=\"utf-8\")\n    return str(path)\n\n\ndef test_plan_lists_missing_directories(tmp_path):\n    result = CliRunner().invoke(cli, [\"--profile\", write_profile(tmp_path), \"plan\"])\n    assert result.exit_code == 0\n    assert f\"create directory {tmp_path / 'work' / 'projects'}\" in result.output\n\n\ndef test_plan_skips_directories_that_exist(tmp_path):\n    (tmp_path / \"work\" / \"notes\").mkdir(parents=True)\n    result = CliRunner().invoke(cli, [\"--profile\", write_profile(tmp_path), \"plan\"])\n    assert \"notes\" not in result.output\n\n\ndef test_a_missing_profile_is_reported(tmp_path):\n    result = CliRunner().invoke(cli, [\"--profile\", str(tmp_path / \"nope.toml\"), \"plan\"])\n    assert result.exit_code == 1\n    assert \"profile not found\" in result.output\n"
+   }
+  ]
+ }
+}

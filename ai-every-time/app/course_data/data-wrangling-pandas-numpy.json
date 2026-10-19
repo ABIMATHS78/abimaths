@@ -1,0 +1,1128 @@
+{
+ "slug": "data-wrangling-pandas-numpy",
+ "title": "Data Wrangling with pandas and NumPy",
+ "subtitle": "Turn messy, scattered data into clean, analysis-ready tables: vectorised NumPy, pandas' index and dtypes, missing data, validated merges, reshaping and group operations.",
+ "category": "Data Science",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "davaadorji-gantulag",
+  "tiare-teriifaatia"
+ ],
+ "skills": [
+  "NumPy",
+  "Vectorisation and broadcasting",
+  "pandas",
+  "Data cleaning",
+  "Missing data",
+  "Merging and joining",
+  "Reshaping data",
+  "groupby and aggregation",
+  "Pivot tables",
+  "Data validation"
+ ],
+ "tools": [
+  "Python 3",
+  "NumPy",
+  "pandas",
+  "JupyterLab"
+ ],
+ "outcomes": [
+  "Process arrays with vectorised NumPy operations, broadcasting and masks, and tell views from copies",
+  "Build, load and index Series and DataFrames, using alignment and Copy-on-Write to your advantage",
+  "Find and handle missing data, sentinels, duplicates and impossible values, and document every decision",
+  "Merge, join and concatenate datasets with validated keys, and reshape between long and wide forms",
+  "Summarise data with groupby, named aggregation, transform, filter, pivot tables and crosstabs"
+ ],
+ "prerequisites": "Python Foundations for Data Science, or the same Python: functions, loops, dictionaries and comprehensions. Data Analysis with Python and pandas helps but isn't required: this course goes further into NumPy, pandas' index and types, messy cleaning, validated merges, reshaping and group operations. You need Python 3 with NumPy and pandas 2.2 or later (pandas 3 differences are noted), and JupyterLab if you like notebooks. Every dataset comes with the labs.",
+ "description": "Real data rarely arrives ready to analyse. It comes in several files that don't quite agree, with gaps, codes typed three ways, values in the wrong units and rows that repeat. Data wrangling is the work of turning it into one clean, trustworthy table, and this course teaches it with the two libraries that do it in Python: NumPy and pandas. You'll start beneath pandas, with NumPy's arrays: computing a vegetation index for every pixel of a satellite tile at once, masking clouds, and using broadcasting, reshaping and views. Then you'll learn how pandas' Series and DataFrames really work: the index and the alignment it brings, read_csv options for awkward files, dtypes that save memory and keep data honest, and how Copy-on-Write in pandas 3 changes the way you modify data.\n\nThe heart of the course is messy data. You'll clean a reef monitoring export with missing-value markers, sentinels, duplicates and impossible values, combine livestock censuses with district data and satellite passes using merges you validate and audit, reshape between long and wide, and summarise two years of rangeland monitoring with groupby, transform, pivot tables and crosstabs. Every lab's data is made up for the course and comes with it, and every lab prints results you can check exactly. The capstone brings it all together: two overlapping exports from an air-quality network, cleaned, merged with station and weather data, gap-filled and summarised into an analysis-ready dataset, with a cleaning log and checks that would catch each problem if it returned.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Introduction to NumPy",
+   "summary": "Work with NumPy's n-dimensional arrays: how they store data, vectorised operations and universal functions, broadcasting between shapes, and indexing that gives views or copies, on a satellite image.",
+   "instructor": "davaadorji-gantulag",
+   "lessons": [
+    {
+     "title": "The ndarray: shape, dtype and memory",
+     "minutes": 12,
+     "objectives": [
+      "Create arrays and read their shape, dtype and size",
+      "Explain why arrays are faster and more compact than lists of numbers"
+     ],
+     "key_points": [
+      "A NumPy ndarray is a grid of values of one type, its dtype, stored in one contiguous block of memory, so operations run in compiled code without checking each element's type the way Python does for a list.",
+      "shape gives the size of each dimension, ndim the number of dimensions, size the number of elements and nbytes the memory used: a 20 x 20 array of float64 has shape (20, 20), size 400 and takes 3,200 bytes.",
+      "np.array() makes an array from a list; np.zeros, np.ones and np.full fill a shape with one value, np.arange(start, stop, step) counts like range, np.linspace(a, b, n) gives n evenly spaced values and np.loadtxt reads a text file of numbers.",
+      "One dtype covers the whole array: mixing ints and floats gives float64, and astype() converts by making a new array. float32 halves the memory at the cost of precision, and fixed-size integers wrap around silently when they overflow: an int8 of 127 plus 1 is -128.",
+      "For random numbers, make a generator with rng = np.random.default_rng(seed) and call its methods, such as rng.normal() or rng.integers(); the same seed gives the same numbers, so results can be reproduced."
+     ]
+    },
+    {
+     "title": "Vectorised operations and universal functions",
+     "minutes": 12,
+     "objectives": [
+      "Replace loops with whole-array arithmetic, ufuncs and aggregations",
+      "Aggregate along an axis and handle missing values with NaN-aware functions"
+     ],
+     "key_points": [
+      "Arithmetic on arrays works element by element: (nir - red) / (nir + red) computes a vegetation index for every pixel at once. This is vectorisation: the loop runs in compiled code, which is usually many times faster than a Python loop over the same values.",
+      "Universal functions (ufuncs) such as np.sqrt, np.exp, np.log and np.abs apply element by element, and comparisons such as ndvi > 0.5 give a boolean array of the same shape.",
+      "Aggregations take an axis: on a 2-D array, a.sum(axis=0) collapses the rows, giving one total per column, a.mean(axis=1) gives one mean per row, and no axis aggregates every element.",
+      "np.where(condition, x, y) chooses values element by element, np.select picks between several conditions, np.digitize bins values, and the mean of a boolean array is the share of True values.",
+      "NaN marks a missing float and spreads through arithmetic: np.mean returns nan if any value is nan, while np.nanmean, np.nansum and np.nanmax skip them. Any comparison with NaN is False, so test with np.isnan.",
+      "Dividing by zero gives inf or nan with a RuntimeWarning; np.divide(a, b, out=np.full(a.shape, np.nan), where=b != 0) divides only where it's safe and leaves NaN elsewhere."
+     ],
+     "walkthrough": {
+      "tool": "IPython or JupyterLab",
+      "title": "Time a loop against a vectorised expression",
+      "steps": [
+       {
+        "do": "Make a million red and near-infrared values.",
+        "code": "import numpy as np\nrng = np.random.default_rng(0)\nred = rng.uniform(0, 0.3, 1_000_000)\nnir = rng.uniform(0.2, 0.5, 1_000_000)",
+        "lang": "python"
+       },
+       {
+        "do": "Write the index as a Python loop.",
+        "code": "def ndvi_loop(nir, red):\n    out = []\n    for n, r in zip(nir, red):\n        out.append((n - r) / (n + r))\n    return out",
+        "lang": "python"
+       },
+       {
+        "do": "Time the loop, then the vectorised expression.",
+        "code": "%timeit ndvi_loop(nir, red)\n%timeit (nir - red) / (nir + red)",
+        "lang": "python",
+        "see": "The vectorised line is far faster; the exact times depend on your computer."
+       },
+       {
+        "do": "Aggregate along each axis of a 2-D array.",
+        "code": "grid = np.arange(12).reshape(3, 4)\ngrid.sum(axis=0), grid.sum(axis=1)",
+        "lang": "python",
+        "see": "(array([12, 15, 18, 21]), array([ 6, 22, 38])): four column totals, then three row totals."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Broadcasting: arrays of different shapes",
+     "minutes": 12,
+     "objectives": [
+      "Predict the result's shape when NumPy combines arrays of different shapes",
+      "Use keepdims and np.newaxis to line up dimensions"
+     ],
+     "key_points": [
+      "Broadcasting lets an operation combine arrays of different shapes without copying data: a scalar combines with any array, and a (20,) array of column means can be subtracted from a (20, 20) array.",
+      "The rule: compare the shapes from the last dimension backwards. Two dimensions fit when they're equal or one of them is 1, and a missing leading dimension counts as 1; the result takes the larger size of each.",
+      "A (20, 20) array minus a (20,) array lines up with the columns, so per-row values need a column shape: a.mean(axis=1, keepdims=True) has shape (20, 1), and so does a.mean(axis=1)[:, np.newaxis].",
+      "Shapes that don't fit raise an error such as operands could not be broadcast together with shapes (20,20) (5,), which is far better than a silently wrong result.",
+      "Standardising every column is one line: (X - X.mean(axis=0)) / X.std(axis=0) broadcasts two (n_columns,) arrays over an (n_rows, n_columns) table.",
+      "Outer operations broadcast too: a[:, np.newaxis] * b gives the product of every item of a with every item of b, as a grid of shape (len(a), len(b))."
+     ]
+    },
+    {
+     "title": "Indexing, slicing, views and copies",
+     "minutes": 12,
+     "objectives": [
+      "Select with slices, integer arrays and boolean masks",
+      "Tell when a selection is a view that shares memory with the original"
+     ],
+     "key_points": [
+      "a[i, j] picks one element of a 2-D array, a[2:5, :] rows 2 to 4 and a[:, -1] the last column; slices follow Python's rules, so the stop index is left out.",
+      "Basic slicing returns a view, a new array object that shares the original's memory, so changing the view changes the original. np.shares_memory(a, b) tells you whether two arrays overlap, and .copy() makes an independent array.",
+      "Fancy indexing with integer arrays, such as a[[0, 3, 7]], and boolean masks, such as a[a > 0.5], always return copies.",
+      "Assigning through a mask changes the original in place: ndvi[cloud] = np.nan blanks every cloudy pixel.",
+      "reshape() returns a view whenever it can and keeps the elements in order: a 20 x 20 grid reshaped to (4, 5, 4, 5) and averaged over axes 1 and 3 gives a 4 x 4 grid of 5 x 5 block means.",
+      "Python list slices are copies but NumPy slices are views, so code written for lists can behave differently when it meets arrays; ravel() may return a view, while flatten() always copies."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Process a satellite tile with NumPy",
+    "tool": "Python or JupyterLab",
+    "minutes": 50,
+    "goal": "Compute a vegetation index for every pixel of a satellite tile without a loop, mask clouds and missing data, classify and summarise the pixels, and use broadcasting, reshape and views to analyse the grid.",
+    "setup": [
+     "Python 3 with NumPy: python -m pip install numpy",
+     "Download the starter files ndvi_tile.py, red.csv and nir.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Open red.csv and nir.csv in a text editor: 20 lines of 20 reflectances each, for the red and near-infrared bands. Run the starter.",
+      "code": "python ndvi_tile.py",
+      "lang": "bash",
+      "see": "Shape: (20, 20) dtype: float64 size: 400 bytes: 3200; the other lines are placeholders until you fill in the TODOs."
+     },
+     {
+      "do": "TODO 2: compute NDVI = (nir - red) / (nir + red) for every pixel with one np.divide call that leaves the pixels with no data as NaN.",
+      "code": "total = nir + red\nndvi = np.divide(nir - red, total, out=np.full(red.shape, np.nan), where=total > 0)",
+      "lang": "python",
+      "see": "No-data pixels: 7"
+     },
+     {
+      "do": "TODO 3: make a boolean mask of the cloudy pixels (red > 0.25) and assign NaN through it.",
+      "see": "Cloud pixels: 20 and Valid pixels: 373"
+     },
+     {
+      "do": "TODO 4: the mean and maximum with the NaN-aware functions, and the share of valid pixels above 0.5 as the mean of a boolean array.",
+      "see": "Mean NDVI: 0.462, max: 0.866 and Share of valid pixels above 0.5: 50.9%"
+     },
+     {
+      "do": "TODO 5: classify the valid pixels with np.digitize and the bins [0, 0.2, 0.5], and count each class with np.bincount.",
+      "see": "Classes: {'water': 20, 'bare': 36, 'sparse': 127, 'dense': 190}"
+     },
+     {
+      "do": "TODO 6: compute the column means, and the row means with keepdims=True, then run the broadcasting lines.",
+      "see": "Column means: (20,) row means: (20, 1), both anomaly arrays (20, 20), then the error for a (5,) array."
+     },
+     {
+      "do": "TODO 7: average each 5 x 5 block with reshape and one np.nanmean call.",
+      "code": "blocks = np.nanmean(ndvi.reshape(4, 5, 4, 5), axis=(1, 3))",
+      "lang": "python",
+      "see": "A 4 x 4 grid whose first row is [0.51 0.61 0.33 0.08]"
+     },
+     {
+      "do": "Part 8: print tile[0, 0] after changing the view, and explain in a comment why tile changed."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The tile is loaded and NDVI is computed without dividing by zero.",
+      "look_for": [
+       "Shape: (20, 20)",
+       "No-data pixels: 7"
+      ]
+     },
+     {
+      "text": "Clouds are masked through a boolean array.",
+      "look_for": [
+       "Cloud pixels: 20",
+       "Valid pixels: 373"
+      ]
+     },
+     {
+      "text": "The NaN-aware summaries are right.",
+      "look_for": [
+       "Mean NDVI: 0.462, max: 0.866",
+       "50.9%"
+      ]
+     },
+     {
+      "text": "The classes are counted correctly.",
+      "look_for": [
+       "'water': 20",
+       "'bare': 36",
+       "'sparse': 127",
+       "'dense': 190"
+      ]
+     },
+     {
+      "text": "Broadcasting lines up the row and column means, and the bad shape is explained.",
+      "look_for": [
+       "row means: (20, 1)",
+       "operands could not be broadcast together"
+      ]
+     },
+     {
+      "text": "The block means are right.",
+      "look_for": [
+       "[[0.51 0.61 0.33 0.08]"
+      ]
+     },
+     {
+      "text": "Views and copies are told apart, with an explanation.",
+      "look_for": [
+       "Slice shares memory: True",
+       "Mask selection shares memory: False",
+       "after changing the view: 0.0"
+      ]
+     }
+    ],
+    "submit": "Paste your finished ndvi_tile.py, everything it printed, and your comment on why tile changed.",
+    "files": [
+     {
+      "path": "ndvi_tile.py",
+      "content": "\"\"\"Process one 20 x 20 tile of a satellite image with NumPy (made-up data).\n\nred.csv and nir.csv hold the reflectance of each pixel in the red and near-infrared bands, from 0 to 1.\nFill in the TODOs, then run:  python ndvi_tile.py\n\"\"\"\n\nimport numpy as np\n\nred = np.loadtxt(\"red.csv\", delimiter=\",\")\nnir = np.loadtxt(\"nir.csv\", delimiter=\",\")\n\n# 1. What did we load?\nprint(\"Shape:\", red.shape, \"dtype:\", red.dtype, \"size:\", red.size, \"bytes:\", red.nbytes)\n\n# 2. The vegetation index NDVI = (nir - red) / (nir + red), for every pixel at once, without a loop.\n# Pixels where nir + red is 0 have no data: leave them as NaN instead of dividing by zero.\n# TODO: use np.divide with out= and where=\nndvi = np.full(red.shape, np.nan)\nprint(\"No-data pixels:\", int(np.isnan(ndvi).sum()))\n\n# 3. Clouds are bright in the red band: treat every pixel with red > 0.25 as cloud and blank it.\n# TODO: a boolean mask, then assignment through it\ncloud = np.zeros(red.shape, dtype=bool)\nprint(\"Cloud pixels:\", int(cloud.sum()))\nvalid = np.isfinite(ndvi)\nprint(\"Valid pixels:\", int(valid.sum()))\n\n# 4. Summaries that ignore the NaN pixels\n# TODO: replace the zeros with np.nanmean, np.nanmax and the share of valid pixels above 0.5\nmean_ndvi, max_ndvi, dense_share = 0.0, 0.0, 0.0\nprint(f\"Mean NDVI: {mean_ndvi:.3f}, max: {max_ndvi:.3f}\")\nprint(f\"Share of valid pixels above 0.5: {dense_share:.1%}\")\n\n# 5. Classes: water below 0, bare 0 to 0.2, sparse 0.2 to 0.5, dense from 0.5\n# TODO: np.digitize the valid values with the bins [0, 0.2, 0.5], then count each class with np.bincount\ncounts = np.zeros(4, dtype=int)\nprint(\"Classes:\", dict(zip([\"water\", \"bare\", \"sparse\", \"dense\"], counts.tolist())))\n\n# 6. Broadcasting: anomalies from each column's mean, and from each row's mean\n# TODO: column means have shape (20,); row means need keepdims=True to have shape (20, 1)\ncol_means = row_means = np.zeros(1)\nprint(\"Column means:\", col_means.shape, \"row means:\", row_means.shape)\nprint(\"Anomaly shapes:\", (ndvi - col_means).shape, (ndvi - row_means).shape)\ntry:\n    ndvi - np.ones(5)\nexcept ValueError as err:\n    print(\"Error:\", err)\n\n# 7. Block averages: the mean of each 5 x 5 block, as a 4 x 4 grid, with reshape and one call\n# TODO: reshape to (4, 5, 4, 5) and take np.nanmean over axes 1 and 3\nblocks = np.zeros((4, 4))\nprint(\"Block means:\")\nprint(np.round(blocks, 2))\n\n# 8. Views and copies\ncorner = ndvi[:5, :5]\nprint(\"Slice shares memory:\", np.shares_memory(corner, ndvi))\nprint(\"Mask selection shares memory:\", np.shares_memory(ndvi[valid], ndvi))\ntile = ndvi.copy()\nview = tile[:2, :2]\nview[:] = 0\n# TODO: what does changing the view do to tile? Print tile[0, 0] and explain it in a comment.\n"
+     },
+     {
+      "path": "red.csv",
+      "content": "0.078,0.110,0.093,0.103,0.081,0.074,0.101,0.091,0.034,0.048,0.046,0.090,0.097,0.101,0.081,0.102,0.087,0.104,0.094,0.000\n0.107,0.096,0.075,0.107,0.106,0.084,0.105,0.081,0.045,0.046,0.046,0.082,0.107,0.076,0.079,0.089,0.110,0.092,0.072,0.000\n0.090,0.073,0.087,0.091,0.085,0.083,0.101,0.095,0.039,0.042,0.049,0.089,0.085,0.049,0.050,0.046,0.034,0.056,0.083,0.000\n0.108,0.108,0.076,0.100,0.074,0.101,0.090,0.085,0.046,0.032,0.035,0.103,0.082,0.048,0.032,0.050,0.030,0.049,0.101,0.000\n0.109,0.077,0.084,0.074,0.071,0.092,0.091,0.088,0.036,0.041,0.046,0.092,0.079,0.049,0.055,0.032,0.035,0.059,0.093,0.000\n0.105,0.091,0.084,0.090,0.086,0.093,0.074,0.086,0.044,0.043,0.040,0.097,0.101,0.034,0.057,0.057,0.038,0.036,0.082,0.000\n0.103,0.072,0.094,0.093,0.081,0.092,0.090,0.098,0.040,0.037,0.041,0.073,0.098,0.084,0.093,0.082,0.087,0.090,0.078,0.000\n0.073,0.091,0.081,0.102,0.094,0.104,0.109,0.093,0.047,0.039,0.035,0.088,0.089,0.075,0.075,0.083,0.101,0.071,0.107,0.074\n0.082,0.098,0.098,0.108,0.107,0.098,0.071,0.078,0.037,0.036,0.040,0.070,0.084,0.076,0.098,0.092,0.097,0.104,0.074,0.083\n0.079,0.077,0.105,0.091,0.077,0.087,0.105,0.074,0.039,0.048,0.034,0.105,0.078,0.077,0.104,0.102,0.072,0.101,0.081,0.092\n0.085,0.090,0.076,0.087,0.095,0.109,0.104,0.082,0.043,0.043,0.044,0.081,0.362,0.371,0.381,0.374,0.310,0.082,0.104,0.074\n0.073,0.104,0.092,0.098,0.103,0.080,0.099,0.097,0.033,0.041,0.050,0.102,0.396,0.328,0.367,0.370,0.365,0.094,0.100,0.087\n0.085,0.087,0.103,0.094,0.070,0.101,0.094,0.074,0.034,0.042,0.032,0.077,0.337,0.348,0.351,0.359,0.315,0.100,0.070,0.108\n0.081,0.103,0.107,0.095,0.072,0.071,0.080,0.096,0.039,0.030,0.046,0.099,0.372,0.386,0.378,0.306,0.352,0.079,0.078,0.091\n0.203,0.227,0.210,0.208,0.186,0.207,0.108,0.102,0.049,0.045,0.033,0.083,0.104,0.095,0.071,0.096,0.098,0.094,0.084,0.082\n0.184,0.193,0.228,0.220,0.229,0.217,0.087,0.109,0.047,0.038,0.049,0.089,0.102,0.082,0.095,0.107,0.095,0.072,0.080,0.082\n0.217,0.183,0.194,0.226,0.226,0.217,0.085,0.080,0.041,0.048,0.035,0.099,0.073,0.085,0.098,0.103,0.092,0.086,0.101,0.081\n0.205,0.222,0.193,0.227,0.206,0.202,0.109,0.099,0.044,0.043,0.042,0.094,0.100,0.097,0.097,0.091,0.100,0.082,0.105,0.095\n0.182,0.217,0.223,0.202,0.181,0.183,0.092,0.096,0.046,0.034,0.035,0.090,0.081,0.092,0.083,0.109,0.106,0.078,0.081,0.074\n0.226,0.182,0.214,0.223,0.206,0.195,0.078,0.074,0.047,0.045,0.046,0.071,0.095,0.108,0.110,0.085,0.107,0.089,0.097,0.096\n"
+     },
+     {
+      "path": "nir.csv",
+      "content": "0.269,0.269,0.292,0.258,0.240,0.220,0.229,0.233,0.470,0.423,0.381,0.227,0.224,0.311,0.297,0.273,0.254,0.232,0.230,0.000\n0.307,0.283,0.319,0.257,0.239,0.306,0.245,0.295,0.415,0.400,0.473,0.274,0.242,0.315,0.232,0.289,0.277,0.232,0.282,0.000\n0.316,0.222,0.303,0.274,0.309,0.228,0.286,0.268,0.391,0.455,0.413,0.276,0.241,0.025,0.011,0.018,0.022,0.011,0.304,0.000\n0.249,0.285,0.262,0.303,0.317,0.255,0.319,0.300,0.395,0.391,0.438,0.254,0.300,0.021,0.013,0.016,0.027,0.018,0.290,0.000\n0.317,0.296,0.297,0.226,0.259,0.223,0.231,0.236,0.399,0.420,0.431,0.309,0.318,0.011,0.022,0.016,0.015,0.019,0.283,0.000\n0.258,0.278,0.253,0.280,0.227,0.302,0.282,0.291,0.472,0.448,0.472,0.273,0.275,0.012,0.019,0.011,0.030,0.021,0.301,0.000\n0.305,0.291,0.224,0.278,0.304,0.319,0.316,0.277,0.469,0.435,0.425,0.288,0.283,0.251,0.266,0.281,0.313,0.273,0.275,0.000\n0.305,0.308,0.291,0.222,0.259,0.243,0.297,0.304,0.390,0.430,0.440,0.309,0.308,0.310,0.318,0.295,0.294,0.309,0.265,0.313\n0.265,0.237,0.251,0.280,0.268,0.242,0.243,0.311,0.402,0.404,0.464,0.234,0.281,0.283,0.266,0.298,0.231,0.249,0.233,0.254\n0.292,0.241,0.226,0.275,0.293,0.246,0.315,0.305,0.462,0.386,0.432,0.249,0.270,0.242,0.239,0.225,0.274,0.301,0.235,0.229\n0.307,0.293,0.253,0.300,0.221,0.247,0.273,0.223,0.462,0.475,0.425,0.272,0.338,0.404,0.384,0.401,0.413,0.266,0.252,0.311\n0.285,0.290,0.256,0.248,0.254,0.228,0.260,0.251,0.397,0.443,0.454,0.238,0.379,0.371,0.371,0.363,0.419,0.275,0.273,0.301\n0.311,0.258,0.229,0.297,0.246,0.289,0.309,0.226,0.475,0.414,0.433,0.295,0.333,0.383,0.349,0.341,0.398,0.284,0.237,0.250\n0.229,0.306,0.319,0.265,0.307,0.246,0.314,0.308,0.419,0.399,0.426,0.296,0.397,0.372,0.415,0.358,0.401,0.248,0.272,0.233\n0.255,0.231,0.251,0.236,0.268,0.222,0.318,0.254,0.426,0.429,0.452,0.223,0.310,0.255,0.237,0.292,0.307,0.276,0.276,0.265\n0.270,0.243,0.242,0.233,0.251,0.235,0.267,0.240,0.442,0.414,0.421,0.232,0.244,0.312,0.304,0.269,0.222,0.231,0.292,0.314\n0.251,0.246,0.246,0.236,0.241,0.247,0.306,0.286,0.454,0.455,0.432,0.260,0.278,0.316,0.238,0.294,0.253,0.265,0.270,0.295\n0.248,0.222,0.253,0.244,0.237,0.241,0.230,0.301,0.453,0.441,0.474,0.244,0.226,0.239,0.247,0.241,0.223,0.302,0.266,0.295\n0.262,0.250,0.232,0.229,0.237,0.234,0.255,0.269,0.425,0.423,0.451,0.302,0.317,0.299,0.315,0.307,0.313,0.284,0.312,0.313\n0.270,0.221,0.235,0.246,0.234,0.248,0.277,0.300,0.419,0.458,0.454,0.223,0.256,0.274,0.292,0.240,0.245,0.318,0.227,0.319\n"
+     }
+    ],
+    "hints": [
+     "np.divide divides only where where= is True; out= supplies the value (NaN here) for every other pixel.",
+     "Take the share over ndvi[valid], not the whole tile, or the NaN pixels count as False and lower it.",
+     "reshape(4, 5, 4, 5) splits each axis of 20 into 4 blocks of 5; axes 1 and 3 are the positions inside a block."
+    ]
+   }
+  },
+  {
+   "title": "Pandas Data Structures",
+   "summary": "Understand pandas' Series and DataFrame: values with an index, the alignment the index brings, building and loading tables from dictionaries and messy files, and selecting data safely under Copy-on-Write.",
+   "instructor": "tiare-teriifaatia",
+   "lessons": [
+    {
+     "title": "Series: values with an index",
+     "minutes": 10,
+     "objectives": [
+      "Create a Series and select from it by label and by position",
+      "Explain how a Series relates to a NumPy array"
+     ],
+     "key_points": [
+      "A Series is a one-dimensional array of values with an index of labels, a dtype and an optional name: pd.Series({'S01': 4.5, 'S02': 12.0}, name='depth_m') takes its labels from the dictionary's keys.",
+      "Underneath is an array: s.to_numpy() returns it, and vectorised arithmetic and NumPy functions work on a Series while keeping its index.",
+      "s.loc['S02'] selects by label and s.iloc[0] by position. Be explicit: in pandas 3, s[0] always means the label 0 and raises KeyError if there's no such label, whereas older versions fell back to the position with a warning.",
+      "A boolean mask filters a Series as it filters an array, as in s[s > 10], and methods such as sort_values(), value_counts() and describe() return new objects.",
+      "pandas marks missing values as NaN, or as <NA> in its nullable types; s.isna() finds them, and sum(), mean() and most other methods skip them by default."
+     ]
+    },
+    {
+     "title": "The index: alignment and fast look-ups",
+     "minutes": 12,
+     "objectives": [
+      "Predict the result of arithmetic between objects with different indexes",
+      "Set, reset and use an index, including a MultiIndex"
+     ],
+     "key_points": [
+      "Operations between two Series line up their labels first: adding two divers' counts per genus matches the genera by name, whatever their order, and a label found in only one Series gives NaN.",
+      "Methods such as s1.add(s2, fill_value=0) treat a label missing from one side as 0, which suits counts; for measurements, NaN is usually the honest answer.",
+      "set_index('site_id') moves a column into the index and reset_index() moves it back; sort_index() sorts by label, and reindex(labels) conforms an object to a given list of labels, adding NaN for new ones.",
+      "A unique index makes label look-ups fast, like a dictionary's keys. Check index.is_unique, because a repeated label makes .loc return several rows where you expected one.",
+      "A MultiIndex has several levels, such as (site_id, date): df.loc['S03'] selects every row for one site, and df.loc[('S03', '2024-03-04')] a single row."
+     ]
+    },
+    {
+     "title": "DataFrames: build, load and inspect",
+     "minutes": 12,
+     "objectives": [
+      "Build DataFrames from dictionaries, records and arrays",
+      "Load a messy text file with the right read_csv options and dtypes"
+     ],
+     "key_points": [
+      "A DataFrame is a table of columns, each a Series, sharing one row index: pd.DataFrame from a dictionary of lists makes a column per key, and from a list of dictionaries a row per dictionary.",
+      "read_csv adapts to the file: sep=';' for semicolons, decimal=',' for decimal commas, comment='#' to skip notes, na_values=['n/a', '-'] for missing markers, usecols to read some columns and nrows for a quick look.",
+      "Set types on purpose: dtype={'island': 'category'} stores repeated labels as small codes, the nullable 'Int64' keeps whole numbers whole when some are missing, and pd.to_datetime(col, format='%d.%m.%Y') parses dates exactly.",
+      "info() lists each column's dtype and non-missing count, and memory_usage(deep=True) the bytes each uses; text columns show as str in pandas 3 and as object in earlier versions.",
+      "shape, columns, index and dtypes describe a table; head(), sample(5, random_state=0) and describe(include='all') give a first look at its values."
+     ]
+    },
+    {
+     "title": "Selecting data safely: loc, iloc and Copy-on-Write",
+     "minutes": 12,
+     "objectives": [
+      "Select rows and columns by label, position and condition",
+      "Change values in one step, without chained assignment"
+     ],
+     "key_points": [
+      "df.loc[rows, cols] selects by label or condition, and a label slice such as 'S01':'S03' includes both ends; df.iloc[rows, cols] selects by position, and its slices leave out the end, as in Python.",
+      "df.at[label, column] and df.iat[i, j] read or set a single value quickly.",
+      "Copy-on-Write is the default in pandas 3 and can be switched on in pandas 2: every selection behaves as a copy, so changing it never changes the original, and data is copied only when one of them is modified.",
+      "Chained assignment, such as df[df['coral_pct'] > 100]['coral_pct'] = None, changes nothing under Copy-on-Write, and pandas warns about it. Write it as one step: df.loc[df['coral_pct'] > 100, 'coral_pct'] = None.",
+      "Take a subset you mean to change with .copy(): it states the intent and avoids the SettingWithCopyWarning that pandas 2 can show.",
+      "where() keeps the values where a condition holds and replaces the rest, with NaN by default, and mask() does the opposite: df['coral_pct'].mask(df['coral_pct'] > 100) blanks the impossible values."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build, align and load reef survey tables",
+    "tool": "Python or JupyterLab",
+    "minutes": 45,
+    "goal": "Use Series and their index to select and align coral counts, load a messy European-style export with the right read_csv options and types, build a MultiIndex, and change values safely.",
+    "setup": [
+     "Python 3 with pandas 2.2 or later: python -m pip install pandas",
+     "Download the starter files reef_tables.py and reef_surveys.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Open reef_surveys.csv in a text editor and list what read_csv will need: comment lines, semicolons, decimal commas, and n/a or - for missing values. Run the starter; it stops at the first TODO you haven't done, so run it after each one.",
+      "code": "python reef_tables.py",
+      "lang": "bash"
+     },
+     {
+      "do": "Part 1: select S04's depth by label, the first depth by position, and the sites deeper than 8 m.",
+      "see": "S04: 18.5 first: 4.5 and Deeper than 8 m: ['S02', 'S04', 'S05']"
+     },
+     {
+      "do": "Part 2: add the two divers' counts with +, then with add(fill_value=0).",
+      "see": "With +, Montipora and Pocillopora are nan; with fill_value=0 they are 4.0 and 5.0."
+     },
+     {
+      "do": "Part 3: read the export with the right options and types.",
+      "code": "surveys = pd.read_csv(\"reef_surveys.csv\", sep=\";\", decimal=\",\", comment=\"#\",\n                      na_values=[\"n/a\", \"-\"], dtype={\"island\": \"category\", \"fish_count\": \"Int64\"})",
+      "lang": "python",
+      "see": "Shape: (30, 9), the four types, and Missing: {'coral_pct': 1, 'fish_count': 2, 'water_temp_c': 1}"
+     },
+     {
+      "do": "Part 4: convert the dates with an explicit format.",
+      "see": "From 2024-02-05 to 2024-04-01"
+     },
+     {
+      "do": "Part 5: set a MultiIndex of site_id and date, sort it, and select S03's coral cover.",
+      "see": "Index is unique: True and S03 coral cover: [20.7, 29.7, 25.9, 27.5, 340.0]"
+     },
+     {
+      "do": "Part 6: run the chained assignment and read the warning, then blank the impossible 340 with .loc in one step.",
+      "see": "Max after chained assignment: 340.0, then Max after .loc: 59.3, and the mean unchanged at 37.62 after editing the copy."
+     },
+     {
+      "do": "Part 7: build a DataFrame from a list of dictionaries and check its shape and columns.",
+      "see": "New sites: (2, 3) ['site_id', 'island', 'depth_m']"
+     }
+    ],
+    "checks": [
+     {
+      "text": "Labels and positions are used explicitly.",
+      "look_for": [
+       "S04: 18.5 first: 4.5",
+       "['S02', 'S04', 'S05']"
+      ]
+     },
+     {
+      "text": "Alignment gives NaN with +, and fill_value=0 fills the counts.",
+      "look_for": [
+       "'Montipora': nan",
+       "'Montipora': 4.0",
+       "'Pocillopora': 5.0"
+      ]
+     },
+     {
+      "text": "The export is read with the right options and types.",
+      "look_for": [
+       "Shape: (30, 9)",
+       "'fish_count': 'Int64'",
+       "'island': 'category'",
+       "'coral_pct': 1, 'fish_count': 2"
+      ]
+     },
+     {
+      "text": "The dates and the MultiIndex are right.",
+      "look_for": [
+       "From 2024-02-05 to 2024-04-01",
+       "S03 coral cover: [20.7, 29.7, 25.9, 27.5, 340.0]"
+      ]
+     },
+     {
+      "text": "Chained assignment changes nothing, and .loc fixes the value.",
+      "look_for": [
+       "Max after chained assignment: 340.0",
+       "Max after .loc: 59.3"
+      ]
+     },
+     {
+      "text": "Changing a copy leaves the original alone.",
+      "look_for": [
+       "still 37.62"
+      ]
+     }
+    ],
+    "submit": "Paste your finished reef_tables.py and everything it printed, including the warning the chained assignment caused.",
+    "files": [
+     {
+      "path": "reef_tables.py",
+      "content": "\"\"\"Build, align and load reef survey tables with pandas (made-up data).\n\nFill in the TODOs, then run:  python reef_tables.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\n# 1. A Series: depth by site\ndepth = pd.Series({\"S01\": 4.5, \"S02\": 12.0, \"S03\": 6.0, \"S04\": 18.5, \"S05\": 9.0, \"S06\": 3.5}, name=\"depth_m\")\n# TODO: the depth of S04 by label, the first depth by position, and the sites deeper than 8 m\n\n# 2. Alignment: two divers counted coral colonies by genus\ndiver_a = pd.Series({\"Acropora\": 14, \"Porites\": 9, \"Pocillopora\": 5})\ndiver_b = pd.Series({\"Porites\": 11, \"Montipora\": 4, \"Acropora\": 10})\n# TODO: add them with +, then with .add(..., fill_value=0), and print both\nboth = total = pd.Series(dtype=float)\nprint(\"With +:\", both.to_dict())\nprint(\"With add(fill_value=0):\", total.to_dict())\n\n# 3. Load the export. Look at the file first: comments start with #, fields are separated by semicolons,\n# decimals use commas, and missing values are written n/a or -.\n# TODO: the right read_csv options, with island as a category and fish_count as the nullable Int64\nsurveys = pd.read_csv(\"reef_surveys.csv\")\nprint(\"Shape:\", surveys.shape)\nprint(\"Types:\", surveys.dtypes[[\"depth_m\", \"coral_pct\", \"fish_count\", \"island\"]].astype(str).to_dict())\nprint(\"Missing:\", surveys.isna().sum()[lambda s: s > 0].to_dict())\n\n# 4. Dates written day.month.year\n# TODO: convert the date column with pd.to_datetime and an explicit format\nprint(\"From\", surveys[\"date\"].min().date(), \"to\", surveys[\"date\"].max().date())\n\n# 5. A MultiIndex of site and date\n# TODO: set_index([\"site_id\", \"date\"]) and sort_index(), then select site S03's coral cover\nindexed = surveys\nprint(\"Index is unique:\", indexed.index.is_unique)\nprint(\"S03 coral cover:\", indexed.loc[\"S03\", \"coral_pct\"].tolist())\n\n# 6. Changing values safely. One coral cover of 340 is impossible.\nsurveys[surveys[\"coral_pct\"] > 100][\"coral_pct\"] = np.nan    # chained assignment: what happens?\nprint(\"Max after chained assignment:\", surveys[\"coral_pct\"].max())\n# TODO: blank the impossible value in one step with .loc\nprint(\"Max after .loc:\", surveys[\"coral_pct\"].max())\neastern = surveys[surveys[\"island\"] == \"Eastern Reef\"].copy()\neastern[\"coral_pct\"] = 0\nprint(f\"Mean coral cover is still {surveys['coral_pct'].mean():.2f} after changing the copy\")\n\n# 7. A DataFrame from records, one dictionary per row\nrecords = [{\"site_id\": \"S07\", \"island\": \"Northern Atoll\", \"depth_m\": 7.5},\n           {\"site_id\": \"S08\", \"island\": \"Western Lagoon\", \"depth_m\": 11.0}]\nnew_sites = pd.DataFrame(records)\nprint(\"New sites:\", new_sites.shape, new_sites.columns.tolist())\n"
+     },
+     {
+      "path": "reef_surveys.csv",
+      "content": "# Reef monitoring export (made-up data)\n# depth in metres, coral cover in percent, water temperature in C\nsurvey_id;site_id;island;date;depth_m;coral_pct;fish_count;water_temp_c;diver\nV001;S01;Northern Atoll;05.02.2024;4,5;41,0;44;29,7;TT\nV002;S02;Northern Atoll;05.02.2024;12,0;31,0;43;29,4;HL\nV003;S03;Eastern Reef;05.02.2024;6,0;20,7;39;27,8;HL\nV004;S04;Eastern Reef;05.02.2024;18,5;18,0;41;28,1;HL\nV005;S05;Western Lagoon;05.02.2024;9,0;n/a;64;28,1;HL\nV006;S06;Western Lagoon;05.02.2024;3,5;42,1;62;28,5;TT\nV007;S01;Northern Atoll;19.02.2024;4,5;48,8;46;28,1;MR\nV008;S02;Northern Atoll;19.02.2024;12,0;33,2;45;27,5;MR\nV009;S03;Eastern Reef;19.02.2024;6,0;29,7;48;27,8;TT\nV010;S04;Eastern Reef;19.02.2024;18,5;18,1;25;28,4;HL\nV011;S05;Western Lagoon;19.02.2024;9,0;51,1;59;28,4;MR\nV012;S06;Western Lagoon;19.02.2024;3,5;53,2;-;28,5;TT\nV013;S01;Northern Atoll;04.03.2024;4,5;45,6;31;27,4;HL\nV014;S02;Northern Atoll;04.03.2024;12,0;34,9;44;27,8;MR\nV015;S03;Eastern Reef;04.03.2024;6,0;25,9;43;28,7;MR\nV016;S04;Eastern Reef;04.03.2024;18,5;33,6;34;27,9;HL\nV017;S05;Western Lagoon;04.03.2024;9,0;59,3;60;28,2;MR\nV018;S06;Western Lagoon;04.03.2024;3,5;49,4;57;n/a;MR\nV019;S01;Northern Atoll;18.03.2024;4,5;35,4;24;27,4;TT\nV020;S02;Northern Atoll;18.03.2024;12,0;32,6;29;27,7;MR\nV021;S03;Eastern Reef;18.03.2024;6,0;27,5;40;29,1;MR\nV022;S04;Eastern Reef;18.03.2024;18,5;21,6;40;28,4;TT\nV023;S05;Western Lagoon;18.03.2024;9,0;49,0;50;27,7;HL\nV024;S06;Western Lagoon;18.03.2024;3,5;51,1;-;28,1;MR\nV025;S01;Northern Atoll;01.04.2024;4,5;51,9;56;28,5;HL\nV026;S02;Northern Atoll;01.04.2024;12,0;31,3;51;28,6;HL\nV027;S03;Eastern Reef;01.04.2024;6,0;340,0;50;28,2;TT\nV028;S04;Eastern Reef;01.04.2024;18,5;29,6;41;29,0;HL\nV029;S05;Western Lagoon;01.04.2024;9,0;44,7;50;28,0;TT\nV030;S06;Western Lagoon;01.04.2024;3,5;43,1;63;27,8;HL\n"
+     }
+    ],
+    "hints": [
+     "pandas 3 warns with a ChainedAssignmentError and pandas 2 with a SettingWithCopyWarning; either way the original isn't changed.",
+     "Without decimal=',', a value such as 34,5 can't be read as a number, so the column stays text.",
+     "indexed.loc['S03', 'coral_pct'] selects every date for S03 from the first index level."
+    ]
+   }
+  },
+  {
+   "title": "Data Cleaning and Preparation",
+   "summary": "Find and handle missing data, sentinel values and impossible readings, fill gaps by group and over time, and transform messy text, units and categories into clean, typed columns you can trust.",
+   "instructor": "tiare-teriifaatia",
+   "lessons": [
+    {
+     "title": "Missing data: NaN, NA and sentinels",
+     "minutes": 12,
+     "objectives": [
+      "Recognise the ways missing data appears in pandas and in files",
+      "Measure how much is missing, and where"
+     ],
+     "key_points": [
+      "pandas represents missing values as NaN in float columns, NaT in datetime columns and <NA> in its nullable types (Int64, boolean, string); None in a column is treated as missing too.",
+      "NaN isn't equal to anything, itself included, so df['x'] == np.nan is always False; isna() and notna() are the reliable tests.",
+      "Files hide missing values as sentinels such as -999, 0, '-' or 'unknown'. Convert them with na_values= when reading, or replace({-999: np.nan}) afterwards, or they distort every statistic.",
+      "read_csv also treats strings such as NA, N/A, null and None as missing by default, so a category really called None can vanish; keep_default_na=False with your own na_values list prevents that.",
+      "df.isna().sum() counts the missing values per column, df.isna().mean() gives the share, and df[df.isna().any(axis=1)] shows the incomplete rows themselves.",
+      "Ask why a value is missing before fixing it: a failed sensor, a survey that never happened and a reading too high to record are different problems that need different treatments."
+     ]
+    },
+    {
+     "title": "Dropping and filling: dropna, fillna and interpolate",
+     "minutes": 12,
+     "objectives": [
+      "Drop rows or columns with missing values deliberately",
+      "Fill gaps with constants, group statistics, neighbours or interpolation"
+     ],
+     "key_points": [
+      "dropna() drops every row with a missing value; how='all' drops only empty rows, subset=['coral_pct'] looks only at the columns that matter, thresh=n keeps rows with at least n values, and axis=1 drops columns instead.",
+      "fillna(value) fills with one value, or with a dictionary of values per column, and returns a new object, so assign the result: df['visibility_m'] = df['visibility_m'].fillna(0).",
+      "In ordered data, ffill() and bfill() copy the neighbouring value and interpolate() estimates from the values on both sides; limit=n caps how many missing values in a row are filled, though in a longer gap it still fills the first n.",
+      "Fill by group with each group's own statistic: df['temp'].fillna(df.groupby('site')['temp'].transform('median')) fills each site's gaps with that site's median rather than the overall one.",
+      "Every fill invents data, so record it: a flag such as df['temp_imputed'] = df['temp'].isna(), set before filling, lets later analyses tell measured values from estimates."
+     ]
+    },
+    {
+     "title": "Transforming values: text, units and categories",
+     "minutes": 12,
+     "objectives": [
+      "Standardise labels and extract numbers and units from text",
+      "Convert columns to the right numeric and categorical types"
+     ],
+     "key_points": [
+      "The .str accessor applies string methods to a whole column: str.strip(), str.upper(), str.contains() and str.replace(r'[^A-Z0-9]', '', regex=True), which removes every character that isn't a capital letter or a digit.",
+      "str.extract(r'(\\d+(?:\\.\\d+)?)\\s*(m|cm)?') pulls a regular expression's groups out into columns, such as a number and its unit, so that values in mixed units can be converted.",
+      "map(dictionary) replaces each value with its match and turns everything unmatched into NaN, which exposes labels you forgot; replace(dictionary) changes only the matches and leaves the rest alone.",
+      "pd.to_numeric(errors='coerce') turns unreadable text into NaN; count the NaN before and after, because a value a person could read, such as 1,250, may have been lost.",
+      "pd.CategoricalDtype(['none', 'low', 'moderate', 'severe'], ordered=True) stores labels once and gives them an order, so sorting and comparisons such as >= 'moderate' follow severity, not the alphabet.",
+      "pd.cut(values, bins) puts numbers into labelled ranges, and pd.qcut(values, q=4) into groups of equal size, such as quartiles."
+     ]
+    },
+    {
+     "title": "Duplicates, impossible values and validation",
+     "minutes": 10,
+     "objectives": [
+      "Find exact and key-based duplicates and decide which to keep",
+      "Write checks that stop bad data from reaching an analysis"
+     ],
+     "key_points": [
+      "duplicated() flags rows that repeat an earlier row; subset=['survey_id'] compares only the key, and keep=False marks every copy, so you can inspect them all before choosing which to keep.",
+      "Normalise keys before looking for duplicates: 's01', 'S01 ' and 'S-01' are the same site only once they've been cleaned to 'S01'. Copies that share a key but disagree on other values need a decision, not an automatic drop.",
+      "Range checks catch impossible values: df['coral_pct'].between(0, 100) is False for a cover of 640%, probably 64.0 typed without its decimal point. Decide whether to correct, blank or drop it, and record the decision.",
+      "clip(lower, upper) caps values at limits, which suits an instrument with a known range, but it hides errors when it's used on values that are simply wrong.",
+      "Turn the rules into checks that fail loudly: assert df['survey_id'].is_unique and assert df['coral_pct'].between(0, 100).all() stop a pipeline before bad data spreads.",
+      "Chain cleaning steps as small functions with pipe() and assign(), as in raw.pipe(clean_codes).pipe(drop_impossible), so that each step can be read and tested on its own."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Clean a reef monitoring export",
+    "tool": "Python or JupyterLab",
+    "minutes": 55,
+    "goal": "Clean a messy export of reef surveys: missing-value markers and sentinels, site codes typed several ways, duplicates, impossible values, mixed units and labels, then fill gaps by site and in a temperature logger's series, and check the result with asserts.",
+    "setup": [
+     "Python 3 with pandas",
+     "Download the starter files clean_reef.py, reef_raw.csv and logger.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Run the starter. It stops at the first TODO you haven't done, so run it again after each one.",
+      "code": "python clean_reef.py",
+      "lang": "bash",
+      "see": "Bleaching values read as missing by default: 15"
+     },
+     {
+      "do": "Read the file again so that only blank cells and n/a are missing: the default list also includes None, which is a real bleaching level here.",
+      "code": "raw = pd.read_csv(\"reef_raw.csv\", keep_default_na=False, na_values=[\"\", \"n/a\"])",
+      "lang": "python",
+      "see": "Rows: 60 bleaching missing: 4"
+     },
+     {
+      "do": "Replace the -999 sentinels in water_temp_c with NaN.",
+      "see": "Missing temperatures after replacing -999: 6"
+     },
+     {
+      "do": "Normalise the site codes with strip, upper and a regular expression.",
+      "code": "raw[\"site\"] = raw[\"site\"].str.strip().str.upper().str.replace(r\"[^A-Z0-9]\", \"\", regex=True)",
+      "lang": "python",
+      "see": "13 spellings become ['S01', 'S02', 'S03', 'S04', 'S05', 'S06']"
+     },
+     {
+      "do": "Look at the duplicates: 4 rows are exact copies once the codes are clean, and the two copies of R011 disagree about the site. Keep the first copy of each survey_id, and note R011 in your cleaning log.",
+      "see": "Surveys after removing duplicates: 55"
+     },
+     {
+      "do": "Blank the impossible coral cover values, -5.0 and 640.0, with .loc and a between() mask."
+     },
+     {
+      "do": "Extract visibility's number and unit with str.extract, and convert centimetres to metres.",
+      "see": "Visibility: mean 13.0 m, max 24 m, missing 2"
+     },
+     {
+      "do": "Make bleaching an ordered category, count it in order, and count the surveys at moderate or worse.",
+      "see": "Bleaching: {'none': 24, 'low': 7, 'moderate': 14, 'severe': 7} and Moderate or worse: 21"
+     },
+     {
+      "do": "Flag, then fill, the missing temperatures with each site's median; drop the surveys with no coral cover; let the asserts check the rules.",
+      "see": "Temperatures filled: 6 still missing: 0 and Clean surveys: 50 mean coral cover 36.4%"
+     },
+     {
+      "do": "Interpolate the logger's short gaps.",
+      "code": "filled = logger[\"temp_c\"].interpolate(limit=2, limit_area=\"inside\")",
+      "lang": "python",
+      "see": "Logger gaps: 13, Still missing after interpolating: 4 and Filled value on 2024-03-06: 28.6"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The default missing-value list is spotted, and the file is read with explicit markers.",
+      "look_for": [
+       "read as missing by default: 15",
+       "bleaching missing: 4"
+      ]
+     },
+     {
+      "text": "Sentinels and site codes are cleaned.",
+      "look_for": [
+       "after replacing -999: 6",
+       "['S01', 'S02', 'S03', 'S04', 'S05', 'S06']"
+      ]
+     },
+     {
+      "text": "Duplicates are found after normalising, and the conflicting survey is noticed.",
+      "look_for": [
+       "Exact duplicates now: 4",
+       "['R011']",
+       "Surveys after removing duplicates: 55"
+      ]
+     },
+     {
+      "text": "Visibility is in metres and bleaching is an ordered category.",
+      "look_for": [
+       "mean 13.0 m, max 24 m",
+       "'none': 24",
+       "Moderate or worse: 21"
+      ]
+     },
+     {
+      "text": "Temperatures are filled by site and flagged, and the clean table passes its checks.",
+      "look_for": [
+       "Temperatures filled: 6 still missing: 0",
+       "Clean surveys: 50 mean coral cover 36.4%"
+      ]
+     },
+     {
+      "text": "The logger's gaps are interpolated within the limit.",
+      "look_for": [
+       "Still missing after interpolating: 4",
+       "28.6"
+      ]
+     }
+    ],
+    "submit": "Paste your finished clean_reef.py, everything it printed, and a cleaning log with one line per decision, including what you did about R011.",
+    "files": [
+     {
+      "path": "clean_reef.py",
+      "content": "\"\"\"Clean a messy reef monitoring export and a temperature logger's readings with pandas (made-up data).\n\nFill in the TODOs, then run:  python clean_reef.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nnaive = pd.read_csv(\"reef_raw.csv\")\nprint(\"Bleaching values read as missing by default:\", int(naive[\"bleaching\"].isna().sum()))\n# TODO: read the file again so that only blank cells and n/a count as missing (keep_default_na=False, na_values=...)\nraw = naive.copy()\nprint(\"Rows:\", len(raw), \"bleaching missing:\", int(raw[\"bleaching\"].isna().sum()))\n\n# 1. Sentinels: the water temperature uses -999 for \"no reading\"\nprint(\"Missing temperatures as loaded:\", int(raw[\"water_temp_c\"].isna().sum()))\n# TODO: replace -999 with NaN in water_temp_c\nprint(\"Missing temperatures after replacing -999:\", int(raw[\"water_temp_c\"].isna().sum()))\n\n# 2. Site codes are typed several ways (s01, S-01, \" S02\"): make them all like S01\nprint(\"Site spellings:\", raw[\"site\"].nunique())\n# TODO: strip, upper case, then remove anything that isn't a letter or digit with str.replace and a regex\nprint(\"Sites after cleaning:\", sorted(raw[\"site\"].unique()))\n\n# 3. Duplicates: some surveys were exported twice\nprint(\"Exact duplicates now:\", int(raw.duplicated().sum()))\nprint(\"Rows sharing a survey_id:\", int(raw.duplicated(subset=\"survey_id\", keep=False).sum()))\nshared = raw[raw.duplicated(subset=\"survey_id\", keep=False)].drop_duplicates()\nprint(\"Survey ids whose copies disagree:\", sorted(shared.loc[shared.duplicated(\"survey_id\", keep=False), \"survey_id\"].unique()))\n# TODO: drop the duplicates, keeping the first of each survey_id\nsurveys = raw.copy()\nprint(\"Surveys after removing duplicates:\", len(surveys))\n\n# 4. Impossible coral cover: outside 0 to 100 percent\nbad = ~surveys[\"coral_pct\"].between(0, 100) & surveys[\"coral_pct\"].notna()\nprint(\"Impossible coral cover values:\", surveys.loc[bad, \"coral_pct\"].tolist())\n# TODO: set them to NaN with .loc\n\n# 5. Visibility: \"12 m\", \"8m\", \"15\" or \"900 cm\": extract the number and the unit, and convert to metres\n# TODO: str.extract with two groups, then divide the cm values by 100\nsurveys[\"visibility_m\"] = np.nan\nprint(f\"Visibility: mean {surveys['visibility_m'].mean():.1f} m, max {surveys['visibility_m'].max():.0f} m, \"\n      f\"missing {int(surveys['visibility_m'].isna().sum())}\")\n\n# 6. Bleaching: one spelling per level, then an ordered category\nlevels = [\"none\", \"low\", \"moderate\", \"severe\"]\n# TODO: strip and lower-case, then convert to pd.CategoricalDtype(levels, ordered=True)\nprint(\"Bleaching:\", surveys[\"bleaching\"].value_counts(sort=False).to_dict())\nprint(\"Moderate or worse:\", int((surveys[\"bleaching\"] >= \"moderate\").sum()))\n\n# 7. Fill missing temperatures with each site's median, and flag them\n# TODO: the flag first, then fillna with groupby(\"site\")[\"water_temp_c\"].transform(\"median\")\nsurveys[\"temp_imputed\"] = False\nprint(\"Temperatures filled:\", int(surveys[\"temp_imputed\"].sum()),\n      \"still missing:\", int(surveys[\"water_temp_c\"].isna().sum()))\n\n# 8. Coral cover is the key measurement: drop the surveys without it, then check the rules\n# TODO: dropna with subset\nclean = surveys\nassert clean[\"survey_id\"].is_unique\nassert clean[\"coral_pct\"].between(0, 100).all()\nprint(\"Clean surveys:\", len(clean), f\"mean coral cover {clean['coral_pct'].mean():.1f}%\")\n\n# 9. The logger: daily temperatures with gaps\nlogger = pd.read_csv(\"logger.csv\", parse_dates=[\"date\"]).set_index(\"date\")\nprint(\"Logger gaps:\", int(logger[\"temp_c\"].isna().sum()))\n# TODO: interpolate only gaps of up to 2 days (limit=2 and limit_area=\"inside\"), and count what's left\nfilled = logger[\"temp_c\"]\nprint(\"Still missing after interpolating:\", int(filled.isna().sum()))\nprint(\"Filled value on 2024-03-06:\", round(filled.loc[\"2024-03-06\"], 2))\n"
+     },
+     {
+      "path": "reef_raw.csv",
+      "content": "survey_id,site,date,coral_pct,water_temp_c,visibility,bleaching\nR028,s04 ,2024-04-01,,28.0,24m,\nR017,S05,2024-03-18,48.8,28.5,9m,low\nR047,S05,2024-04-22,34.4,29.2,15 m,None\nR008,S02,2024-03-11,39.7,-999,6m,Moderate\nR032,S02,2024-04-08,39.9,28.9,6,NONE\nR033,s03,2024-04-08,18.6,28.5,16m,None\nR006,s-06,2024-03-04,40.3,29.4,10 m,severe\nR052,S04,2024-04-29,33.7,27.0,20m,None\nR003,s03,2024-03-04,23.8,27.4,7 m,Low \nR034,S-04,2024-04-08,-5.0,28.0,1800 cm,None\nR020, S02,2024-03-25,49.4,-999,8 m,NONE\nR044, S02,2024-04-22,22.5,27.4,21 m,low\nR045,S03,2024-04-22,47.0,-999,19m,Moderate\nR031,s01,2024-04-08,34.5,-999,8 m,Moderate\nR013,S-01,2024-03-18,47.8,,6m,NONE\nR026,S02,2024-04-01,47.5,28.2,15 m,Moderate\nR010,S-04,2024-03-11,,29.3,11,low\nR039,s03,2024-04-15,33.5,,13,None\nR009,S03,2024-03-11,33.4,27.9,13,severe\nR007,s01,2024-03-11,20.8,28.0,11 m,None\nR048,s-06,2024-04-22,49.2,28.9,7m,\nR021,S03,2024-03-25,27.2,27.2,7m,NONE\nR026,S02,2024-04-01,47.5,28.2,15 m,Moderate\nR018,s-06,2024-03-18,41.8,29.2,7m,None\nR002, S02,2024-03-04,32.5,27.3,24,Moderate\nR040,S04,2024-04-15,49.0,28.7,11 m,None\nR014,S02,2024-03-18,63.7,28.1,16m,Moderate\nR019,s01,2024-03-25,56.0,28.4,11 m,severe\nR053,S05,2024-04-29,32.7,28.8,20,moderate\nR011,S04,2024-03-11,37.9,29.1,11 m,severe\nR046,s04 ,2024-04-22,54.5,28.5,11 m,severe\nR042,S06,2024-04-15,15.3,29.4,20m,None\nR004,s04 ,2024-03-04,28.5,27.9,11 m,NONE\nR036,S06,2024-04-08,35.7,28.1,8 m,none\nR015,S03,2024-03-18,49.9,28.6,900 cm,Moderate\nR037,S-01,2024-04-15,59.2,28.8,20,none\nR005,S05,2024-03-04,27.2,29.2,12 m,NONE\nR041,S05,2024-04-15,35.1,28.5,n/a,moderate\nR027,S03,2024-04-01,14.8,29.5,10m,Low \nR030,S06,2024-04-01,30.8,28.5,12,low\nR038, S02,2024-04-15,39.1,28.9,2000 cm,NONE\nR012,S06,2024-03-11,34.9,29.7,16m,none\nR023,S05,2024-03-25,39.6,27.4,10m,severe\nR004,s04 ,2024-03-04,28.5,27.9,11 m,NONE\nR035,S05,2024-04-08,52.5,28.6,15 m,none\nR048,s-06,2024-04-22,49.2,28.9,7m,\nR054,s-06,2024-04-29,36.2,28.0,2300 cm,Moderate\nR022,s04 ,2024-03-25,640.0,27.4,17m,none\nR011,S05,2024-03-11,37.9,29.1,11 m,severe\nR043,S-01,2024-04-22,29.4,27.7,23m,Moderate\nR037,s01,2024-04-15,59.2,28.8,20,none\nR001,S-01,2024-03-04,33.4,27.9,8m,None\nR050, S02,2024-04-29,24.5,28.3,12m,moderate\nR029,S05,2024-04-01,19.5,29.4,10 m,severe\nR051,S03,2024-04-29,,27.7,9m,Low \nR024,S06,2024-03-25,32.7,28.0,7 m,NONE\nR025,S01,2024-04-01,23.9,29.6,7 m,Moderate\nR049,S-01,2024-04-29,39.3,28.5,14,Moderate\nR055,S01,2024-05-06,12.3,27.5,13 m,\nR016,s04 ,2024-03-18,45.1,28.3,n/a,None\n"
+     },
+     {
+      "path": "logger.csv",
+      "content": "date,temp_c\n2024-03-01,27.97\n2024-03-02,28.2\n2024-03-03,28.07\n2024-03-04,28.33\n2024-03-05,28.58\n2024-03-06,\n2024-03-07,\n2024-03-08,28.65\n2024-03-09,28.48\n2024-03-10,28.59\n2024-03-11,28.78\n2024-03-12,28.72\n2024-03-13,\n2024-03-14,\n2024-03-15,\n2024-03-16,28.31\n2024-03-17,28.31\n2024-03-18,28.54\n2024-03-19,28.22\n2024-03-20,28.05\n2024-03-21,\n2024-03-22,\n2024-03-23,28.01\n2024-03-24,27.92\n2024-03-25,27.58\n2024-03-26,27.56\n2024-03-27,27.75\n2024-03-28,27.52\n2024-03-29,27.46\n2024-03-30,27.47\n2024-03-31,\n2024-04-01,\n2024-04-02,\n2024-04-03,\n2024-04-04,\n2024-04-05,27.08\n2024-04-06,27.33\n2024-04-07,27.5\n2024-04-08,27.25\n2024-04-09,27.82\n2024-04-10,\n2024-04-11,27.6\n2024-04-12,27.93\n2024-04-13,28.01\n2024-04-14,28.15\n"
+     }
+    ],
+    "hints": [
+     "In str.extract, each pair of brackets is a group and becomes a column: the number in column 0 and the unit in column 1, NaN when no unit was written.",
+     "Set the temp_imputed flag before calling fillna, or every value will look measured.",
+     "interpolate(limit=2) fills at most two missing values in a row; in a longer gap it fills the first two and leaves the rest."
+    ]
+   }
+  },
+  {
+   "title": "Data Wrangling: Join, Combine, and Reshape",
+   "summary": "Combine tables with merges you validate and audit, stack and patch data with concat and combine_first, match readings in time with merge_asof, and reshape between long and wide with melt, pivot, stack and unstack.",
+   "instructor": "davaadorji-gantulag",
+   "lessons": [
+    {
+     "title": "Merging on keys: relationships and validation",
+     "minutes": 12,
+     "objectives": [
+      "Merge DataFrames on one or more keys with the right type of join",
+      "Validate a merge's relationship and audit the rows that didn't match"
+     ],
+     "key_points": [
+      "pd.merge(left, right, on='soum_id', how=...) joins rows with matching keys: 'inner' keeps the matches only, 'left' every left row, 'right' every right row and 'outer' all of them, with NaN where one side has no match.",
+      "Keys with different names use left_on= and right_on=, several keys are passed as a list, and suffixes=('_2023', '_2024') renames columns that appear in both tables.",
+      "State the relationship you expect: validate='many_to_one' raises a MergeError if the right table repeats a key, which would otherwise duplicate left rows without any warning; 'one_to_one' and 'one_to_many' work the same way.",
+      "indicator=True adds a _merge column saying both, left_only or right_only for each row, which shows exactly which keys failed to match and explains any change in the number of rows.",
+      "Most failed matches come from keys that look alike but aren't, such as 'c07' and 'C07' or a trailing space, or from different types, such as 7 and '7'. Clean and type the keys first, and compare the row counts before and after."
+     ]
+    },
+    {
+     "title": "Concatenating, joining on the index and patching gaps",
+     "minutes": 12,
+     "objectives": [
+      "Stack tables with concat and record where each row came from",
+      "Join on the index, patch gaps from a second source and match readings by time"
+     ],
+     "key_points": [
+      "pd.concat([a, b]) stacks tables vertically, matching columns by name and filling missing ones with NaN; ignore_index=True numbers the rows afresh, and keys=[2023, 2024] labels each part with an outer index level.",
+      "pd.concat(axis=1) puts tables side by side, aligned on the index, and df.join(other) joins on the index as well, keeping every row of df by default.",
+      "Two exports that overlap produce repeated rows when stacked, and concat keeps them without a warning; check with duplicated(subset=keys) straight after stacking.",
+      "a.combine_first(b) fills a's missing values with b's values for the same labels, which suits patching one source with a second, less trusted one.",
+      "pd.merge_asof(visits, passes, on='date', by='soum_id', direction='backward', tolerance=pd.Timedelta('10D')) matches each visit with the latest earlier pass over the same soum, within 10 days; both tables must be sorted by the date column."
+     ]
+    },
+    {
+     "title": "Reshaping: melt, pivot, stack and unstack",
+     "minutes": 12,
+     "objectives": [
+      "Reshape data between wide and long forms",
+      "Move index levels between the rows and the columns"
+     ],
+     "key_points": [
+      "Long, or tidy, data has one row per observation and one column per variable, such as soum, year, species and head; wide data spreads one variable across columns, such as a column for each species.",
+      "melt(id_vars=['soum_id', 'year'], var_name='species', value_name='head') turns wide columns into long rows, the form that groupby, merges and most plotting libraries expect.",
+      "pivot(index='soum_id', columns='species', values='head') turns long into wide, but raises ValueError (Index contains duplicate entries, cannot reshape) when an index and column pair appears twice; pivot_table() aggregates the repeats instead.",
+      "stack() moves the innermost column level into the row index and unstack() moves an index level into the columns, as in df.groupby(['aimag', 'year'])['units'].sum().unstack('year').",
+      "explode() gives each item of a list in a cell its own row, which turns a column such as 'sheep;goat' into long data after str.split(';')."
+     ],
+     "walkthrough": {
+      "tool": "IPython or JupyterLab",
+      "title": "Reshape a small census both ways",
+      "steps": [
+       {
+        "do": "Make a wide table: one row per soum, one column per species.",
+        "code": "import pandas as pd\nwide = pd.DataFrame({\"soum_id\": [\"N01\", \"N02\"],\n                     \"horse\": [9100, 6600], \"sheep\": [51800, 37100]})",
+        "lang": "python"
+       },
+       {
+        "do": "Melt it into long form.",
+        "code": "long = wide.melt(id_vars=\"soum_id\", var_name=\"species\", value_name=\"head\")\nlong",
+        "lang": "python",
+        "see": "Four rows: N01 and N02 with horse, then N01 and N02 with sheep."
+       },
+       {
+        "do": "Pivot it back to wide.",
+        "code": "long.pivot(index=\"soum_id\", columns=\"species\", values=\"head\")",
+        "lang": "python",
+        "see": "The original two rows, with species as the columns' name."
+       },
+       {
+        "do": "Do the same with a MultiIndex and unstack.",
+        "code": "long.set_index([\"soum_id\", \"species\"])[\"head\"].unstack()",
+        "lang": "python",
+        "see": "The same wide table: unstack moved the species level into the columns."
+       },
+       {
+        "do": "Repeat one row and pivot again to see the error that pivot_table avoids.",
+        "code": "pd.concat([long, long.head(1)]).pivot(index=\"soum_id\", columns=\"species\", values=\"head\")",
+        "lang": "python",
+        "see": "ValueError: Index contains duplicate entries, cannot reshape"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Combine and reshape livestock and pasture data",
+    "tool": "Python or JupyterLab",
+    "minutes": 55,
+    "goal": "Stack two livestock censuses, reshape them to long form, merge them with district data and conversion factors while validating and auditing every merge, reshape the results for reading, and match field visits with satellite passes by time.",
+    "setup": [
+     "Python 3 with pandas",
+     "Download the starter files combine_herds.py, soums.csv, census_2023.csv, census_2024.csv, sheep_units.csv, visits.csv and passes.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Look at the files: soums.csv describes 12 soums (districts) in three aimags (provinces), each census counts five species per soum, and passes.csv holds the vegetation index (NDVI) from satellite passes over each soum. Run the starter after each TODO.",
+      "code": "python combine_herds.py",
+      "lang": "bash"
+     },
+     {
+      "do": "Stack the two censuses with pd.concat and their years as keys, then move the year into a column.",
+      "code": "wide = pd.concat(census, names=[\"year\", \"row\"]).reset_index(level=\"year\").reset_index(drop=True)",
+      "lang": "python",
+      "see": "Wide census: (25, 7): 2024 has one row more than 2023."
+     },
+     {
+      "do": "Melt the censuses into long form.",
+      "see": "Long census: (125, 4)"
+     },
+     {
+      "do": "Merge with the soums, validating many_to_one and adding the indicator.",
+      "see": "Match result: {'both': 115, 'left_only': 10, 'right_only': 0} and Unmatched codes: ['X99', 'c07']"
+     },
+     {
+      "do": "Upper-case the codes, merge again, and drop X99, which isn't a soum.",
+      "see": "Still unmatched: ['X99'] and Rows kept: 120"
+     },
+     {
+      "do": "Merge the sheep-unit factors, work out the units, and make the aimag-by-year table with pivot_table, then with groupby and unstack.",
+      "see": "Central 678271 then 690799 (1.8%), Northern 732377 then 729736 (-0.4%), Southern 904965 then 923312 (2.0%), and Same as the pivot table: True"
+     },
+     {
+      "do": "Pivot the 2024 rows back to one column per species, then try it without filtering the year and read the error.",
+      "see": "2024 by species: (12, 5), then Index contains duplicate entries, cannot reshape"
+     },
+     {
+      "do": "Run the density section, then match each field visit with the latest pass over its soum at most 10 days before.",
+      "see": "Ar Tal (67.6 sheep units per km2) first; Visits matched: 10 of 12, with FV12 and FV03 unmatched, and FV01 matched with the pass of 2024-06-15 (NDVI 0.379)."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The censuses are stacked with their years and melted to long form.",
+      "look_for": [
+       "Wide census: (25, 7)",
+       "Long census: (125, 4)"
+      ]
+     },
+     {
+      "text": "The merge is validated and audited, and both bad codes are found and dealt with.",
+      "look_for": [
+       "'left_only': 10",
+       "['X99', 'c07']",
+       "Still unmatched: ['X99']",
+       "Rows kept: 120"
+      ]
+     },
+     {
+      "text": "Sheep units by aimag and year are right, and pivot_table agrees with groupby and unstack.",
+      "look_for": [
+       "678271",
+       "923312",
+       "Same as the pivot table: True"
+      ]
+     },
+     {
+      "text": "Long data is pivoted back to wide, and the duplicate-entries error is explained.",
+      "look_for": [
+       "2024 by species: (12, 5)",
+       "Index contains duplicate entries"
+      ]
+     },
+     {
+      "text": "The densest soum is found.",
+      "look_for": [
+       "('Ar Tal', 67.6)"
+      ]
+     },
+     {
+      "text": "merge_asof matches the visits with passes within 10 days.",
+      "look_for": [
+       "Visits matched: 10 of 12",
+       "2024-06-15",
+       "0.379"
+      ]
+     }
+    ],
+    "submit": "Paste your finished combine_herds.py and everything it printed, and explain in a sentence or two why FV03 and FV12 found no satellite pass.",
+    "files": [
+     {
+      "path": "combine_herds.py",
+      "content": "\"\"\"Combine livestock censuses with soum data and satellite passes, and reshape them (made-up data).\n\nFill in the TODOs, then run:  python combine_herds.py\n\"\"\"\n\nimport pandas as pd\n\nsoums = pd.read_csv(\"soums.csv\")\nunits = pd.read_csv(\"sheep_units.csv\")\ncensus = {year: pd.read_csv(f\"census_{year}.csv\") for year in (2023, 2024)}\n\n# 1. Stack the two censuses, labelling each row with its year\n# TODO: pd.concat with keys=, then move the year from the index into a column\nwide = census[2023]\nprint(\"Wide census:\", wide.shape)\n\n# 2. Long form: one row per soum, year and species\n# TODO: melt with id_vars, var_name=\"species\" and value_name=\"head\"\nlong = wide\nprint(\"Long census:\", long.shape)\n\n# 3. Merge in the soums, check the relationship, and audit what didn't match\n# TODO: merge with how=\"left\", validate=\"many_to_one\" and indicator=True\nmerged = long.assign(_merge=\"both\")\nprint(\"Match result:\", merged[\"_merge\"].value_counts().to_dict())\nprint(\"Unmatched codes:\", sorted(merged.loc[merged[\"_merge\"] == \"left_only\", \"soum_id\"].unique()))\n\n# TODO: fix the case of the codes, merge again, and drop the code that isn't a soum at all\nprint(\"Rows kept:\", len(merged))\n\n# 4. Sheep units: merge the factors and multiply\n# TODO: merge on species (many_to_one) and add a column units = head * sheep_units\n\n# 5. Reshape for reading: sheep units by aimag and year\n# TODO: pivot_table with index=\"aimag\", columns=\"year\", values=\"units\", aggfunc=\"sum\"\nby_aimag = pd.DataFrame({2023: [0.0], 2024: [0.0]}, index=[\"?\"])\nby_aimag[\"change_pct\"] = (100 * (by_aimag[2024] / by_aimag[2023] - 1)).round(1)\nprint(by_aimag.astype({2023: int, 2024: int}).to_string())\n\n# 6. The same table with groupby and unstack\n# TODO: groupby([\"aimag\", \"year\"])[\"units\"].sum().unstack(\"year\"), and compare\nsame = by_aimag[[2023, 2024]]\nprint(\"Same as the pivot table:\", same.equals(by_aimag[[2023, 2024]]))\n\n# 7. Back to wide: one column per species for 2024\n# TODO: pivot the 2024 rows with index=\"soum_id\", columns=\"species\", values=\"head\"\nspecies_2024 = pd.DataFrame()\nprint(\"2024 by species:\", species_2024.shape)\ntry:\n    merged.pivot(index=\"soum_id\", columns=\"species\", values=\"head\")\nexcept ValueError as err:\n    print(\"Pivot without the year:\", err)\n\n# 8. Grazing pressure in 2024: sheep units per square kilometre, highest first\ndensity = (merged[merged[\"year\"] == 2024].groupby([\"soum_id\", \"soum\"])[\"units\"].sum()\n           / soums.set_index([\"soum_id\", \"soum\"])[\"area_km2\"]).sort_values(ascending=False)\nprint(\"Highest density:\", [(s, round(v, 1)) for (_, s), v in density.head(3).items()])\n\n# 9. Match each field visit with the latest satellite pass over its soum, at most 10 days before\nvisits = pd.read_csv(\"visits.csv\", parse_dates=[\"date\"]).sort_values(\"date\")\npasses = pd.read_csv(\"passes.csv\", parse_dates=[\"date\"]).sort_values(\"date\")\n# TODO: pd.merge_asof with on=\"date\", by=\"soum_id\", direction=\"backward\" and a 10-day tolerance\nmatched = visits.assign(pass_date=pd.NaT, ndvi=float(\"nan\"))\nprint(\"Visits matched:\", int(matched[\"ndvi\"].notna().sum()), \"of\", len(matched))\nprint(\"Unmatched visits:\", matched.loc[matched[\"ndvi\"].isna(), \"visit_id\"].tolist())\nprint(\"FV01:\", matched.loc[matched[\"visit_id\"] == \"FV01\", [\"pass_date\", \"ndvi\"]].astype(str).values.tolist())\n"
+     },
+     {
+      "path": "soums.csv",
+      "content": "soum_id,soum,aimag,area_km2\nN01,Ar Tal,Northern,3120\nN02,Bor Khad,Northern,2480\nN03,Gol Bulan,Northern,4050\nN04,Nuur Ezen,Northern,1960\nC05,Dund Tal,Central,2890\nC06,Khar Us,Central,3370\nC07,Shar Gol,Central,2210\nC08,Tsagaan Am,Central,3640\nS09,Elst Uul,Southern,5480\nS10,Gobi Zam,Southern,6120\nS11,Ulaan Els,Southern,4730\nS12,Zuun Khudag,Southern,5210\n"
+     },
+     {
+      "path": "census_2023.csv",
+      "content": "soum_id,horse,cattle,camel,sheep,goat\nN01,8160,8520,270,47720,37460\nN02,6350,8280,220,37000,25570\nN03,10800,14180,300,65550,41370\nN04,4560,6370,160,30830,21530\nC05,6020,5410,670,42340,41030\nC06,8840,7220,840,47700,49180\nC07,4470,4670,510,30950,32500\nC08,8470,8210,880,46540,42380\nS09,7430,3480,6230,48680,86620\nS10,9580,4110,6230,44800,101050\nS11,7300,2990,5140,44210,76430\nS12,7660,3300,5200,43400,72350\n"
+     },
+     {
+      "path": "census_2024.csv",
+      "content": "soum_id,horse,cattle,camel,sheep,goat\nN01,8740,10990,320,53640,31770\nN02,6530,7550,240,35510,31730\nN03,9570,13390,410,56840,43890\nN04,4490,6190,170,29770,19550\nC05,7820,6250,770,36980,32970\nC06,7370,7900,1020,44240,45620\nc07,6000,4970,590,32300,33230\nC08,8190,6530,990,56590,48490\nS09,7920,3650,5780,52240,88750\nS10,8880,4080,7900,56440,82650\nS11,6100,3670,5460,44980,69850\nS12,7710,3850,5510,41400,91230\nX99,120,80,0,900,700\n"
+     },
+     {
+      "path": "sheep_units.csv",
+      "content": "species,sheep_units\nhorse,7.0\ncattle,6.0\ncamel,5.0\nsheep,1.0\ngoat,0.9\n"
+     },
+     {
+      "path": "visits.csv",
+      "content": "visit_id,soum_id,date\nFV01,N01,2024-06-20\nFV02,N03,2024-07-02\nFV03,C05,2024-06-03\nFV04,C06,2024-07-15\nFV05,C08,2024-08-01\nFV06,S09,2024-08-12\nFV07,S10,2024-06-28\nFV08,S12,2024-07-30\nFV09,N02,2024-08-20\nFV10,C07,2024-06-25\nFV11,S11,2024-07-08\nFV12,N04,2024-05-28\n"
+     },
+     {
+      "path": "passes.csv",
+      "content": "soum_id,date,ndvi\nN01,2024-06-07,0.361\nN01,2024-06-15,0.379\nN01,2024-06-23,0.458\nN01,2024-07-01,0.49\nN01,2024-07-09,0.352\nN01,2024-07-17,0.201\nN01,2024-07-25,0.223\nN01,2024-08-02,0.383\nN01,2024-08-10,0.203\nN01,2024-08-18,0.512\nN01,2024-08-26,0.536\nN01,2024-09-03,0.387\nN02,2024-06-04,0.186\nN02,2024-06-12,0.429\nN02,2024-06-20,0.547\nN02,2024-06-28,0.194\nN02,2024-07-06,0.251\nN02,2024-07-14,0.456\nN02,2024-07-22,0.302\nN02,2024-07-30,0.458\nN02,2024-08-07,0.498\nN02,2024-08-15,0.488\nN02,2024-08-23,0.443\nN02,2024-08-31,0.528\nN03,2024-06-08,0.471\nN03,2024-06-16,0.391\nN03,2024-06-24,0.381\nN03,2024-07-02,0.507\nN03,2024-07-10,0.229\nN03,2024-07-18,0.515\nN03,2024-07-26,0.277\nN03,2024-08-03,0.181\nN03,2024-08-11,0.483\nN03,2024-08-19,0.462\nN03,2024-08-27,0.31\nN03,2024-09-04,0.286\nN04,2024-06-04,0.398\nN04,2024-06-12,0.438\nN04,2024-06-20,0.31\nN04,2024-06-28,0.497\nN04,2024-07-06,0.304\nN04,2024-07-14,0.318\nN04,2024-07-22,0.238\nN04,2024-07-30,0.437\nN04,2024-08-07,0.501\nN04,2024-08-15,0.334\nN04,2024-08-23,0.272\nN04,2024-08-31,0.217\nC05,2024-06-08,0.199\nC05,2024-06-16,0.304\nC05,2024-06-24,0.545\nC05,2024-07-02,0.406\nC05,2024-07-10,0.325\nC05,2024-07-18,0.364\nC05,2024-07-26,0.237\nC05,2024-08-03,0.399\nC05,2024-08-11,0.207\nC05,2024-08-19,0.493\nC05,2024-08-27,0.549\nC05,2024-09-04,0.448\nC06,2024-06-08,0.309\nC06,2024-06-16,0.432\nC06,2024-06-24,0.429\nC06,2024-07-02,0.274\nC06,2024-07-10,0.254\nC06,2024-07-18,0.19\nC06,2024-07-26,0.258\nC06,2024-08-03,0.242\nC06,2024-08-11,0.353\nC06,2024-08-19,0.312\nC06,2024-08-27,0.505\nC06,2024-09-04,0.388\nC07,2024-06-07,0.3\nC07,2024-06-15,0.494\nC07,2024-06-23,0.509\nC07,2024-07-01,0.42\nC07,2024-07-09,0.496\nC07,2024-07-17,0.292\nC07,2024-07-25,0.396\nC07,2024-08-02,0.353\nC07,2024-08-10,0.23\nC07,2024-08-18,0.204\nC07,2024-08-26,0.218\nC07,2024-09-03,0.439\nC08,2024-06-07,0.444\nC08,2024-06-15,0.278\nC08,2024-06-23,0.209\nC08,2024-07-01,0.525\nC08,2024-07-09,0.277\nC08,2024-07-17,0.392\nC08,2024-07-25,0.272\nC08,2024-08-02,0.204\nC08,2024-08-10,0.403\nC08,2024-08-18,0.46\nC08,2024-08-26,0.545\nC08,2024-09-03,0.312\nS09,2024-06-02,0.326\nS09,2024-06-10,0.322\nS09,2024-06-18,0.224\nS09,2024-06-26,0.488\nS09,2024-07-04,0.511\nS09,2024-07-12,0.392\nS09,2024-07-20,0.226\nS09,2024-07-28,0.517\nS09,2024-08-05,0.186\nS09,2024-08-13,0.19\nS09,2024-08-21,0.381\nS09,2024-08-29,0.187\nS10,2024-06-01,0.327\nS10,2024-06-09,0.372\nS10,2024-06-17,0.323\nS10,2024-06-25,0.273\nS10,2024-07-03,0.36\nS10,2024-07-11,0.295\nS10,2024-07-19,0.313\nS10,2024-07-27,0.416\nS10,2024-08-04,0.191\nS10,2024-08-12,0.196\nS10,2024-08-20,0.253\nS10,2024-08-28,0.368\nS11,2024-06-04,0.231\nS11,2024-06-12,0.294\nS11,2024-06-20,0.234\nS11,2024-06-28,0.181\nS11,2024-07-06,0.274\nS11,2024-07-14,0.254\nS11,2024-07-22,0.279\nS11,2024-07-30,0.245\nS11,2024-08-07,0.214\nS11,2024-08-15,0.224\nS11,2024-08-23,0.258\nS11,2024-08-31,0.244\nS12,2024-06-03,0.185\nS12,2024-06-11,0.283\nS12,2024-06-19,0.357\nS12,2024-06-27,0.297\nS12,2024-07-05,0.263\nS12,2024-07-13,0.224\nS12,2024-07-21,0.214\nS12,2024-07-29,0.418\nS12,2024-08-06,0.238\nS12,2024-08-14,0.201\nS12,2024-08-22,0.351\nS12,2024-08-30,0.409\n"
+     }
+    ],
+    "hints": [
+     "pd.concat on a dictionary of DataFrames uses its keys as the outer index level, and names= labels it year.",
+     "merge_asof needs both tables sorted by their dates, and by='soum_id' only matches passes over the same soum.",
+     "Look at each unmatched visit's date and the dates of the passes over its soum."
+    ]
+   }
+  },
+  {
+   "title": "Data Aggregation and Group Operations",
+   "summary": "Master split-apply-combine with groupby: aggregate with built-in, named and custom functions, transform values within groups, filter whole groups, and summarise in two dimensions with pivot tables and crosstabs.",
+   "instructor": "davaadorji-gantulag",
+   "lessons": [
+    {
+     "title": "Split-apply-combine with groupby",
+     "minutes": 12,
+     "objectives": [
+      "Explain split-apply-combine and group by one or several keys",
+      "Control how keys, missing values and categories appear in the result"
+     ],
+     "key_points": [
+      "df.groupby(keys) splits the rows into groups that share key values, applies a calculation to each and combines the results into one object; nothing is computed until you call an aggregation or another method.",
+      "Keys can be column names, a list of columns, a Series or array of the same length, or a function of the index; they become the result's index, unless as_index=False keeps them as columns.",
+      "size() counts every row in each group, while count() counts each column's non-missing values, so the two differ when values are missing.",
+      "Rows whose key is NaN are left out unless dropna=False. With categorical keys, observed=True, the default in pandas 3, shows only the categories that occur; pandas 2 also listed empty ones by default.",
+      "for name, group in df.groupby('aimag'): loops over (key, DataFrame) pairs, which is useful for looking at one group, but the aggregation methods are much faster than a loop."
+     ]
+    },
+    {
+     "title": "Aggregation: built-in, named and custom",
+     "minutes": 12,
+     "objectives": [
+      "Compute several summaries per group in one step with named aggregation",
+      "Aggregate time series by period and combine it with other keys"
+     ],
+     "key_points": [
+      "Built-in aggregations such as mean, median, sum, min, max, std, nunique, first and last run in fast compiled code: df.groupby('soum_id')['biomass_g_m2'].mean().",
+      "Named aggregation names each result column: agg(visits=('plot_id', 'size'), plots=('plot_id', 'nunique'), mean_biomass=('biomass_g_m2', 'mean')).",
+      "A custom function receives each group's values as a Series, as in ('biomass_g_m2', lambda s: s.quantile(0.9)); it runs in Python once per group, so use a built-in name whenever one exists.",
+      "A weighted mean needs two columns, so compute the pieces per group, the sum of weight times value and the sum of the weights, then divide; averaging group averages gives small groups too much weight.",
+      "Time series aggregate by period with resample('MS', on='date') or groupby(pd.Grouper(key='date', freq='MS')), which can be combined with other keys such as aimag; 'MS' means calendar months, labelled by their first day."
+     ]
+    },
+    {
+     "title": "transform, filter and apply",
+     "minutes": 12,
+     "objectives": [
+      "Add group statistics back to every row with transform",
+      "Keep or drop whole groups with filter, and know when apply is needed"
+     ],
+     "key_points": [
+      "transform returns a result the same length as its input, aligned with the original rows: df.groupby('soum_id')['biomass_g_m2'].transform('mean') puts each soum's mean on each of its rows.",
+      "That makes within-group comparisons one line each: the deviation from the group mean, a z-score within the group, each row's share of its group's total, or a gap filled with the group's median.",
+      "filter(lambda g: len(g) >= 8) keeps or drops whole groups by a condition on the group, such as removing soums with too few visits to trust their averages.",
+      "Ranks and counters work within groups without loops: groupby(...).rank(ascending=False) ranks rows inside each group, cumcount() numbers them, and shift() and cumsum() stay within each group.",
+      "apply() runs any function on each group's DataFrame, which makes it the most flexible option and also the slowest; use it when agg, transform and filter can't express the calculation."
+     ]
+    },
+    {
+     "title": "Pivot tables and crosstabs",
+     "minutes": 10,
+     "objectives": [
+      "Summarise data in two dimensions with pivot_table and crosstab",
+      "Add totals and turn counts into proportions"
+     ],
+     "key_points": [
+      "pivot_table(index='aimag', columns='year', values='biomass_g_m2', aggfunc='mean') puts one key down the rows and another across the columns and aggregates every combination.",
+      "margins=True adds an All row and column computed from the underlying rows, so in a table of means the margins are overall means, not means of the means; fill_value replaces empty combinations.",
+      "aggfunc can be a list, such as ['mean', 'count'], giving a column level for each function, which shows how many rows lie behind each value.",
+      "pd.crosstab(df['aimag'], df['grazing']) counts the combinations of two categories; normalize='index' turns each row into proportions, normalize='columns' each column and normalize='all' the whole table.",
+      "A pivot table is a groupby on two keys followed by unstack; choose whichever reads more clearly, and remember that tables people read are wide, while data you analyse stays long."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Summarise two years of rangeland monitoring",
+    "tool": "Python or JupyterLab",
+    "minutes": 50,
+    "goal": "Summarise 335 visits to rangeland monitoring plots by aimag, soum, year and grazing pressure with groupby, named aggregation, transform, filter and ranks, then present them with a pivot table, a crosstab and monthly averages.",
+    "setup": [
+     "Python 3 with pandas",
+     "Download the starter files group_plots.py and plots.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Run the starter, then work through the TODOs in order, running it after each.",
+      "code": "python group_plots.py",
+      "lang": "bash",
+      "see": "Visits: 335 plots: 34 soums: 12"
+     },
+     {
+      "do": "Compare size() and count() for biomass in each aimag.",
+      "see": "Rows per aimag: Central 120, Northern 120, Southern 95; biomass values: 117, 110 and 87."
+     },
+     {
+      "do": "Summarise by aimag and year with named aggregation, using a lambda for the 90th percentile.",
+      "see": "Northern 2023: 60 visits, 12 plots, mean 107.6 and 90th percentile 155.4 g/m2"
+     },
+     {
+      "do": "Use transform for each soum-year's mean, the anomaly from it, and a z-score within each aimag.",
+      "see": "Rows unchanged by transform: 335, Mean anomaly: 0.000 and Largest z-score: 2.92 at C07-P2"
+     },
+     {
+      "do": "Keep only the soums with at least 15 biomass values, with filter.",
+      "see": "Soums kept: 11 dropped: ['S12']"
+     },
+     {
+      "do": "Rank each soum's plots by their mean biomass in 2024 and keep the best of each.",
+      "see": "Best plots in 2024: ['C05-P1', 'C06-P1', 'C07-P1', 'C08-P3'] ..."
+     },
+     {
+      "do": "Make the pivot table of mean biomass by aimag and grazing pressure with margins, and the crosstab of grazing shares within each aimag.",
+      "see": "An All row of 51.9 (high), 91.4 (low) and 70.8 (medium), 72.7 overall; Southern has 42.1% of its visits at high grazing."
+     },
+     {
+      "do": "Average the 2024 NDVI by month and aimag with pd.Grouper, one column per aimag.",
+      "see": "Northern peaks at 0.405 in 2024-07."
+     }
+    ],
+    "checks": [
+     {
+      "text": "size and count are compared; the missing biomass values explain the difference.",
+      "look_for": [
+       "'Southern': 95",
+       "'Southern': 87"
+      ]
+     },
+     {
+      "text": "The named aggregation is right.",
+      "look_for": [
+       "107.6",
+       "155.4",
+       "34.3"
+      ]
+     },
+     {
+      "text": "transform keeps every row, and the anomalies and z-scores are right.",
+      "look_for": [
+       "Rows unchanged by transform: 335",
+       "Mean anomaly: 0.000",
+       "2.92 at C07-P2"
+      ]
+     },
+     {
+      "text": "filter drops the soum with too few values.",
+      "look_for": [
+       "dropped: ['S12']"
+      ]
+     },
+     {
+      "text": "The pivot table's margins and the crosstab's shares are right.",
+      "look_for": [
+       "72.7",
+       "91.4",
+       "42.1"
+      ]
+     },
+     {
+      "text": "Monthly NDVI is computed with pd.Grouper.",
+      "look_for": [
+       "0.405",
+       "2024-07"
+      ]
+     }
+    ],
+    "submit": "Paste your finished group_plots.py, everything it printed, and a sentence on what the pivot table says about grazing pressure and biomass.",
+    "files": [
+     {
+      "path": "group_plots.py",
+      "content": "\"\"\"Summarise two years of rangeland monitoring with groupby, transform, pivot tables and crosstabs (made-up data).\n\nFill in the TODOs, then run:  python group_plots.py\n\"\"\"\n\nimport pandas as pd\n\nplots = pd.read_csv(\"plots.csv\", parse_dates=[\"date\"])\nplots[\"year\"] = plots[\"date\"].dt.year\nprint(\"Visits:\", len(plots), \"plots:\", plots[\"plot_id\"].nunique(), \"soums:\", plots[\"soum_id\"].nunique())\n\n# 1. size counts rows, count counts values that aren't missing\n# TODO: groupby(\"aimag\")[\"biomass_g_m2\"] then size() and count()\nsizes = counts = pd.Series(dtype=int)\nprint(\"Rows per aimag:\", sizes.to_dict())\nprint(\"Biomass values per aimag:\", counts.to_dict())\n\n# 2. Named aggregation by aimag and year\n# TODO: agg(visits=..., plots=..., mean_biomass=..., p90_biomass=...) with a lambda for the 90th percentile\nsummary = pd.DataFrame()\nprint(summary.round(1).to_string())\n\n# 3. transform: compare each visit with its own soum and year\n# TODO: the soum-year mean on every row, the anomaly from it, and a z-score within each aimag\nplots[\"anomaly\"] = plots[\"z_in_aimag\"] = 0.0\nprint(\"Rows unchanged by transform:\", len(plots))\nprint(f\"Mean anomaly: {plots['anomaly'].mean():.3f}\")\nprint(f\"Largest z-score: {plots['z_in_aimag'].max():.2f} at\", plots.loc[plots[\"z_in_aimag\"].idxmax(), \"plot_id\"])\n\n# 4. filter: keep only soums with at least 15 biomass values\n# TODO: groupby(\"soum_id\").filter(...)\nkept = plots\nprint(\"Soums kept:\", kept[\"soum_id\"].nunique(), \"dropped:\", sorted(set(plots[\"soum_id\"]) - set(kept[\"soum_id\"])))\n\n# 5. Ranks within groups: each soum's best plot in 2024 by mean biomass\nplot_means = kept[kept[\"year\"] == 2024].groupby([\"soum_id\", \"plot_id\"], as_index=False)[\"biomass_g_m2\"].mean()\n# TODO: rank within soum_id, highest first, and keep rank 1\nbest = plot_means.head(0)\nprint(\"Best plots in 2024:\", best[\"plot_id\"].tolist()[:4], \"...\")\n\n# 6. A pivot table with totals\n# TODO: mean biomass by aimag (rows) and grazing (columns), with margins=True\ntable = pd.DataFrame()\nprint(table.round(1).to_string())\n\n# 7. A crosstab of grazing pressure by aimag, as shares of each aimag's visits\n# TODO: pd.crosstab with normalize=\"index\"\nshares = pd.DataFrame()\nprint((100 * shares).round(1).to_string())\n\n# 8. Monthly mean NDVI per aimag in 2024, with pd.Grouper\n# TODO: groupby([\"aimag\", pd.Grouper(key=\"date\", freq=\"MS\")])[\"ndvi\"].mean(), then unstack(\"aimag\")\nmonthly = pd.DataFrame()\nmonthly.index = monthly.index.strftime(\"%Y-%m\")\nprint(monthly.round(3).to_string())\n"
+     },
+     {
+      "path": "plots.csv",
+      "content": "plot_id,soum_id,aimag,date,biomass_g_m2,ndvi,grazing\nN01-P1,N01,Northern,2023-05-08,95.1,0.351,low\nN01-P1,N01,Northern,2023-06-16,,0.396,low\nN01-P1,N01,Northern,2023-07-16,183.4,0.565,low\nN01-P1,N01,Northern,2023-08-10,124.0,0.393,low\nN01-P1,N01,Northern,2023-09-19,97.1,0.35,low\nN01-P1,N01,Northern,2024-05-18,68.0,0.224,low\nN01-P1,N01,Northern,2024-06-14,117.9,0.416,low\nN01-P1,N01,Northern,2024-07-18,167.6,0.517,low\nN01-P1,N01,Northern,2024-08-14,151.7,0.467,low\nN01-P1,N01,Northern,2024-09-09,,0.336,low\nN01-P2,N01,Northern,2023-05-24,69.4,0.269,low\nN01-P2,N01,Northern,2023-06-09,128.0,0.438,low\nN01-P2,N01,Northern,2023-07-14,184.9,0.592,low\nN01-P2,N01,Northern,2023-08-05,151.4,0.462,low\nN01-P2,N01,Northern,2023-09-07,96.6,0.321,low\nN01-P2,N01,Northern,2024-05-14,72.8,0.264,low\nN01-P2,N01,Northern,2024-06-08,122.0,0.41,low\nN01-P2,N01,Northern,2024-07-07,168.4,0.526,low\nN01-P2,N01,Northern,2024-08-20,147.3,0.468,low\nN01-P2,N01,Northern,2024-09-05,112.1,0.337,low\nN01-P3,N01,Northern,2023-05-18,82.7,0.29,medium\nN01-P3,N01,Northern,2023-06-20,91.3,0.345,medium\nN01-P3,N01,Northern,2023-07-18,159.9,0.458,medium\nN01-P3,N01,Northern,2023-08-16,113.7,0.349,medium\nN01-P3,N01,Northern,2023-09-11,105.5,0.322,medium\nN01-P3,N01,Northern,2024-05-10,76.0,0.275,medium\nN01-P3,N01,Northern,2024-06-13,85.7,0.286,medium\nN01-P3,N01,Northern,2024-07-20,110.4,0.348,medium\nN01-P3,N01,Northern,2024-08-13,126.6,0.404,medium\nN01-P3,N01,Northern,2024-09-14,91.0,0.299,medium\nN02-P1,N02,Northern,2023-05-21,48.2,0.182,high\nN02-P1,N02,Northern,2023-06-07,83.2,0.293,high\nN02-P1,N02,Northern,2023-07-22,,0.318,high\nN02-P1,N02,Northern,2023-08-16,96.1,0.331,high\nN02-P1,N02,Northern,2023-09-20,76.4,0.274,high\nN02-P1,N02,Northern,2024-05-20,,0.182,high\nN02-P1,N02,Northern,2024-06-22,,0.318,high\nN02-P1,N02,Northern,2024-07-23,95.0,0.305,high\nN02-P1,N02,Northern,2024-08-10,83.3,0.265,high\nN02-P1,N02,Northern,2024-09-09,66.3,0.233,high\nN02-P2,N02,Northern,2023-05-18,72.5,0.238,medium\nN02-P2,N02,Northern,2023-06-13,88.6,0.275,medium\nN02-P2,N02,Northern,2023-07-23,164.5,0.497,medium\nN02-P2,N02,Northern,2023-08-16,131.1,0.382,medium\nN02-P2,N02,Northern,2023-09-05,82.8,0.287,medium\nN02-P2,N02,Northern,2024-05-06,55.2,0.198,medium\nN02-P2,N02,Northern,2024-06-23,88.9,0.312,medium\nN02-P2,N02,Northern,2024-07-22,142.0,0.405,medium\nN02-P2,N02,Northern,2024-08-09,95.2,0.311,medium\nN02-P2,N02,Northern,2024-09-16,68.3,0.254,medium\nN02-P3,N02,Northern,2023-05-07,85.7,0.301,low\nN02-P3,N02,Northern,2023-06-10,111.3,0.357,low\nN02-P3,N02,Northern,2023-07-07,158.1,0.457,low\nN02-P3,N02,Northern,2023-08-09,120.3,0.408,low\nN02-P3,N02,Northern,2023-09-18,83.3,0.286,low\nN02-P3,N02,Northern,2024-05-16,61.9,0.282,low\nN02-P3,N02,Northern,2024-06-12,129.6,0.353,low\nN02-P3,N02,Northern,2024-07-09,,0.396,low\nN02-P3,N02,Northern,2024-08-05,133.6,0.412,low\nN02-P3,N02,Northern,2024-09-20,91.3,0.333,low\nN03-P1,N03,Northern,2023-05-05,90.4,0.347,low\nN03-P1,N03,Northern,2023-06-23,101.9,0.343,low\nN03-P1,N03,Northern,2023-07-12,131.8,0.4,low\nN03-P1,N03,Northern,2023-08-19,147.6,0.439,low\nN03-P1,N03,Northern,2023-09-10,106.0,0.313,low\nN03-P1,N03,Northern,2024-05-09,70.6,0.268,low\nN03-P1,N03,Northern,2024-06-13,119.5,0.394,low\nN03-P1,N03,Northern,2024-07-23,136.5,0.402,low\nN03-P1,N03,Northern,2024-08-15,112.7,0.367,low\nN03-P1,N03,Northern,2024-09-12,98.0,0.33,low\nN03-P2,N03,Northern,2023-05-12,55.0,0.244,high\nN03-P2,N03,Northern,2023-06-07,,0.275,high\nN03-P2,N03,Northern,2023-07-08,85.1,0.269,high\nN03-P2,N03,Northern,2023-08-22,96.4,0.36,high\nN03-P2,N03,Northern,2023-09-22,54.3,0.232,high\nN03-P2,N03,Northern,2024-05-10,58.6,0.187,high\nN03-P2,N03,Northern,2024-06-10,76.9,0.268,high\nN03-P2,N03,Northern,2024-07-18,106.3,0.319,high\nN03-P2,N03,Northern,2024-08-20,101.2,0.348,high\nN03-P2,N03,Northern,2024-09-18,72.0,0.249,high\nN03-P3,N03,Northern,2023-05-17,96.0,0.309,low\nN03-P3,N03,Northern,2023-06-15,132.2,0.446,low\nN03-P3,N03,Northern,2023-07-06,127.3,0.386,low\nN03-P3,N03,Northern,2023-08-19,119.3,0.352,low\nN03-P3,N03,Northern,2023-09-18,120.7,0.372,low\nN03-P3,N03,Northern,2024-05-23,80.9,0.272,low\nN03-P3,N03,Northern,2024-06-07,131.5,0.42,low\nN03-P3,N03,Northern,2024-07-17,158.4,0.482,low\nN03-P3,N03,Northern,2024-08-08,135.9,0.369,low\nN03-P3,N03,Northern,2024-09-07,102.7,0.331,low\nN04-P1,N04,Northern,2023-05-12,47.5,0.232,high\nN04-P1,N04,Northern,2023-06-24,85.7,0.292,high\nN04-P1,N04,Northern,2023-07-05,123.3,0.437,high\nN04-P1,N04,Northern,2023-08-09,80.5,0.304,high\nN04-P1,N04,Northern,2023-09-16,,0.262,high\nN04-P1,N04,Northern,2024-05-13,49.0,0.236,high\nN04-P1,N04,Northern,2024-06-12,70.3,0.246,high\nN04-P1,N04,Northern,2024-07-23,111.9,0.376,high\nN04-P1,N04,Northern,2024-08-20,89.9,0.31,high\nN04-P1,N04,Northern,2024-09-24,72.3,0.297,high\nN04-P2,N04,Northern,2023-05-14,71.2,0.237,low\nN04-P2,N04,Northern,2023-06-18,141.6,0.371,low\nN04-P2,N04,Northern,2023-07-20,136.3,0.417,low\nN04-P2,N04,Northern,2023-08-19,164.0,0.481,low\nN04-P2,N04,Northern,2023-09-06,110.6,0.363,low\nN04-P2,N04,Northern,2024-05-06,75.0,0.261,low\nN04-P2,N04,Northern,2024-06-23,117.7,0.37,low\nN04-P2,N04,Northern,2024-07-13,144.6,0.43,low\nN04-P2,N04,Northern,2024-08-22,124.8,0.357,low\nN04-P2,N04,Northern,2024-09-23,104.0,0.294,low\nN04-P3,N04,Northern,2023-05-15,78.5,0.276,medium\nN04-P3,N04,Northern,2023-06-18,118.6,0.346,medium\nN04-P3,N04,Northern,2023-07-18,,0.482,medium\nN04-P3,N04,Northern,2023-08-20,125.2,0.396,medium\nN04-P3,N04,Northern,2023-09-11,87.8,0.307,medium\nN04-P3,N04,Northern,2024-05-17,65.8,0.248,medium\nN04-P3,N04,Northern,2024-06-19,96.1,0.326,medium\nN04-P3,N04,Northern,2024-07-12,104.2,0.358,medium\nN04-P3,N04,Northern,2024-08-24,,0.417,medium\nN04-P3,N04,Northern,2024-09-18,81.4,0.281,medium\nC05-P1,C05,Central,2023-05-07,66.5,0.229,low\nC05-P1,C05,Central,2023-06-18,98.9,0.318,low\nC05-P1,C05,Central,2023-07-05,117.2,0.394,low\nC05-P1,C05,Central,2023-08-18,92.3,0.286,low\nC05-P1,C05,Central,2023-09-07,75.6,0.28,low\nC05-P1,C05,Central,2024-05-19,43.8,0.208,low\nC05-P1,C05,Central,2024-06-06,84.0,0.287,low\nC05-P1,C05,Central,2024-07-18,99.2,0.311,low\nC05-P1,C05,Central,2024-08-11,84.2,0.299,low\nC05-P1,C05,Central,2024-09-24,69.4,0.269,low\nC05-P2,C05,Central,2023-05-20,54.2,0.257,medium\nC05-P2,C05,Central,2023-06-14,69.5,0.249,medium\nC05-P2,C05,Central,2023-07-21,92.6,0.339,medium\nC05-P2,C05,Central,2023-08-19,80.9,0.31,medium\nC05-P2,C05,Central,2023-09-18,60.7,0.248,medium\nC05-P2,C05,Central,2024-05-23,46.8,0.208,medium\nC05-P2,C05,Central,2024-06-10,83.3,0.264,medium\nC05-P2,C05,Central,2024-07-17,87.3,0.302,medium\nC05-P2,C05,Central,2024-08-19,73.2,0.249,medium\nC05-P2,C05,Central,2024-09-23,63.7,0.239,medium\nC05-P3,C05,Central,2023-05-13,43.7,0.184,high\nC05-P3,C05,Central,2023-06-20,50.4,0.219,high\nC05-P3,C05,Central,2023-07-16,72.9,0.278,high\nC05-P3,C05,Central,2023-08-24,74.2,0.257,high\nC05-P3,C05,Central,2023-09-16,57.2,0.209,high\nC05-P3,C05,Central,2024-05-12,37.3,0.158,high\nC05-P3,C05,Central,2024-06-14,48.0,0.186,high\nC05-P3,C05,Central,2024-07-07,77.5,0.325,high\nC05-P3,C05,Central,2024-08-13,67.8,0.245,high\nC05-P3,C05,Central,2024-09-08,48.0,0.208,high\nC06-P1,C06,Central,2023-05-23,47.8,0.201,medium\nC06-P1,C06,Central,2023-06-16,88.1,0.313,medium\nC06-P1,C06,Central,2023-07-15,78.7,0.299,medium\nC06-P1,C06,Central,2023-08-22,78.2,0.291,medium\nC06-P1,C06,Central,2023-09-06,51.4,0.221,medium\nC06-P1,C06,Central,2024-05-23,53.4,0.22,medium\nC06-P1,C06,Central,2024-06-19,81.4,0.313,medium\nC06-P1,C06,Central,2024-07-08,98.5,0.359,medium\nC06-P1,C06,Central,2024-08-17,86.8,0.312,medium\nC06-P1,C06,Central,2024-09-20,64.3,0.22,medium\nC06-P2,C06,Central,2023-05-13,37.7,0.172,high\nC06-P2,C06,Central,2023-06-21,51.2,0.192,high\nC06-P2,C06,Central,2023-07-13,87.4,0.31,high\nC06-P2,C06,Central,2023-08-15,61.8,0.182,high\nC06-P2,C06,Central,2023-09-16,44.8,0.21,high\nC06-P2,C06,Central,2024-05-22,35.9,0.155,high\nC06-P2,C06,Central,2024-06-18,,0.175,high\nC06-P2,C06,Central,2024-07-10,72.7,0.246,high\nC06-P2,C06,Central,2024-08-22,66.1,0.282,high\nC06-P2,C06,Central,2024-09-22,50.9,0.196,high\nC06-P3,C06,Central,2023-05-11,56.2,0.195,medium\nC06-P3,C06,Central,2023-06-18,86.5,0.305,medium\nC06-P3,C06,Central,2023-07-21,101.8,0.327,medium\nC06-P3,C06,Central,2023-08-14,83.7,0.287,medium\nC06-P3,C06,Central,2023-09-12,61.1,0.215,medium\nC06-P3,C06,Central,2024-05-20,45.4,0.182,medium\nC06-P3,C06,Central,2024-06-09,70.9,0.241,medium\nC06-P3,C06,Central,2024-07-09,97.3,0.335,medium\nC06-P3,C06,Central,2024-08-09,75.3,0.27,medium\nC06-P3,C06,Central,2024-09-19,59.0,0.207,medium\nC07-P1,C07,Central,2023-05-09,51.4,0.207,low\nC07-P1,C07,Central,2023-06-14,71.2,0.29,low\nC07-P1,C07,Central,2023-07-14,94.9,0.327,low\nC07-P1,C07,Central,2023-08-20,89.9,0.318,low\nC07-P1,C07,Central,2023-09-16,58.8,0.206,low\nC07-P1,C07,Central,2024-05-09,62.1,0.231,low\nC07-P1,C07,Central,2024-06-06,85.8,0.323,low\nC07-P1,C07,Central,2024-07-17,123.9,0.386,low\nC07-P1,C07,Central,2024-08-10,107.5,0.344,low\nC07-P1,C07,Central,2024-09-13,74.3,0.228,low\nC07-P2,C07,Central,2023-05-07,67.8,0.246,low\nC07-P2,C07,Central,2023-06-07,76.9,0.266,low\nC07-P2,C07,Central,2023-07-11,129.7,0.408,low\nC07-P2,C07,Central,2023-08-12,85.9,0.289,low\nC07-P2,C07,Central,2023-09-20,78.2,0.259,low\nC07-P2,C07,Central,2024-05-24,58.2,0.206,low\nC07-P2,C07,Central,2024-06-09,72.5,0.306,low\nC07-P2,C07,Central,2024-07-18,121.1,0.36,low\nC07-P2,C07,Central,2024-08-24,101.7,0.347,low\nC07-P2,C07,Central,2024-09-14,55.2,0.215,low\nC07-P3,C07,Central,2023-05-20,37.7,0.171,high\nC07-P3,C07,Central,2023-06-13,65.6,0.207,high\nC07-P3,C07,Central,2023-07-24,76.2,0.269,high\nC07-P3,C07,Central,2023-08-10,75.8,0.257,high\nC07-P3,C07,Central,2023-09-08,55.3,0.24,high\nC07-P3,C07,Central,2024-05-14,30.8,0.194,high\nC07-P3,C07,Central,2024-06-15,46.4,0.232,high\nC07-P3,C07,Central,2024-07-06,55.9,0.242,high\nC07-P3,C07,Central,2024-08-16,68.2,0.253,high\nC07-P3,C07,Central,2024-09-15,46.6,0.223,high\nC08-P1,C08,Central,2023-05-23,60.4,0.257,medium\nC08-P1,C08,Central,2023-06-20,82.7,0.293,medium\nC08-P1,C08,Central,2023-07-16,91.4,0.302,medium\nC08-P1,C08,Central,2023-08-12,86.3,0.248,medium\nC08-P1,C08,Central,2023-09-21,55.4,0.236,medium\nC08-P1,C08,Central,2024-05-10,56.2,0.207,medium\nC08-P1,C08,Central,2024-06-20,83.4,0.279,medium\nC08-P1,C08,Central,2024-07-10,87.1,0.302,medium\nC08-P1,C08,Central,2024-08-18,66.5,0.257,medium\nC08-P1,C08,Central,2024-09-23,56.7,0.209,medium\nC08-P2,C08,Central,2023-05-17,31.1,0.174,high\nC08-P2,C08,Central,2023-06-09,57.7,0.224,high\nC08-P2,C08,Central,2023-07-13,72.2,0.258,high\nC08-P2,C08,Central,2023-08-16,57.7,0.223,high\nC08-P2,C08,Central,2023-09-07,,0.175,high\nC08-P2,C08,Central,2024-05-24,40.4,0.151,high\nC08-P2,C08,Central,2024-06-19,61.4,0.245,high\nC08-P2,C08,Central,2024-07-06,63.5,0.213,high\nC08-P2,C08,Central,2024-08-14,58.7,0.248,high\nC08-P2,C08,Central,2024-09-17,46.2,0.2,high\nC08-P3,C08,Central,2023-05-07,58.8,0.226,low\nC08-P3,C08,Central,2023-06-23,83.5,0.247,low\nC08-P3,C08,Central,2023-07-20,92.5,0.303,low\nC08-P3,C08,Central,2023-08-12,91.7,0.329,low\nC08-P3,C08,Central,2023-09-12,,0.274,low\nC08-P3,C08,Central,2024-05-16,63.1,0.224,low\nC08-P3,C08,Central,2024-06-20,66.1,0.221,low\nC08-P3,C08,Central,2024-07-08,89.0,0.318,low\nC08-P3,C08,Central,2024-08-09,100.2,0.285,low\nC08-P3,C08,Central,2024-09-10,77.8,0.264,low\nS09-P1,S09,Southern,2023-05-16,24.1,0.147,high\nS09-P1,S09,Southern,2023-06-23,28.8,0.175,high\nS09-P1,S09,Southern,2023-07-06,31.6,0.129,high\nS09-P1,S09,Southern,2023-08-12,29.0,0.174,high\nS09-P1,S09,Southern,2023-09-14,,0.182,high\nS09-P1,S09,Southern,2024-05-16,19.4,0.128,high\nS09-P1,S09,Southern,2024-06-24,32.4,0.198,high\nS09-P1,S09,Southern,2024-07-23,34.0,0.181,high\nS09-P1,S09,Southern,2024-08-20,27.9,0.164,high\nS09-P1,S09,Southern,2024-09-15,20.8,0.107,high\nS09-P2,S09,Southern,2023-05-08,30.8,0.151,low\nS09-P2,S09,Southern,2023-06-05,39.1,0.186,low\nS09-P2,S09,Southern,2023-07-24,48.6,0.239,low\nS09-P2,S09,Southern,2023-08-24,,0.238,low\nS09-P2,S09,Southern,2023-09-20,40.6,0.177,low\nS09-P2,S09,Southern,2024-05-17,25.0,0.119,low\nS09-P2,S09,Southern,2024-06-13,38.3,0.163,low\nS09-P2,S09,Southern,2024-07-08,53.3,0.189,low\nS09-P2,S09,Southern,2024-08-18,43.8,0.182,low\nS09-P2,S09,Southern,2024-09-10,40.0,0.202,low\nS09-P3,S09,Southern,2023-05-14,23.0,0.124,medium\nS09-P3,S09,Southern,2023-06-08,35.8,0.181,medium\nS09-P3,S09,Southern,2023-07-15,55.9,0.193,medium\nS09-P3,S09,Southern,2023-08-18,,0.19,medium\nS09-P3,S09,Southern,2023-09-11,27.5,0.163,medium\nS09-P3,S09,Southern,2024-05-06,20.5,0.128,medium\nS09-P3,S09,Southern,2024-06-18,,0.209,medium\nS09-P3,S09,Southern,2024-07-15,51.0,0.231,medium\nS09-P3,S09,Southern,2024-08-24,52.0,0.207,medium\nS09-P3,S09,Southern,2024-09-14,29.9,0.159,medium\nS10-P1,S10,Southern,2023-05-23,30.7,0.126,medium\nS10-P1,S10,Southern,2023-06-23,46.2,0.202,medium\nS10-P1,S10,Southern,2023-07-08,50.0,0.202,medium\nS10-P1,S10,Southern,2023-08-23,46.7,0.239,medium\nS10-P1,S10,Southern,2023-09-19,29.0,0.15,medium\nS10-P1,S10,Southern,2024-05-11,25.9,0.111,medium\nS10-P1,S10,Southern,2024-06-14,37.7,0.144,medium\nS10-P1,S10,Southern,2024-07-18,49.9,0.224,medium\nS10-P1,S10,Southern,2024-08-15,38.6,0.151,medium\nS10-P1,S10,Southern,2024-09-12,,0.156,medium\nS10-P2,S10,Southern,2023-05-18,21.9,0.154,high\nS10-P2,S10,Southern,2023-06-13,25.5,0.135,high\nS10-P2,S10,Southern,2023-07-23,,0.182,high\nS10-P2,S10,Southern,2023-08-15,41.4,0.197,high\nS10-P2,S10,Southern,2023-09-21,21.9,0.103,high\nS10-P2,S10,Southern,2024-05-14,17.8,0.123,high\nS10-P2,S10,Southern,2024-06-20,23.5,0.13,high\nS10-P2,S10,Southern,2024-07-18,34.2,0.152,high\nS10-P2,S10,Southern,2024-08-06,36.5,0.187,high\nS10-P2,S10,Southern,2024-09-16,23.8,0.137,high\nS10-P3,S10,Southern,2023-05-24,30.0,0.156,medium\nS10-P3,S10,Southern,2023-06-24,44.4,0.217,medium\nS10-P3,S10,Southern,2023-07-17,46.6,0.195,medium\nS10-P3,S10,Southern,2023-08-24,51.1,0.197,medium\nS10-P3,S10,Southern,2023-09-20,30.4,0.161,medium\nS10-P3,S10,Southern,2024-05-22,21.5,0.119,medium\nS10-P3,S10,Southern,2024-06-24,30.5,0.168,medium\nS10-P3,S10,Southern,2024-07-05,46.5,0.189,medium\nS10-P3,S10,Southern,2024-08-08,48.9,0.198,medium\nS10-P3,S10,Southern,2024-09-20,29.1,0.11,medium\nS11-P1,S11,Southern,2023-05-20,32.0,0.161,low\nS11-P1,S11,Southern,2023-06-17,49.3,0.195,low\nS11-P1,S11,Southern,2023-07-11,49.3,0.17,low\nS11-P1,S11,Southern,2023-08-09,51.9,0.183,low\nS11-P1,S11,Southern,2023-09-12,43.4,0.189,low\nS11-P1,S11,Southern,2024-05-10,23.0,0.139,low\nS11-P1,S11,Southern,2024-06-08,42.4,0.188,low\nS11-P1,S11,Southern,2024-07-22,48.8,0.193,low\nS11-P1,S11,Southern,2024-08-16,54.3,0.206,low\nS11-P1,S11,Southern,2024-09-22,37.5,0.185,low\nS11-P2,S11,Southern,2023-05-24,22.1,0.174,high\nS11-P2,S11,Southern,2023-06-11,27.8,0.144,high\nS11-P2,S11,Southern,2023-07-22,36.8,0.181,high\nS11-P2,S11,Southern,2023-08-15,38.8,0.135,high\nS11-P2,S11,Southern,2023-09-18,22.2,0.149,high\nS11-P2,S11,Southern,2024-05-09,,0.129,high\nS11-P2,S11,Southern,2024-06-24,29.2,0.123,high\nS11-P2,S11,Southern,2024-07-08,32.4,0.169,high\nS11-P2,S11,Southern,2024-08-06,26.7,0.126,high\nS11-P2,S11,Southern,2024-09-05,20.4,0.127,high\nS11-P3,S11,Southern,2023-05-05,,0.153,high\nS11-P3,S11,Southern,2023-06-07,33.1,0.175,high\nS11-P3,S11,Southern,2023-07-22,34.2,0.153,high\nS11-P3,S11,Southern,2023-08-12,41.6,0.19,high\nS11-P3,S11,Southern,2023-09-18,25.1,0.196,high\nS11-P3,S11,Southern,2024-05-17,18.2,0.146,high\nS11-P3,S11,Southern,2024-06-22,24.7,0.136,high\nS11-P3,S11,Southern,2024-07-16,35.1,0.171,high\nS11-P3,S11,Southern,2024-08-09,38.9,0.166,high\nS11-P3,S11,Southern,2024-09-19,21.2,0.118,high\nS12-P1,S12,Southern,2024-05-11,24.1,0.157,low\nS12-P1,S12,Southern,2024-06-18,45.2,0.213,low\nS12-P1,S12,Southern,2024-07-22,47.4,0.215,low\nS12-P1,S12,Southern,2024-08-17,52.0,0.207,low\nS12-P1,S12,Southern,2024-09-09,39.9,0.167,low\n"
+     }
+    ],
+    "hints": [
+     "In named aggregation, each argument is new_name=(column, function), and the function can be a lambda.",
+     "transform('std') gives each row its aimag's standard deviation, so the z-score is one vectorised line.",
+     "filter's function receives each soum's rows as a DataFrame and must return True or False."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "NumPy arrays, vectorisation, broadcasting and views; process the satellite tile.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Series, DataFrames and the index; load, align and index the reef survey tables.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Missing data, sentinels, text, units and duplicates; clean the reef export.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Merges, concatenation, merge_asof and reshaping; combine the census and pasture data.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "groupby, transform, filter, pivot tables and crosstabs; summarise the rangeland plots.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the air-quality capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Real-World Dataset Cleaning Capstone: an air-quality network",
+  "minutes": 360,
+  "brief": "A city's air-quality network (made-up data) has six stations measuring PM2.5, PM10 and NO2 every day. You have the first quarter of 2025 in two overlapping exports (readings_part1.csv and readings_part2.csv), the station list (stations.csv) and the daily weather (weather.csv). They're messy: station codes are typed several ways (aq01, AQ-01, ' AQ02'), dates are written 2025-01-14 or 14/01/2025, -999 means no reading, <5 means below the detection limit, a few rows are in mg/m3 instead of µg/m3, some station-days are absent and the overlap repeats rows. Build a pandas pipeline that turns them into one clean table with one row per station and day, then answer the city's questions. The rules: normalise the codes; parse each date format explicitly rather than relying on dayfirst; remove duplicates; treat -999 as missing and <5 as 2.5, half the limit; convert mg/m3 to µg/m3; validate the merges with the stations and the weather; reindex to every station and day from 1 January to 31 March; and fill gaps with interpolate(limit=2, limit_area='inside') within each station, flagging every filled value. Then report the mean PM2.5 by station and month, the days over the city's alert level of 25 µg/m3 (made up for this project) by station, the differences between roadside, industrial and background sites, and calm days (wind under 2 m/s) against windy ones. Check yourself: 553 rows read, 29 exact duplicates, 6 values below the detection limit, 9 rows in mg/m3, 16 of the 540 station-days absent, 1 PM2.5 value still missing after interpolation, and a January mean of 28.5 µg/m3 at AQ01.",
+  "deliverables": [
+   "A notebook or script that rebuilds the clean table from the four raw files from a fresh start, as small functions chained with pipe()",
+   "clean_readings.csv: 540 rows, one per station and day, with each station's details, the weather and a flag for every filled value",
+   "A cleaning log: each problem, how many rows it affected, and what was done about it",
+   "Validation checks (asserts) for the rules: unique station-days, no sentinels left, values in µg/m3 within sensible ranges, and every merge validated",
+   "Summary tables: mean PM2.5 by station and month (a pivot table), days over 25 µg/m3 by station, means by site type, and calm against windy days",
+   "A short write-up of what the data shows, and how the cleaning decisions and filled values could affect it",
+   "Optionally, the same pipeline run on a messy open dataset you choose, with a supplementary table merged in"
+  ],
+  "rubric": [
+   {
+    "name": "Cleaning",
+    "points": 30,
+    "description": "Codes, dates, sentinels, detection limits, units, duplicates and gaps are handled as the rules say, and the self-check numbers match."
+   },
+   {
+    "name": "Combining and reshaping",
+    "points": 20,
+    "description": "The exports are stacked, every merge is validated and audited with no silent loss or duplication of rows, and the station-by-day grid is built with reindex."
+   },
+   {
+    "name": "Aggregation",
+    "points": 20,
+    "description": "groupby, transform, pivot tables and crosstabs answer each question correctly and clearly."
+   },
+   {
+    "name": "Code quality and reproducibility",
+    "points": 15,
+    "description": "Small functions in a pipe() chain, vectorised operations rather than loops, clear names, and code that runs from top to bottom on a fresh start."
+   },
+   {
+    "name": "Validation and write-up",
+    "points": 15,
+    "description": "Asserts that would catch each problem if it came back, a complete cleaning log, and a write-up that is honest about filled and missing values."
+   }
+  ],
+  "submit": "Paste your pipeline code, the output of your checks and summary tables, the first ten rows of clean_readings.csv, your cleaning log and your write-up.",
+  "files": [
+   {
+    "path": "readings_part1.csv",
+    "content": "date,station,pm25,pm10,no2,unit\n01/01/2025,AQ01,18.1,36.3,34.0,ug/m3\n2025-01-02,aq01,55.3,89.7,61.5,ug/m3\n2025-01-03,aq01,27.5,46.9,40.1,ug/m3\n2025-01-04,AQ01,28.8,57.8,76.8,ug/m3\n2025-01-05,AQ-01,30.3,53.2,21.6,ug/m3\n2025-01-06,AQ01,14.0,26.6,39.3,ug/m3\n2025-01-07,AQ-01,33.5,58.8,41.8,ug/m3\n2025-01-08,AQ01,37.8,75.7,39.3,ug/m3\n2025-01-09,AQ-01,26.9,52.0,-999,ug/m3\n2025-01-10,AQ01,32.1,51.0,46.5,ug/m3\n2025-01-11,AQ-01,40.3,80.9,63.9,ug/m3\n2025-01-12,AQ01,21.9,40.0,27.8,ug/m3\n2025-01-13,AQ01,30.6,52.4,56.1,ug/m3\n2025-01-14,AQ01,25.0,38.1,34.7,ug/m3\n2025-01-15,AQ01,60.3,118.3,70.6,ug/m3\n2025-01-16,AQ01,13.2,26.5,31.2,ug/m3\n2025-01-17,AQ01,44.0,67.4,46.1,ug/m3\n18/01/2025,AQ01,28.0,57.7,49.0,ug/m3\n2025-01-19,AQ01,43.2,82.0,66.2,ug/m3\n2025-01-20,AQ01,22.7,46.3,45.2,ug/m3\n21/01/2025,AQ-01,21.6,34.0,29.3,ug/m3\n2025-01-22,AQ01,16.7,31.4,29.8,ug/m3\n2025-01-23,AQ01,41.4,74.9,29.4,ug/m3\n24/01/2025,AQ01,18.5,37.8,60.6,ug/m3\n2025-01-25,AQ01,31.0,59.8,29.2,ug/m3\n2025-01-26,AQ01,17.7,29.1,47.2,ug/m3\n27/01/2025,AQ01,22.3,34.3,27.0,ug/m3\n2025-01-28,AQ01,17.3,34.0,37.4,ug/m3\n29/01/2025,AQ01,15.4,27.7,42.7,ug/m3\n2025-01-30,AQ01,21.0,37.3,33.6,ug/m3\n2025-01-31,AQ01,28.2,46.1,25.1,ug/m3\n2025-02-01,AQ01,28.2,55.7,74.2,ug/m3\n2025-02-02,AQ01,16.7,30.2,40.0,ug/m3\n2025-02-03,AQ01,19.0,30.1,44.5,ug/m3\n2025-02-04,AQ01,27.3,43.1,40.1,ug/m3\n2025-02-05,AQ-01,25.4,49.0,66.7,ug/m3\n2025-02-06,AQ01,20.8,34.1,43.8,ug/m3\n2025-02-07,AQ01,42.0,69.2,50.1,ug/m3\n2025-02-08,AQ01,15.6,29.3,56.8,ug/m3\n09/02/2025,AQ01,11.8,21.1,64.5,ug/m3\n2025-02-10,aq01,36.9,57.1,41.3,ug/m3\n2025-02-11,aq01,21.0,41.8,33.4,ug/m3\n2025-02-12,AQ01,32.7,61.3,60.5,ug/m3\n2025-02-13,aq01,21.8,42.8,40.3,ug/m3\n2025-02-14,AQ01,27.9,47.7,77.3,ug/m3\n2025-02-15,AQ01,23.7,36.4,38.0,ug/m3\n2025-02-16,AQ01,22.6,35.3,36.3,ug/m3\n2025-02-17,AQ01,24.9,37.9,26.3,ug/m3\n2025-02-18,AQ01,41.8,73.2,34.8,ug/m3\n2025-02-19,aq01,36.1,59.6,47.5,ug/m3\n2025-02-20,AQ01,27.3,45.1,45.5,ug/m3\n2025-01-01,AQ02,11.5,17.9,20.3,ug/m3\n2025-01-02,AQ02,19.5,34.3,29.7,ug/m3\n2025-01-03, AQ02,15.9,23.9,20.5,ug/m3\n2025-01-04,AQ02,13.4,23.8,18.7,ug/m3\n2025-01-06,AQ02,17.3,34.8,18.4,ug/m3\n2025-01-07,AQ02,14.8,27.6,20.7,ug/m3\n2025-01-08,AQ02,16.2,27.6,37.2,ug/m3\n2025-01-09, AQ02,14.8,29.8,23.4,ug/m3\n2025-01-10,AQ02,17.1,33.2,16.2,ug/m3\n2025-01-11,AQ02,17.3,33.8,20.3,ug/m3\n12/01/2025,AQ02,7.4,11.9,12.1,ug/m3\n2025-01-13, AQ02,8.5,15.4,11.2,ug/m3\n2025-01-14,AQ02,10.8,20.6,15.3,ug/m3\n2025-01-15,AQ02,15.2,31.1,41.6,ug/m3\n2025-01-16,AQ02,10.4,21.4,14.6,ug/m3\n17/01/2025,AQ02,17.7,32.1,19.4,ug/m3\n2025-01-18,AQ02,10.9,19.7,20.7,ug/m3\n2025-01-19,AQ02,15.3,31.5,21.7,ug/m3\n2025-01-20,AQ02,20.0,39.5,19.4,ug/m3\n2025-01-21,AQ02,19.4,36.4,13.8,ug/m3\n2025-01-22,AQ02,13.9,23.3,10.6,ug/m3\n2025-01-23,AQ02,<5,39.5,16.3,ug/m3\n2025-01-24,AQ02,5.9,9.8,17.5,ug/m3\n2025-01-25,AQ02,9.5,14.4,22.7,ug/m3\n2025-01-26,AQ02,14.2,25.4,18.0,ug/m3\n2025-01-27,AQ02,10.8,17.5,20.0,ug/m3\n2025-01-28,AQ02,16.1,24.5,15.4,ug/m3\n2025-01-29,AQ02,8.9,14.7,13.0,ug/m3\n2025-01-30,AQ02,11.0,18.9,17.5,ug/m3\n2025-01-31, AQ02,25.9,45.5,13.9,ug/m3\n2025-02-01,AQ02,0.016,0.0296,0.0301,mg/m3\n02/02/2025,AQ02,9.1,14.4,11.5,ug/m3\n2025-02-03,AQ02,11.2,20.7,9.6,ug/m3\n2025-02-04,AQ02,7.3,14.3,15.1,ug/m3\n2025-02-05,AQ02,18.8,31.1,29.7,ug/m3\n06/02/2025,AQ02,9.6,19.3,14.7,ug/m3\n2025-02-07, AQ02,11.3,19.4,16.9,ug/m3\n2025-02-08,AQ02,11.9,22.1,20.5,ug/m3\n2025-02-09,AQ02,5.0,10.1,20.1,ug/m3\n10/02/2025,AQ02,14.9,28.8,15.3,ug/m3\n2025-02-11,AQ02,16.8,30.4,26.3,ug/m3\n12/02/2025,AQ02,19.6,39.1,39.1,ug/m3\n13/02/2025,AQ02,10.5,21.7,21.3,ug/m3\n2025-02-14,AQ02,9.9,15.3,23.3,ug/m3\n15/02/2025,AQ02,12.9,25.2,20.2,ug/m3\n16/02/2025,AQ02,9.6,15.2,20.1,ug/m3\n2025-02-17, AQ02,17.2,34.7,13.4,ug/m3\n2025-02-18, AQ02,15.4,30.6,22.4,ug/m3\n2025-02-19, AQ02,17.8,29.5,14.9,ug/m3\n20/02/2025,AQ02,14.3,25.4,43.0,ug/m3\n2025-01-01,AQ03,31.9,56.3,53.6,ug/m3\n2025-01-02,AQ03,26.4,47.1,56.5,ug/m3\n2025-01-03,AQ03,16.8,35.2,28.8,ug/m3\n2025-01-04,AQ03,27.6,47.9,47.8,ug/m3\n2025-01-05,AQ03,17.0,27.9,25.6,ug/m3\n06/01/2025,AQ03,18.1,29.3,32.0,ug/m3\n07/01/2025,AQ03,26.2,48.0,28.4,ug/m3\n2025-01-08,AQ03,39.2,59.8,72.8,ug/m3\n2025-01-09,AQ03,21.8,42.6,40.0,ug/m3\n2025-01-10,AQ03,60.7,123.3,56.5,ug/m3\n2025-01-11,AQ03,26.8,44.6,92.3,ug/m3\n12/01/2025,AQ03,18.2,35.8,30.9,ug/m3\n2025-01-13,AQ03,14.9,23.9,32.8,ug/m3\n2025-01-14,aq03,29.7,46.8,35.5,ug/m3\n15/01/2025,AQ03,36.0,58.5,52.1,ug/m3\n2025-01-16,aq03,24.4,43.2,36.6,ug/m3\n2025-01-17,AQ03,42.6,70.4,48.0,ug/m3\n18/01/2025,AQ03,30.6,52.2,43.6,ug/m3\n2025-01-19,AQ03,38.0,77.7,78.2,ug/m3\n2025-01-20,AQ03,38.5,61.1,63.4,ug/m3\n2025-01-21,AQ03,24.0,47.1,46.6,ug/m3\n2025-01-22,AQ03,10.0,20.4,42.6,ug/m3\n2025-01-23,AQ03,13.3,23.5,39.7,ug/m3\n24/01/2025,AQ03,16.1,25.0,42.5,ug/m3\n2025-01-25,AQ03,22.4,39.7,40.5,ug/m3\n2025-01-26,AQ03,21.3,41.3,39.6,ug/m3\n2025-01-28,aq03,20.6,37.4,23.6,ug/m3\n2025-01-29,AQ03,36.0,66.3,44.8,ug/m3\n30/01/2025,AQ03,19.7,39.0,40.6,ug/m3\n31/01/2025,AQ03,17.2,32.5,52.4,ug/m3\n2025-02-01,aq03,52.7,83.6,68.1,ug/m3\n2025-02-02,aq03,17.3,27.5,37.9,ug/m3\n2025-02-03,AQ03,27.7,55.3,35.6,ug/m3\n2025-02-04,AQ03,17.7,33.4,28.1,ug/m3\n2025-02-05,AQ03,24.9,44.9,50.0,ug/m3\n06/02/2025,AQ03,34.8,70.0,33.5,ug/m3\n07/02/2025,AQ03,27.8,43.4,36.8,ug/m3\n2025-02-08,AQ03,33.2,56.6,23.9,ug/m3\n2025-02-09,AQ03,26.4,52.6,41.5,ug/m3\n2025-02-10,AQ03,25.6,51.4,33.6,ug/m3\n2025-02-11,AQ03,15.9,26.5,50.4,ug/m3\n2025-02-12,AQ03,58.1,103.5,79.1,ug/m3\n2025-02-13,AQ03,17.8,32.0,27.4,ug/m3\n2025-02-14,AQ03,51.1,92.3,50.9,ug/m3\n2025-02-15,AQ03,44.3,69.1,34.1,ug/m3\n16/02/2025,AQ03,35.7,71.0,35.3,ug/m3\n2025-02-17,aq03,23.5,39.6,41.5,ug/m3\n2025-02-18,AQ03,33.1,64.9,50.8,ug/m3\n2025-02-19,aq03,11.7,19.5,41.0,ug/m3\n2025-02-20,AQ03,27.8,57.8,38.8,ug/m3\n2025-01-01,AQ04,7.0,10.7,19.9,ug/m3\n2025-01-03,AQ04,18.0,35.5,15.6,ug/m3\n04/01/2025,AQ04,11.6,23.9,23.9,ug/m3\n2025-01-05,AQ04,<5,30.5,15.1,ug/m3\n2025-01-06,AQ04,11.9,20.9,7.9,ug/m3\n2025-01-07,AQ04,8.3,15.6,19.5,ug/m3\n2025-01-08,AQ04,19.6,38.7,27.9,ug/m3\n2025-01-09,AQ04,16.0,25.8,17.4,ug/m3\n2025-01-10,AQ04,16.5,32.0,19.2,ug/m3\n2025-01-11,AQ04,23.7,46.3,26.0,ug/m3\n12/01/2025,AQ04,14.5,29.8,19.0,ug/m3\n2025-01-13,AQ04,9.9,18.8,32.1,ug/m3\n2025-01-14,AQ04,11.6,22.2,12.3,ug/m3\n15/01/2025,AQ04,19.5,38.8,24.1,ug/m3\n2025-01-16,AQ04,9.1,15.0,17.0,ug/m3\n2025-01-17,AQ04,18.0,27.1,31.5,ug/m3\n2025-01-18,AQ04,11.1,22.5,21.0,ug/m3\n2025-01-19,AQ04,20.4,35.4,34.2,ug/m3\n2025-01-20,AQ04,24.0,45.7,31.9,ug/m3\n2025-01-21,AQ04,0.0108,0.0185,0.0269,mg/m3\n2025-01-22,AQ04,9.3,18.4,15.5,ug/m3\n2025-01-23,AQ04,12.1,22.6,16.3,ug/m3\n2025-01-24,AQ04,10.8,17.1,16.2,ug/m3\n2025-01-25,AQ04,9.3,17.3,13.9,ug/m3\n2025-01-26,AQ04,11.6,22.4,18.9,ug/m3\n2025-01-27,AQ04,0.0111,0.023,0.0216,mg/m3\n2025-01-28,AQ04,11.2,20.8,22.0,ug/m3\n2025-01-29,AQ04,8.8,15.7,12.8,ug/m3\n2025-01-30,AQ04,11.4,18.4,19.9,ug/m3\n2025-01-31,AQ04,12.2,24.0,14.2,ug/m3\n2025-02-01,AQ04,27.1,43.0,27.3,ug/m3\n2025-02-02,AQ04,10.7,21.4,17.6,ug/m3\n2025-02-03,AQ04,13.4,22.3,16.1,ug/m3\n2025-02-04,AQ04,6.9,11.6,20.3,ug/m3\n05/02/2025,AQ04,15.1,30.5,36.7,ug/m3\n2025-02-06,AQ04,18.0,29.1,24.2,ug/m3\n2025-02-07,AQ04,12.8,25.6,18.3,ug/m3\n08/02/2025,AQ04,9.9,18.5,20.4,ug/m3\n2025-02-09,AQ04,6.7,13.4,19.2,ug/m3\n2025-02-10,AQ04,17.4,27.7,19.3,ug/m3\n2025-02-11,AQ04,8.6,13.7,20.7,ug/m3\n2025-02-12,AQ04,16.2,30.2,34.2,ug/m3\n2025-02-13,AQ04,15.8,31.8,15.8,ug/m3\n14/02/2025,AQ04,19.8,40.4,27.9,ug/m3\n2025-02-15,AQ04,17.7,33.7,20.9,ug/m3\n2025-02-16,AQ04,8.0,16.3,23.8,ug/m3\n2025-02-17,AQ04,10.3,16.7,18.4,ug/m3\n2025-02-18,AQ04,26.6,42.8,20.1,ug/m3\n2025-02-20,AQ04,13.3,27.4,39.1,ug/m3\n2025-01-01,AQ05,21.2,35.2,15.4,ug/m3\n2025-01-02,AQ05,29.1,43.8,26.2,ug/m3\n2025-01-03,AQ05,27.1,50.0,18.2,ug/m3\n04/01/2025,AQ05,28.8,46.5,25.9,ug/m3\n2025-01-05,AQ05,15.2,31.3,13.2,ug/m3\n2025-01-06,AQ05,0.025,0.043,0.0173,mg/m3\n2025-01-07,AQ-05,12.2,20.2,12.2,ug/m3\n2025-01-08,AQ05,43.3,73.0,32.8,ug/m3\n2025-01-09,AQ05,22.7,39.2,12.8,ug/m3\n11/01/2025,AQ05,46.7,74.0,38.7,ug/m3\n2025-01-12,AQ05,7.2,12.7,19.8,ug/m3\n13/01/2025,AQ05,36.2,57.8,14.9,ug/m3\n2025-01-14,AQ05,20.7,42.1,19.9,ug/m3\n2025-01-15,AQ05,23.0,45.7,22.2,ug/m3\n2025-01-16,AQ-05,18.2,33.1,19.2,ug/m3\n2025-01-17,AQ05,27.3,50.0,26.2,ug/m3\n18/01/2025,AQ05,15.3,28.8,15.8,ug/m3\n19/01/2025,AQ05,15.3,29.6,41.7,ug/m3\n2025-01-20,AQ05,35.0,56.2,32.3,ug/m3\n2025-01-21,AQ05,17.8,33.8,13.3,ug/m3\n2025-01-22,AQ05,10.3,17.7,15.0,ug/m3\n2025-01-23,AQ05,16.8,29.5,21.0,ug/m3\n2025-01-24,AQ05,13.2,26.2,19.8,ug/m3\n2025-01-25,AQ05,26.6,48.8,15.7,ug/m3\n2025-01-27,AQ05,<5,51.8,10.3,ug/m3\n2025-01-28,AQ05,26.5,53.2,17.4,ug/m3\n30/01/2025,aq05 ,15.4,23.2,25.0,ug/m3\n2025-02-01,AQ05,26.2,40.5,24.6,ug/m3\n02/02/2025,AQ05,17.9,35.5,20.5,ug/m3\n2025-02-03,aq05 ,20.3,33.7,14.7,ug/m3\n2025-02-04,AQ05,17.4,28.8,22.8,ug/m3\n05/02/2025,AQ05,50.2,87.7,25.9,ug/m3\n2025-02-06,AQ05,16.3,25.6,20.9,ug/m3\n2025-02-07,AQ05,13.6,23.1,18.9,ug/m3\n2025-02-09,AQ05,14.4,26.6,18.1,ug/m3\n2025-02-10,AQ05,16.0,32.4,15.3,ug/m3\n2025-02-11,aq05 ,19.1,34.8,22.0,ug/m3\n2025-02-12,AQ05,44.8,80.9,25.2,ug/m3\n13/02/2025,AQ05,15.5,30.1,18.9,ug/m3\n2025-02-14,AQ05,0.0321,0.0538,0.0314,mg/m3\n2025-02-15,AQ05,-999,29.2,16.7,ug/m3\n2025-02-16,AQ05,26.2,53.2,33.5,ug/m3\n2025-02-17,AQ05,17.5,29.1,24.0,ug/m3\n18/02/2025,AQ05,15.7,27.2,25.2,ug/m3\n19/02/2025,AQ05,22.3,35.5,23.5,ug/m3\n2025-02-20,AQ05,27.9,50.4,25.5,ug/m3\n2025-01-01,AQ06,10.4,21.1,17.0,ug/m3\n2025-01-02,AQ06,22.4,38.6,44.8,ug/m3\n03/01/2025,AQ06,12.6,22.0,18.6,ug/m3\n04/01/2025,AQ06,15.7,24.4,24.7,ug/m3\n2025-01-05,AQ06,17.2,25.9,15.5,ug/m3\n2025-01-06,AQ06,5.9,10.5,19.6,ug/m3\n07/01/2025,AQ06,10.2,19.3,18.2,ug/m3\n2025-01-08,AQ06,19.2,40.1,24.2,ug/m3\n2025-01-09,AQ06,7.3,12.5,27.3,ug/m3\n2025-01-10,AQ06,19.6,40.1,20.6,ug/m3\n2025-01-11,AQ06,19.9,33.6,27.0,ug/m3\n2025-01-12,AQ06,10.3,19.8,12.6,ug/m3\n13/01/2025,aq-06,16.1,26.3,27.5,ug/m3\n2025-01-14,AQ06,9.3,16.2,12.8,ug/m3\n2025-01-15,AQ06,23.3,39.7,39.7,ug/m3\n2025-01-16,AQ06,17.7,37.2,21.7,ug/m3\n2025-01-17,AQ06,25.0,44.4,32.6,ug/m3\n2025-01-18,AQ06,14.5,29.8,13.7,ug/m3\n2025-01-19,AQ06,12.7,21.5,31.8,ug/m3\n2025-01-20,AQ06,-999,55.3,23.6,ug/m3\n2025-01-21,AQ06,12.3,21.1,10.0,ug/m3\n2025-01-22,aq-06,12.5,24.5,13.7,ug/m3\n2025-01-23,AQ06,10.7,21.8,18.9,ug/m3\n2025-01-24,aq-06,12.5,20.0,25.7,ug/m3\n25/01/2025,AQ06,9.1,18.7,18.8,ug/m3\n26/01/2025,AQ06,10.1,18.2,21.0,ug/m3\n2025-01-27,AQ06,19.3,34.1,18.9,ug/m3\n2025-01-28,AQ06,13.3,22.9,19.6,ug/m3\n29/01/2025,AQ06,6.3,9.7,19.6,ug/m3\n2025-01-30,AQ06,13.1,27.3,13.8,ug/m3\n2025-01-31,AQ06,20.8,42.5,17.7,ug/m3\n2025-02-01,AQ06,19.6,30.5,33.7,ug/m3\n2025-02-02,AQ06,7.8,13.7,26.5,ug/m3\n03/02/2025,AQ06,12.4,23.5,25.3,ug/m3\n2025-02-04,AQ06,16.1,33.5,16.7,ug/m3\n2025-02-05,AQ06,26.1,48.1,31.9,ug/m3\n06/02/2025,AQ06,9.5,18.7,20.1,ug/m3\n07/02/2025,AQ06,20.1,41.8,17.8,ug/m3\n2025-02-08,AQ06,10.8,21.2,13.8,ug/m3\n2025-02-09,AQ06,7.6,15.1,10.3,ug/m3\n2025-02-10,AQ06,12.8,24.0,18.7,ug/m3\n11/02/2025,AQ06,13.5,26.7,17.2,ug/m3\n2025-02-12,aq-06,26.3,44.6,32.8,ug/m3\n2025-02-13,aq-06,8.5,14.9,18.9,ug/m3\n2025-02-14,aq-06,18.2,27.6,28.9,ug/m3\n2025-02-15,AQ06,14.2,26.9,24.3,ug/m3\n2025-02-16,aq-06,20.0,38.5,30.7,ug/m3\n2025-02-17,AQ06,11.7,19.8,18.0,ug/m3\n18/02/2025,aq-06,12.6,26.2,25.5,ug/m3\n2025-02-19,AQ06,13.8,23.2,26.7,ug/m3\n2025-02-20,AQ06,14.0,22.1,24.5,ug/m3\n"
+   },
+   {
+    "path": "readings_part2.csv",
+    "content": "date,station,pm25,pm10,no2,unit\n2025-02-16,AQ01,22.6,35.3,36.3,ug/m3\n2025-02-17,AQ01,24.9,37.9,26.3,ug/m3\n2025-02-18,AQ01,41.8,73.2,34.8,ug/m3\n2025-02-19,aq01,36.1,59.6,47.5,ug/m3\n2025-02-20,AQ01,27.3,45.1,45.5,ug/m3\n2025-02-21,aq01,38.7,69.3,70.5,ug/m3\n2025-02-22,AQ01,35.4,74.1,30.5,ug/m3\n2025-02-23,AQ-01,30.2,52.1,69.4,ug/m3\n2025-02-24,AQ01,32.1,54.4,36.7,ug/m3\n2025-02-25,AQ-01,36.9,76.3,76.2,ug/m3\n2025-02-26,AQ01,28.2,42.6,41.8,ug/m3\n2025-02-27,AQ01,31.7,48.7,58.9,ug/m3\n2025-02-28,AQ01,13.3,25.7,27.5,ug/m3\n01/03/2025,AQ01,28.6,45.3,67.9,ug/m3\n02/03/2025,AQ01,45.4,68.7,79.3,ug/m3\n03/03/2025,AQ01,27.1,44.6,27.9,ug/m3\n2025-03-04,aq01,31.4,52.2,74.1,ug/m3\n05/03/2025,AQ01,30.7,62.1,36.0,ug/m3\n06/03/2025,AQ01,26.3,45.1,46.6,ug/m3\n2025-03-07,AQ01,29.7,61.1,55.2,ug/m3\n2025-03-08,AQ01,0.0203,0.0418,0.0343,mg/m3\n09/03/2025,AQ01,25.2,44.0,48.2,ug/m3\n2025-03-10,AQ01,47.7,76.2,68.5,ug/m3\n11/03/2025,AQ01,28.9,51.3,40.6,ug/m3\n2025-03-12,AQ01,21.6,37.2,30.6,ug/m3\n13/03/2025,AQ01,29.3,48.3,36.7,ug/m3\n2025-03-14,AQ01,21.9,36.0,28.2,ug/m3\n2025-03-15,AQ01,32.9,56.2,29.5,ug/m3\n2025-03-16,aq01,<5,33.1,30.2,ug/m3\n17/03/2025,AQ01,23.9,47.0,36.5,ug/m3\n2025-03-18,AQ01,25.7,46.3,23.8,ug/m3\n2025-03-19,AQ01,24.9,51.2,62.6,ug/m3\n2025-03-20,AQ01,21.1,32.5,41.7,ug/m3\n21/03/2025,AQ01,22.1,43.7,31.3,ug/m3\n2025-03-22,AQ01,25.2,44.5,25.8,ug/m3\n23/03/2025,AQ01,53.9,96.6,18.4,ug/m3\n2025-03-24,AQ01,0.0302,0.0524,0.0397,mg/m3\n2025-03-25,AQ01,28.8,54.8,46.7,ug/m3\n2025-03-26,AQ01,27.0,48.0,75.7,ug/m3\n2025-03-27,AQ-01,22.8,40.5,95.5,ug/m3\n2025-03-28,AQ01,40.9,69.4,51.5,ug/m3\n2025-03-30,AQ-01,21.2,36.7,33.3,ug/m3\n2025-03-31,AQ01,31.8,61.0,46.9,ug/m3\n16/02/2025,AQ02,9.6,15.2,20.1,ug/m3\n2025-02-17, AQ02,17.2,34.7,13.4,ug/m3\n2025-02-18, AQ02,15.4,30.6,22.4,ug/m3\n2025-02-19, AQ02,17.8,29.5,14.9,ug/m3\n20/02/2025,AQ02,14.3,25.4,43.0,ug/m3\n2025-02-21, AQ02,16.8,27.3,28.6,ug/m3\n2025-02-22,AQ02,10.9,20.7,16.1,ug/m3\n2025-02-23,AQ02,15.3,24.1,38.6,ug/m3\n2025-02-24, AQ02,17.9,29.2,31.1,ug/m3\n2025-02-25,AQ02,18.7,35.4,13.5,ug/m3\n2025-02-26,AQ02,8.8,16.2,19.9,ug/m3\n2025-02-27,AQ02,15.9,30.5,38.9,ug/m3\n2025-02-28, AQ02,7.9,14.2,26.4,ug/m3\n2025-03-01,AQ02,14.5,30.2,17.6,ug/m3\n2025-03-03,AQ02,11.7,18.5,16.0,ug/m3\n2025-03-04,AQ02,-999,27.2,20.2,ug/m3\n2025-03-05,AQ02,15.7,24.7,14.9,ug/m3\n06/03/2025,AQ02,20.6,41.7,38.2,ug/m3\n07/03/2025,AQ02,19.0,33.6,19.5,ug/m3\n2025-03-08, AQ02,17.8,32.5,15.4,ug/m3\n2025-03-09,AQ02,20.7,31.6,20.5,ug/m3\n2025-03-10,AQ02,20.8,39.7,34.1,ug/m3\n11/03/2025,AQ02,7.2,12.7,16.4,ug/m3\n2025-03-12,AQ02,7.7,11.9,18.5,ug/m3\n2025-03-14,AQ02,9.1,13.9,15.2,ug/m3\n2025-03-15,AQ02,17.6,27.9,16.7,ug/m3\n16/03/2025,AQ02,10.6,20.5,25.2,ug/m3\n2025-03-17,AQ02,21.9,35.4,22.3,ug/m3\n2025-03-18,AQ02,14.0,27.3,18.3,ug/m3\n2025-03-19,AQ02,14.1,28.7,26.3,ug/m3\n2025-03-20,AQ02,11.3,19.3,19.4,ug/m3\n2025-03-21,AQ02,10.1,15.8,13.9,ug/m3\n2025-03-22, AQ02,10.9,18.6,17.0,ug/m3\n2025-03-23,AQ02,23.3,46.4,12.9,ug/m3\n24/03/2025,AQ02,15.6,24.8,18.4,ug/m3\n2025-03-25,AQ02,7.0,10.7,27.9,ug/m3\n2025-03-26,AQ02,20.1,34.4,23.2,ug/m3\n2025-03-27,AQ02,21.1,33.3,24.1,ug/m3\n2025-03-28,AQ02,11.8,23.4,23.3,ug/m3\n29/03/2025,AQ02,11.3,23.2,17.7,ug/m3\n2025-03-30,AQ02,13.8,22.9,20.0,ug/m3\n2025-03-31, AQ02,-999,29.2,23.3,ug/m3\n16/02/2025,AQ03,35.7,71.0,35.3,ug/m3\n2025-02-17,aq03,23.5,39.6,41.5,ug/m3\n2025-02-18,AQ03,33.1,64.9,50.8,ug/m3\n2025-02-19,aq03,11.7,19.5,41.0,ug/m3\n2025-02-20,AQ03,27.8,57.8,38.8,ug/m3\n2025-02-21,AQ03,22.6,36.4,39.9,ug/m3\n2025-02-22,AQ03,13.9,27.4,44.5,ug/m3\n23/02/2025,AQ03,26.9,49.7,62.2,ug/m3\n2025-02-24,AQ03,21.9,45.5,76.6,ug/m3\n2025-02-25,AQ03,32.9,49.8,52.7,ug/m3\n2025-02-26,AQ03,14.5,22.6,41.0,ug/m3\n2025-02-27,AQ03,24.2,40.2,38.1,ug/m3\n2025-02-28,AQ03,26.1,47.6,45.9,ug/m3\n2025-03-01,AQ03,37.5,67.0,-999,ug/m3\n2025-03-02,AQ03,34.6,52.9,50.4,ug/m3\n2025-03-03,AQ03,22.8,43.4,31.6,ug/m3\n2025-03-04,AQ03,32.0,52.7,86.1,ug/m3\n2025-03-05,AQ03,30.9,63.8,21.5,ug/m3\n2025-03-06,AQ03,25.6,49.3,74.3,ug/m3\n2025-03-07,AQ03,30.6,61.4,73.3,ug/m3\n08/03/2025,AQ03,20.1,41.3,50.1,ug/m3\n2025-03-09,AQ03,23.1,40.7,54.2,ug/m3\n10/03/2025,AQ03,31.6,58.1,59.0,ug/m3\n2025-03-11,AQ03,18.0,27.1,33.2,ug/m3\n2025-03-12,AQ03,15.7,29.3,24.8,ug/m3\n2025-03-13,AQ03,25.3,40.8,56.4,ug/m3\n2025-03-14,AQ03,31.5,50.2,22.1,ug/m3\n2025-03-15,AQ03,24.9,45.7,34.1,ug/m3\n2025-03-16,AQ03,23.0,41.1,35.4,ug/m3\n2025-03-17,AQ03,33.4,65.8,49.3,ug/m3\n2025-03-18,AQ03,16.6,26.8,27.8,ug/m3\n2025-03-19,aq03,28.7,57.3,77.7,ug/m3\n2025-03-20,AQ03,19.7,31.2,20.3,ug/m3\n2025-03-21,AQ03,21.2,31.9,26.3,ug/m3\n2025-03-22,AQ03,21.8,43.5,49.0,ug/m3\n2025-03-23,aq03,12.4,20.5,33.8,ug/m3\n24/03/2025,AQ03,32.6,60.6,44.8,ug/m3\n2025-03-25,AQ03,16.5,33.2,30.9,ug/m3\n2025-03-26,AQ03,44.1,69.8,79.7,ug/m3\n2025-03-27,AQ03,26.3,45.7,33.8,ug/m3\n28/03/2025,AQ03,27.3,53.0,42.8,ug/m3\n2025-03-29,AQ03,18.6,37.3,50.8,ug/m3\n2025-03-30,AQ03,12.0,21.3,64.1,ug/m3\n2025-03-31,AQ03,34.2,62.8,43.5,ug/m3\n2025-02-16,AQ04,8.0,16.3,23.8,ug/m3\n2025-02-17,AQ04,10.3,16.7,18.4,ug/m3\n2025-02-18,AQ04,26.6,42.8,20.1,ug/m3\n2025-02-20,AQ04,13.3,27.4,39.1,ug/m3\n21/02/2025,AQ04,24.0,42.6,50.0,ug/m3\n2025-02-22,AQ04,12.1,23.5,19.4,ug/m3\n2025-02-23,AQ04,21.1,38.4,23.4,ug/m3\n24/02/2025,AQ04,15.1,29.7,24.6,ug/m3\n25/02/2025,AQ04,20.5,31.6,26.0,ug/m3\n2025-02-26,AQ04,19.7,40.1,26.0,ug/m3\n2025-02-27,AQ04,23.2,34.9,44.6,ug/m3\n28/02/2025,AQ04,12.5,22.7,13.9,ug/m3\n2025-03-01,AQ04,<5,38.8,27.0,ug/m3\n2025-03-02,AQ04,-999,37.5,25.9,ug/m3\n2025-03-03,AQ04,14.5,23.7,16.2,ug/m3\n2025-03-04,AQ04,22.4,36.3,24.8,ug/m3\n2025-03-05,AQ04,-999,16.0,26.5,ug/m3\n2025-03-06,AQ04,26.5,48.8,30.1,ug/m3\n2025-03-07,AQ04,17.2,29.1,17.1,ug/m3\n08/03/2025,AQ04,6.6,12.9,28.0,ug/m3\n2025-03-09,AQ04,29.6,56.0,28.9,ug/m3\n2025-03-10,AQ04,13.1,26.4,24.7,ug/m3\n2025-03-11,AQ04,11.8,19.8,26.8,ug/m3\n2025-03-12,AQ04,10.4,21.4,20.5,ug/m3\n13/03/2025,AQ04,16.6,25.5,23.5,ug/m3\n2025-03-14,AQ04,17.4,31.1,14.3,ug/m3\n2025-03-15,AQ04,12.5,22.1,18.6,ug/m3\n2025-03-16,AQ04,11.5,23.1,16.1,ug/m3\n2025-03-17,AQ04,12.6,26.2,25.7,ug/m3\n18/03/2025,AQ04,-999,13.7,21.0,ug/m3\n2025-03-19,AQ04,0.0152,0.0279,0.0318,mg/m3\n2025-03-20,AQ04,18.5,29.4,16.9,ug/m3\n2025-03-21,AQ04,17.0,32.1,16.3,ug/m3\n2025-03-22,AQ04,7.9,15.7,17.3,ug/m3\n2025-03-24,AQ04,14.0,23.2,16.1,ug/m3\n2025-03-25,AQ04,17.2,26.4,13.8,ug/m3\n2025-03-26,AQ04,14.9,27.9,34.3,ug/m3\n2025-03-27,AQ04,13.6,26.0,36.1,ug/m3\n2025-03-28,AQ04,9.5,17.5,32.9,ug/m3\n2025-03-30,AQ04,13.2,24.9,14.8,ug/m3\n2025-03-31,AQ04,13.5,27.7,38.4,ug/m3\n2025-02-16,AQ05,26.2,53.2,33.5,ug/m3\n2025-02-17,AQ05,17.5,29.1,24.0,ug/m3\n18/02/2025,AQ05,15.7,27.2,25.2,ug/m3\n19/02/2025,AQ05,22.3,35.5,23.5,ug/m3\n2025-02-20,AQ05,27.9,50.4,25.5,ug/m3\n21/02/2025,AQ05,37.8,64.0,35.4,ug/m3\n2025-02-22,AQ05,10.7,20.7,14.0,ug/m3\n2025-02-24,AQ05,26.3,40.1,30.0,ug/m3\n2025-02-25,AQ-05,33.1,54.7,24.9,ug/m3\n2025-02-26,AQ-05,21.1,35.8,16.9,ug/m3\n2025-02-27,AQ05,25.4,46.3,22.7,ug/m3\n2025-02-28,AQ05,25.2,47.2,33.5,ug/m3\n2025-03-01,AQ05,16.2,32.5,-999,ug/m3\n2025-03-02,AQ05,25.2,49.3,32.6,ug/m3\n2025-03-03,AQ05,16.3,24.5,14.4,ug/m3\n2025-03-04,AQ05,34.5,56.2,36.5,ug/m3\n2025-03-05,AQ05,17.2,32.9,26.7,ug/m3\n06/03/2025,AQ05,20.2,39.1,36.0,ug/m3\n07/03/2025,AQ05,24.4,48.4,26.2,ug/m3\n2025-03-08,AQ05,13.6,20.8,15.8,ug/m3\n2025-03-09,aq05 ,19.2,36.4,27.4,ug/m3\n2025-03-10,AQ05,57.1,113.5,32.4,ug/m3\n2025-03-11,AQ-05,16.8,31.2,15.1,ug/m3\n2025-03-12,AQ05,7.8,12.2,13.5,ug/m3\n2025-03-13,AQ05,25.5,46.5,28.5,ug/m3\n2025-03-14,AQ05,12.7,25.9,12.2,ug/m3\n2025-03-15,AQ05,28.3,57.0,13.9,ug/m3\n2025-03-16,AQ05,16.8,29.0,19.4,ug/m3\n2025-03-17,AQ05,44.9,88.5,-999,ug/m3\n2025-03-18,aq05 ,12.4,20.2,33.8,ug/m3\n2025-03-19,aq05 ,34.3,61.8,23.2,ug/m3\n2025-03-20,AQ05,13.6,25.1,16.3,ug/m3\n2025-03-21,AQ05,-999,34.4,20.3,ug/m3\n2025-03-22,AQ05,23.3,37.2,19.2,ug/m3\n2025-03-23,AQ05,18.9,39.3,17.9,ug/m3\n2025-03-24,AQ05,12.3,20.8,27.4,ug/m3\n25/03/2025,AQ-05,12.6,25.2,24.6,ug/m3\n2025-03-26,AQ05,22.8,46.2,34.0,ug/m3\n2025-03-27,AQ-05,21.3,41.1,28.0,ug/m3\n2025-03-28,AQ05,21.3,38.8,35.2,ug/m3\n2025-03-29,AQ05,10.8,20.9,18.4,ug/m3\n2025-03-30,AQ05,15.8,24.7,19.5,ug/m3\n2025-03-31,AQ05,34.6,60.8,31.9,ug/m3\n2025-02-16,aq-06,20.0,38.5,30.7,ug/m3\n2025-02-17,AQ06,11.7,19.8,18.0,ug/m3\n18/02/2025,aq-06,12.6,26.2,25.5,ug/m3\n2025-02-19,AQ06,13.8,23.2,26.7,ug/m3\n2025-02-20,AQ06,14.0,22.1,24.5,ug/m3\n21/02/2025,aq-06,27.1,46.4,35.7,ug/m3\n2025-02-22,aq-06,8.6,15.5,22.3,ug/m3\n2025-02-23,AQ06,14.7,28.0,24.4,ug/m3\n2025-02-24,aq-06,<5,28.1,18.4,ug/m3\n2025-02-25,AQ06,20.1,33.9,31.7,ug/m3\n2025-02-26,AQ06,0.0078,0.0126,0.0168,mg/m3\n2025-02-27,aq-06,14.5,29.5,36.9,ug/m3\n2025-02-28,AQ06,14.0,25.8,15.5,ug/m3\n2025-03-01,AQ06,22.1,45.1,19.7,ug/m3\n2025-03-02,aq-06,25.4,46.7,35.9,ug/m3\n2025-03-03,AQ06,15.3,29.7,17.7,ug/m3\n2025-03-04,AQ06,28.9,45.7,21.3,ug/m3\n2025-03-05,AQ06,7.9,15.7,32.5,ug/m3\n06/03/2025,AQ06,21.5,37.6,31.6,ug/m3\n2025-03-07,AQ06,22.7,38.5,39.4,ug/m3\n08/03/2025,AQ06,12.8,25.4,13.0,ug/m3\n2025-03-09,AQ06,26.3,42.7,22.7,ug/m3\n2025-03-10,aq-06,30.4,49.4,45.3,ug/m3\n11/03/2025,AQ06,8.7,16.0,20.0,ug/m3\n2025-03-12,AQ06,13.0,21.4,18.1,ug/m3\n2025-03-13,AQ06,12.5,23.6,32.4,ug/m3\n2025-03-14,AQ06,15.5,31.4,12.7,ug/m3\n2025-03-15,AQ06,14.1,27.8,21.9,ug/m3\n2025-03-16,AQ06,12.0,23.7,16.4,ug/m3\n2025-03-17,AQ06,18.3,33.7,24.7,ug/m3\n2025-03-18,AQ06,11.4,23.8,24.0,ug/m3\n2025-03-19,AQ06,17.3,27.0,40.9,ug/m3\n2025-03-20,AQ06,14.2,23.1,20.3,ug/m3\n2025-03-21,aq-06,9.6,15.1,19.5,ug/m3\n22/03/2025,AQ06,9.6,19.0,23.5,ug/m3\n23/03/2025,AQ06,7.1,11.4,22.9,ug/m3\n2025-03-24,AQ06,18.3,35.9,20.2,ug/m3\n25/03/2025,AQ06,15.9,25.5,22.9,ug/m3\n2025-03-26,AQ06,28.2,49.0,29.2,ug/m3\n2025-03-27,AQ06,14.1,22.3,32.9,ug/m3\n2025-03-28,AQ06,22.4,39.3,30.0,ug/m3\n2025-03-29,aq-06,7.9,14.3,17.7,ug/m3\n2025-03-31,AQ06,13.7,28.1,27.2,ug/m3\n"
+   },
+   {
+    "path": "stations.csv",
+    "content": "station_id,name,district,site_type\nAQ01,Market Street,Centre,roadside\nAQ02,Riverside Park,North,background\nAQ03,Ring Road,Centre,roadside\nAQ04,Hill School,North,background\nAQ05,Depot Lane,South,industrial\nAQ06,Old Town,South,background\n"
+   },
+   {
+    "path": "weather.csv",
+    "content": "date,temp_c,wind_ms,rain_mm\n2025-01-01,-0.6,7.7,1.6\n2025-01-02,-4.2,1.2,0.4\n2025-01-03,-0.3,4.5,0.0\n2025-01-04,-5.2,0.9,0.0\n2025-01-05,-0.7,5.9,0.0\n2025-01-06,-4.3,2.8,0.0\n2025-01-07,-3.3,4.1,0.0\n2025-01-08,-0.9,1.7,0.0\n2025-01-09,-1.3,3.6,0.0\n2025-01-10,0.0,1.5,0.0\n2025-01-11,-3.9,1.8,0.0\n2025-01-12,-3.0,5.2,6.3\n2025-01-13,0.5,5.3,0.3\n2025-01-14,0.3,2.1,0.0\n2025-01-15,-2.8,1.1,0.0\n2025-01-16,-4.4,3.5,0.0\n2025-01-17,-4.0,1.4,0.0\n2025-01-18,1.4,4.1,0.0\n2025-01-19,-4.4,1.7,10.3\n2025-01-20,3.2,0.7,0.0\n2025-01-21,-2.1,3.0,0.5\n2025-01-22,2.0,3.7,4.5\n2025-01-23,2.4,4.7,0.4\n2025-01-24,2.0,2.7,5.9\n2025-01-25,3.9,3.9,0.0\n2025-01-26,0.6,4.1,0.0\n2025-01-27,-1.1,2.7,0.0\n2025-01-28,-8.3,4.3,0.0\n2025-01-29,-0.7,3.4,0.0\n2025-01-30,-1.2,2.0,0.0\n2025-01-31,-0.7,2.8,0.0\n2025-02-01,0.6,1.1,0.0\n2025-02-02,-1.0,2.9,0.0\n2025-02-03,2.9,5.8,0.0\n2025-02-04,1.5,2.4,0.0\n2025-02-05,10.2,1.9,0.0\n2025-02-06,0.2,2.7,0.0\n2025-02-07,-2.3,2.9,0.0\n2025-02-08,5.1,2.3,0.0\n2025-02-09,5.1,7.0,9.3\n2025-02-10,8.2,5.8,1.1\n2025-02-11,4.0,5.7,0.0\n2025-02-12,4.4,1.1,0.0\n2025-02-13,4.2,2.0,0.0\n2025-02-14,4.5,0.9,0.0\n2025-02-15,5.0,2.3,0.0\n2025-02-16,3.8,3.3,0.0\n2025-02-17,1.8,3.8,0.0\n2025-02-18,-4.3,1.7,7.0\n2025-02-19,4.1,2.8,7.9\n2025-02-20,0.9,1.0,3.3\n2025-02-21,3.5,1.0,0.0\n2025-02-22,3.6,3.3,1.1\n2025-02-23,2.2,1.9,0.0\n2025-02-24,1.7,0.5,0.0\n2025-02-25,4.2,0.9,1.0\n2025-02-26,8.5,5.6,0.4\n2025-02-27,6.4,1.8,0.0\n2025-02-28,5.0,5.0,0.0\n2025-03-01,14.0,0.6,2.3\n2025-03-02,4.7,1.3,0.0\n2025-03-03,-0.2,2.7,0.0\n2025-03-04,2.8,1.3,0.0\n2025-03-05,4.1,4.6,0.0\n2025-03-06,1.1,1.3,0.0\n2025-03-07,7.5,1.9,0.0\n2025-03-08,0.9,3.0,0.0\n2025-03-09,6.8,1.9,1.3\n2025-03-10,9.6,1.5,0.0\n2025-03-11,3.8,2.4,0.0\n2025-03-12,5.4,2.8,3.2\n2025-03-13,11.1,1.0,3.6\n2025-03-14,3.5,4.9,0.0\n2025-03-15,8.0,9.0,0.0\n2025-03-16,6.0,6.7,9.3\n2025-03-17,3.2,0.3,6.6\n2025-03-18,8.2,13.2,0.0\n2025-03-19,6.2,1.3,0.0\n2025-03-20,8.6,7.5,0.0\n2025-03-21,4.5,3.4,0.0\n2025-03-22,5.0,2.3,0.0\n2025-03-23,5.8,3.8,0.0\n2025-03-24,12.1,3.3,0.0\n2025-03-25,6.1,3.5,0.0\n2025-03-26,7.4,1.8,0.0\n2025-03-27,10.6,1.1,0.0\n2025-03-28,8.2,1.6,0.0\n2025-03-29,8.5,2.7,2.9\n2025-03-30,9.3,3.2,0.0\n2025-03-31,12.0,0.8,0.0\n"
+   }
+  ]
+ }
+}
