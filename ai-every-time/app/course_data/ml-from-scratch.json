@@ -80,17 +80,7 @@
                 },
                 "code": "import numpy as np\n\nX = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])\nw = np.array([0.5, -1.0])\nprint(X.shape, w.shape, X @ w)",
                 "lang": "python",
-                "see": "(3, 2) (2,) [-1.5 -2.5 -3.5]: three predictions from one matrix product."
-              },
-              {
-                "do": "Check the vectorised answer against an explicit double loop.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "loop = [float(sum(X[i, j] * w[j] for j in range(X.shape[1]))) for i in range(X.shape[0])]\nprint(loop, np.allclose(loop, X @ w))",
-                "lang": "python",
-                "see": "[-1.5, -2.5, -3.5] True"
+                "see": "(3, 2) (2,) [-1.5 -2.5 -3.5]"
               },
               {
                 "do": "Centre every column with broadcasting, and measure the distance between the first two rows.",
@@ -98,9 +88,9 @@
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "centred = X - X.mean(axis=0)\nprint(centred)\nprint(centred.mean(axis=0), np.linalg.norm(X[0] - X[1]))",
+                "code": "centred = X - X.mean(axis=0)\nprint(centred.mean(axis=0), np.linalg.norm(X[0] - X[1]))",
                 "lang": "python",
-                "see": "Each centred column has mean 0, and the distance is 2.828..., the square root of 8."
+                "see": "[0. 0.] 2.828..., the square root of 8."
               },
               {
                 "do": "Make the silent shape bug happen: a column of predictions minus a flat vector of targets.",
@@ -110,13 +100,13 @@
                 },
                 "code": "y = np.array([1.0, 2.0, 3.0])\ncolumn = (X @ w).reshape(-1, 1)\nprint((column - y).shape, (column.ravel() - y).shape)",
                 "lang": "python",
-                "see": "(3, 3) (3,): the first is a 3 × 3 matrix of every prediction minus every target, not three errors."
+                "see": "(3, 3) (3,): a 3 × 3 matrix, not three errors."
               },
               {
                 "do": "Time a Python loop over rows against one matrix product. %timeit is a notebook magic: it works in JupyterLab, not in a plain .py file.",
                 "code": "big = np.random.default_rng(0).normal(size=(100_000, 10))\nweights = np.ones(10)\n%timeit [row @ weights for row in big]\n%timeit big @ weights",
                 "lang": "python",
-                "see": "The matrix product is many times faster; the exact times depend on your computer."
+                "see": "The matrix product is many times faster; the times depend on your computer."
               },
               {
                 "do": "Add a column of ones, so that the intercept becomes the first weight.",
@@ -126,7 +116,7 @@
                 },
                 "code": "Xb = np.column_stack([np.ones(len(X)), X])\nprint(Xb @ np.array([2.0, 0.5, -1.0]))",
                 "lang": "python",
-                "see": "[ 0.5 -0.5 -1.5]: the intercept, 2, added to the predictions from before."
+                "see": "[ 0.5 -0.5 -1.5]: the old predictions plus 2."
               }
             ]
           }
@@ -159,7 +149,7 @@
                 },
                 "code": "import numpy as np\n\nx = np.array([1.0, 2.0, 3.0, 4.0])\ny = 2 * x + 1                                  # 3, 5, 7, 9\nX = np.column_stack([np.ones(len(x)), x])      # a column of ones for the intercept\n\ndef loss(w):\n    r = X @ w - y\n    return r @ r / len(y)\n\ndef grad(w):\n    return 2 / len(y) * X.T @ (X @ w - y)\n\nw = np.zeros(2)\nprint(loss(w), grad(w))",
                 "lang": "python",
-                "see": "41.0 [-12. -35.]: at w = 0 the loss is the mean of y², and both partial derivatives are negative, so the weights should grow."
+                "see": "41.0 [-12. -35.]: both partial derivatives are negative, so the weights should grow."
               },
               {
                 "do": "Check the formula with central differences, one coordinate at a time.",
@@ -172,14 +162,14 @@
                 "see": "[-12. -35.] True"
               },
               {
-                "do": "Take 1,000 steps of gradient descent with a learning rate of 0.05, recording the loss before each step.",
+                "do": "Take 1,000 steps with a learning rate of 0.05, then compare with least squares.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "history = []\nfor step in range(1000):\n    history.append(loss(w))\n    w = w - 0.05 * grad(w)\nprint(w.round(4), history[0], f\"{history[-1]:.1e}\")",
+                "code": "history = []\nfor step in range(1000):\n    history.append(loss(w))\n    w = w - 0.05 * grad(w)\nprint(w.round(4), history[0], f\"{history[-1]:.1e}\")\nprint(np.linalg.lstsq(X, y, rcond=None)[0].round(4))",
                 "lang": "python",
-                "see": "[1. 2.] 41.0 and a final loss of about 1e-15: the intercept 1 and slope 2."
+                "see": "[1. 2.] 41.0 and a final loss of about 1e-15, then [1. 2.] from least squares: intercept 1, slope 2."
               },
               {
                 "do": "Plot the loss on a log scale.",
@@ -189,17 +179,7 @@
                 },
                 "code": "import matplotlib.pyplot as plt\n\nplt.semilogy(history)\nplt.xlabel(\"step\")\nplt.ylabel(\"mean squared error\")\nplt.show()",
                 "lang": "python",
-                "see": "A line falling steadily on the log scale: the error shrinks by about the same factor every step."
-              },
-              {
-                "do": "Compare with the least-squares answer.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "print(np.linalg.lstsq(X, y, rcond=None)[0].round(4))",
-                "lang": "python",
-                "see": "[1. 2.]: the same point."
+                "see": "A straight falling line: the error shrinks by about the same factor every step."
               }
             ]
           }
@@ -421,37 +401,27 @@
                 },
                 "code": "import numpy as np\n\ntrain = np.array([[1.0, 1.0], [2.0, 1.0], [4.0, 3.0], [5.0, 4.0], [1.5, 2.0]])\nlabels = np.array([0, 0, 1, 1, 0])\nqueries = np.array([[1.5, 1.5], [4.5, 3.0]])\ndiff = queries[:, None, :] - train[None, :, :]        # every query minus every training row\ndist = np.sqrt((diff ** 2).sum(axis=2))\nprint(diff.shape)\nprint(dist.round(2))",
                 "lang": "python",
-                "see": "(2, 5, 2), then a 2 × 5 table of distances; broadcasting builds a 3-D array, which gets big for large data."
+                "see": "(2, 5, 2), then a 2 × 5 table of distances. The 3-D array gets big for large data."
               },
               {
-                "do": "Get the same squared distances from the norms-and-dot-products identity, with no 3-D array, and compute Manhattan distances for comparison.",
+                "do": "Get the same squared distances from the norms-and-dot-products identity, with no 3-D array.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "sq = (queries ** 2).sum(axis=1)[:, None] - 2 * queries @ train.T + (train ** 2).sum(axis=1)[None, :]\nprint(np.allclose(np.sqrt(np.maximum(sq, 0)), dist))\nprint(np.abs(diff).sum(axis=2))",
+                "code": "sq = (queries ** 2).sum(axis=1)[:, None] - 2 * queries @ train.T + (train ** 2).sum(axis=1)[None, :]\nprint(np.allclose(np.sqrt(np.maximum(sq, 0)), dist))",
                 "lang": "python",
-                "see": "True, then the Manhattan distances, such as 0.5 from the first query to the last point."
+                "see": "True"
               },
               {
-                "do": "Find each query's three nearest training rows and take the vote.",
+                "do": "Find each query's three nearest training rows, take the vote, and check with scikit-learn.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "k = 3\nnearest = np.argsort(sq, axis=1)[:, :k]\nprint(nearest)\nprint([int(np.bincount(labels[row]).argmax()) for row in nearest])",
+                "code": "from sklearn.neighbors import KNeighborsClassifier\n\nnearest = np.argsort(sq, axis=1)[:, :3]\nprint(nearest, [int(np.bincount(labels[row]).argmax()) for row in nearest])\nprint(KNeighborsClassifier(n_neighbors=3).fit(train, labels).predict(queries))",
                 "lang": "python",
-                "see": "[[4 0 1] [2 3 4]], then [0, 1]: the first query's neighbours are all class 0, the second's two to one for class 1."
-              },
-              {
-                "do": "Check against scikit-learn.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "from sklearn.neighbors import KNeighborsClassifier\n\nprint(KNeighborsClassifier(n_neighbors=3).fit(train, labels).predict(queries))",
-                "lang": "python",
-                "see": "[0 1]"
+                "see": "Neighbours [[4 0 1] [2 3 4]] and votes [0, 1], then [0 1] from scikit-learn."
               }
             ]
           }
@@ -504,17 +474,7 @@
                 },
                 "code": "from sklearn.model_selection import cross_val_score, train_test_split\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nX_train, X_test, y_train, y_test = train_test_split(X, wine.target, test_size=0.3, random_state=0,\n                                                    stratify=wine.target)\nfor k in (1, 5, 15, 45, 85):\n    model = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=k))\n    print(k, cross_val_score(model, X_train, y_train, cv=5).mean().round(3))",
                 "lang": "python",
-                "see": "0.92 for k = 1, 0.944 for 5 and 15, 0.96 for 45, then 0.403 for 85, nearly every row of a fold's training part, where the vote is just the majority class."
-              },
-              {
-                "do": "Build a confusion matrix in one call.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "y_true = np.array([0, 1, 2, 2, 1, 0])\ny_pred = np.array([0, 2, 2, 2, 1, 1])\nmatrix = np.zeros((3, 3), dtype=int)\nnp.add.at(matrix, (y_true, y_pred), 1)\nprint(matrix, np.mean(y_true == y_pred).round(3))",
-                "lang": "python",
-                "see": "[[1 1 0] [0 1 1] [0 0 2]] 0.667: four of six right, the diagonal."
+                "see": "0.92 for k = 1, 0.944 for 5 and 15, 0.96 for 45, then 0.403 for 85, nearly a whole fold, where the vote is just the majority class."
               }
             ]
           }
@@ -738,17 +698,7 @@
                 },
                 "code": "scores = np.array([-1000.0, -1001.0])          # log P(c) + sum of log P(x_j | c) for two classes\nprint(np.exp(scores) / np.exp(scores).sum())\nshifted = np.exp(scores - scores.max())\nprint((shifted / shifted.sum()).round(3))",
                 "lang": "python",
-                "see": "[nan nan] with a RuntimeWarning (0 divided by 0), then [0.731 0.269]."
-              },
-              {
-                "do": "Do the same with SciPy's logsumexp.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "from scipy.special import logsumexp\n\nprint((scores - logsumexp(scores)).round(3), np.exp(scores - logsumexp(scores)).round(3))",
-                "lang": "python",
-                "see": "[-0.313 -1.313] [0.731 0.269]: log probabilities, then probabilities."
+                "see": "[nan nan] with a RuntimeWarning (0 divided by 0), then [0.731 0.269]; scipy.special.logsumexp does the same shift for you."
               }
             ]
           }
@@ -855,22 +805,12 @@
                 "see": "[-199.115   -1.1     -1.027] True: impossible for setosa, nearly level between the other two."
               },
               {
-                "do": "Find the same numbers inside scikit-learn's GaussianNB, including the variance smoothing.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "from sklearn.naive_bayes import GaussianNB\n\nnb = GaussianNB().fit(X, y)\nprint(np.allclose(nb.theta_[:, 2], means), nb.epsilon_, 1e-9 * X.var(axis=0).max())",
-                "lang": "python",
-                "see": "True, and epsilon_ equal to 1e-9 times the largest feature variance: 3.0955...e-09 both times."
-              },
-              {
                 "do": "Count the same evidence several times by copying one feature, and watch the confidence grow.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "rng = np.random.default_rng(0)\nx = np.concatenate([rng.normal(0, 1, 500), rng.normal(1, 1, 500)])\nlabel = np.repeat([0, 1], 500)\nfor copies in (1, 3, 5):\n    model = GaussianNB().fit(np.tile(x[:, None], copies), label)\n    print(copies, model.predict_proba(np.full((1, copies), 0.8)).round(3))",
+                "code": "from sklearn.naive_bayes import GaussianNB\n\nrng = np.random.default_rng(0)\nx = np.concatenate([rng.normal(0, 1, 500), rng.normal(1, 1, 500)])\nlabel = np.repeat([0, 1], 500)\nfor copies in (1, 3, 5):\n    model = GaussianNB().fit(np.tile(x[:, None], copies), label)\n    print(copies, model.predict_proba(np.full((1, copies), 0.8)).round(3))",
                 "lang": "python",
                 "see": "P(class 1) for x = 0.8 rises from 0.599 to 0.769 and 0.881, with no new information."
               }
@@ -1059,57 +999,6 @@
           }
         },
         {
-          "title": "Regression metrics you write yourself",
-          "minutes": 10,
-          "objectives": [
-            "Implement MSE, RMSE, MAE and R² with NumPy",
-            "Choose a metric that matches the cost of errors"
-          ],
-          "key_points": [
-            "Mean squared error averages the squared errors, so one large miss dominates it; RMSE, its square root, is in the target's own units.",
-            "Mean absolute error averages the sizes of the errors, so a few large misses sway it less than RMSE.",
-            "R² = 1 − Σ(y − ŷ)² / Σ(y − ȳ)² compares a model with always predicting the mean: 1 is perfect, 0 is no better than the mean, and it is negative for a model that does worse.",
-            "Compute metrics on data the model didn't train on, and compare them with a baseline, such as always predicting the training mean.",
-            "Check your own metric functions against sklearn.metrics on the same inputs: np.isclose(mine, theirs) catches slips such as a missing square or a swapped sign."
-          ],
-          "walkthrough": {
-            "tool": "JupyterLab",
-            "title": "Metrics by hand",
-            "steps": [
-              {
-                "do": "Score five predictions, one of them a big miss, with MSE, RMSE, MAE and R².",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "import numpy as np\nfrom sklearn import metrics\n\ny = np.array([3.0, 5.0, 7.0, 9.0, 30.0])\np = np.array([2.5, 5.5, 7.0, 8.0, 20.0])\nmse = np.mean((y - p) ** 2)\nmae = np.mean(np.abs(y - p))\nr2 = 1 - ((y - p) ** 2).sum() / ((y - y.mean()) ** 2).sum()\nprint(mse, round(mse ** 0.5, 3), mae, round(r2, 4))",
-                "lang": "python",
-                "see": "20.3 4.506 2.4 0.7889: the one 10-unit miss supplies 100 of the 101.5 summed squared error."
-              },
-              {
-                "do": "Check them against scikit-learn.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "print(metrics.mean_squared_error(y, p), metrics.mean_absolute_error(y, p), round(metrics.r2_score(y, p), 4))",
-                "lang": "python",
-                "see": "20.3 2.4 0.7889"
-              },
-              {
-                "do": "Score two baselines: always the mean, and always zero.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "print(round(metrics.r2_score(y, np.full(5, y.mean())), 4), round(metrics.r2_score(y, np.zeros(5)), 3))",
-                "lang": "python",
-                "see": "0.0 for the mean and -1.213 for zeros: worse than the mean gives a negative R²."
-              }
-            ]
-          }
-        },
-        {
           "title": "Logistic regression: the sigmoid and the log-loss",
           "minutes": 12,
           "objectives": [
@@ -1150,22 +1039,12 @@
                 "see": "0.1839, then 1.6446 when one positive gets a probability of 0.01."
               },
               {
-                "do": "Check the gradient formula numerically on random data.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "rng = np.random.default_rng(0)\nX, t = rng.normal(size=(50, 3)), rng.integers(0, 2, 50)\nsigmoid = lambda s: np.exp(-np.logaddexp(0, -s))\nloss = lambda w: log_loss(t, sigmoid(X @ w))\nw0 = rng.normal(size=3)\nanalytic = X.T @ (sigmoid(X @ w0) - t) / len(t)\nnumeric = np.array([(loss(w0 + 1e-5 * e) - loss(w0 - 1e-5 * e)) / 2e-5 for e in np.eye(3)])\nprint(np.allclose(analytic, numeric))",
-                "lang": "python",
-                "see": "True"
-              },
-              {
                 "do": "Fit four separable points with and without an L2 penalty.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "x = np.array([-2.0, -1.0, 1.0, 2.0])\nt = np.array([0, 0, 1, 1])                                # x > 0 means class 1\nfor lam in (0.0, 0.1):\n    w = 0.0\n    for step in range(1, 100001):\n        w -= 1.0 * (np.mean((sigmoid(w * x) - t) * x) + lam * w)\n        if step in (100, 10000, 100000):\n            print(lam, step, round(w, 2))",
+                "code": "sigmoid = lambda s: np.exp(-np.logaddexp(0, -s))\nx = np.array([-2.0, -1.0, 1.0, 2.0])\nt = np.array([0, 0, 1, 1])                                # x > 0 means class 1\nfor lam in (0.0, 0.1):\n    w = 0.0\n    for step in range(1, 100001):\n        w -= 1.0 * (np.mean((sigmoid(w * x) - t) * x) + lam * w)\n        if step in (100, 10000, 100000):\n            print(lam, step, round(w, 2))",
                 "lang": "python",
                 "see": "Without a penalty the weight keeps growing, 4.02, 8.52, 10.82; with λ = 0.1 it settles at 1.46."
               }
@@ -1173,52 +1052,44 @@
           }
         },
         {
-          "title": "Classification metrics from scratch",
-          "minutes": 10,
+          "title": "Metrics you write yourself",
+          "minutes": 12,
           "objectives": [
-            "Count true and false positives and negatives with boolean masks",
-            "Compute precision, recall and F1, and see how the threshold moves them"
+            "Implement MSE, RMSE, MAE and R² for regression",
+            "Implement precision, recall and F1 from confusion counts",
+            "Choose a metric and a threshold that match the cost of errors"
           ],
           "key_points": [
-            "For 0/1 labels, boolean masks give the four counts: tp = sum((y == 1) & (pred == 1)), and likewise fp, fn and tn; accuracy is (tp + tn) / n.",
-            "Precision, tp / (tp + fp), is the share of predicted positives that are right; recall, tp / (tp + fn), is the share of real positives found; F1 is their harmonic mean, 2PR / (P + R).",
-            "Accuracy misleads when classes are imbalanced: with 5% positives, always predicting negative scores 0.95 accuracy and 0 recall.",
-            "Raising the decision threshold usually raises precision and lowers recall, and lowering it does the opposite; choose it from the cost of each kind of mistake.",
-            "Handle the empty cases on purpose: precision is undefined when nothing is predicted positive. scikit-learn returns 0 by default, with a warning, and a from-scratch function should make a clear choice too."
+            "Mean squared error averages the squared errors, so one large miss dominates it; RMSE, its square root, is in the target's units, and mean absolute error, the average size of the errors, is swayed less by a few large misses.",
+            "R² = 1 − Σ(y − ŷ)² / Σ(y − ȳ)² compares a model with always predicting the mean: 1 is perfect, 0 is no better than the mean, and it is negative for a model that does worse.",
+            "For 0/1 labels, boolean masks give the confusion counts: tp = sum((y == 1) & (pred == 1)), and likewise fp, fn and tn; accuracy is (tp + tn) / n.",
+            "Precision, tp / (tp + fp), is the share of predicted positives that are right; recall, tp / (tp + fn), is the share of real positives found; F1, 2PR / (P + R), is their harmonic mean.",
+            "Accuracy misleads when classes are imbalanced: with 5% positives, always predicting negative scores 0.95 accuracy and 0 recall. Raising the threshold usually trades recall for precision, so choose it from the cost of each kind of mistake.",
+            "Handle the empty cases on purpose (precision is undefined when nothing is predicted positive, and scikit-learn returns 0 with a warning), and check every metric against sklearn.metrics with np.isclose."
           ],
           "walkthrough": {
             "tool": "JupyterLab",
-            "title": "Confusion counts, precision and recall",
+            "title": "Metrics by hand, checked by scikit-learn",
             "steps": [
               {
-                "do": "Count the four outcomes for ten predictions and compute the metrics.",
+                "do": "Score five regression predictions, one of them a big miss, then two baselines.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "import numpy as np\nfrom sklearn import metrics\n\ny    = np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0])\npred = np.array([1, 1, 1, 0, 1, 0, 0, 0, 0, 0])\ntp = np.sum((y == 1) & (pred == 1)); fp = np.sum((y == 0) & (pred == 1))\nfn = np.sum((y == 1) & (pred == 0)); tn = np.sum((y == 0) & (pred == 0))\nprecision, recall = tp / (tp + fp), tp / (tp + fn)\nf1 = 2 * precision * recall / (precision + recall)\nprint(int(tp), int(fp), int(fn), int(tn), precision, recall, f1)",
+                "code": "import numpy as np\nfrom sklearn import metrics\n\ny = np.array([3.0, 5.0, 7.0, 9.0, 30.0])\np = np.array([2.5, 5.5, 7.0, 8.0, 20.0])\nmse = np.mean((y - p) ** 2)\nmae = np.mean(np.abs(y - p))\nr2 = 1 - ((y - p) ** 2).sum() / ((y - y.mean()) ** 2).sum()\nprint(mse, round(mse ** 0.5, 3), mae, round(r2, 4), round(metrics.r2_score(y, p), 4))\nprint(round(metrics.r2_score(y, np.full(5, y.mean())), 4), round(metrics.r2_score(y, np.zeros(5)), 3))",
                 "lang": "python",
-                "see": "3 1 1 5 0.75 0.75 0.75"
+                "see": "20.3 4.506 2.4 0.7889 0.7889: the 10-unit miss supplies 100 of the 101.5 summed squared error. Then R² is 0.0 for always predicting the mean and -1.213 for always predicting zero."
               },
               {
-                "do": "Check against scikit-learn, whose confusion_matrix(...).ravel() gives tn, fp, fn, tp.",
+                "do": "Count the four outcomes for ten classifications, and compare with scikit-learn.",
                 "keys": {
                   "mac": "Shift+Enter",
                   "win": "Shift+Enter"
                 },
-                "code": "print(metrics.precision_score(y, pred), metrics.recall_score(y, pred), metrics.f1_score(y, pred))\nprint(metrics.confusion_matrix(y, pred).ravel())",
+                "code": "y = np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0])\npred = np.array([1, 1, 1, 0, 1, 0, 0, 0, 0, 0])\ntp = np.sum((y == 1) & (pred == 1)); fp = np.sum((y == 0) & (pred == 1))\nfn = np.sum((y == 1) & (pred == 0)); tn = np.sum((y == 0) & (pred == 0))\nprecision, recall = tp / (tp + fp), tp / (tp + fn)\nprint(int(tp), int(fp), int(fn), int(tn), precision, recall, 2 * precision * recall / (precision + recall))\nprint(metrics.confusion_matrix(y, pred).ravel(), metrics.f1_score(y, pred))",
                 "lang": "python",
-                "see": "0.75 0.75 0.75, then [5 1 1 3]."
-              },
-              {
-                "do": "Score a model that always says no on data with 5% positives.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "y_rare = np.array([1] * 5 + [0] * 95)\nalways_no = np.zeros(100, dtype=int)\nprint(np.mean(always_no == y_rare), metrics.recall_score(y_rare, always_no))",
-                "lang": "python",
-                "see": "0.95 0.0"
+                "see": "3 1 1 5 0.75 0.75 0.75, then [5 1 1 3] 0.75: scikit-learn's ravel() order is tn, fp, fn, tp."
               },
               {
                 "do": "Move the threshold over some predicted probabilities.",
@@ -1443,16 +1314,6 @@
                 "see": "5 nodes; feature [ 3 -2  3 -2 -2] (-2 marks a leaf), children_left [ 1 -1  3 -1 -1] and children_right [ 2 -1  4 -1 -1]."
               },
               {
-                "do": "Read the leaves' class shares and every node's size. In recent scikit-learn versions value holds shares rather than counts.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "print(t.value[[1, 3, 4]].round(3), t.n_node_samples)",
-                "lang": "python",
-                "see": "Shares such as [0. 0.907 0.093] for the versicolor leaf, and node sizes [150  50 100  54  46]."
-              },
-              {
                 "do": "Walk one flower down the tree by hand, and compare with apply and predict.",
                 "keys": {
                   "mac": "Shift+Enter",
@@ -1492,16 +1353,6 @@
                 "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.tree import DecisionTreeClassifier\n\nX, y = load_breast_cancer(return_X_y=True)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\nfor depth in (1, 2, 3, 5, None):\n    t = DecisionTreeClassifier(criterion=\"entropy\", max_depth=depth, random_state=0).fit(X_train, y_train)\n    print(depth, t.get_n_leaves(), round(t.score(X_train, y_train), 3), round(t.score(X_test, y_test), 3))",
                 "lang": "python",
                 "see": "Training accuracy climbs from 0.932 to 1.0 while test accuracy stops at 0.93; the full tree has 12 leaves."
-              },
-              {
-                "do": "Limit the leaf size instead.",
-                "keys": {
-                  "mac": "Shift+Enter",
-                  "win": "Shift+Enter"
-                },
-                "code": "for leaf in (1, 5, 20):\n    t = DecisionTreeClassifier(criterion=\"entropy\", min_samples_leaf=leaf, random_state=0).fit(X_train, y_train)\n    print(leaf, t.get_n_leaves(), round(t.score(X_test, y_test), 3))",
-                "lang": "python",
-                "see": "12, 11 and 6 leaves, with test accuracies of 0.93, 0.936 and 0.889."
               },
               {
                 "do": "Prune by cost complexity: list the useful alphas, then try a few.",
