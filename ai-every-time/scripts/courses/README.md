@@ -34,6 +34,13 @@ taken in order (Coursera's "weeks"). Each module has:
 A course can end with a capstone **project**, reviewed against its rubric. Finishing every lesson, passing every
 quiz and lab, and passing the project earns the course certificate.
 
+Every course also has, without you writing them:
+
+- an **outline** (its modules and their lessons, labs and quizzes) and a **study plan**: the weeks to take it over, from
+  `study_plan` if the course has one, otherwise one module a week;
+- a **mock exam** on the whole course, timed, for practice (it doesn't count towards the certificate), and
+  **flashcards**, for each lesson or the whole course. Both are written from the key points, like the quizzes.
+
 A **guided project** is a short, hands-on course (one to two hours): one module of two or three short lessons that
 ends with its lab, and usually no capstone.
 
@@ -94,6 +101,11 @@ ends with its lab, and usually no capstone.
       }
     }
   ],
+  "study_plan": [                             // optional: the weeks to take the course over, in order
+    {"week": 1, "focus": "Set up, and write and run your first scripts.", "modules": [1]},
+    {"week": 2, "focus": "Control flow and functions; finish the module 2 lab.", "modules": [2, 3]},
+    {"week": 3, "focus": "Build and submit the capstone project.", "modules": []}   // no modules: review or the project
+  ],
   "project": {                                // optional capstone
     "title": "Build a study tracker",
     "minutes": 240,                           // 30-900
@@ -106,8 +118,15 @@ ends with its lab, and usually no capstone.
 }
 ```
 
-**Categories:** Generative AI, Machine Learning, Data Science, Software Development, Networking, Cybersecurity,
-Cloud & DevOps, AI for Business, Responsible AI, AI in Industry, Robotics & Edge AI.
+**Categories:** Generative AI, Machine Learning, AI Engineering (MLOps, LLMOps, serving, AI system design), Data Science
+(analysis, statistics, visualisation), Data Engineering (pipelines, warehouses, streaming), Software Development,
+Computer Science (algorithms, systems, databases, distributed systems), Networking, Cybersecurity, Cloud & DevOps,
+AI for Business, Responsible AI, AI in Industry, Robotics & Edge AI.
+
+**Study plans.** A `study_plan` spreads the modules over weeks: number the weeks from 1, take the modules in order, and
+cover every module (a long module can span two weeks; a week can also be for review or the capstone, with no modules).
+Each week's `focus` says what to get done that week, in a sentence. The course page shows each week's time, worked
+out from the minutes. Leave it out and the plan is one module a week.
 
 The time a course takes is worked out from its minutes (each quiz adds 10), so set realistic minutes.
 

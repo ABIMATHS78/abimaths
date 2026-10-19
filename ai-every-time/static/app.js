@@ -2720,6 +2720,9 @@ const CATEGORY_LOOK = {
   "Responsible AI": ["⚖️", "#277f45", "#6fba6a"],
   "AI in Industry": ["🏥", "#b54c22", "#ec9150"],
   "Robotics & Edge AI": ["🤖", "#434c5e", "#8494b0"],
+  "AI Engineering": ["🛠️", "#4a3aa8", "#3f8fd6"],
+  "Data Engineering": ["🗄️", "#0b6e6e", "#3aa0c8"],
+  "Computer Science": ["🧮", "#3d3a8c", "#7a6fd6"],
 };
 const look = (category) => CATEGORY_LOOK[category] || ["🎓", "#5b4cdb", "#8a7dff"];
 const ITEM_ICON = { lesson: "📖", lab: "🧪", quiz: "📝", project: "🏗️" };
@@ -2915,6 +2918,21 @@ function wireProgress(root, c) {
   });
 }
 
+/* A course's study plan, week by week, with what each week takes. */
+function planBlock(c, kind) {
+  const weeks = c.study_plan, total = weeks.reduce((n, w) => n + w.hours, 0);
+  return `<section class="stack" id="plan">
+    <h2 class="section">Study plan: ${plural2(weeks.length, "week")}</h2>
+    <div class="card stack">
+      <p class="muted small" style="margin:0">About ${hoursText(total / weeks.length)} a week, at your own pace. Each module ends with a graded quiz; then practise for
+        the whole ${kind} with a ${c.mock_exam.minutes}-minute mock exam and flashcards.</p>
+      <ol class="plan">${weeks.map((w) => `<li><div class="row spread"><b>Week ${w.week}</b><span class="muted small">${hoursText(w.hours)}</span></div>
+        <div>${esc(w.focus)}</div>${w.modules.length ? `<div class="muted small">${w.modules.map((m) =>
+          `Module ${m}: ${esc(c.syllabus[m - 1].title)}`).join(" · ")}</div>` : ""}</li>`).join("")}</ol>
+    </div>
+  </section>`;
+}
+
 /* A course's page, as Coursera lays one out: what it is, what you'll learn, the syllabus, the instructors. */
 async function viewCourse(m) {
   const slug = m[1];
@@ -2948,7 +2966,7 @@ async function viewCourse(m) {
       <div><b>${hoursText(c.hours)}</b><span class="muted small">At your own pace</span></div>
       <div><b>${count("lab") ? plural2(count("lab"), "hands-on lab") : "Graded quizzes"}</b><span class="muted small">${c.project ? "and a capstone project" : "reviewed by your instructor"}</span></div>
     </div>
-    <nav class="anchors" aria-label="On this page">${[["about", "About"], ["modules", "Modules"], ["instructors", "Instructors"], ...(c.enrolled ? [["yours", "Your progress"]] : [])]
+    <nav class="anchors" aria-label="On this page">${[["about", "About"], ...(c.kind === "course" ? [["plan", "Study plan"]] : []), ["modules", "Modules"], ["instructors", "Instructors"], ...(c.enrolled ? [["yours", "Your progress"]] : [])]
       .map(([id, t]) => `<button type="button" data-to="${id}">${t}</button>`).join("")}</nav>
     <section class="stack" id="about">
       <div class="card"><h2>What you'll learn</h2><ul class="outcomes">${c.outcomes.map((o) => `<li>${esc(o)}</li>`).join("")}</ul></div>
@@ -2956,13 +2974,14 @@ async function viewCourse(m) {
         <div class="card stack"><div><h3>Skills you'll gain</h3>${chipList(c.skills)}</div>${c.tools.length ? `<div><h3>Tools you'll use</h3>${chipList(c.tools)}</div>` : ""}</div>
         <div class="card details-grid">
           <div>🎓 <b>Shareable certificate</b><div class="muted small">When you finish: print it, or add it to LinkedIn</div></div>
-          <div>📝 <b>Assessments</b><div class="muted small">${[plural2(count("quiz"), "graded quiz", "graded quizzes"), count("lab") && plural2(count("lab"), "lab"), c.project && "a capstone project"].filter(Boolean).join(", ")}</div></div>
+          <div>📝 <b>Assessments</b><div class="muted small">${[plural2(count("quiz"), "graded quiz", "graded quizzes"), count("lab") && plural2(count("lab"), "lab"), c.project && "a capstone project"].filter(Boolean).join(", ")}, then a mock exam and flashcards to practise</div></div>
           <div>🤖 <b>Taught by AI Learning Companions</b><div class="muted small">Ask your instructor about any lesson or lab</div></div>
           <div>🖥️ <b>${c.walkthroughs ? plural2(c.walkthroughs, "tool walkthrough") : "Self-paced"}</b><div class="muted small">${c.walkthroughs ? "Shown step by step, with shortcuts for macOS, Windows and Linux" : "Study whenever suits you"}</div></div>
         </div>
       </div>
       <div class="card"><h2>About this ${kind}</h2><p>${esc(c.description)}</p><h3>Before you start</h3><p style="margin:0">${esc(c.prerequisites)}</p></div>
     </section>
+    ${c.kind === "course" ? planBlock(c, kind) : ""}
     <section class="stack" id="modules">
       <h2 class="section">There ${c.syllabus.length === 1 ? "is 1 module" : `are ${c.syllabus.length} modules`} in this ${kind}</h2>
       ${c.syllabus.map((mod, i) => moduleBlock(c, mod, i === 0)).join("")}
