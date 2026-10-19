@@ -1,0 +1,1321 @@
+{
+  "slug": "containers-kubernetes",
+  "title": "Containerisation and Orchestration with Docker and Kubernetes",
+  "subtitle": "Package Python services as lean, secure container images, run multi-container apps with Docker Compose, and deploy, scale and troubleshoot them on Kubernetes.",
+  "category": "Cloud & DevOps",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "dariusz-wojciechowski",
+    "lachlanee-mitchell"
+  ],
+  "skills": [
+    "Docker",
+    "Dockerfile optimisation",
+    "Docker Compose",
+    "Kubernetes",
+    "kubectl",
+    "Kubernetes manifests",
+    "Horizontal Pod Autoscaling",
+    "Kubernetes troubleshooting",
+    "Container security"
+  ],
+  "tools": [
+    "Docker",
+    "Docker Compose",
+    "kind",
+    "kubectl",
+    "Helm",
+    "Python 3",
+    "FastAPI",
+    "Redis"
+  ],
+  "outcomes": [
+    "Write optimised, multi-stage Dockerfiles that package Python services as small images running as a non-root user",
+    "Run and debug multi-container applications with Docker Compose, using networks, volumes and healthchecks",
+    "Explain Kubernetes' architecture and its core objects: Pods, ReplicaSets, Deployments, Services and namespaces",
+    "Deploy and scale applications with declarative manifests, probes, ConfigMaps, Secrets and the Horizontal Pod Autoscaler",
+    "Troubleshoot and manage cluster resources with kubectl, Ingress, resource quotas and limits"
+  ],
+  "prerequisites": "Comfort with the Linux command line and basic Python, as Python Scripting and Linux for DevOps teaches them (Linux Command Line Essentials covers the shell). You need a computer with at least 8 GB of memory and Docker (Docker Desktop on macOS and Windows, Docker Engine on Linux), plus kind, kubectl and Helm. No cloud account is needed.",
+  "description": "Containers changed how software is shipped: an image carries an application with everything it needs, and Kubernetes runs those images across a cluster of machines, restarting, scaling and updating them for you. This advanced course takes one realistic service, a FastAPI inventory API with a Redis cache, from a first Dockerfile to a highly available deployment on a Kubernetes cluster on your own laptop. You'll see how containers isolate processes with namespaces and cgroups, write lean multi-stage Dockerfiles that run as a non-root user, and run the API and Redis together with Docker Compose, using healthchecks, networks and volumes.\n\nThen you'll move to Kubernetes with kind: the control plane and nodes, Pods, ReplicaSets, Deployments, Services, namespaces and persistent storage. You'll deploy from declarative manifests with startup, readiness and liveness probes, configuration in ConfigMaps and Secrets, rolling updates and rollbacks, and scale on CPU with the Horizontal Pod Autoscaler. The last module is about running a cluster day to day: kubectl for diagnosis, the common failure states and their fixes, Ingress and Gateway API, quotas and limits, and keeping services up while nodes are drained. Every module ends with a hands-on lab on your own machine, and the capstone brings it together: a Compose setup for developers and Kubernetes manifests that keep serving while you take nodes away.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Introduction to Containerisation",
+      "summary": "How containers differ from virtual machines, how Docker's client, daemon, images and registries fit together, and the container lifecycle, ending with a first Dockerfile for the course's sample service.",
+      "instructor": "dariusz-wojciechowski",
+      "lessons": [
+        {
+          "title": "From virtual machines to containers",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a container differs from a virtual machine",
+            "Describe the Linux kernel features that isolate a container"
+          ],
+          "key_points": [
+            "A virtual machine runs a complete guest operating system, with its own kernel, on virtual hardware provided by a hypervisor. A container is a group of ordinary processes on the host that share the host's kernel.",
+            "Isolation comes from two Linux kernel features: namespaces give a container its own view of process IDs, network interfaces, mounts and hostname, and control groups (cgroups) limit and account for the CPU, memory and I/O it can use.",
+            "With no guest operating system to boot, a container starts in about the time its own process takes to start and uses far less memory and disk than a VM, so one machine can run many more containers than VMs.",
+            "Sharing the kernel is the trade-off: a container can't bring its own kernel, Linux containers need a Linux kernel (Docker Desktop runs one in a small VM on macOS and Windows), and a kernel flaw affects every container on the host, so VMs isolate more strongly.",
+            "An image packages the application with its exact runtime and libraries, so it behaves the same on a laptop, in CI and in production; what differs between environments, such as addresses and credentials, is passed in when the container starts."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "See a container's isolation for yourself",
+            "steps": [
+              {
+                "do": "Run ps in a throwaway Alpine container. It sees only its own processes, because it has its own PID namespace.",
+                "code": "docker run --rm alpine:3.22 ps",
+                "lang": "bash",
+                "see": "One process, ps itself, as PID 1."
+              },
+              {
+                "do": "Give a container its own hostname: the UTS namespace keeps it separate from the host's.",
+                "code": "docker run --rm --hostname demo alpine:3.22 hostname",
+                "lang": "bash",
+                "see": "demo"
+              },
+              {
+                "do": "Compare kernels. A container has no kernel of its own.",
+                "code": "uname -r\ndocker run --rm alpine:3.22 uname -r",
+                "lang": "bash",
+                "see": "On Linux, the same version twice. On macOS and Windows, the container reports the kernel of Docker Desktop's Linux VM, not your computer's."
+              },
+              {
+                "do": "Set a memory limit and read it back from the container's cgroup: 64 MB is 67108864 bytes.",
+                "code": "docker run --rm --memory 64m alpine:3.22 cat /sys/fs/cgroup/memory.max",
+                "lang": "bash",
+                "see": "67108864, on hosts that use cgroup v2, as current Linux distributions and Docker Desktop do."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Docker's architecture: client, daemon, images and registries",
+          "minutes": 12,
+          "objectives": [
+            "Describe how the Docker client, daemon and container runtime work together",
+            "Explain the difference between an image, a container and a registry"
+          ],
+          "key_points": [
+            "The docker command is a client: it sends API requests to the Docker daemon (dockerd), which builds images and manages containers, handing the low-level work to containerd and runc, the OCI runtime that sets up each container's namespaces and cgroups.",
+            "An image is a read-only template: a stack of filesystem layers plus metadata such as the default command, environment variables and exposed ports. A container is an instance of an image with a thin writable layer on top, which is lost when the container is removed.",
+            "Images are kept in registries such as Docker Hub or a private registry. A reference like docker.io/library/python:3.13-slim names the registry, repository and tag; a tag can be moved to a new image, but a digest (@sha256:...) always names the same one.",
+            "Images and runtimes follow the Open Container Initiative (OCI) specifications, so an image built with Docker also runs under containerd, CRI-O or Podman, which is how Kubernetes nodes run it.",
+            "Pin base images to a specific version tag, or a digest, rather than latest, so a rebuild next month gives the same result and updates happen when you choose."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Inspect an image and its layers",
+            "steps": [
+              {
+                "do": "Pull the slim Python image and list the Python images you have.",
+                "code": "docker pull python:3.13-slim-trixie\ndocker image ls python",
+                "lang": "bash"
+              },
+              {
+                "do": "Show which platform the image was built for.",
+                "code": "docker image inspect python:3.13-slim-trixie --format '{{.Os}}/{{.Architecture}}'",
+                "lang": "bash",
+                "see": "linux/amd64 or linux/arm64, matching your machine."
+              },
+              {
+                "do": "See its layers and the instructions that made them.",
+                "code": "docker history python:3.13-slim-trixie",
+                "lang": "bash",
+                "see": "One line per instruction, newest first, with the size each one added."
+              },
+              {
+                "do": "Find the digest that names this exact image.",
+                "code": "docker image inspect python:3.13-slim-trixie --format '{{index .RepoDigests 0}}'",
+                "lang": "bash",
+                "see": "python@sha256: followed by 64 hexadecimal characters."
+              },
+              {
+                "do": "See what the daemon is looking after.",
+                "code": "docker system df",
+                "lang": "bash",
+                "see": "The space used by images, containers, local volumes and the build cache."
+              }
+            ]
+          }
+        },
+        {
+          "title": "The container lifecycle and your first Dockerfile",
+          "minutes": 14,
+          "objectives": [
+            "Run, inspect, stop and remove containers",
+            "Write a Dockerfile that packages a Python web service"
+          ],
+          "key_points": [
+            "docker run creates and starts a container, which runs for as long as its main process (PID 1) runs. -d runs it in the background, --name names it, -e sets an environment variable and --rm removes it when it exits.",
+            "docker ps lists running containers (-a adds stopped ones), docker logs shows what the main process wrote to standard output and standard error, and docker exec runs another command inside a running container.",
+            "docker stop sends SIGTERM and, if the process hasn't exited after a grace period (10 seconds by default), SIGKILL; docker rm deletes a stopped container along with its writable layer.",
+            "In a Dockerfile, FROM chooses the base image, WORKDIR sets the working folder, COPY adds files from the build context, RUN runs a command at build time, ENV sets variables, EXPOSE documents a port and CMD sets the default command.",
+            "Write CMD in exec form, a JSON array such as [\"uvicorn\", \"app.main:app\"], so your app is PID 1 and gets SIGTERM directly. The shell form starts it through /bin/sh -c, where it may never see the signal, so docker stop waits out the grace period and kills it.",
+            "-p 8000:8000 publishes container port 8000 on the host, and the app must listen on 0.0.0.0 inside the container, because 127.0.0.1 there is unreachable from outside. A .dockerignore file keeps .git, virtual environments and secrets out of the build context."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Run containers and package the inventory API",
+        "tool": "Docker",
+        "minutes": 60,
+        "goal": "Practise the container lifecycle, then package the course's sample service, inventory-api (a FastAPI app that caches lookups in Redis), with a first Dockerfile, and see how it behaves when its cache is missing.",
+        "setup": [
+          "Docker Desktop (macOS or Windows) or Docker Engine (Linux), running",
+          "A terminal with curl, which macOS, Linux and Windows 10 and later include",
+          "Download the starter files into a folder called inventory-api"
+        ],
+        "steps": [
+          {
+            "do": "Check that the client can reach the daemon, and run the hello-world image.",
+            "code": "docker version\ndocker run --rm hello-world",
+            "lang": "bash",
+            "see": "Client and Server sections, then a message that starts Hello from Docker!"
+          },
+          {
+            "do": "Start Redis in the background, then look at it from outside: list it, read its log and run a command in it.",
+            "code": "docker run -d --name demo redis:8.2-alpine\ndocker ps\ndocker logs demo | tail -n 3\ndocker exec demo redis-cli ping",
+            "lang": "bash",
+            "see": "demo in the list, Ready to accept connections in the log, and PONG."
+          },
+          {
+            "do": "Stop it, find it among all containers, then remove it.",
+            "code": "docker stop demo\ndocker ps -a --filter name=demo\ndocker rm demo",
+            "lang": "bash",
+            "see": "A STATUS starting with Exited before you remove it."
+          },
+          {
+            "do": "In the inventory-api folder, create a file named .dockerignore, so the build context leaves out what the image doesn't need.",
+            "code": ".git/\n.venv/\n__pycache__/\n*.pyc\n.env\nk8s/\n",
+            "lang": "text"
+          },
+          {
+            "do": "Create a file named Dockerfile with this first, simple version. It builds on the full Python image; module 2 slims it down.",
+            "code": "FROM python:3.13-trixie\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY app/ ./app/\nENV APP_VERSION=1.0.0\nEXPOSE 8000\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n",
+            "lang": "dockerfile"
+          },
+          {
+            "do": "Build the image and list it.",
+            "code": "docker build -t inventory-api:1.0.0 .\ndocker image ls inventory-api",
+            "lang": "bash",
+            "see": "inventory-api 1.0.0 and its size: note the size for module 2."
+          },
+          {
+            "do": "Run it with port 8000 published, and call it.",
+            "code": "docker run -d --name inv -p 8000:8000 inventory-api:1.0.0\ncurl -s localhost:8000/\ncurl -s localhost:8000/healthz",
+            "lang": "bash",
+            "see": "{\"service\":\"inventory-api\",\"version\":\"1.0.0\",\"host\":\"...\"} and {\"status\":\"ok\"}"
+          },
+          {
+            "do": "Ask whether it's ready. There's no Redis for it to use, so readiness says no, while the service still answers, just without its cache.",
+            "code": "curl -s -i localhost:8000/readyz\ncurl -s localhost:8000/items/sku-1001",
+            "lang": "bash",
+            "see": "HTTP/1.1 503 Service Unavailable with {\"status\":\"waiting for redis\"}, then the item with \"cache\":\"miss\"."
+          },
+          {
+            "do": "Compare the container's hostname with the host field above, and check how the image starts.",
+            "code": "docker exec inv hostname\ndocker image inspect inventory-api:1.0.0 --format '{{json .Config.Cmd}}'",
+            "lang": "bash",
+            "see": "The container ID, then [\"uvicorn\",\"app.main:app\",\"--host\",\"0.0.0.0\",\"--port\",\"8000\"]"
+          },
+          {
+            "do": "Read the container's log, then stop and remove it in one command.",
+            "code": "docker logs inv\ndocker rm -f inv",
+            "lang": "bash",
+            "see": "uvicorn's access log, one line for each request you made."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Docker works, and the lifecycle commands ran against the Redis container.",
+            "look_for": [
+              "Hello from Docker!",
+              "PONG"
+            ]
+          },
+          {
+            "text": "The image builds and the service answers on port 8000 as version 1.0.0.",
+            "look_for": [
+              "\"service\":\"inventory-api\"",
+              "\"version\":\"1.0.0\""
+            ]
+          },
+          {
+            "text": "Without Redis, readiness answers 503 while liveness still passes.",
+            "look_for": [
+              "503 Service Unavailable",
+              "waiting for redis",
+              "\"status\":\"ok\""
+            ]
+          },
+          {
+            "text": "The image's default command is in exec form.",
+            "look_for": [
+              "[\"uvicorn\",\"app.main:app\""
+            ]
+          }
+        ],
+        "submit": "Paste your Dockerfile, then the commands and output from steps 1, 2, 6, 7, 8 and 9.",
+        "files": [
+          {
+            "path": "app/__init__.py",
+            "content": "\"\"\"inventory-api: the sample service for this course.\"\"\"\n"
+          },
+          {
+            "path": "app/main.py",
+            "content": "\"\"\"inventory-api: a small FastAPI service with a Redis cache, used throughout the course.\"\"\"\n\nimport hashlib\nimport json\nimport os\nimport socket\nimport time\n\nimport redis\nfrom fastapi import FastAPI, HTTPException, Response\nfrom redis.backoff import NoBackoff\nfrom redis.retry import Retry\n\nAPP_VERSION = os.environ.get(\"APP_VERSION\", \"1.0.0\")\nCACHE_TTL_SECONDS = int(os.environ.get(\"CACHE_TTL_SECONDS\", \"30\"))\nSLOW_LOOKUP_SECONDS = float(os.environ.get(\"SLOW_LOOKUP_SECONDS\", \"0.5\"))\n\n# Stands in for a database table.\nCATALOGUE = {\n    \"sku-1001\": {\"name\": \"Hard hat\", \"stock\": 42},\n    \"sku-1002\": {\"name\": \"Safety boots\", \"stock\": 7},\n    \"sku-1003\": {\"name\": \"Hi-vis vest\", \"stock\": 0},\n}\n\ncache = redis.Redis(\n    host=os.environ.get(\"REDIS_HOST\", \"localhost\"),\n    port=int(os.environ.get(\"REDIS_PORT\", \"6379\")),\n    password=os.environ.get(\"REDIS_PASSWORD\") or None,\n    socket_connect_timeout=1,\n    socket_timeout=1,\n    retry=Retry(NoBackoff(), 0),  # fail fast: the service still works without its cache\n    decode_responses=True,\n)\n\napp = FastAPI(title=\"inventory-api\")\n\n\n@app.get(\"/\")\ndef index():\n    return {\"service\": \"inventory-api\", \"version\": APP_VERSION, \"host\": socket.gethostname()}\n\n\n@app.get(\"/healthz\")\ndef healthz():\n    \"\"\"Liveness: the process is up and answering.\"\"\"\n    return {\"status\": \"ok\"}\n\n\n@app.get(\"/readyz\")\ndef readyz(response: Response):\n    \"\"\"Readiness: the service can reach its cache, so it can do real work.\"\"\"\n    try:\n        cache.ping()\n    except redis.RedisError:\n        response.status_code = 503\n        return {\"status\": \"waiting for redis\"}\n    return {\"status\": \"ready\"}\n\n\n@app.get(\"/items/{sku}\")\ndef get_item(sku: str):\n    key = f\"item:{sku}\"\n    try:\n        cached = cache.get(key)\n    except redis.RedisError:\n        cached = None  # carry on without the cache\n    if cached:\n        return {\"sku\": sku, **json.loads(cached), \"cache\": \"hit\"}\n    if sku not in CATALOGUE:\n        raise HTTPException(status_code=404, detail=\"unknown sku\")\n    time.sleep(SLOW_LOOKUP_SECONDS)  # a slow database query\n    item = CATALOGUE[sku]\n    try:\n        cache.setex(key, CACHE_TTL_SECONDS, json.dumps(item))\n    except redis.RedisError:\n        pass\n    return {\"sku\": sku, **item, \"cache\": \"miss\"}\n\n\n@app.post(\"/visits\")\ndef add_visit():\n    \"\"\"Count a visit in Redis, so every replica shares one total.\"\"\"\n    return {\"visits\": cache.incr(\"visits\"), \"host\": socket.gethostname()}\n\n\n@app.get(\"/work\")\ndef work(ms: int = 100):\n    \"\"\"Keep a CPU busy for about `ms` milliseconds, so the autoscaler has something to react to.\"\"\"\n    deadline = time.perf_counter() + min(ms, 2000) / 1000\n    rounds = 0\n    digest = b\"inventory\"\n    while time.perf_counter() < deadline:\n        digest = hashlib.sha256(digest).digest()\n        rounds += 1\n    return {\"rounds\": rounds, \"host\": socket.gethostname()}\n"
+          },
+          {
+            "path": "requirements.txt",
+            "content": "fastapi==0.146.0\nuvicorn==0.54.0\nredis==8.1.0\n"
+          }
+        ],
+        "hints": [
+          "If docker version shows no Server section, the daemon isn't running: start Docker Desktop, or run sudo systemctl start docker on Linux.",
+          "Bind for 0.0.0.0:8000 failed means another program uses port 8000: stop it, or publish a different host port with -p 8080:8000 and call localhost:8080.",
+          "A connection reset straight after docker run means the app is still starting: wait a second and try again, or read docker logs inv.",
+          "In Windows PowerShell, curl can be an alias for Invoke-WebRequest: type curl.exe, or use Git Bash or WSL."
+        ]
+      }
+    },
+    {
+      "title": "Docker and Docker Compose",
+      "summary": "Write efficient, secure Dockerfiles with layer caching and multi-stage builds, manage images responsibly, and run multi-container applications with Docker Compose, its networks and its volumes.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Efficient Dockerfiles: layers, caching and multi-stage builds",
+          "minutes": 14,
+          "objectives": [
+            "Order Dockerfile instructions to make the most of the build cache",
+            "Use a multi-stage build to produce a small runtime image"
+          ],
+          "key_points": [
+            "Each RUN, COPY and ADD instruction creates a layer. Docker reuses a cached layer when the instruction and its inputs haven't changed, and rebuilds every layer after the first one that has.",
+            "Order instructions from least to most often changed: copy requirements.txt and install the dependencies before copying the source code, so editing code doesn't reinstall every package.",
+            "A multi-stage build has several FROM stages. Compilers, headers and caches stay in an early build stage, COPY --from=build copies only the result, such as a virtual environment, into a slim runtime stage, and only the last stage becomes the image.",
+            "Keep the stages on the same Python version and Debian release, such as python:3.13-trixie and python:3.13-slim-trixie: a virtual environment points at its interpreter's path, and compiled packages need the same system libraries.",
+            "A file deleted in a later layer still takes up space in the layer that added it, so clean up in the same RUN instruction, or leave the mess in a build stage. A BuildKit cache mount (RUN --mount=type=cache) speeds up rebuilds without putting pip's cache in the image."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Watch the build cache at work",
+            "steps": [
+              {
+                "do": "In your inventory-api folder, build the image twice. The second build takes a moment, because every step is reused.",
+                "code": "docker build -t inventory-api:cache-test .\ndocker build -t inventory-api:cache-test .",
+                "lang": "bash",
+                "see": "CACHED beside each step of the second build."
+              },
+              {
+                "do": "Change only the code by appending a comment to app/main.py, and build again.",
+                "code": "echo '# cache test' >> app/main.py\ndocker build -t inventory-api:cache-test .",
+                "lang": "bash",
+                "see": "The pip install step is still CACHED; only COPY app/ and the steps after it run."
+              },
+              {
+                "do": "Now add a blank line to requirements.txt and build again.",
+                "code": "echo '' >> requirements.txt\ndocker build -t inventory-api:cache-test .",
+                "lang": "bash",
+                "see": "The install step runs again, because one of its inputs changed."
+              },
+              {
+                "do": "Remove the comment and the blank line you added, then delete the test image.",
+                "code": "docker image rm inventory-api:cache-test",
+                "lang": "bash"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Image hygiene: tags, users, secrets and scanning",
+          "minutes": 12,
+          "objectives": [
+            "Tag and version images so deployments are repeatable",
+            "Harden an image with a non-root user, no secrets and fewer vulnerabilities"
+          ],
+          "key_points": [
+            "Tag every build with an immutable version, such as inventory-api:1.1.0 or the Git commit SHA, and never push different contents under a version already used; latest is just the default tag name, not a promise of the newest build.",
+            "Containers run as root unless the image or the runtime says otherwise. Create a user in the Dockerfile and switch to it with USER, ideally by numeric UID such as 10001, so Kubernetes can verify runAsNonRoot and a compromised process has less power.",
+            "Never put secrets in an image: every layer can be read back, including files deleted in a later layer and values passed with --build-arg. Supply secrets when the container runs, or use a BuildKit secret mount (RUN --mount=type=secret) for build-time credentials.",
+            "Scan images for known vulnerabilities in operating-system packages and libraries with a scanner such as Docker Scout, Trivy or Grype, rebuild regularly to pick up patched base images, and keep images small so there's less to patch.",
+            "Docker's HEALTHCHECK instruction lets Docker and Compose mark a container healthy or unhealthy; Kubernetes ignores it and uses its own probes instead.",
+            "docker system df shows the space taken by images, containers, volumes and the build cache, and docker image prune removes dangling images, the untagged leftovers of rebuilds."
+          ]
+        },
+        {
+          "title": "Multi-container apps with Docker Compose",
+          "minutes": 14,
+          "objectives": [
+            "Describe a multi-container application in a compose.yaml file",
+            "Connect services through networks and keep their data in volumes"
+          ],
+          "key_points": [
+            "Docker Compose describes a whole application in compose.yaml: its services, networks and volumes. docker compose up -d builds or pulls the images and starts everything; docker compose down stops and removes the containers and networks.",
+            "Compose creates a network for the project, and each service reaches the others by service name through Docker's built-in DNS, so the API connects to Redis at cache:6379; containers that aren't on that network can't reach it at all.",
+            "A container's writable layer goes when the container goes, so data that must last lives in a volume: a named volume managed by Docker for databases, or a bind mount of a host folder for code during development. docker compose down keeps named volumes unless you add -v.",
+            "depends_on only orders start-up. With condition: service_healthy, Compose waits for the dependency's healthcheck to pass first, so the API doesn't start before Redis accepts connections.",
+            "Environment variables, .env files and profiles let one file serve several uses, but Compose runs everything on one host: it doesn't spread containers across machines, move them when a machine fails or scale them on load. That's what Kubernetes adds."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Day-to-day Compose commands",
+            "steps": [
+              {
+                "do": "Check the file: Compose prints the fully resolved configuration, or the first error it finds.",
+                "code": "docker compose config",
+                "lang": "bash"
+              },
+              {
+                "do": "Start the stack in the background, rebuilding images whose files changed, and wait until it's healthy.",
+                "code": "docker compose up -d --build --wait",
+                "lang": "bash"
+              },
+              {
+                "do": "See each service's state, then follow the API's log (Ctrl+C stops following, not the service).",
+                "code": "docker compose ps\ndocker compose logs -f api",
+                "lang": "bash",
+                "see": "STATUS shows (healthy) once a service's healthcheck passes."
+              },
+              {
+                "do": "Run a command inside a service's container.",
+                "code": "docker compose exec cache redis-cli dbsize",
+                "lang": "bash"
+              },
+              {
+                "do": "Stop and remove the containers and network; add -v to delete the named volumes too.",
+                "code": "docker compose down",
+                "lang": "bash"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Slim the image and run the stack with Compose",
+        "tool": "Docker Compose",
+        "minutes": 75,
+        "goal": "Rebuild inventory-api as a multi-stage image that runs as a non-root user, then run it with Redis under Docker Compose, with healthchecks, a private network and a volume that keeps data across restarts.",
+        "setup": [
+          "Your inventory-api folder from the module 1 lab, with the image inventory-api:1.0.0",
+          "Docker with Compose v2: docker compose version should print a version"
+        ],
+        "steps": [
+          {
+            "do": "Rename your module 1 Dockerfile to Dockerfile.single, and write a new Dockerfile with a build stage and a runtime stage.",
+            "code": "# syntax=docker/dockerfile:1\n\n# Build stage: the full Python image, with compilers in case a package needs building.\nFROM python:3.13-trixie AS build\nWORKDIR /build\nRUN python -m venv /opt/venv\nENV PATH=\"/opt/venv/bin:$PATH\"\nCOPY requirements.txt .\nRUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt\n\n# Runtime stage: the slim image of the same Python and Debian release, plus the venv and the code.\nFROM python:3.13-slim-trixie AS runtime\nARG APP_VERSION=1.1.0\nENV PATH=\"/opt/venv/bin:$PATH\" \\\n    PYTHONDONTWRITEBYTECODE=1 \\\n    PYTHONUNBUFFERED=1 \\\n    APP_VERSION=${APP_VERSION}\nRUN useradd --uid 10001 --no-create-home appuser\nWORKDIR /app\nCOPY --from=build /opt/venv /opt/venv\nCOPY app/ ./app/\nUSER 10001\nEXPOSE 8000\nHEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \\\n  CMD [\"python\", \"-c\", \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)\"]\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n",
+            "lang": "dockerfile"
+          },
+          {
+            "do": "Build version 1.1.0 and compare the two images.",
+            "code": "docker build -t inventory-api:1.1.0 .\ndocker image ls inventory-api",
+            "lang": "bash",
+            "see": "Both tags: 1.1.0, built on the slim image, is several times smaller than 1.0.0."
+          },
+          {
+            "do": "Check which user the container runs as, and look through the runtime image's layers.",
+            "code": "docker run --rm inventory-api:1.1.0 id\ndocker history inventory-api:1.1.0",
+            "lang": "bash",
+            "see": "uid=10001(appuser), and no compilers or pip cache among the layers."
+          },
+          {
+            "do": "Create compose.yaml next to the Dockerfile.",
+            "code": "name: inventory\n\nservices:\n  api:\n    build:\n      context: .\n      args:\n        APP_VERSION: \"1.1.0\"\n    image: inventory-api:1.1.0\n    ports:\n      - \"8000:8000\"\n    environment:\n      REDIS_HOST: cache\n      CACHE_TTL_SECONDS: \"30\"\n    depends_on:\n      cache:\n        condition: service_healthy\n    networks:\n      - backend\n    restart: unless-stopped\n\n  cache:\n    image: redis:8.2-alpine\n    command: [\"redis-server\", \"--appendonly\", \"yes\"]\n    volumes:\n      - cache-data:/data\n    healthcheck:\n      test: [\"CMD\", \"redis-cli\", \"ping\"]\n      interval: 5s\n      timeout: 3s\n      retries: 5\n    networks:\n      - backend\n\nvolumes:\n  cache-data:\n\nnetworks:\n  backend:\n",
+            "lang": "yaml"
+          },
+          {
+            "do": "Validate the file, start the stack, and wait until both services are healthy.",
+            "code": "docker compose config --quiet && echo valid\ndocker compose up -d --build --wait\ndocker compose ps",
+            "lang": "bash",
+            "see": "valid, then both services with (healthy) in their STATUS."
+          },
+          {
+            "do": "Look up an item twice: the first lookup is slow and fills the cache, the second comes from Redis.",
+            "code": "curl -s localhost:8000/items/sku-1001\ncurl -s localhost:8000/items/sku-1001",
+            "lang": "bash",
+            "see": "\"cache\":\"miss\", then \"cache\":\"hit\""
+          },
+          {
+            "do": "Record three visits, remove and recreate the containers, then record one more. The total survives because Redis keeps its data in the cache-data volume.",
+            "code": "for i in 1 2 3; do curl -s -X POST localhost:8000/visits; echo; done\ndocker compose down\ndocker compose up -d --wait\ncurl -s -X POST localhost:8000/visits",
+            "lang": "bash",
+            "see": "\"visits\":1 to \"visits\":3, then \"visits\":4 after the restart."
+          },
+          {
+            "do": "Prove the network is private: a container on the project's network reaches cache, one on Docker's default network can't even resolve the name.",
+            "code": "docker run --rm --network inventory_backend redis:8.2-alpine redis-cli -h cache ping\ndocker run --rm redis:8.2-alpine redis-cli -h cache ping",
+            "lang": "bash",
+            "see": "PONG, then Could not connect to Redis at cache:6379 and the reason."
+          },
+          {
+            "do": "Read the API's last log lines, then clean up, deleting the volume too.",
+            "code": "docker compose logs api --tail 5\ndocker compose down -v",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The multi-stage image builds and runs as the non-root user.",
+            "look_for": [
+              "uid=10001(appuser)"
+            ]
+          },
+          {
+            "text": "Compose reports both services healthy.",
+            "look_for": [
+              "(healthy)"
+            ]
+          },
+          {
+            "text": "The second lookup is served from the Redis cache.",
+            "look_for": [
+              "\"cache\":\"miss\"",
+              "\"cache\":\"hit\""
+            ]
+          },
+          {
+            "text": "The visit count survives recreating the containers, because it lives in the volume.",
+            "look_for": [
+              "\"visits\":4"
+            ]
+          },
+          {
+            "text": "Only containers on the project's network can reach Redis.",
+            "look_for": [
+              "PONG",
+              "Could not connect to Redis"
+            ]
+          }
+        ],
+        "submit": "Paste your Dockerfile and compose.yaml, the docker image ls output, and the commands and output from steps 3, 5, 6, 7 and 8.",
+        "hints": [
+          "If the build fails at RUN --mount, BuildKit is off: it's the default in Docker Desktop and Docker Engine 23 and later; on older engines set DOCKER_BUILDKIT=1.",
+          "If the network in step 8 isn't found, run docker network ls: its name is the project name from compose.yaml (inventory) followed by _backend.",
+          "If api never becomes healthy, read docker compose logs api: a typo in app.main:app or a missing app/__init__.py stops uvicorn starting.",
+          "If the second lookup is also a miss, the API can't reach Redis: REDIS_HOST must be the service name, cache, not localhost."
+        ]
+      }
+    },
+    {
+      "title": "Kubernetes Primitives",
+      "summary": "How a Kubernetes cluster is built, and the objects you use every day: Pods, ReplicaSets, Deployments, Services, namespaces and persistent storage, explored on a three-node kind cluster.",
+      "instructor": "dariusz-wojciechowski",
+      "lessons": [
+        {
+          "title": "Kubernetes architecture: the control plane and the nodes",
+          "minutes": 13,
+          "objectives": [
+            "Describe what each control-plane and node component does",
+            "Explain how Kubernetes reconciles desired and actual state"
+          ],
+          "key_points": [
+            "A Kubernetes cluster has a control plane, which decides what should run, and worker nodes, which run it. You declare the desired state as objects, and controllers keep working to make the actual state match it.",
+            "The API server (kube-apiserver) is the only way in: kubectl, controllers and nodes all read and write objects through it, and it stores them in etcd, a consistent key-value store that holds the whole cluster's state.",
+            "The scheduler (kube-scheduler) chooses a node for each new Pod, one with enough unreserved CPU and memory that meets the Pod's constraints, while kube-controller-manager runs the reconciliation loops that, for example, replace missing Pods.",
+            "On every node, the kubelet starts the Pods assigned to it through a container runtime such as containerd and reports their status; kube-proxy routes Service traffic, and a CNI plugin gives every Pod an IP address on one flat cluster network.",
+            "kind (Kubernetes in Docker) runs each node as a Docker container, and minikube runs a cluster in a VM or a container: both give you a real cluster on a laptop for learning and testing, not for production."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Tour a kind cluster",
+            "steps": [
+              {
+                "do": "Create a single-node cluster called tour, and check that kubectl can reach it.",
+                "code": "kind create cluster --name tour\nkubectl cluster-info --context kind-tour",
+                "lang": "bash",
+                "see": "Kubernetes control plane is running at https://127.0.0.1:... and the CoreDNS address."
+              },
+              {
+                "do": "List the nodes, then the control-plane components, which run as Pods in the kube-system namespace.",
+                "code": "kubectl get nodes -o wide\nkubectl get pods -n kube-system",
+                "lang": "bash",
+                "see": "etcd, kube-apiserver, kube-controller-manager and kube-scheduler Pods named after tour-control-plane, plus coredns, kube-proxy and kindnet, kind's CNI plugin."
+              },
+              {
+                "do": "See every kind of object the API server serves, with its API group.",
+                "code": "kubectl api-resources | head -n 25",
+                "lang": "bash"
+              },
+              {
+                "do": "Each kind node is a Docker container: find this one.",
+                "code": "docker ps --filter name=tour",
+                "lang": "bash",
+                "see": "One container, tour-control-plane, running a kindest/node image."
+              },
+              {
+                "do": "Delete the cluster.",
+                "code": "kind delete cluster --name tour",
+                "lang": "bash"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Pods, ReplicaSets and Deployments",
+          "minutes": 14,
+          "objectives": [
+            "Explain why Pods are created by controllers rather than directly",
+            "Describe how a Deployment rolls out a new version through ReplicaSets"
+          ],
+          "key_points": [
+            "A Pod is the smallest thing Kubernetes runs: one or more containers that share a network namespace (one IP address, so they talk over localhost) and can share volumes. Most Pods have one main container, with helpers beside it only when they must be.",
+            "Pods are disposable. If a bare Pod is deleted or its node fails, nothing recreates it, so you rarely create Pods yourself: a controller creates them from a Pod template.",
+            "A ReplicaSet keeps a set number of identical Pods running, counting the Pods that match its label selector. A Deployment manages ReplicaSets for you, and is what you normally write for a stateless service.",
+            "Changing a Deployment's Pod template, such as its image, starts a rolling update: a new ReplicaSet scales up as the old one scales down, within maxSurge and maxUnavailable, and kubectl rollout undo returns to the previous ReplicaSet.",
+            "Labels are key-value pairs on objects, and selectors choose objects by label. A Deployment's selector must match its Pod template's labels, and can't be changed after the Deployment is created."
+          ]
+        },
+        {
+          "title": "Services, DNS and namespaces",
+          "minutes": 13,
+          "objectives": [
+            "Choose the right Service type for a workload",
+            "Reach a Service by its DNS name from another namespace"
+          ],
+          "key_points": [
+            "Pod IP addresses change whenever Pods are replaced, so a Service gives the Pods matching its selector one stable virtual IP address and DNS name, and spreads connections across those that are ready.",
+            "A ClusterIP Service, the default, is reachable only inside the cluster; NodePort also opens a port (30000 to 32767 by default) on every node; LoadBalancer asks the cloud for an external load balancer; a headless Service (clusterIP: None) returns the Pods' own addresses.",
+            "The cluster DNS server, CoreDNS, gives every Service a name: inventory-api from Pods in the same namespace, and inventory-api.shop.svc.cluster.local (or inventory-api.shop) from any namespace.",
+            "Kubernetes lists the ready Pods behind a Service in EndpointSlices. A Service with no endpoints nearly always means its selector doesn't match the Pods' labels, or none of the matching Pods is ready.",
+            "Namespaces divide a cluster into groups of objects: names only need to be unique within one, and quotas and access rules apply per namespace. Nodes, PersistentVolumes and namespaces themselves belong to none, and a namespace alone isn't a security boundary."
+          ]
+        },
+        {
+          "title": "Volumes, persistent storage and StatefulSets",
+          "minutes": 12,
+          "objectives": [
+            "Choose between emptyDir, ConfigMap, Secret and persistent volumes",
+            "Explain when to use a StatefulSet instead of a Deployment"
+          ],
+          "key_points": [
+            "A container's files are lost when it restarts, so Pods declare volumes: an emptyDir lasts as long as the Pod (scratch space, or files shared between its containers), and ConfigMap and Secret volumes present configuration as files.",
+            "For data that must outlive any Pod, a PersistentVolumeClaim (PVC) asks for storage of a size and access mode; a StorageClass's provisioner creates a matching PersistentVolume (PV) on demand, and the Pod mounts the claim by name.",
+            "Access modes say how a volume can be mounted: ReadWriteOnce by one node at a time (most block storage, and kind's default local-path class), ReadWriteOncePod by a single Pod, ReadOnlyMany by many nodes read-only, and ReadWriteMany by many nodes read-write.",
+            "A StatefulSet gives each Pod a stable name (redis-0, redis-1), a stable DNS name through a headless Service, and its own PVC from volumeClaimTemplates that stays with it when it's rescheduled. Use it for databases and other stateful software.",
+            "A ReadWriteOnce volume ties its Pod to the nodes that can attach it, and with kind's local-path class that's one particular node, so drain that node and the Pod has nowhere to go until it returns."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Explore Kubernetes primitives on kind",
+        "tool": "kubectl",
+        "minutes": 75,
+        "goal": "Create a three-node kind cluster, load the inventory-api image into it, and see Pods, ReplicaSets, Deployments, Services and namespaces at work, including why a Deployment's Pod comes back and a bare Pod doesn't.",
+        "setup": [
+          "Docker running, with the inventory-api:1.1.0 image from the module 2 lab",
+          "kind and kubectl installed: kind version and kubectl version --client should both answer",
+          "Download the starter files: kind-config.yaml, pod.yaml, deployment.yaml and service.yaml"
+        ],
+        "steps": [
+          {
+            "do": "Create the cluster from the config: one control-plane node and two workers, with port 30080 mapped to your computer for later labs.",
+            "code": "kind create cluster --config kind-config.yaml\nkubectl get nodes",
+            "lang": "bash",
+            "see": "Set kubectl context to \"kind-lab\", then lab-control-plane, lab-worker and lab-worker2, all Ready."
+          },
+          {
+            "do": "List the control-plane components and where they run.",
+            "code": "kubectl get pods -n kube-system -o wide",
+            "lang": "bash",
+            "see": "etcd-lab-control-plane, kube-apiserver-lab-control-plane, kube-controller-manager-lab-control-plane and kube-scheduler-lab-control-plane, plus coredns, kindnet and kube-proxy Pods."
+          },
+          {
+            "do": "The cluster's nodes can't see the images on your computer, so load yours into them.",
+            "code": "kind load docker-image inventory-api:1.1.0 --name lab",
+            "lang": "bash"
+          },
+          {
+            "do": "Create a bare Pod, see which node it landed on, then delete it. Nothing brings it back.",
+            "code": "kubectl apply -f pod.yaml\nkubectl get pod inventory-pod -o wide\nkubectl delete pod inventory-pod\nkubectl get pods",
+            "lang": "bash",
+            "see": "No resources found in default namespace. after the delete."
+          },
+          {
+            "do": "Create the Deployment and list the objects it manages.",
+            "code": "kubectl apply -f deployment.yaml\nkubectl get deployment,replicaset,pods -l app=inventory-api -o wide",
+            "lang": "bash",
+            "see": "The Deployment at 3/3, one ReplicaSet with 3 ready, and three Pods spread over the workers."
+          },
+          {
+            "do": "Delete one of the Deployment's Pods and watch the ReplicaSet replace it.",
+            "code": "kubectl delete pod $(kubectl get pods -l app=inventory-api -o jsonpath='{.items[0].metadata.name}')\nkubectl get pods -l app=inventory-api",
+            "lang": "bash",
+            "see": "Three Pods again, one of them only seconds old."
+          },
+          {
+            "do": "Create the Service and look at the endpoints behind it.",
+            "code": "kubectl apply -f service.yaml\nkubectl get service inventory-api\nkubectl get endpointslices -l kubernetes.io/service-name=inventory-api",
+            "lang": "bash",
+            "see": "A ClusterIP Service on port 80, and an EndpointSlice with three Pod addresses on port 8000."
+          },
+          {
+            "do": "Call the Service from inside the cluster with a temporary Pod. Run it a few times: different Pods answer.",
+            "code": "kubectl run curl --rm -i --restart=Never --image=curlimages/curl:8.17.0 -- curl -s http://inventory-api/",
+            "lang": "bash",
+            "see": "{\"service\":\"inventory-api\",\"version\":\"1.1.0\",\"host\":\"inventory-api-...\"}, then a line saying the curl Pod was deleted."
+          },
+          {
+            "do": "Scale the Deployment out, then back.",
+            "code": "kubectl scale deployment inventory-api --replicas=5\nkubectl get deployment inventory-api\nkubectl scale deployment inventory-api --replicas=3",
+            "lang": "bash",
+            "see": "5/5 once the new Pods are ready."
+          },
+          {
+            "do": "Create a namespace, and call the Service from it by its full DNS name.",
+            "code": "kubectl create namespace sandbox\nkubectl run curl -n sandbox --rm -i --restart=Never --image=curlimages/curl:8.17.0 -- curl -s http://inventory-api.default.svc.cluster.local/\nkubectl get pods -n sandbox",
+            "lang": "bash",
+            "see": "The same kind of answer, then No resources found in sandbox namespace."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The three-node cluster is running, with its control-plane components.",
+            "look_for": [
+              "kind-lab",
+              "lab-worker2",
+              "kube-scheduler-lab-control-plane"
+            ]
+          },
+          {
+            "text": "The bare Pod isn't recreated after it's deleted.",
+            "look_for": [
+              "No resources found in default namespace"
+            ]
+          },
+          {
+            "text": "The Deployment keeps three replicas and replaces a deleted Pod.",
+            "look_for": [
+              "deployment.apps/inventory-api",
+              "3/3"
+            ]
+          },
+          {
+            "text": "The Service has endpoints and answers inside the cluster, including from another namespace by its full DNS name.",
+            "look_for": [
+              "\"service\":\"inventory-api\"",
+              "inventory-api.default.svc.cluster.local"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 1, 2 and 4 to 8 and step 10, then two sentences explaining why the bare Pod stayed deleted while the Deployment's Pod came back.",
+        "files": [
+          {
+            "path": "kind-config.yaml",
+            "content": "kind: Cluster\napiVersion: kind.x-k8s.io/v1alpha4\nname: lab\nnodes:\n  - role: control-plane\n    extraPortMappings:\n      - containerPort: 30080   # a NodePort, reachable on the host as localhost:30080\n        hostPort: 30080\n        protocol: TCP\n  - role: worker\n  - role: worker\n"
+          },
+          {
+            "path": "pod.yaml",
+            "content": "apiVersion: v1\nkind: Pod\nmetadata:\n  name: inventory-pod\n  labels:\n    app: inventory-pod\nspec:\n  containers:\n    - name: api\n      image: inventory-api:1.1.0\n      ports:\n        - containerPort: 8000\n"
+          },
+          {
+            "path": "deployment.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: inventory-api\n  labels:\n    app: inventory-api\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: inventory-api\n  template:\n    metadata:\n      labels:\n        app: inventory-api\n    spec:\n      containers:\n        - name: api\n          image: inventory-api:1.1.0\n          ports:\n            - containerPort: 8000\n"
+          },
+          {
+            "path": "service.yaml",
+            "content": "apiVersion: v1\nkind: Service\nmetadata:\n  name: inventory-api\nspec:\n  selector:\n    app: inventory-api\n  ports:\n    - port: 80\n      targetPort: 8000\n"
+          }
+        ],
+        "hints": [
+          "ErrImagePull or ImagePullBackOff means the nodes don't have the image: run kind load docker-image again, and check the tag matches the manifest exactly.",
+          "If kind can't create the cluster because port 30080 is taken, free it or change hostPort in kind-config.yaml, and use that port in later labs.",
+          "kubectl talks to the cluster its current context names: kubectl config current-context should print kind-lab.",
+          "If Pods stay Pending, give Docker more memory: at least 6 GB in Docker Desktop's Resources settings."
+        ]
+      }
+    },
+    {
+      "title": "Deploying and Scaling on K8s",
+      "summary": "Deploy an application from declarative manifests, keep traffic away from unhealthy Pods with probes, supply configuration and secrets, update it without downtime, and scale it with the Horizontal Pod Autoscaler.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Declarative manifests and kubectl apply",
+          "minutes": 12,
+          "objectives": [
+            "Write manifests with the correct API version and kind for each object",
+            "Apply, preview and validate changes declaratively"
+          ],
+          "key_points": [
+            "A manifest is a YAML (or JSON) description of objects. Each has apiVersion, kind, metadata (name, namespace, labels) and usually spec, the desired state; Kubernetes fills in status, the state it observes.",
+            "Use each object's API group and version: v1 for Pods, Services, ConfigMaps, Secrets and Namespaces; apps/v1 for Deployments and StatefulSets; autoscaling/v2 for HorizontalPodAutoscalers; networking.k8s.io/v1 for Ingress; policy/v1 for PodDisruptionBudgets.",
+            "kubectl apply -f is declarative: it creates what's missing and changes what differs, so files in Git stay the source of truth. kubectl diff -f shows what would change, and kubectl apply --dry-run=server -f has the API server validate without saving.",
+            "kubectl apply -f on a folder applies its files in name order, so number them (00-namespace.yaml first) when one object must exist before another. Keep imperative commands such as kubectl scale and edit for experiments.",
+            "Tools build on plain manifests: Kustomize, built into kubectl as apply -k, layers changes for each environment over a shared base, and Helm packages manifests as versioned, templated charts."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Generate, check and apply a manifest",
+            "steps": [
+              {
+                "do": "Read the documentation for a field without leaving the terminal.",
+                "code": "kubectl explain deployment.spec.strategy.rollingUpdate",
+                "lang": "bash",
+                "see": "What maxSurge and maxUnavailable mean, and that both default to 25%."
+              },
+              {
+                "do": "Generate a starting manifest instead of typing it from memory.",
+                "code": "kubectl create deployment hello --image=inventory-api:1.1.0 --replicas=2 --dry-run=client -o yaml > hello.yaml",
+                "lang": "bash",
+                "see": "A complete Deployment in hello.yaml, ready to edit."
+              },
+              {
+                "do": "Have the API server validate it without saving anything.",
+                "code": "kubectl apply --dry-run=server -f hello.yaml",
+                "lang": "bash",
+                "see": "deployment.apps/hello created (server dry run)"
+              },
+              {
+                "do": "Apply it, change replicas to 3 in the file, and preview the change before applying it again.",
+                "code": "kubectl apply -f hello.yaml\nkubectl diff -f hello.yaml",
+                "lang": "bash",
+                "see": "A diff in which replicas changes from 2 to 3."
+              },
+              {
+                "do": "Delete everything the file created.",
+                "code": "kubectl delete -f hello.yaml",
+                "lang": "bash"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Health checks, resources and rolling updates",
+          "minutes": 14,
+          "objectives": [
+            "Configure startup, readiness and liveness probes for what each is for",
+            "Set resource requests and limits, and update a Deployment without downtime"
+          ],
+          "key_points": [
+            "A readiness probe decides whether a Pod gets traffic: while it fails, the Pod is taken out of its Services' endpoints but keeps running. Check what the Pod needs in order to serve requests, such as its cache connection.",
+            "A liveness probe decides whether a container is restarted: after failureThreshold failures in a row, the kubelet kills and restarts it. Keep it cheap and independent of other services, or one slow database restarts every Pod that uses it.",
+            "A startup probe holds off the liveness and readiness probes until it succeeds, so a slow-starting container isn't killed while it loads.",
+            "Requests are what the scheduler reserves for a container; limits are the most it may use. Going over a CPU limit throttles the container, going over its memory limit gets it killed (OOMKilled), and requests are the basis of the autoscaler's utilisation figures.",
+            "With a RollingUpdate strategy of maxSurge: 1 and maxUnavailable: 0, Kubernetes starts a new Pod, waits until it's ready, then removes an old one, so capacity never drops during an update; readiness probes are what make that safe."
+          ]
+        },
+        {
+          "title": "ConfigMaps and Secrets",
+          "minutes": 12,
+          "objectives": [
+            "Supply configuration to Pods as environment variables or files",
+            "Handle Secrets with an understanding of what they do and don't protect"
+          ],
+          "key_points": [
+            "ConfigMaps hold non-secret configuration and Secrets hold sensitive values; both keep configuration out of the image, so the same image runs unchanged in every environment.",
+            "A Pod reads them as environment variables (env with valueFrom, or envFrom for every key) or as files in a volume. Mounted files update a little while after the object changes; environment variables are fixed when the container starts, so restart the Deployment (kubectl rollout restart) to apply them.",
+            "Secret values are only base64-encoded, not encrypted: anyone who can read the Secret can decode it. Restrict who can read Secrets with RBAC, turn on encryption at rest for etcd, and never commit real Secret manifests to Git.",
+            "In production, secrets usually come from a manager such as HashiCorp Vault or a cloud provider's secret manager, synchronised by a tool such as the External Secrets Operator or mounted by the Secrets Store CSI Driver; Sealed Secrets lets you keep encrypted secrets in Git.",
+            "If a Pod refers to a ConfigMap, Secret or key that doesn't exist, its container isn't started and the Pod shows CreateContainerConfigError until the reference can be resolved."
+          ]
+        },
+        {
+          "title": "Scaling with the Horizontal Pod Autoscaler",
+          "minutes": 12,
+          "objectives": [
+            "Explain how the Horizontal Pod Autoscaler decides how many replicas to run",
+            "Configure an autoscaler on CPU utilisation, with sensible scaling behaviour"
+          ],
+          "key_points": [
+            "The Horizontal Pod Autoscaler (autoscaling/v2) changes a workload's replica count to keep a metric near a target, such as average CPU use at 60% of the Pods' CPU requests.",
+            "It needs metrics: CPU and memory come from metrics-server, which kubectl top also reads, while custom and external metrics need an adapter such as the Prometheus Adapter or KEDA.",
+            "The desired count is the current count times the current value divided by the target, rounded up and kept between minReplicas and maxReplicas. Pods without CPU requests have no utilisation, so always set requests.",
+            "The behavior section controls the pace: by default scale-down waits for a 300-second stabilisation window, so a short dip in load doesn't remove Pods that are needed again a minute later.",
+            "When an autoscaler manages a Deployment, leave replicas out of the Deployment's manifest; otherwise each kubectl apply resets the count the autoscaler chose."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Deploy, configure and scale the inventory service",
+        "tool": "kubectl",
+        "minutes": 90,
+        "goal": "Deploy inventory-api and Redis to their own namespace from numbered manifests, with settings in a ConfigMap and the Redis password in a Secret, then see readiness, a configuration change, autoscaling, a rolling update and a rollback at work.",
+        "setup": [
+          "The kind cluster from the module 3 lab, with your kubectl context set to kind-lab",
+          "Your inventory-api folder with the multi-stage Dockerfile from module 2",
+          "Helm (version 3 or 4), for installing metrics-server",
+          "Download the starter files into a folder called k8s inside inventory-api"
+        ],
+        "steps": [
+          {
+            "do": "Build version 1.2.0 for the rolling update later, and load both versions into the cluster.",
+            "code": "docker build --build-arg APP_VERSION=1.2.0 -t inventory-api:1.2.0 .\nkind load docker-image inventory-api:1.1.0 inventory-api:1.2.0 --name lab",
+            "lang": "bash"
+          },
+          {
+            "do": "Create the namespace, then a random Redis password as a Secret, so no password is ever written in a file.",
+            "code": "kubectl apply -f k8s/00-namespace.yaml\nkubectl -n shop create secret generic redis-auth --from-literal=password=\"$(python3 -c 'import secrets; print(secrets.token_hex(16))')\"",
+            "lang": "bash",
+            "see": "namespace/shop created and secret/redis-auth created"
+          },
+          {
+            "do": "Apply the whole folder (in file-name order, which is why the files are numbered) and wait for the API.",
+            "code": "kubectl apply -f k8s/\nkubectl -n shop rollout status deployment/inventory-api",
+            "lang": "bash",
+            "see": "One line per object, then deployment \"inventory-api\" successfully rolled out"
+          },
+          {
+            "do": "Call the service through its NodePort, which kind maps to localhost:30080.",
+            "code": "curl -s localhost:30080/\ncurl -s localhost:30080/items/sku-1001\ncurl -s localhost:30080/items/sku-1001",
+            "lang": "bash",
+            "see": "Version 1.1.0, then \"cache\":\"miss\" and \"cache\":\"hit\""
+          },
+          {
+            "do": "See readiness at work: stop Redis, and the API Pods stay Running but become 0/1 ready, so the Service sends them nothing. Then bring Redis back.",
+            "code": "kubectl -n shop scale deployment redis --replicas=0\nsleep 20\nkubectl -n shop get pods -l app=inventory-api\nkubectl -n shop scale deployment redis --replicas=1",
+            "lang": "bash",
+            "see": "READY 0/1, STATUS Running and no restarts: readiness failed, liveness didn't."
+          },
+          {
+            "do": "Change a setting. Environment variables are read when a container starts, so patch the ConfigMap, then restart the Deployment.",
+            "code": "kubectl -n shop exec deploy/inventory-api -- env | grep CACHE_TTL\nkubectl -n shop patch configmap inventory-config -p '{\"data\":{\"CACHE_TTL_SECONDS\":\"10\"}}'\nkubectl -n shop rollout restart deployment/inventory-api\nkubectl -n shop rollout status deployment/inventory-api\nkubectl -n shop exec deploy/inventory-api -- env | grep CACHE_TTL",
+            "lang": "bash",
+            "see": "CACHE_TTL_SECONDS=30 before the restart, CACHE_TTL_SECONDS=10 after it."
+          },
+          {
+            "do": "See that a Secret is only encoded.",
+            "code": "kubectl -n shop get secret redis-auth -o jsonpath='{.data.password}' | base64 --decode; echo",
+            "lang": "bash",
+            "see": "The password in plain text: anyone allowed to read Secrets in shop can do the same."
+          },
+          {
+            "do": "Install metrics-server, where the autoscaler gets CPU figures. kind's kubelets use self-signed certificates, hence the extra argument.",
+            "code": "helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/\nhelm upgrade --install metrics-server metrics-server/metrics-server -n kube-system --set 'args={--kubelet-insecure-tls}'\nkubectl top pods -n shop",
+            "lang": "bash",
+            "see": "CPU and memory for each Pod; if metrics aren't available yet, wait a minute and try again."
+          },
+          {
+            "do": "Generate CPU load from inside the cluster and watch the autoscaler scale out (Ctrl+C stops watching).",
+            "code": "kubectl -n shop run load --image=busybox:1.37 --restart=Never -- /bin/sh -c 'while true; do wget -q -O /dev/null http://inventory-api/work?ms=200; done'\nkubectl -n shop get hpa inventory-api --watch",
+            "lang": "bash",
+            "see": "The CPU figure climbs far above the 60% target and REPLICAS rises from 2 towards 6."
+          },
+          {
+            "do": "Stop the load and watch it scale back in after the 60-second stabilisation window set in 50-hpa.yaml.",
+            "code": "kubectl -n shop delete pod load\nkubectl -n shop get hpa inventory-api --watch",
+            "lang": "bash",
+            "see": "REPLICAS returns to 2 within a few minutes."
+          },
+          {
+            "do": "Roll out version 1.2.0 and check it, then roll back.",
+            "code": "kubectl -n shop set image deployment/inventory-api api=inventory-api:1.2.0\nkubectl -n shop rollout status deployment/inventory-api\ncurl -s localhost:30080/\nkubectl -n shop rollout history deployment/inventory-api\nkubectl -n shop rollout undo deployment/inventory-api\nkubectl -n shop rollout status deployment/inventory-api\ncurl -s localhost:30080/",
+            "lang": "bash",
+            "see": "\"version\":\"1.2.0\", then deployment.apps/inventory-api rolled back, and \"version\":\"1.1.0\" again."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Every object applies and the API rolls out in the shop namespace.",
+            "look_for": [
+              "deployment \"inventory-api\" successfully rolled out",
+              "horizontalpodautoscaler.autoscaling/inventory-api"
+            ]
+          },
+          {
+            "text": "The service answers through the NodePort and uses its Redis cache.",
+            "look_for": [
+              "\"cache\":\"hit\""
+            ]
+          },
+          {
+            "text": "With Redis stopped, the API Pods are Running but not ready.",
+            "look_for": [
+              "0/1"
+            ]
+          },
+          {
+            "text": "The new ConfigMap value reaches the Pods only after the restart.",
+            "look_for": [
+              "CACHE_TTL_SECONDS=30",
+              "CACHE_TTL_SECONDS=10"
+            ]
+          },
+          {
+            "text": "The autoscaler scales the Deployment out under load and back in afterwards.",
+            "look_for": [
+              "Deployment/inventory-api"
+            ]
+          },
+          {
+            "text": "The rolling update reaches 1.2.0 and the rollback restores 1.1.0.",
+            "look_for": [
+              "\"version\":\"1.2.0\"",
+              "rolled back"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 3 to 6 and 9 to 11; for the watches, include the lines where the replica count changes.",
+        "files": [
+          {
+            "path": "k8s/00-namespace.yaml",
+            "content": "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: shop\n"
+          },
+          {
+            "path": "k8s/10-redis.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: redis\n  namespace: shop\n  labels:\n    app: redis\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: redis\n  template:\n    metadata:\n      labels:\n        app: redis\n    spec:\n      containers:\n        - name: redis\n          image: redis:8.2-alpine\n          args: [\"redis-server\", \"--requirepass\", \"$(REDIS_PASSWORD)\"]\n          env:\n            - name: REDIS_PASSWORD\n              valueFrom:\n                secretKeyRef:\n                  name: redis-auth\n                  key: password\n          ports:\n            - name: redis\n              containerPort: 6379\n          readinessProbe:\n            exec:\n              command: [\"sh\", \"-c\", \"redis-cli -a \\\"$REDIS_PASSWORD\\\" --no-auth-warning ping | grep -q PONG\"]\n            periodSeconds: 5\n          resources:\n            requests:\n              cpu: 50m\n              memory: 64Mi\n            limits:\n              memory: 128Mi\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: redis\n  namespace: shop\nspec:\n  selector:\n    app: redis\n  ports:\n    - name: redis\n      port: 6379\n      targetPort: redis\n"
+          },
+          {
+            "path": "k8s/20-configmap.yaml",
+            "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: inventory-config\n  namespace: shop\ndata:\n  REDIS_HOST: redis\n  REDIS_PORT: \"6379\"\n  CACHE_TTL_SECONDS: \"30\"\n"
+          },
+          {
+            "path": "k8s/30-api.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: inventory-api\n  namespace: shop\n  labels:\n    app: inventory-api\nspec:\n  # No replicas field: the HorizontalPodAutoscaler in 50-hpa.yaml owns the count.\n  revisionHistoryLimit: 5\n  selector:\n    matchLabels:\n      app: inventory-api\n  strategy:\n    type: RollingUpdate\n    rollingUpdate:\n      maxSurge: 1\n      maxUnavailable: 0\n  template:\n    metadata:\n      labels:\n        app: inventory-api\n    spec:\n      securityContext:\n        runAsNonRoot: true\n        runAsUser: 10001\n      containers:\n        - name: api\n          image: inventory-api:1.1.0\n          imagePullPolicy: IfNotPresent\n          ports:\n            - name: http\n              containerPort: 8000\n          envFrom:\n            - configMapRef:\n                name: inventory-config\n          env:\n            - name: REDIS_PASSWORD\n              valueFrom:\n                secretKeyRef:\n                  name: redis-auth\n                  key: password\n          startupProbe:\n            httpGet:\n              path: /healthz\n              port: http\n            periodSeconds: 2\n            failureThreshold: 15\n          readinessProbe:\n            httpGet:\n              path: /readyz\n              port: http\n            periodSeconds: 5\n            failureThreshold: 2\n          livenessProbe:\n            httpGet:\n              path: /healthz\n              port: http\n            periodSeconds: 10\n            failureThreshold: 3\n          resources:\n            requests:\n              cpu: 100m\n              memory: 96Mi\n            limits:\n              cpu: 500m\n              memory: 192Mi\n          securityContext:\n            allowPrivilegeEscalation: false\n            readOnlyRootFilesystem: true\n            capabilities:\n              drop: [\"ALL\"]\n"
+          },
+          {
+            "path": "k8s/40-service.yaml",
+            "content": "apiVersion: v1\nkind: Service\nmetadata:\n  name: inventory-api\n  namespace: shop\nspec:\n  type: NodePort\n  selector:\n    app: inventory-api\n  ports:\n    - name: http\n      port: 80\n      targetPort: http\n      nodePort: 30080\n"
+          },
+          {
+            "path": "k8s/50-hpa.yaml",
+            "content": "apiVersion: autoscaling/v2\nkind: HorizontalPodAutoscaler\nmetadata:\n  name: inventory-api\n  namespace: shop\nspec:\n  scaleTargetRef:\n    apiVersion: apps/v1\n    kind: Deployment\n    name: inventory-api\n  minReplicas: 2\n  maxReplicas: 6\n  metrics:\n    - type: Resource\n      resource:\n        name: cpu\n        target:\n          type: Utilization\n          averageUtilization: 60\n  behavior:\n    scaleDown:\n      stabilizationWindowSeconds: 60\n"
+          }
+        ],
+        "hints": [
+          "API Pods stuck in CreateContainerConfigError mean the redis-auth Secret is missing: create it (step 2) and they start by themselves.",
+          "If kubectl top says metrics aren't available, give metrics-server a minute; kubectl -n kube-system logs deploy/metrics-server shows certificate errors if the argument didn't take effect.",
+          "TARGETS showing <unknown> means the autoscaler has no metrics yet, or the Pods have no CPU request.",
+          "On Windows, run these commands in Git Bash or WSL; PowerShell quotes the JSON in step 6 differently. If python3 isn't found, use python."
+        ]
+      }
+    },
+    {
+      "title": "Managing K8s Clusters",
+      "summary": "Use kubectl to inspect, diagnose and fix workloads, expose services with Ingress, share a cluster fairly with quotas and limits, and keep applications available while nodes are drained and upgraded.",
+      "instructor": "dariusz-wojciechowski",
+      "lessons": [
+        {
+          "title": "kubectl for operators: contexts, output and inspection",
+          "minutes": 12,
+          "objectives": [
+            "Point kubectl at the right cluster and namespace",
+            "Inspect objects, events and logs to understand what a workload is doing"
+          ],
+          "key_points": [
+            "kubectl reads clusters, users and contexts from a kubeconfig file (~/.kube/config, or the files in KUBECONFIG). kubectl config get-contexts lists them and use-context switches, so check where you're pointed before changing anything.",
+            "kubectl get lists objects: -o wide adds nodes and IP addresses, -o yaml shows the whole object, -l filters by label, -A covers every namespace, -w watches for changes, and -o jsonpath or custom-columns picks out fields for scripts.",
+            "kubectl describe shows an object's details and its recent events, which usually state a problem's cause; kubectl get events --sort-by=.lastTimestamp lists a namespace's events in time order.",
+            "kubectl logs shows a container's output (-f to follow, --previous for the last crashed run, -c to choose a container); kubectl exec runs a command in a container, and kubectl port-forward connects a local port to a Pod or Service for testing.",
+            "kubectl debug adds an ephemeral container with your choice of tools to a running Pod, which helps when the application's image has no shell."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Inspect a workload from the outside in",
+            "steps": [
+              {
+                "do": "Check which cluster and namespace you're about to work on.",
+                "code": "kubectl config get-contexts\nkubectl config current-context",
+                "lang": "bash"
+              },
+              {
+                "do": "Get an overview of a namespace, then one Pod in full.",
+                "code": "kubectl -n shop get all -o wide\nkubectl -n shop get pod $(kubectl -n shop get pods -l app=inventory-api -o name | head -n 1 | cut -d/ -f2) -o yaml | head -n 40",
+                "lang": "bash"
+              },
+              {
+                "do": "Pick out fields for a report: every Pod's name, node and restart count.",
+                "code": "kubectl -n shop get pods -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,RESTARTS:.status.containerStatuses[0].restartCount",
+                "lang": "bash"
+              },
+              {
+                "do": "Read the namespace's events in order.",
+                "code": "kubectl -n shop get events --sort-by=.lastTimestamp | tail -n 10",
+                "lang": "bash"
+              },
+              {
+                "do": "Follow the logs of every API Pod at once, prefixed with the Pod name (Ctrl+C to stop).",
+                "code": "kubectl -n shop logs -l app=inventory-api -f --prefix",
+                "lang": "bash"
+              },
+              {
+                "do": "The API image has a shell, but many don't: attach a debugging container that shares the API container's process namespace.",
+                "code": "kubectl -n shop debug -it deploy/inventory-api --image=busybox:1.37 --target=api -- sh",
+                "lang": "bash",
+                "see": "A busybox prompt; ps shows uvicorn running in the API container. Type exit to leave."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Troubleshooting Pods that won't run or won't serve",
+          "minutes": 14,
+          "objectives": [
+            "Diagnose the common failure states from their symptoms",
+            "Follow a repeatable path from symptom to root cause"
+          ],
+          "key_points": [
+            "Pending means the scheduler can't place the Pod; describe says why, such as insufficient CPU or memory, a taint it doesn't tolerate, or a PersistentVolumeClaim that isn't bound.",
+            "ErrImagePull and then ImagePullBackOff mean the image can't be pulled: a wrong name or tag, a registry that needs credentials (imagePullSecrets) or, on kind, an image never loaded; Kubernetes keeps retrying with growing delays.",
+            "CrashLoopBackOff means the container keeps starting and exiting. Read kubectl logs --previous for the error, and look for OOMKilled under Last State in describe, which means the memory limit is too low.",
+            "CreateContainerConfigError means a referenced ConfigMap, Secret or key is missing. A Pod that is Running but not ready has a failing readiness probe, and its events say what the probe got back.",
+            "A Service that doesn't answer usually has no endpoints: compare its selector with the Pods' labels (kubectl get pods --show-labels) and check its EndpointSlices, then test from a temporary Pod inside the cluster before suspecting the network."
+          ]
+        },
+        {
+          "title": "Ingress, quotas and limits",
+          "minutes": 13,
+          "objectives": [
+            "Expose HTTP services through an Ingress controller, and describe Gateway API",
+            "Share a namespace fairly with ResourceQuotas and LimitRanges"
+          ],
+          "key_points": [
+            "An Ingress (networking.k8s.io/v1) routes outside HTTP and HTTPS traffic to Services by host name and path, with TLS certificates from Secrets. It does nothing until an Ingress controller runs in the cluster, chosen with ingressClassName.",
+            "Many controllers implement Ingress, such as Traefik, HAProxy, Contour and those from cloud providers. The community Ingress NGINX controller stopped receiving updates, security fixes included, in March 2026, so choose a maintained controller.",
+            "The Ingress API is stable but frozen. Gateway API (gateway.networking.k8s.io) is its successor: it splits the job between GatewayClass, Gateway and route objects such as HTTPRoute, and builds in features such as weighted traffic splitting.",
+            "A ResourceQuota caps a namespace's totals, such as its number of Pods or the sum of its CPU and memory requests and limits. Once a quota covers CPU or memory, every new Pod there must set them, or it's rejected.",
+            "A LimitRange gives containers that don't set requests and limits default values, and can set a minimum and maximum per container, so a quota doesn't reject Pods that forgot them."
+          ]
+        },
+        {
+          "title": "Keeping applications available during maintenance",
+          "minutes": 12,
+          "objectives": [
+            "Drain nodes safely with PodDisruptionBudgets in place",
+            "Spread replicas so the loss of a node doesn't take a service down"
+          ],
+          "key_points": [
+            "kubectl cordon marks a node unschedulable; kubectl drain cordons it and evicts its Pods so their controllers recreate them elsewhere (add --ignore-daemonsets, and --delete-emptydir-data for Pods with emptyDir volumes); kubectl uncordon brings it back.",
+            "A PodDisruptionBudget (policy/v1) limits voluntary disruptions such as drains: with minAvailable: 2, an eviction that would leave fewer than two ready Pods is refused until a replacement is ready somewhere else.",
+            "Replicas only protect you if they run on different nodes: topologySpreadConstraints, or pod anti-affinity, spread a Deployment's Pods using node labels such as kubernetes.io/hostname and topology.kubernetes.io/zone.",
+            "With whenUnsatisfiable: DoNotSchedule, a spread rule can leave Pods Pending when there are too few nodes, for example during a drain; ScheduleAnyway treats the spread as a preference instead.",
+            "PodDisruptionBudgets don't stop involuntary disruptions such as a node failing; spread replicas and readiness probes are what keep a service up then. Upgrade clusters one minor version at a time, control plane first, then nodes, and keep kubectl within one minor version of the API server."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Troubleshoot a broken namespace",
+        "tool": "kubectl",
+        "minutes": 75,
+        "goal": "Find and fix five broken workloads with get, describe, logs and events, watch a ResourceQuota stop a scale-up, and send traffic to a repaired service through an Ingress controller.",
+        "setup": [
+          "The kind cluster from the earlier labs, with inventory-api:1.1.0 loaded",
+          "Helm, for installing the Traefik Ingress controller",
+          "Download the starter files into a folder called debug"
+        ],
+        "steps": [
+          {
+            "do": "Create the namespace with its quota and default limits, then the workloads.",
+            "code": "kubectl apply -f debug/00-namespace.yaml\nkubectl apply -f debug/\nkubectl -n debug get deployments,pods",
+            "lang": "bash",
+            "see": "Five Deployments, most of them not ready, and Pods in several different states."
+          },
+          {
+            "do": "Start broad: list the Pods and the recent events, then describe the orders Pod.",
+            "code": "kubectl -n debug get pods\nkubectl -n debug get events --sort-by=.lastTimestamp | tail -n 20\nkubectl -n debug describe pod -l app=orders | tail -n 15",
+            "lang": "bash",
+            "see": "ErrImagePull or ImagePullBackOff for orders, CreateContainerConfigError for stock, 0/1 ready for pricing and CrashLoopBackOff for reports."
+          },
+          {
+            "do": "Look closer at stock, reports and pricing.",
+            "code": "kubectl -n debug describe pod -l app=stock | grep -i 'error'\nkubectl -n debug describe pod -l app=reports | grep -A 4 'Last State'\nkubectl -n debug describe pod -l app=pricing | grep -i 'readiness probe failed'",
+            "lang": "bash",
+            "see": "A missing key in ConfigMap stock-config, Reason: OOMKilled, and HTTP probe failed with statuscode: 404."
+          },
+          {
+            "do": "The catalogue Pod is healthy, yet its Service doesn't answer. Compare the Service's selector with the Pod's labels, and look at its endpoints.",
+            "code": "kubectl -n debug get pods --show-labels\nkubectl -n debug get service catalogue -o jsonpath='{.spec.selector}'; echo\nkubectl -n debug get endpointslices -l kubernetes.io/service-name=catalogue",
+            "lang": "bash",
+            "see": "The Pod is labelled app=catalogue, the Service selects {\"app\":\"catalog\"}, and its EndpointSlice has no endpoints."
+          },
+          {
+            "do": "Fix the manifests: the image tag in 01 (1.1.0), the ConfigMap key in 02, the probe path in 03 (the app serves /healthz), the memory request and limit in 04 (128Mi) and the selector in 05. Apply them and check.",
+            "code": "kubectl apply -f debug/\nkubectl -n debug get pods",
+            "lang": "bash",
+            "see": "All five Pods Running and 1/1 ready after a minute or so."
+          },
+          {
+            "do": "See the quota at work: ask for 8 catalogue replicas, more than the namespace's 10 Pods allow, then scale back.",
+            "code": "kubectl -n debug scale deployment catalogue --replicas=8\nsleep 5\nkubectl -n debug describe resourcequota debug-quota\nkubectl -n debug get events --field-selector reason=FailedCreate | tail -n 3\nkubectl -n debug scale deployment catalogue --replicas=1",
+            "lang": "bash",
+            "see": "pods 10 of 10 used, and FailedCreate events that say exceeded quota: debug-quota."
+          },
+          {
+            "do": "Install Traefik as the Ingress controller, then check its IngressClass and the Ingress from 06-ingress.yaml.",
+            "code": "helm repo add traefik https://traefik.github.io/charts\nhelm install traefik traefik/traefik -n traefik --create-namespace\nkubectl get ingressclass\nkubectl -n debug get ingress catalogue",
+            "lang": "bash",
+            "see": "An IngressClass called traefik, and the catalogue Ingress for host catalogue.local."
+          },
+          {
+            "do": "Forward a local port to Traefik once its Pod is running, and send a request with the Ingress's host name.",
+            "code": "kubectl -n traefik rollout status deployment/traefik\nkubectl -n traefik port-forward svc/traefik 8080:80 &\nsleep 3\ncurl -s -H 'Host: catalogue.local' http://localhost:8080/\nkill %1",
+            "lang": "bash",
+            "see": "{\"service\":\"inventory-api\",\"version\":\"1.1.0\",...}, served through the Ingress."
+          },
+          {
+            "do": "Write a short incident note for each of the five problems: the symptom, the command that showed the cause, the cause, and the fix."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The image problem is diagnosed and fixed.",
+            "look_for": [
+              "ImagePull",
+              "1.1.0"
+            ]
+          },
+          {
+            "text": "The missing ConfigMap key is diagnosed and fixed.",
+            "look_for": [
+              "CreateContainerConfigError"
+            ]
+          },
+          {
+            "text": "The failing readiness probe and the low memory limit are diagnosed and fixed.",
+            "look_for": [
+              "statuscode: 404",
+              "OOMKilled"
+            ]
+          },
+          {
+            "text": "The Service's selector mismatch is found and fixed.",
+            "look_for": [
+              "{\"app\":\"catalog\"}"
+            ]
+          },
+          {
+            "text": "The quota stops the scale-up.",
+            "look_for": [
+              "exceeded quota"
+            ]
+          },
+          {
+            "text": "Requests reach the repaired service through the Ingress, and the incident notes cover all five problems.",
+            "look_for": [
+              "\"service\":\"inventory-api\"",
+              "catalogue.local"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 2 to 8, then your five incident notes.",
+        "files": [
+          {
+            "path": "debug/00-namespace.yaml",
+            "content": "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: debug\n---\napiVersion: v1\nkind: ResourceQuota\nmetadata:\n  name: debug-quota\n  namespace: debug\nspec:\n  hard:\n    pods: \"10\"\n    requests.cpu: \"1\"\n    requests.memory: 1Gi\n    limits.cpu: \"3\"\n    limits.memory: 2Gi\n---\napiVersion: v1\nkind: LimitRange\nmetadata:\n  name: debug-defaults\n  namespace: debug\nspec:\n  limits:\n    - type: Container\n      defaultRequest:\n        cpu: 50m\n        memory: 64Mi\n      default:\n        cpu: 250m\n        memory: 128Mi\n"
+          },
+          {
+            "path": "debug/01-orders.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: orders\n  namespace: debug\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: orders\n  template:\n    metadata:\n      labels:\n        app: orders\n    spec:\n      containers:\n        - name: api\n          image: inventory-api:1.1\n          ports:\n            - containerPort: 8000\n"
+          },
+          {
+            "path": "debug/02-stock.yaml",
+            "content": "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: stock-config\n  namespace: debug\ndata:\n  CACHE_TTL_SECONDS: \"60\"\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: stock\n  namespace: debug\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: stock\n  template:\n    metadata:\n      labels:\n        app: stock\n    spec:\n      containers:\n        - name: api\n          image: inventory-api:1.1.0\n          env:\n            - name: CACHE_TTL_SECONDS\n              valueFrom:\n                configMapKeyRef:\n                  name: stock-config\n                  key: cache-ttl\n          ports:\n            - containerPort: 8000\n"
+          },
+          {
+            "path": "debug/03-pricing.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: pricing\n  namespace: debug\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: pricing\n  template:\n    metadata:\n      labels:\n        app: pricing\n    spec:\n      containers:\n        - name: api\n          image: inventory-api:1.1.0\n          ports:\n            - name: http\n              containerPort: 8000\n          readinessProbe:\n            httpGet:\n              path: /health\n              port: http\n            periodSeconds: 5\n"
+          },
+          {
+            "path": "debug/04-reports.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: reports\n  namespace: debug\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: reports\n  template:\n    metadata:\n      labels:\n        app: reports\n    spec:\n      containers:\n        - name: api\n          image: inventory-api:1.1.0\n          ports:\n            - containerPort: 8000\n          resources:\n            requests:\n              memory: 20Mi\n            limits:\n              memory: 20Mi\n"
+          },
+          {
+            "path": "debug/05-catalogue.yaml",
+            "content": "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: catalogue\n  namespace: debug\nspec:\n  replicas: 1\n  selector:\n    matchLabels:\n      app: catalogue\n  template:\n    metadata:\n      labels:\n        app: catalogue\n    spec:\n      containers:\n        - name: api\n          image: inventory-api:1.1.0\n          ports:\n            - containerPort: 8000\n---\napiVersion: v1\nkind: Service\nmetadata:\n  name: catalogue\n  namespace: debug\nspec:\n  selector:\n    app: catalog\n  ports:\n    - port: 80\n      targetPort: 8000\n"
+          },
+          {
+            "path": "debug/06-ingress.yaml",
+            "content": "apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: catalogue\n  namespace: debug\nspec:\n  ingressClassName: traefik\n  rules:\n    - host: catalogue.local\n      http:\n        paths:\n          - path: /\n            pathType: Prefix\n            backend:\n              service:\n                name: catalogue\n                port:\n                  number: 80\n"
+          }
+        ],
+        "hints": [
+          "describe ends with Events, which usually state the cause in plain words: read them before anything else.",
+          "logs --previous shows the last crashed container's output; without it you see the current attempt, which may not have printed anything yet. A container killed for memory may print nothing at all.",
+          "If a fixed Deployment still shows a failing Pod, it's the old one on its way out: kubectl -n debug rollout status deployment/NAME waits for the new one.",
+          "If port-forward says the port is in use, choose another local port, such as 8081:80, and use it in curl."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn how containers isolate processes, practise the container lifecycle and write a first Dockerfile for inventory-api.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Rebuild the image as a lean multi-stage build and run the API with Redis under Docker Compose.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Learn Kubernetes' architecture and core objects, and explore them on a three-node kind cluster.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Deploy the service from manifests with probes, configuration, secrets and autoscaling, and practise a rolling update and a rollback.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Troubleshoot broken workloads, add Ingress and quotas, build the capstone, and review with the mock exam and flashcards.",
+      "modules": [
+        5
+      ]
+    }
+  ],
+  "project": {
+    "title": "Ship a highly available inventory service",
+    "minutes": 480,
+    "brief": "Take inventory-api from a developer's laptop to a small but production-shaped Kubernetes deployment. Package it with a lean, multi-stage Dockerfile that runs as a non-root user, and give developers a compose.yaml that runs the API and Redis with healthchecks, a private network and a persistent volume. Then write numbered Kubernetes manifests for a three-node kind (or minikube) cluster: a namespace with a ResourceQuota and a LimitRange; Redis as a StatefulSet (or a Deployment with the Recreate strategy) with its data on a PersistentVolumeClaim and its password in a Secret created outside Git; the API with at least three replicas spread across nodes, startup, readiness and liveness probes, requests and limits, settings from a ConfigMap, a PodDisruptionBudget and a HorizontalPodAutoscaler; and access from your computer through a NodePort or an Ingress. Prove it works with the smoke test, keep it serving while you delete an API Pod and drain a worker node that isn't running Redis, and document how to run and operate it.",
+    "deliverables": [
+      "Dockerfile, .dockerignore and compose.yaml, with docker compose ps output showing both services healthy",
+      "A k8s folder of numbered manifests for every object listed in the brief",
+      "The output of kubectl get all,pvc,pdb,hpa -n shop -o wide, showing the API's Pods on different nodes",
+      "The output of python smoke_test.py http://localhost:30080 (or your Ingress address) with all 4 checks passed",
+      "An availability test: the output of smoke_test.py --watch 120 while you delete an API Pod and drain a worker, with the kubectl commands you ran",
+      "README.md: how to run the service with Compose and on kind, how settings and the password are supplied, and a short troubleshooting guide"
+    ],
+    "rubric": [
+      {
+        "name": "Container images",
+        "points": 15,
+        "description": "A multi-stage Dockerfile with a slim runtime stage, a numeric non-root user, an exec-form CMD, pinned base images, a cache-friendly layer order and a .dockerignore; no secrets in any layer."
+      },
+      {
+        "name": "Local development with Compose",
+        "points": 10,
+        "description": "Both services start healthy and in the right order, on a private network, with Redis data in a named volume; docker compose config validates the file."
+      },
+      {
+        "name": "Kubernetes manifests",
+        "points": 25,
+        "description": "Valid, numbered manifests with the right API versions, consistent labels and selectors, probes that separate readiness from liveness, requests and limits, settings from a ConfigMap and the password from a Secret."
+      },
+      {
+        "name": "High availability and scaling",
+        "points": 20,
+        "description": "At least three API replicas spread across nodes, a PodDisruptionBudget that lets the drain finish without an outage, a working autoscaler, and a watch test with no failed requests, or a clear explanation of any."
+      },
+      {
+        "name": "Storage, quotas and access",
+        "points": 10,
+        "description": "Redis on a PersistentVolumeClaim, a ResourceQuota and LimitRange in the namespace, and a NodePort or Ingress that works from the host."
+      },
+      {
+        "name": "Evidence and documentation",
+        "points": 20,
+        "description": "The outputs prove each claim, and the README lets a colleague run and troubleshoot the service and understand the main design decisions."
+      }
+    ],
+    "submit": "Paste your Dockerfile, compose.yaml, every manifest and README.md, then the outputs listed in the deliverables.",
+    "files": [
+      {
+        "path": "smoke_test.py",
+        "content": "\"\"\"Smoke-test a deployed inventory-api: python smoke_test.py http://localhost:30080\n\nWith --watch SECONDS it instead calls the service twice a second for that long and counts failures,\nwhich shows whether it stays up while you delete Pods or drain a node.\nUses only the Python standard library.\n\"\"\"\n\nimport argparse\nimport json\nimport sys\nimport time\nimport urllib.error\nimport urllib.request\n\n\ndef call(base, path, method=\"GET\"):\n    req = urllib.request.Request(base + path, method=method)\n    with urllib.request.urlopen(req, timeout=5) as resp:  # a new connection each time\n        return resp.status, json.loads(resp.read())\n\n\ndef checks(base):\n    passed = 0\n    status, body = call(base, \"/\")\n    ok = status == 200 and body.get(\"service\") == \"inventory-api\"\n    print(f\"{'PASS' if ok else 'FAIL'} service: {body.get('service')} {body.get('version')}\")\n    passed += ok\n\n    try:\n        status, body = call(base, \"/readyz\")\n    except urllib.error.HTTPError as e:\n        status, body = e.code, {\"status\": \"not ready\"}\n    ok = status == 200\n    print(f\"{'PASS' if ok else 'FAIL'} readiness: {body.get('status')}\")\n    passed += ok\n\n    call(base, \"/items/sku-1002\")\n    _, second = call(base, \"/items/sku-1002\")\n    ok = second.get(\"cache\") == \"hit\"\n    print(f\"{'PASS' if ok else 'FAIL'} cache: second lookup was a {second.get('cache')}\")\n    passed += ok\n\n    counts, hosts = [], set()\n    try:\n        for _ in range(12):\n            _, body = call(base, \"/visits\", method=\"POST\")\n            counts.append(body[\"visits\"])\n            hosts.add(body[\"host\"])\n        ok = all(b > a for a, b in zip(counts, counts[1:]))\n        print(f\"{'PASS' if ok else 'FAIL'} shared state: visits rose from {counts[0]} to {counts[-1]} \"\n              f\"across {len(hosts)} pod(s)\")\n    except urllib.error.HTTPError as e:\n        ok = False\n        print(f\"FAIL shared state: POST /visits returned {e.code}\")\n    passed += ok\n\n    print(f\"{'All' if passed == 4 else 'Only'} {passed} of 4 checks passed\")\n    return passed == 4\n\n\ndef watch(base, seconds):\n    total = failed = 0\n    hosts = set()\n    end = time.monotonic() + seconds\n    while time.monotonic() < end:\n        total += 1\n        try:\n            _, body = call(base, \"/\")\n            hosts.add(body[\"host\"])\n        except (urllib.error.URLError, OSError):\n            failed += 1\n        time.sleep(0.5)\n    print(f\"{total} requests, {failed} failed, answered by {len(hosts)} pod(s)\")\n    return failed == 0\n\n\nif __name__ == \"__main__\":\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"base_url\", help=\"for example http://localhost:30080\")\n    parser.add_argument(\"--watch\", type=int, metavar=\"SECONDS\", help=\"keep calling the service for this long\")\n    args = parser.parse_args()\n    base = args.base_url.rstrip(\"/\")\n    ok = watch(base, args.watch) if args.watch else checks(base)\n    sys.exit(0 if ok else 1)\n"
+      }
+    ]
+  }
+}
