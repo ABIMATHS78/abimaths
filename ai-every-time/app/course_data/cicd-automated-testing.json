@@ -1,0 +1,1134 @@
+{
+ "slug": "cicd-automated-testing",
+ "title": "CI/CD and Automated Testing",
+ "subtitle": "Build pipelines that test every change and release it safely: pytest suites with fixtures and coverage, GitHub Actions and Jenkins pipelines, quality gates, and deployment strategies that make releases routine.",
+ "category": "Cloud & DevOps",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "rodrigoo-silva",
+  "agnieszka-kowalska"
+ ],
+ "skills": [
+  "Continuous integration",
+  "Continuous delivery and deployment",
+  "GitHub Actions",
+  "Jenkins pipelines",
+  "pytest",
+  "Test strategy",
+  "Code coverage",
+  "Quality gates",
+  "Secrets management",
+  "Deployment strategies"
+ ],
+ "tools": [
+  "GitHub Actions",
+  "Jenkins",
+  "pytest",
+  "pytest-cov",
+  "Ruff",
+  "Git",
+  "actionlint"
+ ],
+ "outcomes": [
+  "Explain how continuous integration, delivery and deployment shorten feedback and lower the risk of each release",
+  "Build GitHub Actions workflows and Jenkins pipelines that lint, test, build and deploy, with secrets handled safely",
+  "Design a test strategy across unit, integration and end-to-end tests, guided by the testing pyramid",
+  "Write maintainable pytest suites with fixtures, parametrisation, markers, mocks and coverage",
+  "Turn tests into quality gates that block bad changes, publish reports and keep flaky tests out of the pipeline",
+  "Release with confidence using versioned artefacts, protected environments and strategies such as rolling, blue-green and canary"
+ ],
+ "prerequisites": "Python Scripting and Linux for DevOps, or the same skills: comfortable Python (functions, classes, modules, virtual environments) and a Linux or macOS terminal. Basic Git (commit, branch, push, pull request), as in Git and GitHub Workflows for Teams. You need Python 3.11 or later, Git, and a free GitHub account with a public repository for the pipeline labs; a Jenkins server is optional.",
+ "description": "Teams that release often and calmly have one thing in common: every change goes through an automated pipeline that builds it, tests it and deploys it the same way every time. This course teaches you to build that pipeline. You'll start with the principles, continuous integration, delivery and deployment, version control as the foundation and the deployment strategies that make releases safe, then write pipelines as code in GitHub Actions and Jenkins, with secrets handled properly. You'll design a test strategy across the testing pyramid, write pytest suites with fixtures, parametrisation, mocks and markers, and measure what they cover. Finally you'll turn the tests into quality gates, publish reports and artefacts, hunt down a flaky test, and deploy only when everything is green.\n\nAll the labs use stockroom, a small inventory library and command-line tool that comes with the course, and build on each other: a local CI loop, a first workflow, tests at every level of the pyramid, a coverage gate, and a full pipeline with a simulated deployment. Every workflow is checked with actionlint and every command shows the output a correct solution prints. The capstone is a complete, protected pipeline with a tagged release.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Principles of CI/CD",
+   "summary": "Why teams integrate small changes continuously and keep software always ready to release: fast feedback, pipelines as code, version control as the foundation, and deployment strategies that make releases safe to repeat.",
+   "instructor": "rodrigoo-silva",
+   "lessons": [
+    {
+     "title": "What CI and CD are, and why they pay off",
+     "minutes": 12,
+     "objectives": [
+      "Define continuous integration, continuous delivery and continuous deployment",
+      "Explain how fast feedback lowers the cost of defects"
+     ],
+     "key_points": [
+      "Continuous integration (CI) means everyone merges small changes into the main branch often, at least daily, and every change is built and tested automatically, so a problem shows up within minutes of being made.",
+      "Continuous delivery keeps the main branch releasable at all times: every change that passes the pipeline produces an artefact that could go to production at the press of a button. Continuous deployment goes further and releases every passing change automatically.",
+      "Fast feedback is the point: a defect found minutes after the commit that caused it is cheap to fix, because the change is small and fresh in mind; found weeks later, it's tangled up with many other changes.",
+      "A pipeline is the automated path from commit to release, usually stages of build, test, package and deploy. Each stage is a gate, and a failure stops the change going any further.",
+      "The pipeline is defined as code in the repository, as a GitHub Actions workflow or a Jenkinsfile, so it's versioned, reviewed and changed like everything else."
+     ]
+    },
+    {
+     "title": "Version control: the foundation of the pipeline",
+     "minutes": 12,
+     "objectives": [
+      "Explain why everything the pipeline needs lives in version control",
+      "Use short-lived branches, pull requests and small commits to keep integration easy"
+     ],
+     "key_points": [
+      "Everything needed to build, test and deploy lives in version control: code, tests, the pipeline definition, pinned dependency versions and configuration. Nothing depends on a file on someone's laptop.",
+      "Trunk-based development keeps branches short-lived, from hours to a day or two, and merges them into main often; long-lived feature branches drift apart and make integration painful, which is the problem CI exists to solve.",
+      "A pull request proposes a change: the pipeline runs on it, reviewers discuss it, and branch protection on main can require passing checks and an approval before it's merged.",
+      "Small, focused commits with clear messages make failures easy to trace: git bisect finds the commit that broke a test by binary search, and reverting one small commit is a safe way to recover.",
+      "Feature flags let unfinished work be merged but switched off, so main stays releasable without long-lived branches."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Find the commit that broke a test with git bisect",
+      "steps": [
+       {
+        "do": "Start a bisect session on a branch where a test fails now but passed at an earlier commit (here, a tag or commit you know was good).",
+        "code": "git bisect start\ngit bisect bad\ngit bisect good v0.1.0",
+        "lang": "bash",
+        "see": "Bisecting: N revisions left to test after this, and Git checks out a commit halfway between."
+       },
+       {
+        "do": "Let Git run the test at each step: exit status 0 marks a commit good, anything from 1 to 127 except 125 marks it bad.",
+        "code": "git bisect run python -m pytest -q tests/unit/test_pricing.py",
+        "lang": "bash",
+        "see": "Git tests about log2(N) commits, then prints the first bad commit with its message."
+       },
+       {
+        "do": "Look at the culprit, then return to where you started.",
+        "code": "git show --stat HEAD\ngit bisect reset",
+        "lang": "bash",
+        "see": "The change that broke the test; then you're back on your branch."
+       },
+       {
+        "do": "Undo the bad change with a new commit, rather than rewriting shared history.",
+        "code": "git revert COMMIT_ID",
+        "lang": "bash",
+        "see": "A new commit that reverses the bad one."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Deployment strategies and release safety",
+     "minutes": 13,
+     "objectives": [
+      "Compare rolling, blue-green, canary and recreate deployments",
+      "Plan a rollback, including for database changes"
+     ],
+     "key_points": [
+      "Build once, deploy many: the pipeline builds one versioned artefact, such as a wheel or a container image, and promotes that same artefact through test, staging and production with configuration per environment, so what you tested is what you release.",
+      "A rolling deployment replaces instances a few at a time, keeping the service up but running old and new versions side by side for a while; blue-green runs the new version beside the old one and switches all traffic at once, with an instant switch back.",
+      "A canary deployment sends a small share of traffic to the new version first and widens it only while error rates and latency stay healthy; recreate, stopping the old version and starting the new one, is simplest but means downtime.",
+      "Every strategy needs a rollback plan, practised before it's needed: redeploy the previous artefact, switch traffic back or turn off a feature flag. Database changes must work with both versions: add columns first and remove old ones in a later release.",
+      "DORA's research (DevOps Research and Assessment) tracks delivery performance with four key measures: deployment frequency, lead time for changes, change failure rate and time to restore service."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Set up stockroom and a local CI loop",
+    "tool": "Python 3 and Git",
+    "minutes": 40,
+    "goal": "Set up the sample project used throughout the course, put it under Git, and run the same checks the pipeline will run, so a broken change is caught before it leaves your machine.",
+    "setup": [
+     "Python 3.11 or later and Git",
+     "The starter files in a folder ~/cicd-lab/stockroom"
+    ],
+    "steps": [
+     {
+      "do": "Create a virtual environment and install the project in editable mode with its development tools: pytest, pytest-cov and Ruff, at pinned versions.",
+      "code": "cd ~/cicd-lab/stockroom\npython3 -m venv .venv\nsource .venv/bin/activate\npip install -r requirements-dev.txt -e .",
+      "lang": "bash"
+     },
+     {
+      "do": "Try the command the project builds.",
+      "code": "stockroom --db demo.db add TEA-01 \"Green tea\" 4.50 6 --reorder 5\nstockroom --db demo.db sell TEA-01 2\nstockroom --db demo.db low",
+      "lang": "bash",
+      "see": "added TEA-01 Green tea at 4.50, stock 6; sold 2 x TEA-01, 4 left (reorder!); then TEA-01 Green tea 4 (reorder at 5) and 1 product(s) to reorder."
+     },
+     {
+      "do": "Tell Git which generated files to leave out, then put the project under Git with a first commit.",
+      "code": "cat > .gitignore <<'EOF'\n.venv/\n__pycache__/\n*.egg-info/\n*.db\n.coverage\ncoverage.xml\nhtmlcov/\nreports/\ndist/\nbuild/\ndeployments/\nEOF\ngit init -b main\ngit add .\ngit commit -m \"Start the stockroom project\"",
+      "lang": "bash",
+      "see": "[main (root-commit) ...] Start the stockroom project"
+     },
+     {
+      "do": "Run the local CI script: lint, formatting, then the tests, stopping at the first failure.",
+      "code": "chmod +x ci.sh\n./ci.sh\necho \"exit status: $?\"",
+      "lang": "bash",
+      "see": "== lint, All checks passed!, 7 files already formatted, == tests, 5 passed, == all checks passed and exit status: 0"
+     },
+     {
+      "do": "Break something on a branch: change the expected 899 in the line-total test to 900, then run the script again.",
+      "code": "git switch -c try-a-failure\nsed -i 's/== 899/== 900/' tests/unit/test_pricing.py\n./ci.sh\necho \"exit status: $?\"",
+      "lang": "bash",
+      "see": "assert 899 == 900, FAILED tests/unit/test_pricing.py::test_line_total_applies_the_discount_and_rounds_half_up, 1 failed, 4 passed and exit status: 1"
+     },
+     {
+      "do": "Put it right and go back to main: the failure never reached it.",
+      "code": "git restore tests/unit/test_pricing.py\n./ci.sh\ngit switch main\ngit branch -d try-a-failure",
+      "lang": "bash"
+     },
+     {
+      "do": "While you work, run only what you need: one folder, or the tests whose names match.",
+      "code": "python -m pytest tests/unit -q\npython -m pytest -k vat -v",
+      "lang": "bash",
+      "see": "5 passed; then test_add_vat_uses_twenty_percent_by_default PASSED and 1 passed, 4 deselected."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The command works from the editable install.",
+      "look_for": [
+       "sold 2 x TEA-01, 4 left (reorder!)"
+      ]
+     },
+     {
+      "text": "The project is committed on main.",
+      "look_for": [
+       "Start the stockroom project"
+      ]
+     },
+     {
+      "text": "The local CI script passes on a clean checkout.",
+      "look_for": [
+       "All checks passed!",
+       "5 passed",
+       "== all checks passed"
+      ]
+     },
+     {
+      "text": "A broken test makes the script fail with exit status 1.",
+      "look_for": [
+       "1 failed, 4 passed",
+       "exit status: 1"
+      ]
+     }
+    ],
+    "submit": "Paste the output of steps 2 to 5 and 7.",
+    "files": [
+     {
+      "path": "stockroom/__init__.py",
+      "content": "\"\"\"stockroom: a small inventory library and command-line tool, used to practise CI/CD.\"\"\"\n\n__version__ = \"0.1.0\"\n"
+     },
+     {
+      "path": "stockroom/__main__.py",
+      "content": "from stockroom.cli import main\n\nraise SystemExit(main())\n"
+     },
+     {
+      "path": "stockroom/pricing.py",
+      "content": "\"\"\"Money is kept in whole cents (integers), so there are no floating-point surprises.\"\"\"\n\nfrom decimal import ROUND_HALF_UP, Decimal, InvalidOperation\n\nDEFAULT_VAT_PERCENT = 20\n_vat_percent = DEFAULT_VAT_PERCENT  # the rate add_vat uses when it isn't given one\n\n\ndef parse_money(text: str) -> int:\n    \"\"\"'12.5' -> 1250 cents. Raises ValueError for anything that isn't an amount of zero or more.\"\"\"\n    try:\n        amount = Decimal(text.strip())\n    except InvalidOperation:\n        raise ValueError(f\"not an amount: {text!r}\") from None\n    if not amount.is_finite() or amount < 0 or amount.as_tuple().exponent < -2:\n        raise ValueError(f\"not an amount: {text!r}\")\n    return int(amount * 100)\n\n\ndef format_money(cents: int) -> str:\n    \"\"\"1250 -> '12.50'.\"\"\"\n    sign = \"-\" if cents < 0 else \"\"\n    return f\"{sign}{abs(cents) // 100}.{abs(cents) % 100:02d}\"\n\n\ndef _round(amount: Decimal) -> int:\n    return int(amount.quantize(Decimal(\"1\"), rounding=ROUND_HALF_UP))\n\n\ndef line_total(unit_cents: int, quantity: int, discount_percent: int = 0) -> int:\n    \"\"\"The price of quantity items after a percentage discount, rounded half up to the cent.\"\"\"\n    if quantity < 0:\n        raise ValueError(\"quantity can't be negative\")\n    if not 0 <= discount_percent <= 100:\n        raise ValueError(\"discount must be between 0 and 100\")\n    return _round(Decimal(unit_cents * quantity) * (100 - discount_percent) / 100)\n\n\ndef set_vat_percent(percent: int) -> None:\n    \"\"\"Change the VAT rate add_vat uses by default, for the rest of the process.\"\"\"\n    global _vat_percent\n    if not 0 <= percent <= 100:\n        raise ValueError(\"VAT must be between 0 and 100 percent\")\n    _vat_percent = percent\n\n\ndef add_vat(net_cents: int, vat_percent: int | None = None) -> int:\n    \"\"\"The price including VAT, rounded half up to the cent.\"\"\"\n    rate = _vat_percent if vat_percent is None else vat_percent\n    return _round(Decimal(net_cents) * (100 + rate) / 100)\n"
+     },
+     {
+      "path": "stockroom/inventory.py",
+      "content": "\"\"\"Products and their stock levels, kept in SQLite.\"\"\"\n\nimport sqlite3\nfrom dataclasses import dataclass\nfrom pathlib import Path\n\nCOLUMNS = \"sku, name, price_cents, stock, reorder_level\"\n\n\n@dataclass(frozen=True)\nclass Product:\n    sku: str\n    name: str\n    price_cents: int\n    stock: int\n    reorder_level: int = 0\n\n    @property\n    def needs_reorder(self) -> bool:\n        return self.stock <= self.reorder_level\n\n\nclass Inventory:\n    \"\"\"An inventory in a SQLite file, or in memory when no path is given.\"\"\"\n\n    def __init__(self, path: str | Path = \":memory:\"):\n        self.db = sqlite3.connect(path)\n        self.db.execute(\n            \"CREATE TABLE IF NOT EXISTS products (sku TEXT PRIMARY KEY, name TEXT NOT NULL, \"\n            \"price_cents INTEGER NOT NULL, stock INTEGER NOT NULL, reorder_level INTEGER NOT NULL)\"\n        )\n\n    def close(self) -> None:\n        self.db.close()\n\n    def add(self, product: Product) -> None:\n        if product.price_cents < 0 or product.stock < 0 or product.reorder_level < 0:\n            raise ValueError(\"price, stock and reorder level can't be negative\")\n        try:\n            with self.db:\n                self.db.execute(\n                    f\"INSERT INTO products ({COLUMNS}) VALUES (?, ?, ?, ?, ?)\",\n                    (\n                        product.sku,\n                        product.name,\n                        product.price_cents,\n                        product.stock,\n                        product.reorder_level,\n                    ),\n                )\n        except sqlite3.IntegrityError:\n            raise ValueError(f\"product {product.sku} already exists\") from None\n\n    def get(self, sku: str) -> Product:\n        row = self.db.execute(f\"SELECT {COLUMNS} FROM products WHERE sku = ?\", (sku,)).fetchone()\n        if row is None:\n            raise KeyError(sku)\n        return Product(*row)\n\n    def adjust(self, sku: str, delta: int) -> Product:\n        \"\"\"Add delta to the stock (negative to sell). Stock can't go below zero.\"\"\"\n        product = self.get(sku)\n        if product.stock + delta < 0:\n            raise ValueError(f\"only {product.stock} of {sku} in stock\")\n        with self.db:\n            self.db.execute(\"UPDATE products SET stock = stock + ? WHERE sku = ?\", (delta, sku))\n        return self.get(sku)\n\n    def low_stock(self) -> list[Product]:\n        \"\"\"Products at or below their reorder level, by SKU.\"\"\"\n        rows = self.db.execute(\n            f\"SELECT {COLUMNS} FROM products WHERE stock <= reorder_level ORDER BY sku\"\n        ).fetchall()\n        return [Product(*row) for row in rows]\n"
+     },
+     {
+      "path": "stockroom/alerts.py",
+      "content": "\"\"\"Tell someone when products need reordering.\"\"\"\n\nfrom typing import Protocol\n\nfrom stockroom.inventory import Inventory\n\n\nclass Sender(Protocol):\n    def send(self, to: str, message: str) -> None: ...\n\n\ndef send_low_stock_alert(inventory: Inventory, sender: Sender, to: str) -> int:\n    \"\"\"Send one message listing the products to reorder, if there are any; return how many.\"\"\"\n    low = inventory.low_stock()\n    if low:\n        lines = [f\"{p.sku} {p.name}: {p.stock} left (reorder at {p.reorder_level})\" for p in low]\n        sender.send(to, \"Reorder needed:\\n\" + \"\\n\".join(lines))\n    return len(low)\n"
+     },
+     {
+      "path": "stockroom/cli.py",
+      "content": "\"\"\"The stockroom command: add products, sell them and list what needs reordering.\"\"\"\n\nimport argparse\nimport os\nimport sys\n\nfrom stockroom import __version__\nfrom stockroom.inventory import Inventory, Product\nfrom stockroom.pricing import format_money, parse_money\n\n\ndef build_parser() -> argparse.ArgumentParser:\n    parser = argparse.ArgumentParser(prog=\"stockroom\", description=\"A small inventory tool.\")\n    parser.add_argument(\"--version\", action=\"version\", version=f\"stockroom {__version__}\")\n    parser.add_argument(\n        \"--db\",\n        default=os.environ.get(\"STOCKROOM_DB\", \"stockroom.db\"),\n        help=\"the SQLite file to use (default: $STOCKROOM_DB or stockroom.db)\",\n    )\n    sub = parser.add_subparsers(dest=\"command\", required=True)\n    add = sub.add_parser(\"add\", help=\"add a product\")\n    add.add_argument(\"sku\")\n    add.add_argument(\"name\")\n    add.add_argument(\"price\", help=\"the price, such as 4.99\")\n    add.add_argument(\"stock\", type=int)\n    add.add_argument(\"--reorder\", type=int, default=0, help=\"reorder when stock falls to this\")\n    sell = sub.add_parser(\"sell\", help=\"sell some of a product\")\n    sell.add_argument(\"sku\")\n    sell.add_argument(\"quantity\", type=int)\n    sub.add_parser(\"low\", help=\"list the products that need reordering\")\n    return parser\n\n\ndef main(argv: list[str] | None = None) -> int:\n    args = build_parser().parse_args(argv)\n    inventory = Inventory(args.db)\n    try:\n        if args.command == \"add\":\n            product = Product(\n                args.sku, args.name, parse_money(args.price), args.stock, args.reorder\n            )\n            inventory.add(product)\n            print(\n                f\"added {product.sku} {product.name} at {format_money(product.price_cents)}, \"\n                f\"stock {product.stock}\"\n            )\n        elif args.command == \"sell\":\n            if args.quantity < 1:\n                raise ValueError(\"quantity must be at least 1\")\n            product = inventory.adjust(args.sku, -args.quantity)\n            note = \" (reorder!)\" if product.needs_reorder else \"\"\n            print(f\"sold {args.quantity} x {product.sku}, {product.stock} left{note}\")\n        else:\n            low = inventory.low_stock()\n            for p in low:\n                print(f\"{p.sku:<8}{p.name:<16}{p.stock:>4} (reorder at {p.reorder_level})\")\n            print(f\"{len(low)} product(s) to reorder\", file=sys.stderr)\n    except KeyError as e:\n        print(f\"error: no such product: {e.args[0]}\", file=sys.stderr)\n        return 1\n    except ValueError as e:\n        print(f\"error: {e}\", file=sys.stderr)\n        return 1\n    finally:\n        inventory.close()\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+     },
+     {
+      "path": "pyproject.toml",
+      "content": "[build-system]\nrequires = [\"setuptools>=61\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"stockroom\"\ndynamic = [\"version\"]\ndescription = \"A small inventory library and command-line tool\"\nrequires-python = \">=3.11\"\ndependencies = []\n\n[project.scripts]\nstockroom = \"stockroom.cli:main\"\n\n[tool.setuptools.dynamic]\nversion = {attr = \"stockroom.__version__\"}\n\n[tool.setuptools.packages.find]\ninclude = [\"stockroom*\"]\n\n[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\naddopts = \"--strict-markers\"\nmarkers = [\n    \"integration: tests that use a real database or real files\",\n    \"e2e: tests that run the stockroom command the way a user does\",\n]\n\n[tool.coverage.run]\nsource = [\"stockroom\"]\nbranch = true\n\n[tool.ruff]\nline-length = 100\ntarget-version = \"py311\"\n\n[tool.ruff.lint]\nselect = [\"E\", \"F\", \"W\", \"I\", \"B\", \"UP\"]\n"
+     },
+     {
+      "path": "requirements-dev.txt",
+      "content": "pytest==9.1.1\npytest-cov==7.1.0\nruff==0.17.1\n"
+     },
+     {
+      "path": "ci.sh",
+      "content": "#!/usr/bin/env bash\n# Run the pipeline's checks locally, fastest first; stop at the first failure.\nset -euo pipefail\n\necho \"== lint\"\nruff check .\nruff format --check .\n\necho \"== tests\"\npython -m pytest -q\n\necho \"== all checks passed\"\n"
+     },
+     {
+      "path": "tests/unit/test_pricing.py",
+      "content": "import pytest\n\nfrom stockroom.pricing import add_vat, format_money, line_total, parse_money\n\n\ndef test_parse_money_reads_a_decimal_amount():\n    assert parse_money(\"12.5\") == 1250\n\n\ndef test_parse_money_rejects_text():\n    with pytest.raises(ValueError, match=\"not an amount\"):\n        parse_money(\"abc\")\n\n\ndef test_format_money_pads_the_cents():\n    assert format_money(1205) == \"12.05\"\n\n\ndef test_line_total_applies_the_discount_and_rounds_half_up():\n    assert line_total(333, 3, discount_percent=10) == 899  # 899.1 cents\n    assert line_total(5, 1, discount_percent=50) == 3  # 2.5 cents rounds up\n\n\ndef test_add_vat_uses_twenty_percent_by_default():\n    assert add_vat(1000) == 1200\n"
+     }
+    ],
+    "hints": [
+     "If stockroom isn't found, activate the environment (source .venv/bin/activate) and rerun pip install -r requirements-dev.txt -e .",
+     "ci.sh uses set -euo pipefail, so the first failing command stops it with that command's status.",
+     "If git commit asks who you are, set git config --global user.name and user.email first."
+    ]
+   }
+  },
+  {
+   "title": "Building Pipelines (Jenkins/GitHub Actions)",
+   "summary": "Pipelines as code in the two tools teams use most: GitHub Actions workflows triggered by repository events, and Jenkins declarative pipelines. Stages from build to deploy, and secrets handled so they never leak.",
+   "instructor": "rodrigoo-silva",
+   "lessons": [
+    {
+     "title": "GitHub Actions workflows",
+     "minutes": 13,
+     "objectives": [
+      "Write a GitHub Actions workflow with triggers, jobs and steps",
+      "Run a job across several Python versions with a matrix, and cache dependencies"
+     ],
+     "key_points": [
+      "A GitHub Actions workflow is a YAML file in .github/workflows/. Its on: section lists the events that trigger it, such as push to main, pull_request, workflow_dispatch (a manual button), schedule (cron syntax, in UTC) and release.",
+      "A workflow has jobs, each running on a fresh runner (runs-on: ubuntu-latest) as a sequence of steps; jobs run in parallel unless needs: makes one wait for another.",
+      "A step either runs shell commands (run:) or uses an action, configured with with:: actions/checkout@v4 gets the code and actions/setup-python@v5 installs Python. Pin actions to a major version or, stricter, to a full commit SHA.",
+      "strategy.matrix runs the same job for every combination, such as python-version: [\"3.11\", \"3.12\", \"3.13\"]; fail-fast: false lets the other combinations finish when one fails.",
+      "setup-python's cache: pip keeps downloaded packages between runs, keyed on the requirements file named in cache-dependency-path, so installs get faster."
+     ],
+     "walkthrough": {
+      "tool": "GitHub",
+      "title": "Read a workflow run",
+      "steps": [
+       {
+        "do": "Open your repository on GitHub and choose the Actions tab: every run is listed with its workflow, commit message, branch and result."
+       },
+       {
+        "do": "Open a run. The Summary page shows the jobs as a graph, in the order needs: sets, and lists any artifacts the run uploaded."
+       },
+       {
+        "do": "Open a job from the list on the left. Each step has its own log; expand the pytest step to see each test's result and the summary line."
+       },
+       {
+        "do": "For the full text, open the job's menu (the gear icon) and choose View raw logs."
+       },
+       {
+        "do": "If a job failed for a reason outside your code, such as a network error, use Re-run jobs and choose Re-run failed jobs. If it fails twice the same way, look for a real cause."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Jenkins pipelines as code",
+     "minutes": 12,
+     "objectives": [
+      "Read and write a declarative Jenkinsfile with stages, agents and post actions",
+      "Compare Jenkins with GitHub Actions"
+     ],
+     "key_points": [
+      "Jenkins is a self-hosted automation server. A Jenkinsfile in the repository defines a Pipeline as code, and a Multibranch Pipeline job finds every branch and pull request that has one and runs it.",
+      "Declarative syntax: pipeline { agent any; stages { stage('Test') { steps { sh 'python -m pytest' } } } }, with post { always { junit 'reports/junit.xml' } } for steps that must run whatever the result.",
+      "agent says where it runs: any free agent, a labelled node (agent { label 'linux' }) or a Docker image (agent { docker { image 'python:3.12-slim' } }, with the Docker Pipeline plugin), so builds get a clean, known environment.",
+      "when { branch 'main' } runs a stage only for the main branch in a multibranch pipeline, and options { timeout(time: 15, unit: 'MINUTES') } stops a stuck build.",
+      "GitHub Actions is hosted and configured in YAML; Jenkins is self-managed, extended with plugins and configured in Groovy. Stages, gates, artefacts and credentials are the same ideas in both."
+     ]
+    },
+    {
+     "title": "Pipeline stages and secrets",
+     "minutes": 12,
+     "objectives": [
+      "Order a pipeline's stages so the cheapest failures come first",
+      "Store and use secrets safely in GitHub Actions and Jenkins"
+     ],
+     "key_points": [
+      "A typical pipeline runs fast checks first, lint and unit tests, then integration tests, then builds and packages the artefact, then deploys, so the cheapest failures are found soonest.",
+      "Secrets such as deploy tokens are stored encrypted in the CI system, as GitHub repository or environment secrets or Jenkins credentials, and injected at run time with ${{ secrets.DEPLOY_TOKEN }} or withCredentials. Never commit them.",
+      "GitHub masks secret values in logs, but a script can still leak a changed form of one: never echo secrets. Workflows triggered by pull requests from forks don't receive the repository's secrets.",
+      "Give the automatic GITHUB_TOKEN the least privilege it needs with permissions: (contents: read for most jobs), and prefer OpenID Connect (id-token: write) for short-lived cloud credentials over long-lived stored keys.",
+      "In a Jenkinsfile, pass secrets to sh in single quotes, as in sh 'deploy --token \"$DEPLOY_TOKEN\"', so the shell expands them; Groovy interpolation in double quotes can expose the secret, and Jenkins warns about it."
+     ],
+     "walkthrough": {
+      "tool": "GitHub",
+      "title": "Store a secret for workflows",
+      "steps": [
+       {
+        "do": "In your repository, open Settings, then Secrets and variables, then Actions."
+       },
+       {
+        "do": "Choose New repository secret. Name it DEPLOY_TOKEN, paste a test value such as not-a-real-token, and choose Add secret.",
+        "see": "DEPLOY_TOKEN in the list of repository secrets; its value can't be viewed again, only replaced."
+       },
+       {
+        "do": "Refer to it only where it's needed, in a step's env:, and test it without printing it.",
+        "code": "env:\n  DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}\nrun: test -n \"$DEPLOY_TOKEN\" && echo \"DEPLOY_TOKEN is set\"",
+        "lang": "yaml"
+       },
+       {
+        "do": "For deployment credentials, use an environment instead: Settings, Environments, New environment (staging), then Add environment secret. Only jobs that declare environment: staging can read it."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Your first GitHub Actions workflow",
+    "tool": "GitHub Actions",
+    "minutes": 55,
+    "goal": "Push stockroom to GitHub and add a workflow that lints and tests every push and pull request on three Python versions, uses a secret safely, and fails a pull request that breaks a test.",
+    "setup": [
+     "A free GitHub account and the stockroom project from the module 1 lab, committed on main",
+     "An empty public repository on GitHub called stockroom (no README, licence or .gitignore)",
+     "Optional: a Jenkins server whose agents can run Docker, for the Jenkinsfile in the starter files"
+    ],
+    "steps": [
+     {
+      "do": "Push your project to the new repository.",
+      "code": "cd ~/cicd-lab/stockroom\ngit remote add origin https://github.com/YOUR-NAME/stockroom.git\ngit push -u origin main",
+      "lang": "bash"
+     },
+     {
+      "do": "Add the repository secret DEPLOY_TOKEN with any test value (Settings, Secrets and variables, Actions, New repository secret), as in the lesson's walkthrough."
+     },
+     {
+      "do": "Create .github/workflows/ci.yml with this workflow.",
+      "code": "mkdir -p .github/workflows\nnano .github/workflows/ci.yml",
+      "lang": "bash"
+     },
+     {
+      "do": "Its content: on pushes to main and on pull requests, lint and test on three Python versions; on pushes, also check that the deploy token is available without printing it.",
+      "code": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n\npermissions:\n  contents: read\n\njobs:\n  test:\n    runs-on: ubuntu-latest\n    strategy:\n      fail-fast: false\n      matrix:\n        python-version: [\"3.11\", \"3.12\", \"3.13\"]\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: ${{ matrix.python-version }}\n          cache: pip\n          cache-dependency-path: requirements-dev.txt\n      - run: python -m pip install -r requirements-dev.txt -e .\n      - run: ruff check .\n      - run: python -m pytest -v\n      - name: Check that the deploy token is available, without printing it\n        if: github.event_name == 'push'\n        env:\n          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n        run: |\n          if [ -n \"$DEPLOY_TOKEN\" ]; then echo \"DEPLOY_TOKEN is set\"; else echo \"DEPLOY_TOKEN is missing\"; exit 1; fi\n",
+      "lang": "yaml"
+     },
+     {
+      "do": "Check the workflow before pushing it, with actionlint (the download script puts the binary in the current folder).",
+      "code": "bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)\n./actionlint && echo \"actionlint: no problems found\"\nrm actionlint",
+      "lang": "bash",
+      "see": "actionlint: no problems found"
+     },
+     {
+      "do": "Commit and push it.",
+      "code": "git add .github/workflows/ci.yml\ngit commit -m \"Add the CI workflow\"\ngit push",
+      "lang": "bash"
+     },
+     {
+      "do": "Open the Actions tab and the new run.",
+      "see": "Three jobs, test (3.11), test (3.12) and test (3.13), all green. In each, the pytest step lists every test as PASSED and ends with 5 passed, and the last step prints DEPLOY_TOKEN is set."
+     },
+     {
+      "do": "Now break a test on a branch and open a pull request for it (GitHub offers Compare & pull request).",
+      "code": "git switch -c break-rounding\nsed -i 's/== 899/== 900/' tests/unit/test_pricing.py\ngit commit -am \"Break the rounding test on purpose\"\ngit push -u origin break-rounding",
+      "lang": "bash",
+      "see": "On the pull request, the checks fail and the pytest step's log ends 1 failed, 4 passed. The token step is skipped, because it only runs on pushes."
+     },
+     {
+      "do": "Close the pull request without merging and delete the branch, on GitHub and locally (git switch main, then git branch -D break-rounding)."
+     },
+     {
+      "do": "Optional: read the starter Jenkinsfile, which has the same stages in Jenkins. If you have a Jenkins server, create a Multibranch Pipeline job pointing at your repository and run it."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The workflow is valid.",
+      "look_for": [
+       "actionlint: no problems found"
+      ]
+     },
+     {
+      "text": "It uses current actions and a Python matrix.",
+      "look_for": [
+       "actions/checkout@v4",
+       "actions/setup-python@v5",
+       "matrix"
+      ]
+     },
+     {
+      "text": "The tests ran on GitHub for each Python version.",
+      "look_for": [
+       "test (3.11)",
+       "test (3.13)",
+       "5 passed"
+      ]
+     },
+     {
+      "text": "The secret was used without being printed.",
+      "look_for": [
+       "DEPLOY_TOKEN is set"
+      ]
+     },
+     {
+      "text": "The pull request with a broken test failed its checks.",
+      "look_for": [
+       "1 failed, 4 passed"
+      ]
+     }
+    ],
+    "submit": "Paste your ci.yml, the actionlint result, the end of the pytest step from one job, the token step's output, and the end of the failing pull request's pytest log. The run's link is welcome too.",
+    "files": [
+     {
+      "path": "Jenkinsfile",
+      "content": "pipeline {\n    agent { docker { image 'python:3.12-slim' } }\n    options {\n        timeout(time: 15, unit: 'MINUTES')\n    }\n    stages {\n        stage('Install') {\n            steps {\n                sh 'python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt -e .'\n            }\n        }\n        stage('Lint') {\n            steps {\n                sh '.venv/bin/ruff check . && .venv/bin/ruff format --check .'\n            }\n        }\n        stage('Test') {\n            steps {\n                sh '.venv/bin/pytest --cov=stockroom --cov-fail-under=90 --junitxml=reports/junit.xml'\n            }\n            post {\n                always {\n                    junit 'reports/junit.xml'\n                }\n            }\n        }\n        stage('Build') {\n            steps {\n                sh '.venv/bin/pip install build && .venv/bin/python -m build'\n                archiveArtifacts artifacts: 'dist/*', fingerprint: true\n            }\n        }\n        stage('Deploy to staging') {\n            when { branch 'main' }\n            steps {\n                withCredentials([string(credentialsId: 'deploy-token', variable: 'DEPLOY_TOKEN')]) {\n                    sh 'bash deploy.sh staging dist/*.whl'\n                }\n            }\n        }\n    }\n}\n"
+     }
+    ],
+    "hints": [
+     "YAML is indentation-sensitive: use spaces, never tabs, and keep each step's keys aligned.",
+     "If the token step fails with DEPLOY_TOKEN is missing, check the secret's name; names are case-insensitive in the settings but are written in capitals by convention.",
+     "If pip can't find a package version on one Python, check requirements-dev.txt: every pin must support every Python version in the matrix."
+    ]
+   }
+  },
+  {
+   "title": "Automated Testing Strategies",
+   "summary": "A testing strategy that gives fast, trustworthy feedback: the testing pyramid, unit tests with test doubles, integration tests against real dependencies, and a few end-to-end tests of the journeys that matter.",
+   "instructor": "agnieszka-kowalska",
+   "lessons": [
+    {
+     "title": "The testing pyramid",
+     "minutes": 12,
+     "objectives": [
+      "Describe the layers of the testing pyramid and what each catches",
+      "Choose the cheapest kind of test that would catch a given bug"
+     ],
+     "key_points": [
+      "The testing pyramid has many fast unit tests at the base, fewer integration tests in the middle and a handful of end-to-end tests at the top, because tests get slower, more brittle and costlier to maintain as they cover more of the system.",
+      "A unit test checks one function or class in isolation, in milliseconds, with no network, database or files beyond temporary ones, and when it fails it points straight at what broke.",
+      "Integration tests check that parts work together for real: your code with a real database, the file system, a message queue or another service's API, often started in a container just for the test.",
+      "End-to-end tests drive the whole application the way a user does, through its UI, API or command line; they catch wiring problems the others miss but are slow and can fail for unrelated reasons, so keep them few and focused on critical journeys.",
+      "An inverted pyramid, mostly slow end-to-end and manual tests, gives slow, flaky feedback: aim for the cheapest test that would catch each kind of bug."
+     ]
+    },
+    {
+     "title": "Unit tests and test doubles",
+     "minutes": 12,
+     "objectives": [
+      "Write unit tests around behaviour, with clear arrange, act and assert steps",
+      "Replace collaborators with stubs, fakes and mocks, and know when not to"
+     ],
+     "key_points": [
+      "Write unit tests around behaviour, not implementation: arrange the inputs, act by calling the code, assert on the result, and name the test after the behaviour, as in test_vat_is_rounded_half_up.",
+      "Test doubles stand in for slow or unpredictable collaborators: a stub returns canned answers, a fake is a working lightweight version (such as an in-memory repository), and a mock records calls so the test can check them.",
+      "unittest.mock.Mock(spec=Inventory) only allows the real class's attributes; set what it returns with .return_value and check calls with assert_called_once_with(...) or assert_not_called().",
+      "patch replaces a name where it's looked up, not where it's defined: for code that did from stockroom.inventory import Inventory in cli.py, patch stockroom.cli.Inventory.",
+      "Make time and randomness injectable, by passing in a clock or a seed, rather than patching them, so code is testable by design. Too many mocks couple tests to internals and can pass while the real integration is broken."
+     ]
+    },
+    {
+     "title": "Integration and end-to-end tests",
+     "minutes": 12,
+     "objectives": [
+      "Write integration tests against real dependencies that each test controls",
+      "Write end-to-end tests that use the application the way its users do"
+     ],
+     "key_points": [
+      "An integration test uses real dependencies under the test's control: a SQLite file in a temporary folder, a PostgreSQL container started for the run, or a local copy of an API, created fresh and removed afterwards.",
+      "Isolate test data: each test creates what it needs and leaves nothing behind, so tests pass in any order and can run in parallel.",
+      "End-to-end tests of a command-line tool run it as a user would, with subprocess, and check its output and exit status; for web apps, browser tools such as Playwright drive the real interface.",
+      "Contract tests check that a service and its clients agree on the API's shape, its requests, responses and error codes, without running both together; an OpenAPI schema or a consumer-driven contract tool supports this.",
+      "Mark slow tests, with @pytest.mark.integration or @pytest.mark.e2e, so developers can run the fast set locally (pytest -m \"not e2e\") while CI runs everything."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Test across the pyramid",
+    "tool": "pytest",
+    "minutes": 55,
+    "goal": "Add tests at all three levels of the pyramid to stockroom: unit tests with a mock, integration tests against a real SQLite file, and end-to-end tests of the command, each level selectable by marker.",
+    "setup": [
+     "The stockroom project from the earlier labs, on main, with its virtual environment active",
+     "The starter files tests/unit/test_alerts.py, tests/integration/test_inventory_db.py and tests/e2e/test_cli.py, copied into your project's tests folder"
+    ],
+    "steps": [
+     {
+      "do": "Look at the markers registered in pyproject.toml. With --strict-markers, a marker that isn't registered is an error, so a typo can't silently create a new one.",
+      "code": "grep -A 4 \"addopts\" pyproject.toml",
+      "lang": "bash",
+      "see": "addopts = \"--strict-markers\" and the integration and e2e markers with their descriptions."
+     },
+     {
+      "do": "Complete the TODO in tests/unit/test_alerts.py: when nothing needs reordering, no message is sent. Run the unit tests.",
+      "code": "python -m pytest tests/unit -q",
+      "lang": "bash",
+      "see": "7 passed"
+     },
+     {
+      "do": "Complete the two TODOs in tests/integration/test_inventory_db.py, then run the integration tests by marker.",
+      "code": "python -m pytest -m integration -v",
+      "lang": "bash",
+      "see": "Four test_inventory_db.py tests PASSED, then 4 passed, 8 deselected."
+     },
+     {
+      "do": "Complete the TODO in tests/e2e/test_cli.py: an unknown product must exit with status 1 and the exact error message. Run the end-to-end tests.",
+      "code": "python -m pytest -m e2e -v",
+      "lang": "bash",
+      "see": "2 passed, 11 deselected"
+     },
+     {
+      "do": "Run the fast set, as you would before each commit, then everything, as CI will, with the slowest tests listed.",
+      "code": "python -m pytest -m \"not e2e\" -q\npython -m pytest -q --durations=3",
+      "lang": "bash",
+      "see": "11 passed, 2 deselected; then 13 passed, with the end-to-end tests at the top of the slowest durations, because each starts a new Python process."
+     },
+     {
+      "do": "Run the local CI script and commit the tests.",
+      "code": "./ci.sh\ngit add tests\ngit commit -m \"Test stockroom across the pyramid\"",
+      "lang": "bash",
+      "see": "13 passed and == all checks passed"
+     },
+     {
+      "do": "Write TESTING.md in the project: a short paragraph for each layer saying which files belong to it, what it protects against and when it runs."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The unit tests use a mock sender and check the message it was given.",
+      "look_for": [
+       "assert_called_once_with",
+       "assert_not_called"
+      ]
+     },
+     {
+      "text": "The integration tests use a real SQLite file in tmp_path.",
+      "look_for": [
+       "tmp_path",
+       "4 passed, 8 deselected"
+      ]
+     },
+     {
+      "text": "The end-to-end tests run the command in a separate process.",
+      "look_for": [
+       "subprocess.run",
+       "2 passed, 11 deselected"
+      ]
+     },
+     {
+      "text": "The fast set and the full suite pass.",
+      "look_for": [
+       "11 passed, 2 deselected",
+       "13 passed"
+      ]
+     },
+     {
+      "text": "TESTING.md explains each layer.",
+      "look_for": [
+       "unit",
+       "integration",
+       "end-to-end"
+      ]
+     }
+    ],
+    "submit": "Paste your completed tests, the output of steps 2 to 6, and your TESTING.md.",
+    "files": [
+     {
+      "path": "tests/unit/test_alerts.py",
+      "content": "from unittest.mock import Mock\n\nfrom stockroom.alerts import send_low_stock_alert\nfrom stockroom.inventory import Inventory, Product\n\n\ndef test_one_message_lists_every_product_to_reorder():\n    inventory = Mock(spec=Inventory)\n    inventory.low_stock.return_value = [\n        Product(\"CUP-03\", \"Paper cups\", 199, 4, 4),\n        Product(\"TEA-01\", \"Green tea\", 450, 2, 5),\n    ]\n    sender = Mock()\n\n    count = send_low_stock_alert(inventory, sender, \"ops@example.com\")\n\n    assert count == 2\n    sender.send.assert_called_once_with(\n        \"ops@example.com\",\n        \"Reorder needed:\\nCUP-03 Paper cups: 4 left (reorder at 4)\\n\"\n        \"TEA-01 Green tea: 2 left (reorder at 5)\",\n    )\n\n\n# TODO: test that when low_stock() returns an empty list, send_low_stock_alert returns 0 and\n#       the sender is never called (sender.send.assert_not_called()).\n"
+     },
+     {
+      "path": "tests/integration/test_inventory_db.py",
+      "content": "import pytest\n\nfrom stockroom.inventory import Inventory, Product\n\npytestmark = pytest.mark.integration\n\n\ndef test_products_survive_reopening_the_database(tmp_path):\n    db = tmp_path / \"stock.db\"\n    inventory = Inventory(db)\n    inventory.add(Product(\"TEA-01\", \"Green tea\", 450, 10, 3))\n    inventory.close()\n\n    reopened = Inventory(db)\n    assert reopened.get(\"TEA-01\").stock == 10\n    reopened.close()\n\n\ndef test_selling_more_than_is_in_stock_is_refused(tmp_path):\n    inventory = Inventory(tmp_path / \"stock.db\")\n    inventory.add(Product(\"TEA-01\", \"Green tea\", 450, 2, 5))\n    with pytest.raises(ValueError, match=\"only 2 of TEA-01 in stock\"):\n        inventory.adjust(\"TEA-01\", -3)\n    assert inventory.get(\"TEA-01\").stock == 2\n    inventory.close()\n\n\n# TODO: test that low_stock() returns the products at or below their reorder level,\n#       sorted by SKU: add TEA-01 (stock 2, reorder at 5), MUG-02 (12, 4) and CUP-03 (4, 4),\n#       and expect [\"CUP-03\", \"TEA-01\"].\n# TODO: test that adding a product whose SKU already exists raises ValueError (\"already exists\").\n"
+     },
+     {
+      "path": "tests/e2e/test_cli.py",
+      "content": "import subprocess\nimport sys\n\nimport pytest\n\npytestmark = pytest.mark.e2e\n\n\ndef stockroom(*args, db):\n    \"\"\"Run the stockroom command in a separate process, as a user would.\"\"\"\n    return subprocess.run(\n        [sys.executable, \"-m\", \"stockroom\", \"--db\", str(db), *args],\n        capture_output=True,\n        text=True,\n        timeout=30,\n    )\n\n\ndef test_add_sell_and_list_low_stock(tmp_path):\n    db = tmp_path / \"e2e.db\"\n    added = stockroom(\"add\", \"TEA-01\", \"Green tea\", \"4.50\", \"6\", \"--reorder\", \"5\", db=db)\n    assert added.stdout == \"added TEA-01 Green tea at 4.50, stock 6\\n\"\n\n    sold = stockroom(\"sell\", \"TEA-01\", \"2\", db=db)\n    assert sold.stdout == \"sold 2 x TEA-01, 4 left (reorder!)\\n\"\n\n    low = stockroom(\"low\", db=db)\n    assert low.stdout.startswith(\"TEA-01\")\n    assert \"1 product(s) to reorder\" in low.stderr\n\n\n# TODO: test that selling a product that doesn't exist exits with status 1 and prints exactly\n#       \"error: no such product: NOPE\" and a newline on standard error.\n"
+     }
+    ],
+    "hints": [
+     "The e2e helper runs sys.executable -m stockroom, so it uses the same Python and installed package as pytest.",
+     "Compare the whole of result.stderr, newline included, so a changed message fails the test.",
+     "Each integration test opens its own database in tmp_path: there's nothing to clean up afterwards."
+    ]
+   }
+  },
+  {
+   "title": "Pytest in Practice",
+   "summary": "pytest the way professional suites use it: discovery and selection, fixtures for set-up and tear-down, parametrised tests, markers, plugins, and coverage that shows what the tests never touch.",
+   "instructor": "agnieszka-kowalska",
+   "lessons": [
+    {
+     "title": "Assertions, discovery and running tests",
+     "minutes": 12,
+     "objectives": [
+      "Write tests pytest discovers, using plain assert, pytest.raises and pytest.approx",
+      "Select and configure test runs, and read pytest's exit statuses"
+     ],
+     "key_points": [
+      "pytest finds tests in files named test_*.py or *_test.py, in functions named test_* and in classes named Test* without an __init__ method. Plain assert statements are all you need: pytest rewrites them to show the values involved when they fail.",
+      "with pytest.raises(ValueError, match=\"negative\"): checks that code raises, and pytest.approx(0.3) compares floating-point results within a tolerance.",
+      "Choose what to run: pytest tests/unit, pytest -k vat (names matching an expression), pytest -m integration (by marker), -x to stop at the first failure, --lf to rerun only the last failures, and -q or -v for less or more output.",
+      "Configure pytest in pyproject.toml under [tool.pytest.ini_options]: testpaths, registered markers (with --strict-markers so a typo in a decorator is an error) and addopts for options you always want.",
+      "pytest exits with 0 when every test passes, 1 when some fail, 2 when interrupted, 4 for a usage error and 5 when no tests were collected. A misspelt -m marker deselects everything and exits with 5, so read the summary line."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Choose which tests to run",
+      "steps": [
+       {
+        "do": "List what pytest would run, without running it (in the project as the module 3 lab left it).",
+        "code": "python -m pytest --collect-only -q | tail -n 1",
+        "lang": "bash",
+        "see": "13 tests collected"
+       },
+       {
+        "do": "Run tests by name and by marker.",
+        "code": "python -m pytest -q -k vat\npython -m pytest -q -m integration",
+        "lang": "bash",
+        "see": "1 passed, 12 deselected; then 4 passed, 9 deselected."
+       },
+       {
+        "do": "Run the slowest tests' report to see where the time goes.",
+        "code": "python -m pytest -q --durations=3",
+        "lang": "bash",
+        "see": "The two end-to-end tests at the top: each starts a Python process."
+       },
+       {
+        "do": "See the exit statuses CI relies on.",
+        "code": "python -m pytest -q -k nothing_matches; echo \"exit status: $?\"\npython -m pytest -q tests/nope; echo \"exit status: $?\"",
+        "lang": "bash",
+        "see": "13 deselected and exit status: 5; then ERROR: file or directory not found: tests/nope and exit status: 4."
+       },
+       {
+        "do": "A misspelt marker in -m isn't caught by --strict-markers: it just selects nothing.",
+        "code": "python -m pytest -q -m intgration; echo \"exit status: $?\"",
+        "lang": "bash",
+        "see": "13 deselected and exit status: 5"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Fixtures: set-up and tear-down",
+     "minutes": 13,
+     "objectives": [
+      "Write fixtures with set-up and tear-down, and share them through conftest.py",
+      "Use the built-in fixtures tmp_path, monkeypatch, capsys and caplog"
+     ],
+     "key_points": [
+      "A fixture is a function decorated with @pytest.fixture; a test asks for it by naming it as a parameter, and pytest runs the fixture first and passes in its result.",
+      "Code after yield in a fixture is the tear-down, run after the test even when the test fails: open a database, yield it, then close it.",
+      "scope= controls reuse: function (the default, a fresh one for each test), class, module, package or session (once per run), for expensive resources such as a server started once.",
+      "Fixtures in conftest.py are available to every test in that folder and below, without importing, and fixtures can use other fixtures, as stocked uses inventory.",
+      "Built-in fixtures cover common needs: tmp_path (a fresh temporary directory as a Path), monkeypatch (set environment variables or attributes, undone afterwards), capsys (captured output) and caplog (captured log records)."
+     ]
+    },
+    {
+     "title": "Parametrisation, markers and plugins",
+     "minutes": 12,
+     "objectives": [
+      "Run one test over many cases with parametrize",
+      "Use markers and plugins, and read a coverage report critically"
+     ],
+     "key_points": [
+      "@pytest.mark.parametrize(\"net, rate, gross\", [(1000, None, 1200), (3, 50, 5)]) runs one test function once per case, each reported separately; ids= or pytest.param(..., id=\"...\") gives cases readable names.",
+      "Markers label tests. The built-in ones include skip, skipif(condition, reason=...) and xfail (expected to fail); custom ones such as integration must be registered in the configuration.",
+      "Plugins extend pytest: pytest-cov measures coverage, pytest-xdist runs tests in parallel (-n auto), pytest-randomly shuffles their order to expose hidden dependencies, and pytest-timeout stops tests that hang.",
+      "pytest --cov=stockroom --cov-report=term-missing lists each file's coverage and the lines never run; with branch = true under [tool.coverage.run] it also checks that both sides of each if were taken. Code run in a subprocess isn't measured by default.",
+      "Coverage shows what the tests ran, not what they checked: 100% coverage with weak assertions still misses bugs, so use it to find untested code, not as proof of quality."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Fixtures, parametrisation and coverage",
+    "tool": "pytest and pytest-cov",
+    "minutes": 60,
+    "goal": "Measure stockroom's coverage, then raise it above 90% with better tests rather than more of the same: shared fixtures, parametrised cases and in-process tests of the command, finishing with a coverage gate in ci.sh.",
+    "setup": [
+     "The stockroom project after the module 3 lab, with its virtual environment active",
+     "The starter files tests/conftest.py, tests/unit/test_pricing.py (it replaces yours) and tests/integration/test_cli_main.py"
+    ],
+    "steps": [
+     {
+      "do": "Measure coverage before changing anything.",
+      "code": "python -m pytest -q --cov=stockroom --cov-report=term-missing",
+      "lang": "bash",
+      "see": "TOTAL about 49%. cli.py shows 0% even though the end-to-end tests run the command: they run it in another process, which coverage doesn't measure."
+     },
+     {
+      "do": "Copy tests/conftest.py into place. It has an inventory fixture that closes the database after each test; write the stocked fixture its TODO describes."
+     },
+     {
+      "do": "Refactor tests/integration/test_inventory_db.py to use inventory and stocked instead of building databases by hand, and add two tests: negative stock is refused, and an unknown SKU raises KeyError.",
+      "code": "python -m pytest -q tests/integration/test_inventory_db.py",
+      "lang": "bash",
+      "see": "6 passed"
+     },
+     {
+      "do": "Replace tests/unit/test_pricing.py with the starter. Its first test is parametrised with readable ids; complete the TODO by parametrising the rest the same way.",
+      "code": "python -m pytest tests/unit/test_pricing.py -v",
+      "lang": "bash",
+      "see": "Cases named like test_parse_money[one-decimal] and test_parse_money[exponent], each PASSED."
+     },
+     {
+      "do": "Copy tests/integration/test_cli_main.py. It runs main() in-process, using monkeypatch to set STOCKROOM_DB and capsys to read the output. Complete its TODO: one parametrised test for three error cases.",
+      "code": "python -m pytest -q tests/integration/test_cli_main.py",
+      "lang": "bash",
+      "see": "5 passed"
+     },
+     {
+      "do": "Measure again, with a gate that fails below 90% (branch coverage is on in pyproject.toml).",
+      "code": "python -m pytest -q --cov=stockroom --cov-report=term-missing --cov-fail-under=90\necho \"exit status: $?\"",
+      "lang": "bash",
+      "see": "33 passed, cli.py at 97% and inventory.py at 100%, then Required test coverage of 90% reached. Total coverage: 94.38% and exit status: 0 (your figures may differ a little)."
+     },
+     {
+      "do": "Put the gate into ci.sh: change its pytest line to python -m pytest -q --cov=stockroom --cov-fail-under=90. Run it and commit.",
+      "code": "./ci.sh\ngit add -A\ngit commit -m \"Add fixtures, parametrised tests and a coverage gate\"",
+      "lang": "bash",
+      "see": "Required test coverage of 90% reached and == all checks passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The coverage was measured before the changes.",
+      "look_for": [
+       "TOTAL",
+       "cli.py"
+      ]
+     },
+     {
+      "text": "conftest.py has an inventory fixture with tear-down after yield, and a stocked fixture.",
+      "look_for": [
+       "yield",
+       "def stocked"
+      ]
+     },
+     {
+      "text": "Tests are parametrised with readable ids.",
+      "look_for": [
+       "parametrize",
+       "ids="
+      ]
+     },
+     {
+      "text": "main() is tested in-process with monkeypatch and capsys.",
+      "look_for": [
+       "monkeypatch.setenv",
+       "capsys"
+      ]
+     },
+     {
+      "text": "The coverage gate passes.",
+      "look_for": [
+       "Required test coverage of 90% reached",
+       "exit status: 0"
+      ]
+     }
+    ],
+    "submit": "Paste your conftest.py, test_pricing.py and test_cli_main.py, and the output of steps 1, 6 and 7.",
+    "files": [
+     {
+      "path": "tests/conftest.py",
+      "content": "import pytest\n\nfrom stockroom.inventory import Inventory, Product\n\n\n@pytest.fixture\ndef inventory(tmp_path):\n    \"\"\"A fresh inventory in a temporary SQLite file, closed after the test.\"\"\"\n    inv = Inventory(tmp_path / \"stock.db\")\n    yield inv\n    inv.close()\n\n\n# TODO: write a fixture called stocked that uses the inventory fixture, adds these three products\n#       and returns the inventory:\n#       Product(\"TEA-01\", \"Green tea\", 450, 2, 5), Product(\"MUG-02\", \"Blue mug\", 899, 12, 4),\n#       Product(\"CUP-03\", \"Paper cups\", 199, 4, 4)\n"
+     },
+     {
+      "path": "tests/unit/test_pricing.py",
+      "content": "import pytest\n\nfrom stockroom.pricing import add_vat, format_money, line_total, parse_money\n\n\n@pytest.mark.parametrize(\n    \"text, cents\",\n    [(\"12.5\", 1250), (\"0.99\", 99), (\" 3 \", 300), (\"1e3\", 100000)],\n    ids=[\"one-decimal\", \"cents-only\", \"spaces\", \"exponent\"],\n)\ndef test_parse_money(text, cents):\n    assert parse_money(text) == cents\n\n\n# TODO: parametrise the tests below the same way, with more cases each: bad amounts such as\n#       \"-1\", \"1.005\" and \"nan\"; several format_money values, including a negative one; both\n#       ways line_total rejects input; and add_vat with the default rate, 50% and 0%.\n\n\ndef test_parse_money_rejects_text():\n    with pytest.raises(ValueError, match=\"not an amount\"):\n        parse_money(\"abc\")\n\n\ndef test_format_money_pads_the_cents():\n    assert format_money(1205) == \"12.05\"\n\n\ndef test_line_total_applies_the_discount_and_rounds_half_up():\n    assert line_total(333, 3, discount_percent=10) == 899  # 899.1 cents\n    assert line_total(5, 1, discount_percent=50) == 3  # 2.5 cents rounds up\n\n\ndef test_add_vat_uses_twenty_percent_by_default():\n    assert add_vat(1000) == 1200\n"
+     },
+     {
+      "path": "tests/integration/test_cli_main.py",
+      "content": "import pytest\n\nfrom stockroom.cli import main\n\npytestmark = pytest.mark.integration\n\n\n@pytest.fixture\ndef db(tmp_path, monkeypatch):\n    \"\"\"Point the command at a temporary database through STOCKROOM_DB.\"\"\"\n    monkeypatch.setenv(\"STOCKROOM_DB\", str(tmp_path / \"cli.db\"))\n\n\ndef test_add_then_list_low_stock(db, capsys):\n    assert main([\"add\", \"CUP-03\", \"Paper cups\", \"1.99\", \"4\", \"--reorder\", \"4\"]) == 0\n    assert main([\"low\"]) == 0\n    out, err = capsys.readouterr()\n    assert \"added CUP-03 Paper cups at 1.99, stock 4\" in out\n    assert \"1 product(s) to reorder\" in err\n\n\ndef test_selling_reports_what_is_left(db, capsys):\n    main([\"add\", \"MUG-02\", \"Blue mug\", \"8.99\", \"12\", \"--reorder\", \"4\"])\n    assert main([\"sell\", \"MUG-02\", \"3\"]) == 0\n    assert capsys.readouterr().out.endswith(\"sold 3 x MUG-02, 9 left\\n\")\n\n\n# TODO: write one parametrised test, test_errors_exit_with_status_1, for three cases: a price of\n#       \"abc\", selling an SKU that doesn't exist, and selling a quantity of 0. Each must return 1\n#       and print its error message on standard error (check capsys.readouterr().err).\n"
+     }
+    ],
+    "hints": [
+     "A fixture that uses another just names it as a parameter: def stocked(inventory):",
+     "If coverage stays low for cli.py, check that your new tests call main([...]) directly rather than through subprocess.",
+     "The Missing column gives line numbers: open the file at those lines to see which branch no test takes."
+    ]
+   }
+  },
+  {
+   "title": "Integrating Tests into Pipelines",
+   "summary": "Make the tests count: quality gates that stop a bad change, reports and artefacts the pipeline publishes, flaky tests found and fixed, and a deployment that runs only when everything is green.",
+   "instructor": "rodrigoo-silva",
+   "lessons": [
+    {
+     "title": "Quality gates",
+     "minutes": 12,
+     "objectives": [
+      "Set up gates that stop a change when tests, lint, formatting or coverage fall short",
+      "Make the gates impossible to skip with branch protection"
+     ],
+     "key_points": [
+      "A quality gate is a check a change must pass to move on. In CI a step fails its job by exiting non-zero, so a failing test, a lint error or coverage under the threshold stops the pipeline at once.",
+      "Typical gates for Python: ruff check (lint) and ruff format --check (formatting), pytest with --cov-fail-under=90, a type checker such as mypy, and a dependency audit such as pip-audit for packages with known vulnerabilities.",
+      "A branch ruleset (or classic branch protection) on main can require the CI checks to pass, and a pull request, before anything is merged, so the gates can't be bypassed.",
+      "Order gates by speed and keep the pipeline quick, ten minutes being a common rule of thumb, so people wait for it instead of working around it; run very slow suites in parallel jobs or on a schedule.",
+      "Raise thresholds gradually: set the coverage gate just below today's figure so it can't fall, and tighten it as tests are added."
+     ],
+     "walkthrough": {
+      "tool": "GitHub",
+      "title": "Require checks before merging",
+      "steps": [
+       {
+        "do": "In your repository, open Settings, then Rules, then Rulesets, and choose New ruleset, then New branch ruleset."
+       },
+       {
+        "do": "Name it protect-main, set Enforcement status to Active, and under Target branches choose Add target, then Include default branch."
+       },
+       {
+        "do": "Turn on Require a pull request before merging, and Require status checks to pass. Under the status checks, choose Add checks and add the jobs from your workflow, such as lint and test (3.12)."
+       },
+       {
+        "do": "Create the ruleset, then try to push a commit straight to main.",
+        "code": "git commit --allow-empty -m \"Try to skip the checks\"\ngit push origin main",
+        "lang": "bash",
+        "see": "The push is rejected with a message about repository rule violations: changes must now arrive through a pull request with passing checks."
+       },
+       {
+        "do": "Undo the local commit.",
+        "code": "git reset --hard origin/main",
+        "lang": "bash"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Reports, artefacts and job summaries",
+     "minutes": 12,
+     "objectives": [
+      "Publish test reports, coverage and build artefacts from a pipeline",
+      "Build a versioned artefact once and pass it to later jobs"
+     ],
+     "key_points": [
+      "pytest --junitxml=reports/junit.xml writes results as JUnit XML, which CI tools display as test reports; --cov-report=xml writes coverage.xml for coverage services, and --cov-report=html a browsable report.",
+      "actions/upload-artifact@v4 saves files from a job, such as reports or the built wheel, for download from the run's page or for later jobs with actions/download-artifact@v4; add if: always() so reports are kept even when the tests fail.",
+      "Markdown appended to $GITHUB_STEP_SUMMARY appears on the run's summary page, and name=value lines appended to $GITHUB_OUTPUT become outputs that later steps and jobs can read.",
+      "Build the artefact once, with its version from the code or a Git tag: python -m build makes a source distribution and a wheel in dist/, which later jobs deploy or publish unchanged.",
+      "In Jenkins, the junit step publishes test results, archiveArtifacts keeps files with the build, and post { always { ... } } runs them whatever happened."
+     ]
+    },
+    {
+     "title": "Flaky tests and pipeline health",
+     "minutes": 11,
+     "objectives": [
+      "Recognise the usual causes of flaky tests",
+      "Find and fix flaky tests, and keep the pipeline trustworthy"
+     ],
+     "key_points": [
+      "A flaky test passes and fails on the same code. The usual causes are order dependence (state shared between tests), timing (sleeps, timeouts and races), uncontrolled randomness or clock time, and real network calls.",
+      "Flaky tests are worse than no tests: people learn to rerun until the build is green and stop trusting a red one, so real failures slip through.",
+      "Find them by rerunning a suspect test many times, running tests alone and in a different order (as pytest-randomly does), and looking through CI history for tests that fail without related changes.",
+      "Fix the cause rather than adding retries: isolate state with fixtures, inject clocks and seeds, wait for a condition instead of sleeping, and fake external services. Quarantine a test you can't fix at once with a marker the gate excludes, and track it.",
+      "Watch the pipeline's own health: its duration, how often it fails, and how long main stays red. A broken main branch is the whole team's first priority."
+     ]
+    },
+    {
+     "title": "From a green build to a release",
+     "minutes": 12,
+     "objectives": [
+      "Deploy automatically and safely once every check has passed",
+      "Release a tagged version with its artefacts"
+     ],
+     "key_points": [
+      "A deploy job runs only after the checks pass and only for main: needs: build with if: github.event_name == 'push' && github.ref == 'refs/heads/main' skips it for pull requests and other branches.",
+      "environment: staging links a job to a GitHub environment with its own secrets and protection rules, such as required reviewers or a wait timer, so a production deployment can need an approval.",
+      "concurrency: with a group such as deploy-staging and cancel-in-progress: false makes deployments to one environment run one at a time, in order.",
+      "Release from a tag: on: push: tags: [\"v*\"] builds the artefact and creates a GitHub release, for example with gh release create \"$GITHUB_REF_NAME\" dist/* --generate-notes and permissions: contents: write.",
+      "After deploying, run a smoke test, such as calling a health endpoint or one key command, and fail the job if it fails, so a bad release is caught at once and rolled back."
+     ],
+     "walkthrough": {
+      "tool": "Bash",
+      "title": "Tag a release",
+      "steps": [
+       {
+        "do": "Add a release workflow to the project as .github/workflows/release.yml.",
+        "code": "name: Release\n\non:\n  push:\n    tags: [\"v*\"]\n\npermissions:\n  contents: write\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n      - run: python -m pip install build\n      - run: python -m build\n      - name: Create the GitHub release with the built files\n        env:\n          GH_TOKEN: ${{ github.token }}\n        run: gh release create \"$GITHUB_REF_NAME\" dist/* --generate-notes\n",
+        "lang": "yaml"
+       },
+       {
+        "do": "Commit it through a pull request, then tag the merged main branch and push the tag.",
+        "code": "git switch main && git pull\ngit tag v0.1.0\ngit push origin v0.1.0",
+        "lang": "bash"
+       },
+       {
+        "do": "Open the Actions tab: the Release workflow runs for the tag.",
+        "see": "A release job that builds the project and runs gh release create."
+       },
+       {
+        "do": "Open the repository's Releases page.",
+        "see": "Release v0.1.0 with notes generated from the merged pull requests, and the wheel and source archive attached."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Quality gates, reports and a simulated deployment",
+    "tool": "GitHub Actions and pytest",
+    "minutes": 70,
+    "goal": "Find and fix an order-dependent test, then grow the workflow into a full pipeline: lint, tests with a coverage gate and reports, one build, and a simulated deployment to staging that runs only from main after everything has passed.",
+    "setup": [
+     "The stockroom project after the module 4 lab, pushed to your public GitHub repository",
+     "The starter files deploy.sh and tests/unit/test_vat_settings.py, copied into the project"
+    ],
+    "steps": [
+     {
+      "do": "Run the whole suite with the new test file: everything passes.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "35 passed"
+     },
+     {
+      "do": "Run the two new tests in the opposite order. One fails: the first changed a setting the second relies on.",
+      "code": "python -m pytest -q \"tests/unit/test_vat_settings.py::test_the_default_rate_can_be_changed\" \"tests/unit/test_vat_settings.py::test_default_vat_is_twenty_percent\"",
+      "lang": "bash",
+      "see": "FAILED tests/unit/test_vat_settings.py::test_default_vat_is_twenty_percent and 1 failed, 1 passed"
+     },
+     {
+      "do": "Fix the cause, not the symptom: in tests/conftest.py, add an autouse fixture that yields and then sets the VAT rate back to pricing.DEFAULT_VAT_PERCENT. Run the same command again.",
+      "see": "2 passed"
+     },
+     {
+      "do": "Run the gate exactly as the pipeline will, with its reports.",
+      "code": "python -m pytest --cov=stockroom --cov-report=term-missing --cov-report=xml --cov-fail-under=90 --junitxml=reports/junit.xml",
+      "lang": "bash",
+      "see": "- generated xml file: ...reports/junit.xml -, Coverage XML written to file coverage.xml, Required test coverage of 90% reached. Total coverage: 96.25% and 35 passed (your figures may differ a little)."
+     },
+     {
+      "do": "Build the artefact once.",
+      "code": "python -m pip install build\npython -m build",
+      "lang": "bash",
+      "see": "Successfully built stockroom-0.1.0.tar.gz and stockroom-0.1.0-py3-none-any.whl"
+     },
+     {
+      "do": "Try the simulated deployment locally: it installs the wheel into a fresh environment and smoke-tests the command.",
+      "code": "bash deploy.sh staging dist/stockroom-0.1.0-py3-none-any.whl",
+      "lang": "bash",
+      "see": "note: DEPLOY_TOKEN isn't set; a real deployment would stop here, installed stockroom-0.1.0-py3-none-any.whl into staging, then smoke test passed: stockroom 0.1.0"
+     },
+     {
+      "do": "Replace .github/workflows/ci.yml with the full pipeline: lint, then the tests on three Python versions with the gate and reports, then one build, then deploy-staging, only for pushes to main.",
+      "code": "name: CI\n\non:\n  push:\n    branches: [main]\n  pull_request:\n  workflow_dispatch:\n\npermissions:\n  contents: read\n\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n          cache: pip\n          cache-dependency-path: requirements-dev.txt\n      - run: python -m pip install -r requirements-dev.txt\n      - run: ruff check .\n      - run: ruff format --check .\n\n  test:\n    needs: lint\n    runs-on: ubuntu-latest\n    strategy:\n      fail-fast: false\n      matrix:\n        python-version: [\"3.11\", \"3.12\", \"3.13\"]\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: ${{ matrix.python-version }}\n          cache: pip\n          cache-dependency-path: requirements-dev.txt\n      - run: python -m pip install -r requirements-dev.txt -e .\n      - name: Run the tests with a coverage gate\n        run: >-\n          python -m pytest --cov=stockroom --cov-report=term-missing\n          --cov-report=xml --cov-fail-under=90 --junitxml=reports/junit.xml\n      - name: Keep the test reports\n        if: always()\n        uses: actions/upload-artifact@v4\n        with:\n          name: reports-${{ matrix.python-version }}\n          path: |\n            reports/junit.xml\n            coverage.xml\n\n  build:\n    needs: test\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n      - run: python -m pip install build\n      - run: python -m build\n      - uses: actions/upload-artifact@v4\n        with:\n          name: dist\n          path: dist/\n\n  deploy-staging:\n    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n    needs: build\n    runs-on: ubuntu-latest\n    environment: staging\n    concurrency:\n      group: deploy-staging\n      cancel-in-progress: false\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n      - uses: actions/download-artifact@v4\n        with:\n          name: dist\n          path: dist/\n      - name: Deploy (simulated) and smoke-test\n        env:\n          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}\n        run: bash deploy.sh staging dist/*.whl\n      - name: Write the job summary\n        run: echo \"Deployed $(basename dist/*.whl) to staging\" >> \"$GITHUB_STEP_SUMMARY\"\n",
+      "lang": "yaml"
+     },
+     {
+      "do": "Check it with actionlint, then commit everything on a branch, push and open a pull request.",
+      "code": "./actionlint && echo \"actionlint: no problems found\"\ngit switch -c full-pipeline\ngit add -A\ngit commit -m \"Add quality gates, reports and a staging deployment\"\ngit push -u origin full-pipeline",
+      "lang": "bash",
+      "see": "On the pull request, lint, the three test jobs and build run and pass; deploy-staging is skipped, because it only runs for pushes to main."
+     },
+     {
+      "do": "Merge the pull request. On main, the run continues through build and deploy-staging; GitHub creates the staging environment the first time a job uses it.",
+      "see": "deploy-staging's log ends smoke test passed: stockroom 0.1.0; the run's summary shows Deployed stockroom-0.1.0-py3-none-any.whl to staging and the reports and dist artifacts."
+     },
+     {
+      "do": "Protect staging: in Settings, Environments, staging, add yourself as a required reviewer and save. Push a small change to main through a pull request and approve the deployment when the run waits.",
+      "see": "deploy-staging waits with Review deployments until you choose Approve and deploy."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The order-dependent test is found and fixed at its cause.",
+      "look_for": [
+       "1 failed, 1 passed",
+       "autouse=True",
+       "2 passed"
+      ]
+     },
+     {
+      "text": "The gate passes and writes both reports.",
+      "look_for": [
+       "Required test coverage of 90% reached",
+       "generated xml file",
+       "Coverage XML written to file coverage.xml"
+      ]
+     },
+     {
+      "text": "The artefact is built once.",
+      "look_for": [
+       "Successfully built stockroom-0.1.0.tar.gz and stockroom-0.1.0-py3-none-any.whl"
+      ]
+     },
+     {
+      "text": "The deployment's smoke test passes.",
+      "look_for": [
+       "smoke test passed: stockroom 0.1.0"
+      ]
+     },
+     {
+      "text": "The pipeline orders its jobs and deploys only from main.",
+      "look_for": [
+       "needs: build",
+       "environment: staging",
+       "refs/heads/main"
+      ]
+     },
+     {
+      "text": "Reports are uploaded even when tests fail.",
+      "look_for": [
+       "if: always()",
+       "upload-artifact@v4"
+      ]
+     }
+    ],
+    "submit": "Paste your autouse fixture, the output of steps 2 to 6, your ci.yml, and the end of the deploy-staging log from the run on main, with the run's link.",
+    "files": [
+     {
+      "path": "deploy.sh",
+      "content": "#!/usr/bin/env bash\n# A simulated deployment: install the wheel into a fresh environment named after the target\n# environment, then smoke-test the installed command. Usage: deploy.sh ENVIRONMENT WHEEL\nset -euo pipefail\n\nenvironment=\"${1:?usage: deploy.sh ENVIRONMENT WHEEL}\"\nwheel=\"${2:?usage: deploy.sh ENVIRONMENT WHEEL}\"\ntarget=\"${DEPLOY_ROOT:-$PWD/deployments}/$environment\"\n\nif [ -z \"${DEPLOY_TOKEN:-}\" ]; then\n    echo \"note: DEPLOY_TOKEN isn't set; a real deployment would stop here\" >&2\nfi\n\nrm -rf \"$target\"\npython3 -m venv \"$target\"\n\"$target/bin/pip\" install --quiet \"$wheel\"\necho \"installed $(basename \"$wheel\") into $environment\"\n\nversion=$(\"$target/bin/stockroom\" --version)\necho \"smoke test passed: $version\"\n"
+     },
+     {
+      "path": "tests/unit/test_vat_settings.py",
+      "content": "from stockroom import pricing\n\n\ndef test_default_vat_is_twenty_percent():\n    assert pricing.add_vat(1000) == 1200\n\n\ndef test_the_default_rate_can_be_changed():\n    pricing.set_vat_percent(25)\n    assert pricing.add_vat(1000) == 1250\n"
+     }
+    ],
+    "hints": [
+     "An autouse fixture runs for every test without being asked for: @pytest.fixture(autouse=True). Put the reset after its yield.",
+     "Import pricing in conftest.py with from stockroom import pricing.",
+     "If deploy-staging never runs, check the run was for a push to main, not for the pull request.",
+     "Environments are available for public repositories on every GitHub plan; private repositories need a paid plan for them."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "CI/CD principles, version control and deployment strategies; set up stockroom with a local CI loop.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Write your first GitHub Actions workflow and read a Jenkinsfile, then test stockroom across the pyramid.",
+   "modules": [
+    2,
+    3
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "pytest in depth with fixtures, parametrisation and coverage, then quality gates, reports and a simulated deployment.",
+   "modules": [
+    4,
+    5
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Build the capstone pipeline and its release, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "A complete CI/CD pipeline for stockroom",
+  "minutes": 480,
+  "brief": "Take stockroom to a pipeline you would trust with a real product. First add a feature test-first: a restock command that adds stock to a product and reports whether it's still below its reorder level, with unit, integration and end-to-end tests. Then finish the pipeline in GitHub Actions. It must run on every pull request and on every push to main; lint and check formatting; run the unit and integration tests on several Python versions and the end-to-end tests on one; generate a coverage report and fail below 90%; keep the JUnit and coverage reports as artifacts even when tests fail; build the wheel once; and, only for pushes to main after every check has passed, deploy that same wheel to a staging environment protected by a required reviewer, with a smoke test. Pushing a version tag must create a GitHub release with the built files. Protect main with a ruleset that requires the checks, and write a Jenkinsfile with the same stages for a team that uses Jenkins.",
+  "deliverables": [
+   "The public repository's link, with the restock feature and its tests at all three levels",
+   ".github/workflows/ci.yml and release.yml, valid according to actionlint",
+   "Links to three runs: a passing run on main that deployed to staging, a pull request whose checks failed, and the release run for a tag",
+   "Evidence of the ruleset on main and the required reviewer on staging (screenshots or a description of each setting)",
+   "README.md with the workflow's status badge, TESTING.md (the test strategy, layer by layer) and DEPLOYMENT.md (how a release would reach production: the strategy, the smoke test and the rollback)",
+   "A Jenkinsfile with the same stages"
+  ],
+  "rubric": [
+   {
+    "name": "Pipeline design",
+    "points": 25,
+    "description": "Right triggers; jobs ordered with needs; a matrix with caching; least-privilege permissions; deployment only from main after every check, one at a time; the artefact built once."
+   },
+   {
+    "name": "Test suite",
+    "points": 25,
+    "description": "The new feature is tested at unit, integration and end-to-end level with fixtures and parametrisation; coverage is at least 90%; no test depends on another's order or state."
+   },
+   {
+    "name": "Quality gates and reports",
+    "points": 15,
+    "description": "Lint, formatting and coverage gates fail the build; JUnit and coverage reports are uploaded even on failure; the run summary says what was deployed."
+   },
+   {
+    "name": "Release and deployment",
+    "points": 15,
+    "description": "The simulated deployment installs the built wheel and smoke-tests it; staging needs an approval; a tag creates a release with the built files."
+   },
+   {
+    "name": "Secrets and safety",
+    "points": 10,
+    "description": "Secrets come only from repository or environment secrets and are never printed; no secrets in the repository; main can't be changed without passing checks."
+   },
+   {
+    "name": "Documentation",
+    "points": 10,
+    "description": "The README has a working badge and usage; TESTING.md and DEPLOYMENT.md are clear and specific; the Jenkinsfile matches the workflow's stages."
+   }
+  ],
+  "submit": "Paste your repository's link, your ci.yml, release.yml and Jenkinsfile, the links to the three runs, the pytest summary with the coverage total, your TESTING.md and DEPLOYMENT.md, and a description or screenshots of the ruleset and the environment's protection."
+ }
+}
