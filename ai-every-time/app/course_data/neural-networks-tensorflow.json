@@ -1,0 +1,1233 @@
+{
+  "slug": "neural-networks-tensorflow",
+  "title": "Introduction to Neural Networks and TensorFlow",
+  "subtitle": "Build neural networks from the single neuron up: code a perceptron and backpropagation in NumPy, then train and evaluate feed-forward networks with TensorFlow and Keras.",
+  "category": "Machine Learning",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "jae-won-parkk",
+    "mei-ling-zhang"
+  ],
+  "skills": [
+    "Neural networks",
+    "Perceptrons",
+    "Multi-layer perceptrons",
+    "Activation functions",
+    "Backpropagation",
+    "Gradient descent",
+    "TensorFlow",
+    "Keras",
+    "Image classification"
+  ],
+  "tools": [
+    "Python 3",
+    "NumPy",
+    "TensorFlow",
+    "Keras",
+    "scikit-learn"
+  ],
+  "outcomes": [
+    "Explain how an artificial neuron and a perceptron work, and why a single layer can't learn XOR",
+    "Describe the architecture of a multi-layer perceptron, count its parameters and choose its activation functions",
+    "Derive and code backpropagation for a small network, and prove it right with a gradient check",
+    "Build, train and evaluate feed-forward networks with TensorFlow tensors, GradientTape and the Keras Sequential API",
+    "Choose output activations and loss functions for regression, binary and multi-class tasks",
+    "Train a handwritten-digit classifier and judge it with validation curves and a confusion matrix"
+  ],
+  "prerequisites": "Classical Classification and Clustering, or Machine Learning Foundations with Python: train/test splits, accuracy and scikit-learn classifiers. Comfortable Python and NumPy, and what a derivative is. Install Python 3.10 or later, then pip install tensorflow scikit-learn (TensorFlow 2.16 or later includes Keras 3). The capstone downloads MNIST, about 11 MB, once.",
+  "description": "Neural networks power modern image recognition, speech and language models, and they're built from a simple part: a neuron that weighs its inputs, adds them up and passes the result through an activation function. This course takes you from that single neuron to working deep learning code. You'll write a perceptron in NumPy and see exactly why one layer can't learn XOR, add hidden layers and non-linear activations to build multi-layer perceptrons, and derive backpropagation yourself, checking your gradients against numerical ones before you train a network from scratch.\n\nThen you'll meet TensorFlow and its high-level Keras API: tensors, automatic differentiation with GradientTape, graphs with tf.function, and models you build, compile, fit and evaluate in a few lines. You'll finish by training a handwritten-digit classifier, with a softmax output, cross-entropy loss, validation curves and a confusion matrix, and the capstone asks you to build, improve and evaluate an MLP on the full MNIST dataset. Every lab runs on an ordinary laptop with fixed random seeds, and comes with starter code and the output to expect. It leads on to Training Deep Neural Networks.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "The Perceptron and Biological Inspiration",
+      "summary": "Meet the artificial neuron and the perceptron: how a weighted sum and a step function make a linear classifier, how the perceptron learns from its mistakes, and why a single layer can never learn XOR.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "From biological neurons to artificial ones",
+          "minutes": 10,
+          "objectives": [
+            "Describe the parts of a biological neuron that inspired artificial neurons",
+            "Write an artificial neuron as a weighted sum plus a bias, passed through an activation function"
+          ],
+          "key_points": [
+            "A biological neuron receives signals from other neurons through its dendrites, combines them in the cell body and, when the combined input is strong enough, fires a pulse along its axon; synapses make some connections stronger than others.",
+            "In 1943 Warren McCulloch and Walter Pitts modelled a neuron as a threshold logic unit: binary inputs, fixed weights, and an output of 1 when the weighted sum reaches a threshold. Frank Rosenblatt's perceptron (1958) added a rule for learning the weights from examples.",
+            "An artificial neuron computes z = w·x + b, each input times its weight, summed, plus a bias, and passes z through an activation function. The weights play the part of synapse strengths and the bias shifts the threshold.",
+            "Writing the neuron with a bias rather than a threshold θ changes nothing: with b = −θ, the condition w·x + b ≥ 0 is the same as w·x ≥ θ.",
+            "The biology is an inspiration, not a blueprint: real neurons send timed spikes, rely on chemistry and learn in ways unlike gradient descent, while artificial networks are mathematical functions whose weights are fitted to data."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Compute an artificial neuron by hand",
+            "steps": [
+              {
+                "do": "Start Python (type python in a terminal, or open a notebook) and create three inputs, a weight for each input and a bias.",
+                "code": "import numpy as np\nx = np.array([1.0, 0.5, -1.0])   # three inputs\nw = np.array([0.8, -0.4, 0.3])   # one weight per input\nb = 0.1                          # the bias",
+                "lang": "python"
+              },
+              {
+                "do": "Compute the weighted sum: each input times its weight, added up, plus the bias.",
+                "code": "z = w @ x + b    # the same as (w * x).sum() + b\nprint(round(z, 2))",
+                "lang": "python",
+                "see": "0.4: 0.8 - 0.2 - 0.3 + 0.1."
+              },
+              {
+                "do": "Pass z through a step activation: the neuron fires (outputs 1) when z is at least 0.",
+                "code": "print(int(z >= 0))",
+                "lang": "python",
+                "see": "1"
+              },
+              {
+                "do": "Lower the bias to -0.5 and compute again. The same inputs no longer make the neuron fire: the bias sets how much weighted input it needs.",
+                "code": "b = -0.5\nz = w @ x + b\nprint(round(z, 2), int(z >= 0))",
+                "lang": "python",
+                "see": "-0.2 0"
+              },
+              {
+                "do": "Swap the step for a sigmoid, 1 / (1 + e^-z), and the neuron gives a graded output between 0 and 1 instead of a yes or a no.",
+                "code": "print(round(1 / (1 + np.exp(-z)), 3))",
+                "lang": "python",
+                "see": "0.45"
+              }
+            ]
+          }
+        },
+        {
+          "title": "The perceptron: a linear classifier that learns from mistakes",
+          "minutes": 12,
+          "objectives": [
+            "Compute a perceptron's prediction with the step activation",
+            "Explain why its decision boundary is a line, plane or hyperplane",
+            "Apply the perceptron learning rule to a misclassified example"
+          ],
+          "key_points": [
+            "A perceptron predicts 1 when w·x + b ≥ 0 and 0 otherwise: the step (Heaviside) activation turns the weighted sum into a yes-or-no answer. Some texts use −1 and +1 for the two classes; the idea is the same.",
+            "Its decision boundary is the set of points where w·x + b = 0: a straight line with two inputs, a plane with three and a hyperplane in general. Everything on one side is class 1 and everything on the other class 0, which makes the perceptron a linear classifier.",
+            "The learning rule takes one example at a time. When the prediction ŷ is wrong it updates w ← w + η(y − ŷ)x and b ← b + η(y − ŷ), moving the boundary towards classifying that example correctly; a correct prediction changes nothing. η is the learning rate.",
+            "The perceptron convergence theorem: if a hyperplane can separate the two classes perfectly, the rule finds a separating boundary after a finite number of mistakes. Which boundary it finds depends on the starting weights and the order of the examples.",
+            "The step function is flat everywhere except at its jump, so its slope gives no direction to improve in. Later networks replaced it with smooth activations such as the sigmoid, which gradient descent can train."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Apply the perceptron rule by hand",
+            "steps": [
+              {
+                "do": "Set up the AND gate's four examples, zero weights, a zero bias and a learning rate of 1.",
+                "code": "import numpy as np\nX = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])\ny = np.array([0, 0, 0, 1])    # AND\nw, b, lr = np.zeros(2), 0.0, 1.0",
+                "lang": "python"
+              },
+              {
+                "do": "Predict the first example, (0, 0). With zero weights z is 0, so the step function says 1, but the target is 0.",
+                "code": "prediction = int(X[0] @ w + b >= 0)\nprint(prediction, y[0])",
+                "lang": "python",
+                "see": "1 0"
+              },
+              {
+                "do": "Apply the rule. The error, target minus prediction, is -1, so the input is subtracted from the weights and 1 from the bias. The input is (0, 0), so only the bias changes.",
+                "code": "error = y[0] - prediction\nw, b = w + lr * error * X[0], b + lr * error\nprint(w, b)",
+                "lang": "python",
+                "see": "[0. 0.] -1.0"
+              },
+              {
+                "do": "Run whole epochs, updating after every mistake, until an epoch makes none.",
+                "code": "for epoch in range(1, 11):\n    mistakes = 0\n    for xi, target in zip(X, y):\n        error = target - int(xi @ w + b >= 0)\n        if error:\n            w, b, mistakes = w + lr * error * xi, b + lr * error, mistakes + 1\n    print(epoch, mistakes, w, b)\n    if mistakes == 0:\n        break",
+                "lang": "python",
+                "see": "One line per epoch: epoch, mistakes, weights, bias. The last line is 6 0 [2. 1.] -3.0: no mistakes, so the boundary now separates AND's single 1 from its 0s."
+              },
+              {
+                "do": "Check the learned boundary on all four inputs.",
+                "code": "print((X @ w + b >= 0).astype(int))",
+                "lang": "python",
+                "see": "[0 0 0 1]"
+              }
+            ]
+          }
+        },
+        {
+          "title": "The XOR problem and the limits of a single layer",
+          "minutes": 12,
+          "objectives": [
+            "Show why no single perceptron can compute XOR",
+            "Describe what the perceptron rule does on data that isn't linearly separable",
+            "Explain how a hidden layer makes XOR solvable"
+          ],
+          "key_points": [
+            "XOR (exclusive or) outputs 1 when exactly one of its two inputs is 1: (0, 1) and (1, 0) are class 1, (0, 0) and (1, 1) class 0. The classes sit on opposite corners of a square, so no straight line separates them.",
+            "A short proof: (0, 0) needs b < 0, while (0, 1) and (1, 0) need w2 + b ≥ 0 and w1 + b ≥ 0. Adding those two gives w1 + w2 + b ≥ −b > 0, so (1, 1) would be classed as 1, which is wrong.",
+            "On data that isn't linearly separable the perceptron rule never settles: every pass over the data makes mistakes and the weights keep changing, so training must stop after a fixed number of epochs with whatever boundary it has at that moment.",
+            "Marvin Minsky and Seymour Papert's book Perceptrons (1969) analysed these limits of single-layer perceptrons, and it contributed to a long decline in interest and funding for neural network research.",
+            "Two layers solve XOR: XOR(x1, x2) = AND(OR(x1, x2), NAND(x1, x2)). The hidden layer maps the four points to new coordinates in which the classes are linearly separable, and the output unit draws the line there.",
+            "What was missing was a way to train hidden layers. Backpropagation, popularised by Rumelhart, Hinton and Williams in 1986, supplied it, and it's the subject of Module 3."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a perceptron and watch it fail on XOR",
+        "tool": "Python with NumPy and scikit-learn",
+        "minutes": 40,
+        "goal": "Code a perceptron's prediction and learning rule in NumPy, train it on the AND, OR and XOR gates and on two pairs of iris species, and solve XOR by wiring three perceptrons into two layers.",
+        "setup": [
+          "Python 3.10 or later with NumPy and scikit-learn: pip install numpy scikit-learn",
+          "A folder for the course, with the starter file perceptron.py in it"
+        ],
+        "steps": [
+          {
+            "do": "Open perceptron.py and read it: step() is the activation, the Perceptron class starts with zero weights and a zero bias, fit() returns the number of mistakes in each epoch, and report() prints the result."
+          },
+          {
+            "do": "Complete predict(): return the step function of the weighted sum for every row of X.",
+            "code": "return step(X @ self.w + self.b)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete the learning rule in fit(): for each example compute error = target - prediction; when it isn't 0, add lr * error * xi to the weights and lr * error to the bias, and count a mistake."
+          },
+          {
+            "do": "Run the script.",
+            "code": "python perceptron.py",
+            "lang": "bash",
+            "see": "AND converges in epoch 6 with weights [2. 1.] and bias -3.000, OR in epoch 4. XOR makes 3 or 4 mistakes in every one of its 20 epochs and ends at accuracy 0.50."
+          },
+          {
+            "do": "Read the iris lines. The two petal measurements are standardised first. Setosa against versicolor converges in epoch 2; versicolor against virginica never converges, because a few flowers of the two species overlap.",
+            "see": "iris versicolor vs virginica: no convergence in 20 epochs, ending at accuracy 0.83."
+          },
+          {
+            "do": "Complete two_layer_xor(): choose weights and biases for an OR unit and a NAND unit in the hidden layer and an AND unit at the output, then run the script again.",
+            "see": "Two-layer network on XOR: [0 1 1 0] expected [0 1 1 0]"
+          },
+          {
+            "do": "Write two or three sentences: why does a single perceptron fail on XOR, and what does the hidden layer do that makes it work?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "AND and OR converge from zero weights, with the epochs, weights and bias the rule finds in this order.",
+            "look_for": [
+              "AND: converged in epoch 6",
+              "OR: converged in epoch 4"
+            ]
+          },
+          {
+            "text": "XOR never converges: there are mistakes in every epoch and accuracy stays at 0.50.",
+            "look_for": [
+              "XOR: no convergence in 20 epochs",
+              "accuracy 0.50"
+            ]
+          },
+          {
+            "text": "On the iris flowers, setosa against versicolor converges and versicolor against virginica doesn't.",
+            "look_for": [
+              "setosa vs versicolor: converged in epoch 2",
+              "versicolor vs virginica: no convergence"
+            ]
+          },
+          {
+            "text": "The hand-built two-layer network computes XOR.",
+            "look_for": [
+              "Two-layer network on XOR: [0 1 1 0]"
+            ]
+          },
+          {
+            "text": "The explanation links the failure to linear separability and the fix to what the hidden layer does.",
+            "look_for": [
+              "separa"
+            ]
+          }
+        ],
+        "submit": "Paste your predict(), the learning rule from fit() and two_layer_xor(), the full output of python perceptron.py, and your sentences.",
+        "files": [
+          {
+            "path": "perceptron.py",
+            "content": "\"\"\"A perceptron from scratch: learn AND and OR, fail on XOR, learn two iris species, then solve XOR with two layers.\"\"\"\n\nimport numpy as np\nfrom sklearn.datasets import load_iris\n\n\ndef step(z):\n    \"\"\"The Heaviside step function: 1 where z >= 0, otherwise 0.\"\"\"\n    return (np.asarray(z) >= 0).astype(int)\n\n\nclass Perceptron:\n    def __init__(self, n_inputs, learning_rate=1.0):\n        self.w = np.zeros(n_inputs)\n        self.b = 0.0\n        self.lr = learning_rate\n\n    def predict(self, X):\n        # TODO: return the step function of the weighted sum, X @ self.w + self.b\n        return np.zeros(len(X), dtype=int)\n\n    def fit(self, X, y, max_epochs=20):\n        \"\"\"Apply the perceptron rule one example at a time, for up to max_epochs passes over the data.\n        Stop after a pass with no mistakes. Return the number of mistakes in each pass.\"\"\"\n        history = []\n        for epoch in range(1, max_epochs + 1):\n            mistakes = 0\n            for xi, target in zip(X, y):\n                # TODO: predict this example; if the prediction is wrong, count a mistake and update:\n                #      error = target - prediction\n                #      self.w += self.lr * error * xi\n                #      self.b += self.lr * error\n                pass\n            history.append(mistakes)\n            if mistakes == 0:\n                break\n        return history\n\n\ndef report(name, model, X, y, history):\n    accuracy = (model.predict(X) == y).mean()\n    if history[-1] == 0:\n        outcome = f\"converged in epoch {len(history)}\"\n    else:\n        outcome = f\"no convergence in {len(history)} epochs\"\n    print(f\"{name}: {outcome}; mistakes per epoch {history}\")\n    print(f\"    weights {np.round(model.w, 3)}, bias {model.b:.3f}, accuracy {accuracy:.2f}\")\n\n\ndef two_layer_xor(X):\n    \"\"\"XOR = AND(OR(x1, x2), NAND(x1, x2)): two perceptrons in a hidden layer, one in the output layer.\"\"\"\n    # TODO: build it from three perceptrons with weights and biases you choose by hand:\n    #      h_or   = step(X @ w_or + b_or)            1 when at least one input is 1\n    #      h_nand = step(X @ w_nand + b_nand)        1 unless both inputs are 1\n    #      output = step(h_or * w1 + h_nand * w2 + b) 1 only when both hidden units are 1\n    return np.zeros(len(X), dtype=int)\n\n\ndef main():\n    X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])\n    gates = {\"AND\": np.array([0, 0, 0, 1]), \"OR\": np.array([0, 1, 1, 1]), \"XOR\": np.array([0, 1, 1, 0])}\n    for name, y in gates.items():\n        model = Perceptron(n_inputs=2)\n        report(name, model, X, y, model.fit(X, y))\n\n    iris = load_iris()\n    petals = iris.data[:, 2:4]  # petal length and petal width, in cm\n    for a, b in [(0, 1), (1, 2)]:\n        mask = (iris.target == a) | (iris.target == b)\n        Xi, yi = petals[mask], (iris.target[mask] == b).astype(int)\n        Xi = (Xi - Xi.mean(axis=0)) / Xi.std(axis=0)  # standardise: mean 0, standard deviation 1\n        model = Perceptron(n_inputs=2)\n        report(f\"iris {iris.target_names[a]} vs {iris.target_names[b]}\", model, Xi, yi, model.fit(Xi, yi))\n\n    print(\"Two-layer network on XOR:\", two_layer_xor(X), \"expected\", gates[\"XOR\"])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "If AND never converges, check the sign of the update: error is target minus prediction, so a missed 1 adds the input to the weights and a false 1 subtracts it.",
+          "The results depend on the starting weights and the order of the examples; keep the zero start and the order given so that your numbers match.",
+          "For two_layer_xor, an OR unit can use the weights [1, 1] and a bias of -0.5. Work out NAND and AND the same way by checking all four inputs."
+        ]
+      }
+    },
+    {
+      "title": "Multi-Layer Perceptrons (MLPs)",
+      "summary": "Add hidden layers of fully connected neurons, see why they need non-linear activation functions, compute forward passes with matrices, and learn what the universal approximation theorem does and doesn't promise.",
+      "instructor": "mei-ling-zhang",
+      "lessons": [
+        {
+          "title": "Hidden layers and fully connected networks",
+          "minutes": 12,
+          "objectives": [
+            "Describe the input, hidden and output layers of an MLP",
+            "Compute a forward pass for a batch with matrix multiplication",
+            "Count the weights and biases in a stack of dense layers"
+          ],
+          "key_points": [
+            "A multi-layer perceptron (MLP) is a feed-forward network of fully connected, or dense, layers: every unit in a layer receives every output of the layer before, and information flows one way, from the inputs to the outputs.",
+            "The input layer is just the features and has no weights. Hidden layers sit between it and the output layer, whose size matches the task, such as 1 unit for a yes-or-no answer or 10 for the digits 0 to 9.",
+            "For a batch, a dense layer computes H = f(XW + b): X is (batch, n_in), the weight matrix W is (n_in, n_out), the n_out biases in b are added to every row, and f is the activation. Each layer's output is the next layer's input.",
+            "A dense layer from n_in inputs to n_out units has n_in × n_out weights plus n_out biases: a 784-128-10 network has 784 × 128 + 128 = 100,480 parameters in its hidden layer and 128 × 10 + 10 = 1,290 in its output layer.",
+            "Width is the number of units in a layer and depth the number of layers; a network with several hidden layers is called deep, which is where the name deep learning comes from.",
+            "Modern networks use smooth activations rather than the perceptron's step, so 'multi-layer perceptron' is a historical name for any feed-forward network of dense layers."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Run a forward pass with matrices",
+            "steps": [
+              {
+                "do": "Make a batch of three examples with two features each, and a hidden layer of four ReLU units.",
+                "code": "import numpy as np\nrng = np.random.default_rng(0)\nX = np.array([[0.5, 1.0], [1.5, -0.5], [0.0, 2.0]])   # (batch, features)\nW1, b1 = rng.normal(size=(2, 4)), np.zeros(4)\nH = np.maximum(0, X @ W1 + b1)                      # ReLU\nprint(H.shape)",
+                "lang": "python",
+                "see": "(3, 4): one row per example, one column per hidden unit."
+              },
+              {
+                "do": "Add an output layer of one unit: (3, 4) @ (4, 1) gives one output per example.",
+                "code": "W2, b2 = rng.normal(size=(4, 1)), np.zeros(1)\nout = H @ W2 + b2\nprint(out.shape)",
+                "lang": "python",
+                "see": "(3, 1)"
+              },
+              {
+                "do": "Count each layer's parameters: its weights plus its biases.",
+                "code": "print(W1.size + b1.size, W2.size + b2.size)",
+                "lang": "python",
+                "see": "12 5: 2 x 4 + 4 for the hidden layer and 4 x 1 + 1 for the output layer."
+              },
+              {
+                "do": "Apply the same formula to a 784-128-10 network for 28 x 28 images.",
+                "code": "sizes = [784, 128, 10]\nprint([n_in * n_out + n_out for n_in, n_out in zip(sizes, sizes[1:])])",
+                "lang": "python",
+                "see": "[100480, 1290]"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Why activation functions must be non-linear",
+          "minutes": 12,
+          "objectives": [
+            "Show that stacked linear layers collapse into a single linear layer",
+            "Compare the sigmoid, tanh and ReLU activations and their slopes",
+            "Choose an output activation for regression, binary and multi-class tasks"
+          ],
+          "key_points": [
+            "Without a non-linear activation, two layers compute W2(W1x + b1) + b2 = (W2W1)x + (W2b1 + b2), which is a single linear layer: however many linear layers are stacked, the network can only draw straight boundaries.",
+            "The sigmoid, σ(z) = 1/(1 + e^−z), squashes any number into (0, 1) and tanh squashes it into (−1, 1). Both flatten out (saturate) for large positive or negative z, where their slopes are close to 0; the sigmoid's slope is at most 0.25 and tanh's at most 1, both at z = 0.",
+            "ReLU, max(0, z), is the usual default for hidden layers: it's cheap to compute and its slope is 1 for every positive input, so it doesn't saturate there. A unit whose input stays negative outputs 0 with a slope of 0 and stops learning, which is called a dead ReLU.",
+            "The output activation follows the task: none (linear) for predicting a number, sigmoid for a yes-or-no probability or several independent labels, and softmax for choosing exactly one of several classes.",
+            "With non-linear activations each hidden layer can bend and fold the input space, which is how the XOR network's hidden layer turns four corners into two separable groups."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Compare activation functions and their slopes",
+            "steps": [
+              {
+                "do": "Evaluate the sigmoid at five points from -4 to 4.",
+                "code": "import numpy as np\nz = np.array([-4.0, -1.0, 0.0, 1.0, 4.0])\nsigmoid = 1 / (1 + np.exp(-z))\nprint(sigmoid.round(3))",
+                "lang": "python",
+                "see": "[0.018 0.269 0.5   0.731 0.982]"
+              },
+              {
+                "do": "Do the same for tanh and ReLU.",
+                "code": "print(np.tanh(z).round(3))\nprint(np.maximum(0, z))",
+                "lang": "python",
+                "see": "[-0.999 -0.762  0.     0.762  0.999]\n[0. 0. 0. 1. 4.]"
+              },
+              {
+                "do": "Compute each activation's slope (derivative) at the same points.",
+                "code": "print((sigmoid * (1 - sigmoid)).round(3))   # sigmoid\nprint((1 - np.tanh(z) ** 2).round(3))       # tanh\nprint((z > 0).astype(float))                # ReLU",
+                "lang": "python",
+                "see": "Sigmoid [0.018 0.197 0.25  0.197 0.018], at most 0.25; tanh [0.001 0.42  1.    0.42  0.001]; ReLU [0. 0. 0. 1. 1.]. At z = 4 the sigmoid and tanh barely slope at all."
+              }
+            ]
+          }
+        },
+        {
+          "title": "The universal approximation theorem",
+          "minutes": 10,
+          "objectives": [
+            "State what the universal approximation theorem says",
+            "Explain what it doesn't promise, and why deep networks are used in practice"
+          ],
+          "key_points": [
+            "The universal approximation theorem: a feed-forward network with one hidden layer of enough units and a suitable non-linear activation can approximate any continuous function on a closed, bounded region of inputs as closely as you like. George Cybenko proved it for sigmoid activations in 1989.",
+            "Later results extended it to any activation that isn't a polynomial, ReLU included. A ReLU network is a piecewise-linear function, and more units give it more linear pieces with which to follow a curve.",
+            "It says that good weights exist, not how to find them: it doesn't say how many units are needed (possibly a vast number), that gradient descent will reach those weights, or that a network fitted to limited data will generalise to new data.",
+            "In practice deeper networks often represent the same function with far fewer parameters than one very wide layer, because each layer builds on the features of the layer before; that's why deep, moderately wide networks are the norm."
+          ],
+          "walkthrough": {
+            "tool": "Python with scikit-learn",
+            "title": "Approximate a curve with more hidden units",
+            "steps": [
+              {
+                "do": "Make 200 points of the curve y = sin(2x) between -3 and 3.",
+                "code": "import numpy as np\nfrom sklearn.neural_network import MLPRegressor\nx = np.linspace(-3, 3, 200).reshape(-1, 1)\ny = np.sin(2 * x).ravel()",
+                "lang": "python"
+              },
+              {
+                "do": "Fit networks with one hidden layer of 1, 2, 4 and 8 tanh units, and print each one's worst error.",
+                "code": "for units in (1, 2, 4, 8):\n    net = MLPRegressor(hidden_layer_sizes=(units,), activation=\"tanh\", solver=\"lbfgs\",\n                       max_iter=5000, random_state=0).fit(x, y)\n    print(units, round(float(np.abs(net.predict(x) - y).max()), 3))",
+                "lang": "python",
+                "see": "Worst errors of 1.216, 1.136, 0.025, 0.007: one or two units can't follow the wave, while four already fit it closely."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Solve XOR and the two moons with hidden layers",
+        "tool": "Python with NumPy and scikit-learn",
+        "minutes": 40,
+        "goal": "Code a dense layer's forward pass in NumPy, show numerically that stacked linear layers collapse into one, and compare a linear model, an MLP without a non-linearity and a ReLU MLP on the two-moons data.",
+        "setup": [
+          "Python 3.10 or later with NumPy and scikit-learn",
+          "The starter file mlp_basics.py"
+        ],
+        "steps": [
+          {
+            "do": "Complete dense(): compute X @ W + b, then apply the activation when one is given.",
+            "code": "z = X @ W + b\nreturn activation(z) if activation else z",
+            "lang": "python"
+          },
+          {
+            "do": "Complete count_params(): for each pair of neighbouring layer sizes add n_in * n_out weights and n_out biases."
+          },
+          {
+            "do": "Run the script and read the first part: the XOR network's hidden layer maps the four inputs to new points, and the output layer turns those into the right answers.",
+            "code": "python mlp_basics.py",
+            "lang": "bash",
+            "see": "Hidden layer outputs: [[0.0, 0.0], [1.0, 0.0], [1.0, 0.0], [2.0, 1.0]] and XOR network outputs: [0.0, 1.0, 1.0, 0.0]."
+          },
+          {
+            "do": "Read the second part: two linear layers give exactly the outputs of one layer with weights A1 @ A2 and bias c1 @ A2 + c2, while the best single linear layer can't reproduce the network with a ReLU between its layers.",
+            "see": "Two linear layers equal one linear layer: True, and the best single linear layer misses the ReLU network by up to 2.73."
+          },
+          {
+            "do": "Read the third part. Logistic regression and the MLP with identity activations both draw a straight boundary through the moons; the ReLU MLP can curve around them.",
+            "see": "Test accuracies of 0.812 (logistic regression), 0.824 (identity MLP) and 0.924 (ReLU MLP), and 337 parameters counted both ways."
+          },
+          {
+            "do": "Change the ReLU MLP's hidden_layer_sizes to (4,) and then (64, 64), run the script after each change and note the test accuracy and parameter count."
+          },
+          {
+            "do": "Write a short explanation: why does the identity MLP score about the same as logistic regression, and what does the ReLU add?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "dense() and the hand-set weights compute XOR with a ReLU hidden layer.",
+            "look_for": [
+              "Hidden layer outputs: [[0.0, 0.0], [1.0, 0.0], [1.0, 0.0], [2.0, 1.0]]",
+              "XOR network outputs: [0.0, 1.0, 1.0, 0.0]"
+            ]
+          },
+          {
+            "text": "Two stacked linear layers are shown to equal one, while a ReLU network can't be matched by one.",
+            "look_for": [
+              "Two linear layers equal one linear layer: True",
+              "misses the ReLU network by up to 2.73"
+            ]
+          },
+          {
+            "text": "The three models are compared on the same test set.",
+            "look_for": [
+              "Logistic regression        test accuracy 0.812",
+              "MLP, ReLU activation       test accuracy 0.924"
+            ]
+          },
+          {
+            "text": "count_params() agrees with scikit-learn's own count of the 2-16-16-1 network.",
+            "look_for": [
+              "Parameters in the 2-16-16-1 MLP: 337 (scikit-learn holds 337)"
+            ]
+          },
+          {
+            "text": "The explanation says why the identity-activation MLP is still a linear model.",
+            "look_for": [
+              "linear"
+            ]
+          }
+        ],
+        "submit": "Paste dense() and count_params(), the output of python mlp_basics.py (including your runs with other hidden layer sizes), and your explanation.",
+        "files": [
+          {
+            "path": "mlp_basics.py",
+            "content": "\"\"\"Forward passes by hand, why activations must be non-linear, and an MLP against a linear model.\"\"\"\n\nimport numpy as np\nfrom sklearn.datasets import make_moons\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.neural_network import MLPClassifier\n\n\ndef relu(z):\n    return np.maximum(0, z)\n\n\ndef dense(X, W, b, activation=None):\n    \"\"\"One fully connected layer for a batch: X is (batch, n_in), W is (n_in, n_out), b is (n_out,).\"\"\"\n    # TODO: compute z = X @ W + b, then apply the activation if there is one\n    return np.zeros((len(X), W.shape[1]))\n\n\ndef count_params(layer_sizes):\n    \"\"\"Weights and biases in a stack of dense layers, e.g. [2, 16, 16, 1].\"\"\"\n    # TODO: each layer from n_in to n_out has n_in * n_out weights and n_out biases\n    return 0\n\n\ndef main():\n    # 1. XOR with a 2-2-1 ReLU network and hand-set weights\n    X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=float)\n    W1, b1 = np.array([[1.0, 1.0], [1.0, 1.0]]), np.array([0.0, -1.0])\n    W2, b2 = np.array([[1.0], [-2.0]]), np.array([0.0])\n    hidden = dense(X, W1, b1, relu)\n    print(\"Hidden layer outputs:\", hidden.tolist())\n    print(\"XOR network outputs:\", dense(hidden, W2, b2).ravel().tolist())\n\n    # 2. Two linear layers collapse into one\n    rng = np.random.default_rng(0)\n    A1, c1 = rng.normal(size=(3, 4)), rng.normal(size=4)\n    A2, c2 = rng.normal(size=(4, 2)), rng.normal(size=2)\n    inputs = rng.normal(size=(200, 3))\n    two_linear = dense(dense(inputs, A1, c1), A2, c2)\n    one_linear = dense(inputs, A1 @ A2, c1 @ A2 + c2)\n    print(\"Two linear layers equal one linear layer:\", np.allclose(two_linear, one_linear))\n    with_relu = dense(dense(inputs, A1, c1, relu), A2, c2)\n    design = np.column_stack([inputs, np.ones(len(inputs))])\n    coef, *_ = np.linalg.lstsq(design, with_relu, rcond=None)\n    leftover = np.abs(design @ coef - with_relu).max()\n    print(f\"Best single linear layer misses the ReLU network by up to {leftover:.2f}\")\n\n    # 3. A linear model, a 'linear MLP' and a real MLP on the two-moons data\n    Xm, ym = make_moons(n_samples=1000, noise=0.25, random_state=0)\n    X_train, X_test, y_train, y_test = train_test_split(Xm, ym, test_size=0.25, random_state=0)\n    models = {\n        \"Logistic regression\": LogisticRegression(),\n        \"MLP, identity activation\": MLPClassifier(hidden_layer_sizes=(16, 16), activation=\"identity\",\n                                                  max_iter=2000, random_state=0),\n        \"MLP, ReLU activation\": MLPClassifier(hidden_layer_sizes=(16, 16), activation=\"relu\",\n                                              max_iter=2000, random_state=0),\n    }\n    for name, model in models.items():\n        model.fit(X_train, y_train)\n        print(f\"{name:26} test accuracy {model.score(X_test, y_test):.3f}\")\n    mlp = models[\"MLP, ReLU activation\"]\n    counted = sum(W.size for W in mlp.coefs_) + sum(b.size for b in mlp.intercepts_)\n    print(f\"Parameters in the 2-16-16-1 MLP: {count_params([2, 16, 16, 1])} (scikit-learn holds {counted})\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "np.maximum(0, z) applies ReLU to a whole array at once, and X @ W multiplies a whole batch by a weight matrix.",
+          "zip(layer_sizes[:-1], layer_sizes[1:]) pairs each layer size with the next one.",
+          "scikit-learn's MLPClassifier keeps its weights in coefs_ and its biases in intercepts_, one array per layer."
+        ]
+      }
+    },
+    {
+      "title": "Training with Backpropagation",
+      "summary": "Follow one training step from start to finish: a forward pass that makes predictions, a loss that measures the error, a backward pass that applies the chain rule to get every gradient, and an update that moves the weights.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "The forward pass and loss functions",
+          "minutes": 12,
+          "objectives": [
+            "Compute a forward pass and the loss for a batch",
+            "Choose mean squared error or cross-entropy for a task",
+            "Explain why cross-entropy suits classification"
+          ],
+          "key_points": [
+            "Training means finding weights that make the loss small. The loss is a single number, usually the average error over a batch of training examples, and it's a function of every weight in the network.",
+            "The forward pass runs the inputs through the layers to get predictions, and keeps each layer's intermediate values (its weighted sums and activations), because the backward pass needs them.",
+            "Mean squared error, the average of (y − ŷ)², suits predicting numbers. Binary cross-entropy, −[y log p + (1 − y) log(1 − p)], suits a yes-or-no probability p; categorical cross-entropy, minus the log of the probability given to the true class, suits choosing one of several classes.",
+            "Cross-entropy punishes confident mistakes hard: giving the true class a probability of 0.01 costs −log(0.01) ≈ 4.6, while giving it 0.99 costs about 0.01.",
+            "With a sigmoid or softmax output, cross-entropy's gradient at the output's weighted sum is simply p − y, so learning stays fast even when a prediction is badly wrong; mean squared error through a sigmoid multiplies that by the sigmoid's slope, which is close to 0 for confident wrong answers."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Compute losses by hand",
+            "steps": [
+              {
+                "do": "Write binary cross-entropy and compare a confident right answer, an unsure one and a confident wrong one, all for a true label of 1.",
+                "code": "import numpy as np\ndef bce(y, p):\n    return -(y * np.log(p) + (1 - y) * np.log(1 - p))\nprint(round(bce(1, 0.99), 3), round(bce(1, 0.6), 3), round(bce(1, 0.01), 3))",
+                "lang": "python",
+                "see": "0.01 0.511 4.605"
+              },
+              {
+                "do": "Compute categorical cross-entropy for a three-class prediction: it's minus the log of the probability given to the true class.",
+                "code": "probs = np.array([0.7, 0.2, 0.1])\nprint(round(-np.log(probs[0]), 3), round(-np.log(probs[2]), 3))",
+                "lang": "python",
+                "see": "0.357 2.303: cheap if the true class is 0, expensive if it's 2."
+              },
+              {
+                "do": "Compare the gradients at a sigmoid output's weighted sum z for a badly wrong prediction (z = -5, label 1): cross-entropy gives p - y, mean squared error adds the sigmoid's slope.",
+                "code": "z, y = -5.0, 1.0\np = 1 / (1 + np.exp(-z))\nprint(round(p, 4), round(p - y, 4), round(2 * (p - y) * p * (1 - p), 4))",
+                "lang": "python",
+                "see": "0.0067 -0.9933 -0.0132: the cross-entropy gradient is about 75 times larger, so the network corrects the mistake fast."
+              }
+            ]
+          }
+        },
+        {
+          "title": "The chain rule and the backward pass",
+          "minutes": 14,
+          "objectives": [
+            "Apply the chain rule through a network, one step at a time",
+            "Write the gradients of a dense layer and of an activation",
+            "Check backpropagation against numerical gradients"
+          ],
+          "key_points": [
+            "The chain rule: if the loss L depends on a weight w only through z, then ∂L/∂w = ∂L/∂z × ∂z/∂w. A network is a chain of such steps, so the gradient for any weight is a product of local derivatives from the loss back to that weight.",
+            "Backpropagation applies the chain rule from the output layer back to the first, handing each layer's gradient to the layer before. Reusing those results makes one backward pass cost about as much as a forward pass or two, rather than one pass per weight.",
+            "For a dense layer z = aW + b with upstream gradient δ = ∂L/∂z for a batch: ∂L/∂W = aᵀδ, ∂L/∂b is δ summed over the batch, and the gradient passed back to the layer's input is δWᵀ.",
+            "Through an activation the gradient is multiplied, element by element, by the activation's slope: δ = (gradient from above) × f′(z). For tanh, f′(z) = 1 − tanh(z)², so the forward pass keeps the activations it computed.",
+            "Gradient checking compares backprop's gradients with central differences, (L(w + ε) − L(w − ε)) / 2ε, for each weight; in 64-bit floats a relative difference of about 10⁻⁷ or less means the backward pass is right. It's slow, so it's for testing, not for training."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Backpropagate through one neuron, then check it numerically",
+            "steps": [
+              {
+                "do": "Set up one sigmoid neuron with one input, a label, and a loss function of its weight and bias.",
+                "code": "import numpy as np\nx, y = 2.0, 1.0\nw, b = 0.5, -1.5\ndef loss(w, b):\n    p = 1 / (1 + np.exp(-(w * x + b)))\n    return -(y * np.log(p) + (1 - y) * np.log(1 - p))",
+                "lang": "python"
+              },
+              {
+                "do": "Run the forward pass and keep its intermediate values.",
+                "code": "z = w * x + b\np = 1 / (1 + np.exp(-z))\nprint(z, round(p, 4), round(loss(w, b), 4))",
+                "lang": "python",
+                "see": "-0.5 0.3775 0.9741: z, the probability p and the loss."
+              },
+              {
+                "do": "Apply the chain rule: dL/dz = p - y, dz/dw = x and dz/db = 1.",
+                "code": "dL_dz = p - y\nprint(round(dL_dz * x, 4), round(dL_dz * 1, 4))",
+                "lang": "python",
+                "see": "-1.2449 -0.6225: the gradients for w and b."
+              },
+              {
+                "do": "Check them with central differences: nudge each parameter up and down by a tiny amount.",
+                "code": "eps = 1e-5\nprint(round((loss(w + eps, b) - loss(w - eps, b)) / (2 * eps), 4),\n      round((loss(w, b + eps) - loss(w, b - eps)) / (2 * eps), 4))",
+                "lang": "python",
+                "see": "-1.2449 -0.6225: the same values, so the backward pass is right."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Gradient descent: updating the weights",
+          "minutes": 12,
+          "objectives": [
+            "Update weights with gradient descent and judge a learning rate",
+            "Distinguish batch, stochastic and mini-batch gradient descent",
+            "Explain why weights must start at different random values"
+          ],
+          "key_points": [
+            "Gradient descent moves every weight a small step against its gradient: w ← w − η ∂L/∂w. The learning rate η sets the step size: too small and training crawls; too large and the loss bounces around or grows without limit (diverges).",
+            "Batch gradient descent uses the whole training set for each step, stochastic gradient descent (SGD) one example, and mini-batch gradient descent a small batch, often 32 to 256 examples, which gives a useful gradient cheaply. In practice 'SGD' usually means mini-batches.",
+            "An epoch is one pass over the training data: with N examples and a batch size of B it takes N/B steps, rounded up. Shuffling the data each epoch keeps the batches varied.",
+            "Weights start as small random numbers: if every unit in a layer started the same, they would all get the same gradient and stay identical for ever, so the layer would act like a single unit. Biases can start at 0.",
+            "Each training step is forward pass, loss, backward pass, update. Training repeats it over batches and epochs while the loss on held-out validation data shows whether the network still improves on data it hasn't seen.",
+            "Optimisers such as SGD with momentum and Adam change how a gradient becomes an update; Keras's Adam uses a learning rate of 0.001 unless told otherwise."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Watch the learning rate at work",
+            "steps": [
+              {
+                "do": "Write gradient descent for the loss (w - 3)², whose gradient is 2(w - 3), starting from w = 0.",
+                "code": "def descend(lr, steps=20, w=0.0):\n    path = []\n    for _ in range(steps):\n        w = w - lr * 2 * (w - 3)\n        path.append(round(w, 3))\n    return path",
+                "lang": "python"
+              },
+              {
+                "do": "Try a learning rate of 0.1: the first five steps, then where it is after 20.",
+                "code": "path = descend(0.1)\nprint(path[:5], path[-1])",
+                "lang": "python",
+                "see": "[0.6, 1.08, 1.464, 1.771, 2.017] 2.965: a steady approach to the minimum at 3."
+              },
+              {
+                "do": "Try 0.5, 0.9 and 1.1.",
+                "code": "for lr in (0.5, 0.9, 1.1):\n    path = descend(lr)\n    print(lr, path[:4], path[-1])",
+                "lang": "python",
+                "see": "0.5 jumps straight to 3 (it's exactly right for this curve), 0.9 overshoots back and forth but still settles, and 1.1 overshoots further each time and ends at -112.013."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Backpropagation from scratch",
+        "tool": "Python with NumPy and scikit-learn",
+        "minutes": 50,
+        "goal": "Code the backward pass of a 2-16-1 network with a tanh hidden layer and a sigmoid output, prove it right with a gradient check, train it with mini-batch gradient descent on the two-moons data, and see what happens when every weight starts the same.",
+        "setup": [
+          "Python 3.10 or later with NumPy and scikit-learn",
+          "The starter file backprop.py"
+        ],
+        "steps": [
+          {
+            "do": "Read forward(): it returns the predicted probabilities and a cache holding the inputs X, the hidden activations a1 and the output probabilities p."
+          },
+          {
+            "do": "Complete backward(), working back from the output layer to the hidden layer.",
+            "code": "dz2 = (p - y) / n                 # (n, 1): the gradient at the output's weighted sum\ndW2 = a1.T @ dz2;  db2 = dz2.sum(axis=0)\ndz1 = (dz2 @ W2.T) * (1 - a1 ** 2)   # back through W2, then through tanh\ndW1 = X.T @ dz1;   db1 = dz1.sum(axis=0)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete the update in train(): subtract learning_rate times each gradient from its parameter."
+          },
+          {
+            "do": "Run the script. The gradient check comes first: it nudges every weight up and down by 0.00001 and compares the change in the loss with your gradients.",
+            "code": "python backprop.py",
+            "lang": "bash",
+            "see": "Gradient check: largest relative error 7.6e-08 -> passed. The tiny number can differ slightly between machines; anything under 1e-6 passes."
+          },
+          {
+            "do": "Read the training log: the loss falls from 0.6662 untrained to 0.0853 after 200 epochs.",
+            "see": "Training accuracy 0.968, test accuracy 0.960"
+          },
+          {
+            "do": "Read the last line: with every weight starting at 0.5, the 16 hidden units are still identical after 50 epochs, and the network does much worse.",
+            "see": "Constant start, after 50 epochs: all 16 hidden units identical? True; test accuracy 0.855"
+          },
+          {
+            "do": "Break your backward pass on purpose, for example by removing the (1 - a1 ** 2) factor, run the script, note what the gradient check reports, then put it back."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The gradient check passes: backprop agrees with the numerical gradients.",
+            "look_for": [
+              "Gradient check: largest relative error",
+              "-> passed"
+            ]
+          },
+          {
+            "text": "Training lowers the loss from the untrained value to the expected one.",
+            "look_for": [
+              "Untrained: training loss 0.6662",
+              "Epoch 200: training loss 0.0853"
+            ]
+          },
+          {
+            "text": "The trained network scores well on the test set.",
+            "look_for": [
+              "Training accuracy 0.968, test accuracy 0.960"
+            ]
+          },
+          {
+            "text": "Starting every weight at the same value leaves the hidden units identical.",
+            "look_for": [
+              "all 16 hidden units identical? True"
+            ]
+          },
+          {
+            "text": "The deliberately broken backward pass is caught by the gradient check.",
+            "look_for": [
+              "FAILED"
+            ]
+          }
+        ],
+        "submit": "Paste backward() and your update loop, the output of python backprop.py, and the gradient check line from your deliberately broken run with a sentence on what it shows.",
+        "files": [
+          {
+            "path": "backprop.py",
+            "content": "\"\"\"Backpropagation from scratch: a 2-16-1 network (tanh hidden layer, sigmoid output) trained on two moons.\"\"\"\n\nimport numpy as np\nfrom sklearn.datasets import make_moons\nfrom sklearn.model_selection import train_test_split\n\n\ndef init_params(rng, n_in=2, n_hidden=16):\n    return {\n        \"W1\": rng.normal(0.0, 1.0 / np.sqrt(n_in), size=(n_in, n_hidden)),\n        \"b1\": np.zeros(n_hidden),\n        \"W2\": rng.normal(0.0, 1.0 / np.sqrt(n_hidden), size=(n_hidden, 1)),\n        \"b2\": np.zeros(1),\n    }\n\n\ndef forward(params, X):\n    \"\"\"Return the predicted probabilities (batch,) and a cache of what the backward pass needs.\"\"\"\n    z1 = X @ params[\"W1\"] + params[\"b1\"]\n    a1 = np.tanh(z1)\n    z2 = a1 @ params[\"W2\"] + params[\"b2\"]\n    p = 1.0 / (1.0 + np.exp(-z2))\n    return p.ravel(), {\"X\": X, \"a1\": a1, \"p\": p}\n\n\ndef bce_loss(p, y):\n    \"\"\"Binary cross-entropy, averaged over the batch.\"\"\"\n    p = np.clip(p, 1e-12, 1 - 1e-12)\n    return float(-np.mean(y * np.log(p) + (1 - y) * np.log(1 - p)))\n\n\ndef backward(params, cache, y):\n    \"\"\"Gradients of the mean binary cross-entropy with respect to every parameter.\"\"\"\n    n = len(y)\n    # TODO: work backwards from the loss, one layer at a time:\n    #      dz2 = (p - y) / n                  the gradient at the output logits, shape (n, 1)\n    #      dW2 = a1.T @ dz2,  db2 = dz2 summed over the batch\n    #      da1 = dz2 @ W2.T,  dz1 = da1 * (1 - a1 ** 2)     tanh'(z) = 1 - tanh(z) ** 2\n    #      dW1 = X.T @ dz1,   db1 = dz1 summed over the batch\n    return {k: np.zeros_like(v) for k, v in params.items()}\n\n\ndef gradient_check(params, X, y, eps=1e-5):\n    \"\"\"Compare backprop's gradients with central finite differences; return the largest relative error.\"\"\"\n    grads = backward(params, forward(params, X)[1], y)\n    worst = 0.0\n    for name, value in params.items():\n        for i in np.ndindex(value.shape):\n            old = value[i]\n            value[i] = old + eps\n            plus = bce_loss(forward(params, X)[0], y)\n            value[i] = old - eps\n            minus = bce_loss(forward(params, X)[0], y)\n            value[i] = old\n            numeric = (plus - minus) / (2 * eps)\n            worst = max(worst, abs(numeric - grads[name][i]) / max(abs(numeric) + abs(grads[name][i]), 1e-12))\n    return worst\n\n\ndef train(params, X, y, rng, learning_rate=0.5, epochs=200, batch_size=32, verbose=True):\n    for epoch in range(1, epochs + 1):\n        order = rng.permutation(len(X))\n        for start in range(0, len(X), batch_size):\n            idx = order[start:start + batch_size]\n            _, cache = forward(params, X[idx])\n            grads = backward(params, cache, y[idx])\n            # TODO: gradient descent: subtract learning_rate * gradient from every parameter\n            pass\n        if verbose and epoch in (1, 10, 50, 100, 200):\n            print(f\"Epoch {epoch:3d}: training loss {bce_loss(forward(params, X)[0], y):.4f}\")\n    return params\n\n\ndef accuracy(params, X, y):\n    return float(((forward(params, X)[0] >= 0.5) == y).mean())\n\n\ndef main():\n    X, y = make_moons(n_samples=1000, noise=0.2, random_state=0)\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)\n    rng = np.random.default_rng(0)\n\n    params = init_params(rng)\n    error = gradient_check(params, X_train[:20], y_train[:20])\n    print(f\"Gradient check: largest relative error {error:.1e} -> {'passed' if error < 1e-6 else 'FAILED'}\")\n    print(f\"Untrained: training loss {bce_loss(forward(params, X_train)[0], y_train):.4f}\")\n\n    params = train(params, X_train, y_train, rng)\n    print(f\"Training accuracy {accuracy(params, X_train, y_train):.3f}, test accuracy {accuracy(params, X_test, y_test):.3f}\")\n\n    # Symmetry: start every weight at the same value and the hidden units never become different\n    same = {k: np.full_like(v, 0.5) for k, v in init_params(rng).items()}\n    same = train(same, X_train, y_train, np.random.default_rng(1), epochs=50, verbose=False)\n    identical = all(np.allclose(same[\"W1\"][:, j], same[\"W1\"][:, 0]) for j in range(16))\n    print(f\"Constant start, after 50 epochs: all 16 hidden units identical? {identical}; \"\n          f\"test accuracy {accuracy(same, X_test, y_test):.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "Shapes are the best debugger: dz2 is (n, 1), a1 is (n, 16) and W2 is (16, 1), so a1.T @ dz2 is (16, 1), the same shape as W2.",
+          "The 1/n in dz2 makes these the gradients of the mean loss; without it the gradient check fails by a factor of n.",
+          "Update the arrays in place (params[name] -= ...) or assign the new arrays back into params; either works."
+        ]
+      }
+    },
+    {
+      "title": "TensorFlow and Keras Basics",
+      "summary": "Meet TensorFlow and its high-level Keras API: tensors and their shapes and types, automatic gradients with GradientTape, computation graphs with tf.function, and models you build, compile, fit and evaluate in a few lines.",
+      "instructor": "mei-ling-zhang",
+      "lessons": [
+        {
+          "title": "Tensors: shapes, types and operations",
+          "minutes": 12,
+          "objectives": [
+            "Create tensors and read their shape, rank and dtype",
+            "Use element-wise operations, reductions, matrix multiplication and broadcasting",
+            "Fix dtype mismatches with tf.cast"
+          ],
+          "key_points": [
+            "A tensor is a multi-dimensional array with a shape and a single data type (dtype): rank 0 is a scalar, rank 1 a vector, rank 2 a matrix, and higher ranks stack them. tf.constant makes a tensor that can't change; tf.Variable holds values that change, such as weights.",
+            "Shapes follow conventions: a batch of tabular data is (batch, features), and a batch of images is (batch, height, width, channels), TensorFlow's default channels-last layout, with 1 channel for greyscale and 3 for colour.",
+            "Operations work much like NumPy's: + and * act element by element, @ or tf.matmul multiplies matrices, tf.reduce_sum and tf.reduce_mean collapse an axis, tf.reshape changes the shape, and broadcasting stretches dimensions of size 1 to match.",
+            "TensorFlow doesn't convert dtypes for you: adding an int32 tensor to a float32 one raises an InvalidArgumentError, so convert with tf.cast. Networks usually compute in float32, while NumPy arrays of decimals default to float64.",
+            "Tensors and NumPy arrays convert both ways: TensorFlow operations accept arrays, and tensor.numpy() returns an array."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Explore tensors in Python",
+            "steps": [
+              {
+                "do": "Import TensorFlow and make a scalar and a matrix.",
+                "code": "import tensorflow as tf\nscalar = tf.constant(3.0)\nmatrix = tf.constant([[1, 2], [3, 4]])\nprint(scalar.shape, matrix.shape, matrix.dtype.name)",
+                "lang": "python",
+                "see": "() (2, 2) int32: Python ints become int32 tensors and floats become float32."
+              },
+              {
+                "do": "Make a batch of 32 greyscale 28 x 28 images in channels-last layout and check its rank.",
+                "code": "images = tf.zeros((32, 28, 28, 1))\nprint(images.shape, tf.rank(images).numpy())",
+                "lang": "python",
+                "see": "(32, 28, 28, 1) 4"
+              },
+              {
+                "do": "Flatten each image into a vector; -1 asks TensorFlow to work out that dimension.",
+                "code": "flat = tf.reshape(images, (32, -1))\nprint(flat.shape)",
+                "lang": "python",
+                "see": "(32, 784)"
+              },
+              {
+                "do": "Make a Variable, the kind of tensor that holds weights, and change it in place.",
+                "code": "v = tf.Variable([1.0, 2.0])\nv.assign_add([0.5, 0.5])\nprint(v.numpy())",
+                "lang": "python",
+                "see": "[1.5 2.5]"
+              },
+              {
+                "do": "Convert a NumPy array: it keeps NumPy's float64, so cast it to float32 before mixing it with float32 tensors.",
+                "code": "import numpy as np\nt = tf.constant(np.array([1.0, 2.0]))\nprint(t.dtype.name, tf.cast(t, tf.float32).dtype.name)",
+                "lang": "python",
+                "see": "float64 float32"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Automatic differentiation and computation graphs",
+          "minutes": 12,
+          "objectives": [
+            "Compute gradients with tf.GradientTape",
+            "Explain what tf.function does and when a function is traced again"
+          ],
+          "key_points": [
+            "tf.GradientTape records the operations run inside its with block, and tape.gradient(loss, variables) then computes the gradients: the backpropagation of Module 3, done automatically for any computation. Trainable Variables are watched automatically; plain tensors need tape.watch().",
+            "TensorFlow 2 runs eagerly by default: each operation runs as soon as Python reaches it, which makes code easy to inspect with print and a debugger.",
+            "Decorating a function with @tf.function traces it into a computation graph the first time it's called with a given input shape and dtype; later calls run the graph, which TensorFlow can optimise and run without going back to Python for each operation. Keras compiles its training step this way.",
+            "Python code inside a tf.function runs only while it's being traced, so a print appears once per trace (tf.print prints on every call), and a call with a new input shape or dtype triggers a new trace.",
+            "A traced graph can be saved with a model and run without the original Python code, which is how TensorFlow models are served in production and on mobile devices."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Differentiate with GradientTape",
+            "steps": [
+              {
+                "do": "Record y = x³ on a tape and ask for dy/dx at x = 2.",
+                "code": "import tensorflow as tf\nx = tf.Variable(2.0)\nwith tf.GradientTape() as tape:\n    y = x ** 3\nprint(tape.gradient(y, x).numpy())",
+                "lang": "python",
+                "see": "12.0: 3x² at x = 2."
+              },
+              {
+                "do": "Try the same with a constant: the tape only watches Variables unless told otherwise.",
+                "code": "c = tf.constant(2.0)\nwith tf.GradientTape() as tape:\n    y = c ** 3\nprint(tape.gradient(y, c))",
+                "lang": "python",
+                "see": "None"
+              },
+              {
+                "do": "Watch the constant explicitly.",
+                "code": "with tf.GradientTape() as tape:\n    tape.watch(c)\n    y = c ** 3\nprint(tape.gradient(y, c).numpy())",
+                "lang": "python",
+                "see": "12.0"
+              },
+              {
+                "do": "Get the gradient of a squared error with respect to a weight matrix.",
+                "code": "W = tf.Variable(tf.ones((3, 1)))\nX = tf.constant([[1.0, 2.0, 3.0]])\nwith tf.GradientTape() as tape:\n    loss = tf.reduce_sum((X @ W - 1.0) ** 2)\nprint(tape.gradient(loss, W).numpy().ravel())",
+                "lang": "python",
+                "see": "[10. 20. 30.]: 2 x (6 - 1) times each input."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Building models with Keras",
+          "minutes": 14,
+          "objectives": [
+            "Build a model with the Sequential API and read its summary",
+            "Compile, fit, evaluate and predict with a Keras model",
+            "Recognise when the functional API is needed"
+          ],
+          "key_points": [
+            "Keras is TensorFlow's high-level API for building and training models. Keras 3, which comes with TensorFlow 2.16 and later, can also run on JAX or PyTorch; you describe the layers and Keras runs the training loop.",
+            "keras.Sequential([...]) stacks layers in a line, one input to one output. Starting it with keras.Input(shape=...) builds the model at once, so model.summary() lists each layer's output shape and parameter count, with None standing for the batch size.",
+            "compile() sets the optimizer, the loss and the metrics to report. fit(x, y, epochs, batch_size, validation_split) trains and returns a History object whose .history dictionary holds each epoch's loss and metrics, with val_ versions for the validation data.",
+            "evaluate(x, y) returns the loss and metrics on data the model didn't train on, and predict(x) returns the outputs, such as one probability per example from a sigmoid output layer.",
+            "The functional API calls layers like functions, outputs = layer(inputs), and builds keras.Model(inputs, outputs). It's needed for several inputs or outputs, branches or shared layers, which Sequential can't express."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Build and inspect a Sequential model",
+            "steps": [
+              {
+                "do": "Build a model for four features and three classes, and print its summary.",
+                "code": "import keras\nfrom keras import layers\nmodel = keras.Sequential([\n    keras.Input(shape=(4,)),\n    layers.Dense(8, activation=\"relu\"),\n    layers.Dense(3, activation=\"softmax\"),\n])\nmodel.summary()",
+                "lang": "python",
+                "see": "A table with dense (Dense), output shape (None, 8) and 40 parameters, then dense_1 (Dense), (None, 3) and 27 parameters, and Total params: 67. None stands for the batch size."
+              },
+              {
+                "do": "List each layer's weights: a kernel matrix and a bias vector.",
+                "code": "for layer in model.layers:\n    print(layer.name, [tuple(w.shape) for w in layer.weights])",
+                "lang": "python",
+                "see": "dense [(4, 8), (8,)]\ndense_1 [(8, 3), (3,)]"
+              },
+              {
+                "do": "Predict for a batch of two examples: one row of three probabilities each, summing to 1.",
+                "code": "import numpy as np\nprobs = model.predict(np.zeros((2, 4)), verbose=0)\nprint(probs.shape, probs.sum(axis=1).round(3))",
+                "lang": "python",
+                "see": "(2, 3) [1. 1.]"
+              },
+              {
+                "do": "Build the same network with the functional API, calling each layer on the output of the one before.",
+                "code": "inputs = keras.Input(shape=(4,))\nhidden = layers.Dense(8, activation=\"relu\")(inputs)\noutputs = layers.Dense(3, activation=\"softmax\")(hidden)\nprint(keras.Model(inputs, outputs).count_params())",
+                "lang": "python",
+                "see": "67, the same as the Sequential model."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Tensors, gradients and a first Keras model",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 45,
+        "goal": "Work with tensors, get gradients from GradientTape and confirm that they match Module 3's backpropagation formulas, watch tf.function trace, then rebuild Module 3's network in Keras and train and evaluate it.",
+        "setup": [
+          "Python 3.10 or later with TensorFlow 2.16 or later and scikit-learn: pip install tensorflow scikit-learn",
+          "Check the install: python -c \"import tensorflow as tf; print(tf.__version__)\" prints 2.16 or a later version",
+          "The starter file tf_basics.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the starter as it is: the tensor and tf.function parts already work.",
+            "code": "python tf_basics.py",
+            "lang": "bash",
+            "see": "shape (2, 3) dtype float32 rank 2, column sums [5. 7. 9.], the int32 + float32 error caught, and Tracing scaled_sum printed for shape (2,) and for shape (3,), but not for the second call with shape (2,)."
+          },
+          {
+            "do": "Complete tape_gradients(): inside a tf.GradientTape compute the hidden activations, the output probabilities and the mean binary cross-entropy, then ask the tape for the gradients with respect to W1 and W2.",
+            "code": "with tf.GradientTape() as tape:\n    a1 = tf.tanh(X @ W1)\n    p = tf.sigmoid(a1 @ W2)\n    loss = ...\ndW1, dW2 = tape.gradient(loss, [W1, W2])",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script again.",
+            "code": "python tf_basics.py",
+            "lang": "bash",
+            "see": "d/dw (w^2 + 3w) at w=2: 7.0 and GradientTape matches manual backprop: True"
+          },
+          {
+            "do": "Complete build_model(): a Sequential model with keras.Input(shape=(2,)), a 16-unit tanh layer and a 1-unit sigmoid layer, compiled with SGD(learning_rate=0.5), binary cross-entropy and accuracy."
+          },
+          {
+            "do": "Run the script once more and read the summary, the history and the evaluation.",
+            "see": "dense (Dense) (None, 16) with 48 parameters, dense_1 (Dense) (None, 1) with 17, Total params: 65; then History keys, five epoch lines and a test accuracy of about 0.94 (figures can differ slightly between machines and versions)."
+          },
+          {
+            "do": "Change the hidden activation to relu and the learning rate to 0.05, run again, and compare the epoch lines and the test accuracy with the first run."
+          },
+          {
+            "do": "Write two sentences: what does GradientTape do for you that you did by hand in Module 3, and why was scaled_sum traced only twice for three calls?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The tensor's shape, dtype and rank are printed, and the int32 + float32 error is caught.",
+            "look_for": [
+              "shape (2, 3) dtype float32 rank 2",
+              "int32 + float32 refused"
+            ]
+          },
+          {
+            "text": "GradientTape gives the expected derivative and matches the manual backprop formulas.",
+            "look_for": [
+              "d/dw (w^2 + 3w) at w=2: 7.0",
+              "GradientTape matches manual backprop: True"
+            ]
+          },
+          {
+            "text": "tf.function traces once for each new input shape, and not for a repeated one.",
+            "look_for": [
+              "Tracing scaled_sum for shape (2,)",
+              "Tracing scaled_sum for shape (3,)"
+            ]
+          },
+          {
+            "text": "The Keras model has a 16-unit hidden layer and 65 parameters.",
+            "look_for": [
+              "(None, 16)",
+              "Total params: 65"
+            ]
+          },
+          {
+            "text": "The model trains with a validation split and reaches the test accuracy target.",
+            "look_for": [
+              "History keys: ['accuracy', 'loss', 'val_accuracy', 'val_loss']",
+              "PASS: test accuracy is at least 0.90"
+            ]
+          },
+          {
+            "text": "The two sentences explain automatic differentiation and why tracing happened only twice.",
+            "look_for": [
+              "trac"
+            ]
+          }
+        ],
+        "submit": "Paste tape_gradients() and build_model(), the output of python tf_basics.py from both runs (tanh, then relu), and your two sentences.",
+        "files": [
+          {
+            "path": "tf_basics.py",
+            "content": "\"\"\"TensorFlow and Keras basics: tensors, automatic gradients, tf.function, and the moons network in Keras.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")  # hide TensorFlow's start-up messages\n\nimport keras\nimport numpy as np\nimport tensorflow as tf\nfrom keras import layers\nfrom sklearn.datasets import make_moons\nfrom sklearn.model_selection import train_test_split\n\n\ndef tensors():\n    x = tf.constant([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])\n    print(\"shape\", x.shape, \"dtype\", x.dtype.name, \"rank\", len(x.shape))\n    print(\"column sums\", tf.reduce_sum(x, axis=0).numpy(), \"row means\", tf.reduce_mean(x, axis=1).numpy())\n    print(\"broadcast add\\n\", (x + tf.constant([10.0, 20.0, 30.0])).numpy())\n    print(\"matmul shape\", (x @ tf.transpose(x)).shape)\n    try:\n        tf.constant(1) + tf.constant(1.0)\n    except tf.errors.InvalidArgumentError:\n        print(\"int32 + float32 refused; tf.cast fixes it:\", (tf.cast(tf.constant(1), tf.float32) + 1.0).numpy())\n\n\ndef tape_gradients(X, y, W1, W2):\n    \"\"\"Return a1, p and the gradients of the mean binary cross-entropy with respect to W1 and W2.\"\"\"\n    # TODO: inside a tf.GradientTape, compute a1 = tanh(X @ W1), p = sigmoid(a1 @ W2) and the mean binary\n    #      cross-entropy, -(y log p + (1 - y) log(1 - p)) averaged; then ask the tape for the gradients of\n    #      the loss with respect to [W1, W2] and return a1, p, dW1, dW2\n    return None\n\n\ndef gradients():\n    w = tf.Variable(2.0)\n    with tf.GradientTape() as tape:\n        f = w ** 2 + 3 * w\n    print(\"d/dw (w^2 + 3w) at w=2:\", tape.gradient(f, w).numpy())\n\n    # The same gradients Module 3 computed by hand, now from GradientTape\n    rng = np.random.default_rng(0)\n    X = rng.normal(size=(8, 2))\n    y = (X[:, 0] * X[:, 1] > 0).astype(\"float64\").reshape(-1, 1)\n    W1 = tf.Variable(rng.normal(size=(2, 4)))\n    W2 = tf.Variable(rng.normal(size=(4, 1)))\n    result = tape_gradients(X, y, W1, W2)\n    if result is None:\n        print(\"GradientTape: tape_gradients() isn't written yet\")\n        return\n    a1, p, dW1, dW2 = result\n    manual_dz2 = (p - y) / len(y)\n    manual_dW2 = tf.transpose(a1) @ manual_dz2\n    manual_dW1 = tf.transpose(X) @ ((manual_dz2 @ tf.transpose(W2)) * (1 - a1 ** 2))\n    print(\"GradientTape matches manual backprop:\",\n          bool(np.allclose(dW1, manual_dW1) and np.allclose(dW2, manual_dW2)))\n\n\n@tf.function\ndef scaled_sum(x):\n    print(\"Tracing scaled_sum for shape\", x.shape)  # a Python print runs only while tracing\n    return tf.reduce_sum(x) * 2.0\n\n\ndef graphs():\n    print(\"result\", scaled_sum(tf.constant([1.0, 2.0])).numpy())\n    print(\"result\", scaled_sum(tf.constant([3.0, 4.0])).numpy())       # same shape: no new trace\n    print(\"result\", scaled_sum(tf.constant([1.0, 2.0, 3.0])).numpy())  # new shape: traced again\n\n\ndef build_model():\n    # TODO: build a Sequential model: keras.Input(shape=(2,)), Dense(16, activation=\"tanh\") and\n    #      Dense(1, activation=\"sigmoid\"); compile it with keras.optimizers.SGD(learning_rate=0.5),\n    #      the \"binary_crossentropy\" loss and the \"accuracy\" metric, and return it\n    return None\n\n\ndef keras_model():\n    keras.utils.set_random_seed(42)\n    X, y = make_moons(n_samples=1000, noise=0.2, random_state=0)\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0)\n    model = build_model()\n    if model is None:\n        print(\"Keras: build_model() isn't written yet\")\n        return\n    model.summary()\n    history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.2, verbose=0)\n    print(\"History keys:\", sorted(history.history))\n    for epoch in (1, 25, 50, 75, 100):\n        h = {k: v[epoch - 1] for k, v in history.history.items()}\n        print(f\"epoch {epoch:3d}: loss {h['loss']:.3f}, val_loss {h['val_loss']:.3f}, val_accuracy {h['val_accuracy']:.3f}\")\n    loss, acc = model.evaluate(X_test, y_test, verbose=0)\n    print(f\"Test loss {loss:.3f}, test accuracy {acc:.3f}\")\n    print(\"PASS: test accuracy is at least 0.90\" if acc >= 0.90 else \"Keep going: test accuracy is below 0.90\")\n    print(\"Probabilities for two new points:\", model.predict(np.array([[0.0, 1.0], [1.0, -0.5]]), verbose=0).round(3).ravel())\n\n\nif __name__ == \"__main__\":\n    tensors()\n    gradients()\n    graphs()\n    keras_model()\n"
+          }
+        ],
+        "hints": [
+          "tf.tanh, tf.sigmoid and tf.math.log work directly on the float64 Variables, and TensorFlow converts the NumPy arrays X and y for you.",
+          "tape.gradient(loss, [W1, W2]) returns a list in the same order as the variables you pass.",
+          "keras.Input(shape=(2,)) needs the trailing comma: shape is a tuple."
+        ]
+      }
+    },
+    {
+      "title": "Building a Digit Classifier",
+      "summary": "Put it all together on handwritten digits: scale and flatten the images, give the network a softmax output and a categorical cross-entropy loss, watch validation accuracy as it trains, and evaluate and save the finished classifier.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "Images as input: scaling and flattening",
+          "minutes": 12,
+          "objectives": [
+            "Describe how MNIST and scikit-learn's digits store their images",
+            "Prepare images for an MLP by scaling and flattening them",
+            "Split data into training, validation and test sets correctly"
+          ],
+          "key_points": [
+            "A greyscale image is a grid of pixel intensities. MNIST has 60,000 training and 10,000 test images of handwritten digits, each 28 × 28 pixels with values from 0 to 255; scikit-learn's digits dataset has 1,797 images of 8 × 8 pixels with values from 0 to 16.",
+            "A Dense layer expects one vector per example, so an MLP needs each image flattened: a 28 × 28 image becomes 784 values, by reshaping the array or with a keras.layers.Flatten layer at the start of the model.",
+            "Flattening discards which pixels are neighbours, so an MLP learns from pixel positions rather than shapes; convolutional networks keep the 2D structure and usually do better on images.",
+            "Scale the pixels to the range 0 to 1, dividing by 255 for MNIST or by 16 for the 8 × 8 digits: small inputs of similar size suit gradient descent far better than raw values in the hundreds.",
+            "Keep the test set for the end and take validation data from the training set. Keras's validation_split takes the last fraction of the arrays before any shuffling, so shuffle ordered data first (train_test_split shuffles by default)."
+          ],
+          "walkthrough": {
+            "tool": "Python with scikit-learn",
+            "title": "Look at a digit as numbers",
+            "steps": [
+              {
+                "do": "Load scikit-learn's digits and check the image array's shape and the first label.",
+                "code": "from sklearn.datasets import load_digits\ndigits = load_digits()\nprint(digits.images.shape, digits.target[0])",
+                "lang": "python",
+                "see": "(1797, 8, 8) 0"
+              },
+              {
+                "do": "Print the first image as its grid of pixel values from 0 to 16.",
+                "code": "print(digits.images[0].astype(int))",
+                "lang": "python",
+                "see": "An 8 x 8 grid of numbers in which the larger values trace the outline of a 0."
+              },
+              {
+                "do": "Flatten every image into a row of 64 values, as an MLP needs.",
+                "code": "flat = digits.images.reshape(len(digits.images), -1)\nprint(flat.shape)",
+                "lang": "python",
+                "see": "(1797, 64)"
+              },
+              {
+                "do": "Scale the pixels to the range 0 to 1.",
+                "code": "scaled = flat / 16.0\nprint(scaled.min(), scaled.max())",
+                "lang": "python",
+                "see": "0.0 1.0"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Softmax outputs and categorical cross-entropy",
+          "minutes": 12,
+          "objectives": [
+            "Explain how softmax turns scores into class probabilities",
+            "Choose between the sparse and one-hot forms of categorical cross-entropy",
+            "Use from_logits for numerically stable training"
+          ],
+          "key_points": [
+            "Softmax turns a vector of scores, or logits, z into probabilities that are all positive and sum to 1: p_k = e^(z_k) / Σ_j e^(z_j). The predicted class is the one with the largest probability, found with argmax.",
+            "Categorical cross-entropy is minus the log of the probability the model gives the true class: near 0 for a confident correct answer and large for a confident wrong one.",
+            "With integer labels such as 3, use the loss sparse_categorical_crossentropy; with one-hot labels such as [0, 0, 0, 1, 0, 0, 0, 0, 0, 0], use categorical_crossentropy. Both compute the same value.",
+            "A 10-class MLP ends with Dense(10, activation=\"softmax\"), and predict() returns an array of shape (examples, 10): one row of probabilities per image.",
+            "For numerical stability the model can output raw logits, with no softmax, and train with SparseCategoricalCrossentropy(from_logits=True), which combines the two steps safely; apply keras.ops.softmax to the outputs when probabilities are needed."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Softmax and cross-entropy by hand",
+            "steps": [
+              {
+                "do": "Turn three logits into probabilities with softmax.",
+                "code": "import numpy as np\nlogits = np.array([2.0, 1.0, 0.1])\nprobs = np.exp(logits) / np.exp(logits).sum()\nprint(probs.round(3), probs.sum().round(3))",
+                "lang": "python",
+                "see": "[0.659 0.242 0.099] 1.0"
+              },
+              {
+                "do": "Compute the categorical cross-entropy when the true class is 0.",
+                "code": "print(round(-np.log(probs[0]), 3))",
+                "lang": "python",
+                "see": "0.417"
+              },
+              {
+                "do": "Get the same loss from Keras, straight from the logits, with an integer label.",
+                "code": "import keras\nloss_fn = keras.losses.SparseCategoricalCrossentropy(from_logits=True)\nprint(round(float(loss_fn(np.array([0]), logits[None, :])), 3))",
+                "lang": "python",
+                "see": "0.417"
+              },
+              {
+                "do": "And from the probabilities with a one-hot label.",
+                "code": "one_hot = np.array([[1.0, 0.0, 0.0]])\nprint(round(float(keras.losses.CategoricalCrossentropy()(one_hot, probs[None, :])), 3))",
+                "lang": "python",
+                "see": "0.417 again: sparse and one-hot labels give the same loss."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Monitoring validation accuracy and evaluating the classifier",
+          "minutes": 12,
+          "objectives": [
+            "Read training and validation curves to choose how long to train",
+            "Evaluate a classifier with test accuracy and a confusion matrix",
+            "Save and reload a trained Keras model"
+          ],
+          "key_points": [
+            "Plot the History: training loss usually keeps falling, and when validation loss levels off and starts to rise, the network has begun to memorise the training data (overfitting). The epoch with the best validation score is the one to keep.",
+            "keras.callbacks.EarlyStopping(monitor=\"val_loss\", patience=3, restore_best_weights=True) stops training once the validation loss hasn't improved for 3 epochs and goes back to the best weights; without restore_best_weights it keeps the last ones.",
+            "Evaluate on the test set once, after every choice is made: checking test accuracy repeatedly to pick settings turns it into another validation set, and it stops being an honest estimate.",
+            "A confusion matrix (sklearn.metrics.confusion_matrix) counts true digits in rows against predicted digits in columns; the cells off the diagonal show which digits the model mixes up, and looking at those images often shows why.",
+            "model.save(\"digits.keras\") stores the architecture, the weights and the compile settings in Keras's native format, and keras.models.load_model(\"digits.keras\") brings back a model that makes the same predictions."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Classify handwritten digits with Keras",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 50,
+        "goal": "Train an MLP on scikit-learn's 8 x 8 digits with a Flatten layer, a softmax output and sparse categorical cross-entropy; track validation accuracy, evaluate it on the test set, read its confusion matrix, save it, and try early stopping.",
+        "setup": [
+          "Python with TensorFlow 2.16 or later and scikit-learn, as in Module 4",
+          "The starter file digits_mlp.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the starter to check the data.",
+            "code": "python digits_mlp.py",
+            "lang": "bash",
+            "see": "Training images (1437, 8, 8) test images (360, 8, 8) pixel range 0.0 to 1.0, then a reminder that build_model() isn't written yet."
+          },
+          {
+            "do": "Complete build_model(): keras.Input(shape=(8, 8)), Flatten, Dense(64, activation=\"relu\") and Dense(10, activation=\"softmax\"), compiled with \"adam\", \"sparse_categorical_crossentropy\" and the \"accuracy\" metric."
+          },
+          {
+            "do": "Run the script.",
+            "code": "python digits_mlp.py",
+            "lang": "bash",
+            "see": "The summary shows flatten (Flatten) with output (None, 64) and 0 parameters, then 4,160 and 650 parameters: Total params: 4,810. Thirty epoch lines follow, ending with Epoch 30/30."
+          },
+          {
+            "do": "Read the evaluation: the best validation epoch, each prediction row summing to 1, the two forms of cross-entropy agreeing, the test accuracy and the confusion matrix.",
+            "see": "On the course's machine: best validation accuracy 0.963 at epoch 17 of 30, test accuracy 0.969 and 11 of 360 test images misclassified. Your figures may differ slightly."
+          },
+          {
+            "do": "Pick one misclassified image from the list and print it with print(X_test[i].round(1)): can you see why the model got it wrong?"
+          },
+          {
+            "do": "Add early stopping: pass callbacks=[es] to fit() with epochs=100, where es is defined as below, and run again.",
+            "code": "es = keras.callbacks.EarlyStopping(monitor=\"val_loss\", patience=3, min_delta=0.001,\n                                   restore_best_weights=True, verbose=1)",
+            "lang": "python",
+            "see": "On the course's machine: Epoch 71: early stopping, then Restoring model weights from the end of the best epoch: 68., and a test accuracy of about 0.978."
+          },
+          {
+            "do": "Write a short note: which digit pairs does the model confuse, and what did the validation curve and early stopping tell you about how long to train?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The model flattens the 8 x 8 images and has 4,810 parameters.",
+            "look_for": [
+              "flatten (Flatten)",
+              "Total params: 4,810"
+            ]
+          },
+          {
+            "text": "It trains for 30 epochs with validation data and reports the best validation epoch.",
+            "look_for": [
+              "Epoch 30/30",
+              "Best validation accuracy"
+            ]
+          },
+          {
+            "text": "Softmax outputs and the two forms of cross-entropy are checked.",
+            "look_for": [
+              "Prediction array shape (360, 10)",
+              "Sparse and one-hot cross-entropy agree: True"
+            ]
+          },
+          {
+            "text": "Test accuracy reaches at least 0.95.",
+            "look_for": [
+              "PASS: test accuracy is at least 0.95"
+            ]
+          },
+          {
+            "text": "A 10 x 10 confusion matrix and the misclassified images are reported.",
+            "look_for": [
+              "Confusion matrix (rows: true digit",
+              "test images misclassified"
+            ]
+          },
+          {
+            "text": "The model is saved in the .keras format and reloads with the same predictions.",
+            "look_for": [
+              "reloaded model gives the same predictions: True"
+            ]
+          },
+          {
+            "text": "The early stopping run is included, with the epoch where it stopped.",
+            "look_for": [
+              "early stopping"
+            ]
+          }
+        ],
+        "submit": "Paste build_model(), the output of both runs (30 epochs, then with early stopping) and your note on the confusion matrix and validation curve.",
+        "files": [
+          {
+            "path": "digits_mlp.py",
+            "content": "\"\"\"Classify scikit-learn's 8x8 handwritten digits with a Keras MLP: flatten, softmax, cross-entropy, validation.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nfrom keras import layers\nfrom sklearn.datasets import load_digits\nfrom sklearn.metrics import confusion_matrix\nfrom sklearn.model_selection import train_test_split\n\n\ndef load_data():\n    digits = load_digits()\n    images = digits.images.astype(\"float32\") / 16.0  # pixel values 0-16 scaled to 0-1\n    return train_test_split(images, digits.target, test_size=0.2, random_state=42, stratify=digits.target)\n\n\ndef build_model():\n    # TODO: build a Sequential model: keras.Input(shape=(8, 8)), a Flatten layer, Dense(64, activation=\"relu\")\n    #      and an output layer of 10 units with a softmax activation; compile it with the \"adam\" optimizer,\n    #      the \"sparse_categorical_crossentropy\" loss and the \"accuracy\" metric, and return it\n    return None\n\n\ndef main():\n    keras.utils.set_random_seed(42)\n    X_train, X_test, y_train, y_test = load_data()\n    print(\"Training images\", X_train.shape, \"test images\", X_test.shape, \"pixel range\", X_train.min(), \"to\", X_train.max())\n\n    model = build_model()\n    if model is None:\n        print(\"build_model() isn't written yet\")\n        return\n    model.summary()\n\n    history = model.fit(X_train, y_train, epochs=30, batch_size=32, validation_split=0.15, verbose=2)\n    val_acc = history.history[\"val_accuracy\"]\n    best = int(np.argmax(val_acc)) + 1\n    print(f\"Best validation accuracy {max(val_acc):.3f} at epoch {best} of {len(val_acc)}\")\n\n    probs = model.predict(X_test, verbose=0)\n    print(\"Prediction array shape\", probs.shape, \"- each row sums to\", round(float(probs[0].sum()), 3))\n    one_hot = keras.utils.to_categorical(y_test, 10)\n    sparse = keras.losses.SparseCategoricalCrossentropy()(y_test, probs)\n    dense = keras.losses.CategoricalCrossentropy()(one_hot, probs)\n    print(\"Sparse and one-hot cross-entropy agree:\", bool(np.isclose(float(sparse), float(dense))))\n\n    test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)\n    print(f\"Test accuracy {test_acc:.3f}\")\n    print(\"PASS: test accuracy is at least 0.95\" if test_acc >= 0.95 else \"Keep going: test accuracy is below 0.95\")\n\n    predicted = probs.argmax(axis=1)\n    cm = confusion_matrix(y_test, predicted)\n    print(\"Confusion matrix (rows: true digit 0-9, columns: predicted digit 0-9)\")\n    print(cm)\n    wrong = np.flatnonzero(predicted != y_test)\n    print(f\"{len(wrong)} of {len(y_test)} test images misclassified\")\n    for i in wrong[:3]:\n        print(f\"  image {i}: true {y_test[i]}, predicted {predicted[i]} with probability {probs[i].max():.2f}\")\n\n    model.save(\"digits_mlp.keras\")\n    reloaded = keras.models.load_model(\"digits_mlp.keras\")\n    same = np.allclose(reloaded.predict(X_test, verbose=0), probs, atol=1e-6)\n    print(\"Saved digits_mlp.keras; reloaded model gives the same predictions:\", bool(same))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "keras.Input(shape=(8, 8)) followed by layers.Flatten() gives the Dense layer 64 inputs per image.",
+          "The loss name must match the labels: these are integers 0 to 9, so use sparse_categorical_crossentropy.",
+          "Results vary a little between machines and TensorFlow versions even with a fixed seed; the checks look for the structure of the output and the 0.95 target, not exact losses."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Meet the artificial neuron and the perceptron, then add hidden layers: finish the perceptron and MLP labs.",
+      "modules": [
+        1,
+        2
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Learn backpropagation: derive the gradients, pass the gradient check and train your NumPy network.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Move to TensorFlow and Keras, then build the 8 x 8 digit classifier: finish the Module 4 and Module 5 labs.",
+      "modules": [
+        4,
+        5
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Build and submit the MNIST capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Digit classifier with TensorFlow",
+    "minutes": 300,
+    "brief": "Build, train and evaluate a multi-layer perceptron that classifies the handwritten digits of MNIST with TensorFlow and Keras. Start from mnist_starter.py: it downloads MNIST (about 11 MB, once, into ~/.keras/datasets), scales the pixels and trains a baseline with one hidden layer of 128 units, which reaches a validation accuracy of about 0.976 in 10 epochs. Improve on it systematically. Try at least three variations, such as wider or deeper hidden layers, ReLU against tanh, a different batch size or learning rate, dropout or early stopping; change one thing at a time, keep the random seed fixed, and compare them on validation accuracy. Choose one, and only then evaluate it on the 10,000 test images, once: a well-built MLP reaches about 0.98. Study its mistakes with a confusion matrix and some misclassified images, save it in the .keras format, and write a predict.py that loads it and classifies test images.",
+    "deliverables": [
+      "A training script that loads and scales MNIST, builds the model with Flatten and Dense layers ending in a 10-unit softmax, and trains it with a validation split and a fixed random seed",
+      "A table comparing the baseline with at least three variations: each one's best validation accuracy and the epoch where it was reached",
+      "Learning curves for the chosen model (training and validation loss and accuracy by epoch), as a plot or a printed table",
+      "The chosen model's summary, its test accuracy measured once, and its confusion matrix with a paragraph on the digits it confuses most",
+      "The saved model's file name and predict.py, which loads it and prints its predictions next to the true labels for ten test images",
+      "A README.md that explains how to run everything and what you'd try next, such as a convolutional network"
+    ],
+    "rubric": [
+      {
+        "name": "A correct pipeline",
+        "points": 20,
+        "description": "Pixels scaled to 0-1, images flattened, a softmax output with a matching cross-entropy loss, validation data taken from the training set, and a fixed seed."
+      },
+      {
+        "name": "Systematic experiments",
+        "points": 25,
+        "description": "At least three variations compared fairly against the baseline on validation accuracy, one change at a time, with the final choice justified from the table."
+      },
+      {
+        "name": "Honest evaluation",
+        "points": 20,
+        "description": "The test set is used once, for the chosen model, and its accuracy is reported as measured; about 0.98 or better earns full marks."
+      },
+      {
+        "name": "Error analysis",
+        "points": 15,
+        "description": "The confusion matrix is read correctly and the most common confusions are explained with misclassified examples."
+      },
+      {
+        "name": "Saving and prediction",
+        "points": 10,
+        "description": "The model saves in the .keras format, and predict.py reloads it and predicts correctly."
+      },
+      {
+        "name": "Code and README",
+        "points": 10,
+        "description": "Clear functions and names, comments where they help, and a README that lets someone else rerun the work."
+      }
+    ],
+    "submit": "Paste your training script and predict.py (each with its file name), the comparison table, the chosen model's summary and learning curves (or printed history), its test accuracy, the confusion matrix with your analysis, the output of predict.py, and your README.",
+    "files": [
+      {
+        "path": "mnist_starter.py",
+        "content": "\"\"\"Starter for the capstone: load MNIST, check the data, and train a first MLP to improve on.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nfrom keras import layers\n\n\ndef load_mnist():\n    \"\"\"Download MNIST once (about 11 MB, cached in ~/.keras/datasets) and scale the pixels to 0-1.\"\"\"\n    (x_train, y_train), (x_test, y_test) = keras.datasets.mnist.load_data()\n    return (x_train.astype(\"float32\") / 255.0, y_train), (x_test.astype(\"float32\") / 255.0, y_test)\n\n\ndef build_baseline():\n    \"\"\"A first MLP to beat: one hidden layer of 128 ReLU units.\"\"\"\n    return keras.Sequential([\n        keras.Input(shape=(28, 28)),\n        layers.Flatten(),\n        layers.Dense(128, activation=\"relu\"),\n        layers.Dense(10, activation=\"softmax\"),\n    ], name=\"baseline\")\n\n\ndef main():\n    keras.utils.set_random_seed(42)\n    (x_train, y_train), (x_test, y_test) = load_mnist()\n    print(\"Training images\", x_train.shape, \"test images\", x_test.shape)\n    print(\"Images per digit in the training set:\", np.bincount(y_train).tolist())\n\n    model = build_baseline()\n    model.compile(optimizer=\"adam\", loss=\"sparse_categorical_crossentropy\", metrics=[\"accuracy\"])\n    model.summary()\n    history = model.fit(x_train, y_train, epochs=10, batch_size=128, validation_split=0.1, verbose=2)\n    best = int(np.argmax(history.history[\"val_accuracy\"])) + 1\n    print(f\"Best validation accuracy {max(history.history['val_accuracy']):.4f} at epoch {best}\")\n    # Evaluate on the test set only once you've chosen your final model:\n    # test_loss, test_acc = model.evaluate(x_test, y_test, verbose=0)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    ]
+  }
+}
