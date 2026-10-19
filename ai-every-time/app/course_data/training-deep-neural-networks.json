@@ -1,0 +1,1004 @@
+{
+  "slug": "training-deep-neural-networks",
+  "title": "Training Deep Neural Networks",
+  "subtitle": "Diagnose and fix what stops deep networks learning: vanishing and exploding gradients, slow or unstable optimisation, overfitting and badly scaled activations, in TensorFlow and Keras.",
+  "category": "Machine Learning",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "jae-won-parkk",
+    "mei-ling-zhang"
+  ],
+  "skills": [
+    "Deep learning",
+    "Weight initialisation",
+    "Gradient clipping",
+    "Momentum, RMSprop and Adam",
+    "Learning-rate schedules",
+    "Regularisation",
+    "Dropout",
+    "Batch normalisation",
+    "Debugging training",
+    "TensorFlow and Keras"
+  ],
+  "tools": [
+    "Python 3",
+    "TensorFlow",
+    "Keras",
+    "NumPy",
+    "scikit-learn",
+    "TensorBoard"
+  ],
+  "outcomes": [
+    "Diagnose vanishing and exploding gradients from per-layer gradient norms, and fix them with activations, initialisation and clipping",
+    "Explain and implement momentum, RMSprop and Adam, and choose and schedule learning rates",
+    "Control overfitting with L1 and L2 penalties, weight decay, dropout, data augmentation and early stopping",
+    "Use batch normalisation correctly in training and inference, and know when layer normalisation suits better",
+    "Debug a training run from its first loss and learning curves, and optimise a deep network for a hold-out test set"
+  ],
+  "prerequisites": "Introduction to Neural Networks and TensorFlow: dense networks, backpropagation, and building and training Keras models. Comfortable Python, NumPy and basic calculus. Install Python 3.10 or later, then pip install tensorflow scikit-learn matplotlib (TensorFlow 2.16 or later, with Keras 3). The capstone downloads Fashion-MNIST, about 30 MB, once.",
+  "description": "A network that's deep enough to be useful is also deep enough to be hard to train. Its gradients can fade to nothing or blow up on the way back through its layers, plain gradient descent can crawl or bounce, a large model can memorise its training data instead of learning from it, and the scale of its activations can drift as it learns. This course is about the techniques that fix those problems, and about knowing which one a failing network needs.\n\nYou'll measure gradients layer by layer and fix them with non-saturating activations, Glorot and He initialisation and gradient clipping; write momentum, RMSprop and Adam yourself and check them against Keras; schedule learning rates with decay and warm-up; regularise with L1 and L2, weight decay, dropout, augmentation and early stopping; and implement batch normalisation by hand before using it in Keras. The last module brings everything together in a training recipe and a debugging routine, and the capstone hands you a deep network that fails on Fashion-MNIST for you to diagnose and rescue, one measured change at a time. Every lab runs on a laptop CPU with fixed seeds and comes with starter code and the output to expect.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Vanishing and Exploding Gradients",
+      "summary": "Find out why deep networks are hard to train: measure gradients shrinking or growing layer by layer, see how saturating activations make it worse, and fix it with non-saturating activations, careful initialisation and gradient clipping.",
+      "instructor": "mei-ling-zhang",
+      "lessons": [
+        {
+          "title": "Why gradients vanish or explode",
+          "minutes": 12,
+          "objectives": [
+            "Explain how backpropagation multiplies one factor per layer",
+            "Recognise the symptoms of vanishing and exploding gradients",
+            "Measure per-layer gradient norms, and limit exploding ones with clipping"
+          ],
+          "key_points": [
+            "Backpropagation multiplies the gradient by one factor per layer, made of that layer's weights and its activation's slope, so the gradient reaching the first layer is roughly a product of many factors: below 1 on average and it shrinks exponentially with depth, above 1 and it grows exponentially.",
+            "Vanishing gradients show as early layers that barely change, a loss that falls a little and then stalls, and gradient norms that drop layer by layer towards the input: the network trains like a shallow one stacked on near-random features.",
+            "Exploding gradients show as a loss that jumps about, overflows to inf or becomes NaN, and weights that grow huge. Recurrent networks are especially prone, because the same weights multiply the gradient at every time step.",
+            "Measure rather than guess: run one batch through a tf.GradientTape, take the gradient for each layer's kernel, and compare their norms (tf.norm) from the first layer to the last.",
+            "Gradient clipping limits the damage when gradients explode: Keras optimisers take clipnorm (rescale each variable's gradient to at most that norm), global_clipnorm (all gradients together) or clipvalue (cap each element). It treats the symptom; initialisation and normalisation treat the cause."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Multiply gradients through depth",
+            "steps": [
+              {
+                "do": "Each sigmoid layer scales the gradient by at most 0.25. Multiply that factor through 10 and 20 layers.",
+                "code": "print(f\"{0.25 ** 10:.1e} {0.25 ** 20:.1e}\")",
+                "lang": "python",
+                "see": "9.5e-07 9.1e-13: even before the weights act, the gradient all but disappears."
+              },
+              {
+                "do": "Compare a per-layer factor a little below 1 with one a little above, over 50 layers.",
+                "code": "print(f\"{0.9 ** 50:.1e} {1.1 ** 50:.1e}\")",
+                "lang": "python",
+                "see": "5.2e-03 1.2e+02: small differences per layer become enormous ones over depth."
+              },
+              {
+                "do": "Push a vector back through 30 random 64 x 64 weight matrices at three scales, and compare its final length with its starting length.",
+                "code": "import numpy as np\nrng = np.random.default_rng(0)\nv = rng.normal(size=64)\nfor scale in (0.8, 1.0, 1.2):\n    x = v.copy()\n    for _ in range(30):\n        x = (scale * rng.normal(size=(64, 64)) / 8) @ x   # std scale / sqrt(64)\n    print(scale, f\"{np.linalg.norm(x) / np.linalg.norm(v):.1e}\")",
+                "lang": "python",
+                "see": "Ratios of 8.8e-04, 8.4e-01, 4.2e+01: the weights' scale decides whether the signal fades, holds or explodes."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Saturating and non-saturating activations",
+          "minutes": 12,
+          "objectives": [
+            "Explain why sigmoid and tanh make vanishing gradients worse",
+            "Compare ReLU, leaky ReLU, ELU, SELU and GELU",
+            "Choose a hidden-layer activation for a deep network"
+          ],
+          "key_points": [
+            "The sigmoid's slope is at most 0.25, so every sigmoid layer cuts the gradient by a factor of at least 4 before the weights act, and saturated units pass back almost nothing; its outputs are also always positive, which skews the next layer's updates. tanh is centred on 0 but saturates too.",
+            "ReLU's slope is exactly 1 for positive inputs, so gradients pass through active units undiminished. Units whose input stays below 0 have slope 0 and never recover (dead ReLUs), which a learning rate that's too high or a large negative bias can cause.",
+            "Leaky ReLU, max(αz, z), keeps a small slope for negative inputs: Keras's LeakyReLU layer defaults to α = 0.3 (negative_slope), but keras.activations.leaky_relu to 0.2. ELU, α(e^z − 1) below 0, is smooth and pulls the mean activation towards 0; Keras's alpha defaults to 1.0.",
+            "SELU scales ELU so that, with LeCun normal initialisation and a plain stack of Dense layers, activations keep a mean near 0 and a variance near 1 by themselves (self-normalising networks, Klambauer et al., 2017); regular dropout breaks this, so such networks use AlphaDropout.",
+            "GELU, z·Φ(z) with Φ the standard normal's cumulative distribution, is a smooth ReLU-like curve used in transformers such as BERT and GPT; Swish (SiLU), z·σ(z), is similar. ReLU remains a sound default, and GELU or Swish are worth trying."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Compare activations in Keras",
+            "steps": [
+              {
+                "do": "Evaluate six activations at five points.",
+                "code": "import keras\nimport numpy as np\nz = np.array([-3.0, -1.0, 0.0, 1.0, 3.0], dtype=\"float32\")\nfor name in (\"relu\", \"leaky_relu\", \"elu\", \"selu\", \"gelu\", \"silu\"):\n    print(f\"{name:10}\", np.asarray(getattr(keras.activations, name)(z)).round(3))",
+                "lang": "python",
+                "see": "One row each. relu zeroes the negatives; leaky_relu keeps 0.2 of them (its function's default); elu and selu curve towards a negative floor; gelu and silu dip slightly below 0 before rising."
+              },
+              {
+                "do": "Get each activation's slope at the same points with GradientTape.",
+                "code": "import tensorflow as tf\nx = tf.constant(z)\nfor name in (\"sigmoid\", \"tanh\", \"relu\", \"elu\"):\n    with tf.GradientTape() as tape:\n        tape.watch(x)\n        y = getattr(keras.activations, name)(x)\n    print(f\"{name:8}\", tape.gradient(y, x).numpy().round(3))",
+                "lang": "python",
+                "see": "sigmoid [0.045 0.197 0.25 0.197 0.045] tanh [0.01 0.42 1. 0.42 0.01] relu [0. 0. 0. 1. 1.] elu [0.05 0.368 1. 1. 1. ]. Only ReLU and ELU keep a slope of 1 for positive inputs."
+              },
+              {
+                "do": "Check the default slope of the LeakyReLU layer, which differs from the function's.",
+                "code": "print(keras.layers.LeakyReLU().get_config()[\"negative_slope\"])",
+                "lang": "python",
+                "see": "0.3"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Weight initialisation: Glorot, He and LeCun",
+          "minutes": 14,
+          "objectives": [
+            "Explain how the initial weights' scale sets the variance of activations and gradients",
+            "Choose Glorot, He or LeCun initialisation to suit an activation",
+            "Set initialisers on Keras layers"
+          ],
+          "key_points": [
+            "A unit sums fan_in weighted inputs, so with zero-mean weights of variance σ² and inputs of variance v, its weighted sum has a variance of about fan_in·σ²·v. Unless fan_in·σ² is about 1 (adjusted for the activation), activations grow or shrink by that factor at every layer, and gradients do the same on the way back.",
+            "Glorot (Xavier) initialisation (Glorot and Bengio, 2010) uses Var(W) = 2/(fan_in + fan_out), a compromise between steady forward and backward variances, suited to tanh, sigmoid and softmax layers. glorot_uniform, drawn from ±√(6/(fan_in + fan_out)), is the default for Keras's Dense layers, with biases at 0.",
+            "He initialisation (He et al., 2015) uses Var(W) = 2/fan_in to make up for ReLU zeroing about half its inputs: kernel_initializer=\"he_normal\" (a truncated normal in Keras) or \"he_uniform\" for ReLU-family layers. LeCun initialisation, Var(W) = 1/fan_in (\"lecun_normal\"), goes with SELU.",
+            "Weights that are too large saturate sigmoid and tanh units or blow up ReLU activations; weights that are too small make the signal fade layer by layer; and identical weights never break the symmetry between units.",
+            "Initialisation matters most in deep plain stacks. Batch normalisation (Module 4) and residual connections make networks much less sensitive to it, but a suitable initialiser is still the right starting point."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Watch the signal through 20 layers",
+            "steps": [
+              {
+                "do": "Send 500 random examples through 20 ReLU layers of 256 units, with weights drawn at three scales, and print the activations' standard deviation after layers 1, 10 and 20.",
+                "code": "import numpy as np\nrng = np.random.default_rng(0)\nx0 = rng.normal(size=(500, 256))\ndef signal(std):\n    x, out = x0, []\n    for layer in range(1, 21):\n        x = np.maximum(0, x @ rng.normal(0, std, size=(256, 256)))\n        if layer in (1, 10, 20):\n            out.append(f\"{x.std():.1e}\")\n    return out\nfor name, std in [(\"too small, 0.01\", 0.01), (\"He, sqrt(2/256)\", np.sqrt(2 / 256)), (\"too large, 0.15\", 0.15)]:\n    print(f\"{name:16}\", signal(std))",
+                "lang": "python",
+                "see": "too small, 0.01  ['9.4e-02', '3.4e-10', '1.3e-19'] | He, sqrt(2/256)  ['8.3e-01', '9.5e-01', '8.8e-01'] | too large, 0.15  ['1.4e+00', '1.4e+02', '2.0e+04']. Only He initialisation keeps the signal steady."
+              },
+              {
+                "do": "Draw weights with three Keras initialisers for a 256 x 128 layer and compare their standard deviations with the formulas: √(2/(fan_in + fan_out)), √(2/fan_in) and √(1/fan_in).",
+                "code": "import keras\nfor init in (\"glorot_uniform\", \"he_normal\", \"lecun_normal\"):\n    w = keras.initializers.get(init)(shape=(256, 128))\n    print(init, round(float(np.std(w)), 4))\nprint(\"formulas\", round(np.sqrt(2 / 384), 4), round(np.sqrt(2 / 256), 4), round(np.sqrt(1 / 256), 4))",
+                "lang": "python",
+                "see": "glorot_uniform 0.0719 | he_normal 0.0882 | lecun_normal 0.0627 | formulas 0.0722 0.0884 0.0625: each matches its formula to about two significant figures."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Measure vanishing gradients, then fix them",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 45,
+        "goal": "Measure each layer's gradient in a 10-layer network with four combinations of activation and initialisation, see gradients vanish in one and explode in another, confirm it by training each, and try gradient clipping on the exploding one.",
+        "setup": [
+          "Python 3.10 or later with TensorFlow 2.16 or later and scikit-learn: pip install tensorflow scikit-learn",
+          "The starter file gradients.py"
+        ],
+        "steps": [
+          {
+            "do": "Read deep_mlp(): ten hidden Dense layers of 64 units with a chosen activation and initialiser, then a 10-way softmax, on scikit-learn's 8 x 8 digits flattened to 64 inputs."
+          },
+          {
+            "do": "Complete kernel_gradient_norms(): inside a tf.GradientTape run the model on the batch and compute the loss, then take the gradient for every layer's kernel and return their norms.",
+            "code": "kernels = [layer.kernel for layer in model.layers]\nwith tf.GradientTape() as tape:\n    loss = loss_fn(y, model(X, training=True))\ngrads = tape.gradient(loss, kernels)\nreturn [float(tf.norm(g)) for g in grads]",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script and read the gradient table.",
+            "code": "python gradients.py",
+            "lang": "bash",
+            "see": "sigmoid + glorot_uniform: about 6e-07 at layer 1 against 1.2 at the output, vanishing; tanh and ReLU with He: similar norms in every layer, healthy; ReLU with normal(stddev=0.5): norms in the tens of thousands, exploding."
+          },
+          {
+            "do": "Read the training table: 10 epochs of SGD for each configuration.",
+            "see": "The sigmoid network stays at chance (test accuracy about 0.10, loss about 2.31), tanh and ReLU with He reach about 0.96, and the exploding network's loss is nan."
+          },
+          {
+            "do": "Complete the last part: train the exploding configuration again with SGD(learning_rate=0.05, clipnorm=1.0) and print the same line.",
+            "see": "On the course's machine the clipped run ends with a large but finite loss and a test accuracy of about 0.77: clipping stops the blow-up but doesn't fix the cause."
+          },
+          {
+            "do": "Change DEPTH to 4, run again and compare the sigmoid network's first/output ratio with the 10-layer one."
+          },
+          {
+            "do": "Write a short explanation of each verdict from the numbers, and of why clipping helped the exploding network without making it as good as He initialisation."
+          }
+        ],
+        "checks": [
+          {
+            "text": "kernel_gradient_norms() returns one norm per Dense layer, and the table shows all four configurations.",
+            "look_for": [
+              "sigmoid + glorot_uniform",
+              "relu + he_normal",
+              "first/output  verdict"
+            ]
+          },
+          {
+            "text": "The sigmoid network's gradients vanish towards the input and the over-scaled ReLU network's explode.",
+            "look_for": [
+              "vanishing",
+              "exploding"
+            ]
+          },
+          {
+            "text": "Trained for 10 epochs, tanh and ReLU with He initialisation learn while the sigmoid network stays at chance and the exploding one reaches NaN.",
+            "look_for": [
+              "tanh + glorot_uniform        final training loss",
+              "nan"
+            ]
+          },
+          {
+            "text": "Gradient clipping is added to the exploding network and its result reported.",
+            "look_for": [
+              "relu + normal(0.5), clipped"
+            ]
+          },
+          {
+            "text": "The write-up explains each verdict from the norms and why clipping helps without curing the cause.",
+            "look_for": [
+              "initiali"
+            ]
+          }
+        ],
+        "submit": "Paste kernel_gradient_norms() and your clipped run, the full output of python gradients.py for DEPTH = 10 and the gradient table for DEPTH = 4, and your explanation.",
+        "files": [
+          {
+            "path": "gradients.py",
+            "content": "\"\"\"Measure each layer's gradient in a deep network, see gradients vanish and explode, and fix them.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nimport tensorflow as tf\nfrom keras import layers\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import train_test_split\n\nDEPTH, WIDTH = 10, 64\n\n\ndef load_data():\n    X, y = load_digits(return_X_y=True)\n    X = X.astype(\"float32\") / 16.0\n    return train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\n\n\ndef deep_mlp(activation, initializer):\n    \"\"\"DEPTH hidden layers of WIDTH units, then a 10-way softmax.\"\"\"\n    keras.utils.set_random_seed(0)\n    model = keras.Sequential([keras.Input(shape=(64,))])\n    for _ in range(DEPTH):\n        model.add(layers.Dense(WIDTH, activation=activation, kernel_initializer=initializer))\n    model.add(layers.Dense(10, activation=\"softmax\"))\n    return model\n\n\ndef kernel_gradient_norms(model, X, y):\n    \"\"\"The L2 norm of the loss gradient for each Dense layer's kernel, first layer first.\"\"\"\n    loss_fn = keras.losses.SparseCategoricalCrossentropy()\n    # TODO: inside a tf.GradientTape, run the model on X and compute the loss; then get the gradients of the\n    #      loss for each Dense layer's kernel (layer.kernel) and return their norms (tf.norm) as a list of floats\n    return [1.0] * len(model.layers)\n\n\ndef verdict(norms):\n    \"\"\"Exploding if any gradient is huge; vanishing if the first layer's is tiny next to the output layer's.\"\"\"\n    if max(norms) > 1e2:\n        return \"exploding\"\n    if norms[0] / norms[-1] < 1e-2:\n        return \"vanishing\"\n    return \"healthy\"\n\n\ndef main():\n    X_train, X_test, y_train, y_test = load_data()\n    batch_X, batch_y = X_train[:256], y_train[:256]\n    configs = {\n        \"sigmoid + glorot_uniform\": (\"sigmoid\", \"glorot_uniform\"),\n        \"tanh + glorot_uniform\": (\"tanh\", \"glorot_uniform\"),\n        \"relu + he_normal\": (\"relu\", \"he_normal\"),\n        \"relu + normal(stddev=0.5)\": (\"relu\", keras.initializers.RandomNormal(stddev=0.5)),\n    }\n    print(f\"Gradient norms in a {DEPTH}-layer MLP on one batch of 256 digits\")\n    print(f\"{'configuration':28} {'layer 1':>9} {'layer 5':>9} {'layer 10':>9} {'output':>9}  first/output  verdict\")\n    for name, (activation, init) in configs.items():\n        norms = kernel_gradient_norms(deep_mlp(activation, init), batch_X, batch_y)\n        ratio = norms[0] / norms[-1]\n        print(f\"{name:28} {norms[0]:9.2e} {norms[4]:9.2e} {norms[9]:9.2e} {norms[10]:9.2e}  {ratio:12.1e}  {verdict(norms)}\")\n\n    print(\"\\nTraining each for 10 epochs with SGD(learning_rate=0.05)\")\n    for name, (activation, init) in configs.items():\n        model = deep_mlp(activation, init)\n        model.compile(optimizer=keras.optimizers.SGD(learning_rate=0.05),\n                      loss=\"sparse_categorical_crossentropy\", metrics=[\"accuracy\"])\n        history = model.fit(X_train, y_train, epochs=10, batch_size=32, verbose=0)\n        loss = history.history[\"loss\"][-1]\n        acc = model.evaluate(X_test, y_test, verbose=0)[1]\n        print(f\"{name:28} final training loss {loss:9.3f}   test accuracy {acc:.3f}\")\n\n    print(\"\\nThe exploding network again, with gradient clipping (clipnorm=1.0)\")\n    # TODO: compile deep_mlp(\"relu\", keras.initializers.RandomNormal(stddev=0.5)) with\n    #      keras.optimizers.SGD(learning_rate=0.05, clipnorm=1.0), train it the same way and print the same line\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "layer.kernel is a Dense layer's weight matrix; model.layers lists the Dense layers in order, the output layer last.",
+          "model(X, training=True) runs the model the way fit() does; gradients come from the tape only for computations inside its with block.",
+          "Exact norms vary a little between machines; the verdicts and their orders of magnitude are what matter."
+        ]
+      }
+    },
+    {
+      "title": "Advanced Optimisers",
+      "summary": "Go beyond plain stochastic gradient descent: momentum and Nesterov, the adaptive methods AdaGrad, RMSprop and Adam, decoupled weight decay with AdamW, and learning-rate schedules with warm-up.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "Momentum and Nesterov",
+          "minutes": 12,
+          "objectives": [
+            "Explain why plain SGD struggles on ill-conditioned losses",
+            "Write the momentum update and explain what β controls",
+            "Use SGD with momentum and Nesterov in Keras"
+          ],
+          "key_points": [
+            "Plain SGD steps along the negative mini-batch gradient. On a ravine-shaped (ill-conditioned) loss, steep across and shallow along, a learning rate small enough for the steep direction makes painfully slow progress along the shallow one, and a larger one zig-zags or diverges across it.",
+            "Momentum keeps a velocity: v ← βv − η∇L, then w ← w + v, with β usually 0.9. Gradients that keep pointing the same way build up speed, up to 1/(1 − β) = 10 times a single step, while components that flip sign from step to step cancel out.",
+            "That built-up speed carries the weights across flat regions, saddle points and small dips in the loss; in high-dimensional networks, plateaus and saddle points are thought to slow training more than poor local minima do.",
+            "Nesterov momentum takes the gradient at the look-ahead point w + βv, where the velocity is about to carry the weights, so it corrects overshooting sooner: keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True).",
+            "Momentum makes the effective step larger, so a learning rate that suits plain SGD is often too large with momentum: tune the two together."
+          ]
+        },
+        {
+          "title": "Adaptive learning rates: AdaGrad, RMSprop and Adam",
+          "minutes": 14,
+          "objectives": [
+            "Explain how AdaGrad, RMSprop and Adam scale each parameter's step",
+            "Describe Adam's bias correction",
+            "Choose between Adam, AdamW and SGD with momentum"
+          ],
+          "key_points": [
+            "AdaGrad divides each parameter's step by the square root of the sum of its squared gradients, so rarely updated parameters take larger steps; but the sum only grows, so the effective learning rate shrinks towards 0 and training can stall.",
+            "RMSprop, proposed by Geoffrey Hinton in a lecture course, swaps the sum for a moving average, s ← ρs + (1 − ρ)g², and steps by ηg/(√s + ε). Keras's defaults are ρ = 0.9, η = 0.001 and ε = 10⁻⁷.",
+            "Adam (Kingma and Ba, 2014) keeps a moving average of the gradients (momentum, β1 = 0.9) and of their squares (as RMSprop, β2 = 0.999), and divides each by 1 − β^t at step t to correct their bias towards 0 early on; Keras's default learning rate for it is 0.001.",
+            "Because adaptive methods divide by the gradient's typical size, their steps are about η whatever the gradient's scale, so they need less tuning and make fast early progress; with a constant η they hover around a minimum rather than settling exactly, which is one reason to decay the rate.",
+            "With Adam, an L2 penalty in the loss isn't the same as weight decay, because the penalty's gradient is rescaled too. AdamW (Loshchilov and Hutter) decays the weights separately: keras.optimizers.AdamW, whose weight_decay defaults to 0.004. Well-tuned SGD with momentum remains common, notably for image classifiers."
+          ]
+        },
+        {
+          "title": "Learning-rate schedules and warm-up",
+          "minutes": 12,
+          "objectives": [
+            "Explain why the learning rate is changed during training",
+            "Set up step, exponential and cosine schedules and ReduceLROnPlateau in Keras",
+            "Find a starting learning rate with a range test"
+          ],
+          "key_points": [
+            "The learning rate is usually the most important setting: start high enough to make fast progress, then lower it so the weights settle into a minimum instead of bouncing around it.",
+            "Keras schedules are functions of the optimiser's step count (batches, not epochs), passed as learning_rate: PiecewiseConstantDecay steps down at set boundaries, ExponentialDecay(initial, decay_steps, decay_rate) multiplies by decay_rate every decay_steps, and CosineDecay follows a half cosine down to a floor.",
+            "Warm-up starts with a small learning rate and raises it over the first few hundred or thousand steps, which steadies Adam's early estimates and large-batch training, and is standard for transformers; CosineDecay does it with warmup_target and warmup_steps.",
+            "Callbacks can change the rate between epochs instead: ReduceLROnPlateau(monitor=\"val_loss\", factor=0.5, patience=3) halves it when validation loss stops improving, and LearningRateScheduler(function) sets it from the epoch number.",
+            "A learning-rate range test (Leslie Smith) trains briefly while raising the rate exponentially, say from 10⁻⁶ to 1, and plots the loss against the rate: choose a rate somewhat below the point where the loss falls fastest, well before it starts to climb."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Inspect learning-rate schedules",
+            "steps": [
+              {
+                "do": "Create three schedules: steps down at 1,000 and 2,000 steps, halving every 1,000 steps, and a cosine decay after 100 steps of warm-up.",
+                "code": "import keras\nsched = keras.optimizers.schedules\nstep_down = sched.PiecewiseConstantDecay(boundaries=[1000, 2000], values=[0.1, 0.01, 0.001])\nhalving = sched.ExponentialDecay(0.1, decay_steps=1000, decay_rate=0.5)\ncosine = sched.CosineDecay(0.0, decay_steps=2900, warmup_target=0.001, warmup_steps=100)",
+                "lang": "python"
+              },
+              {
+                "do": "Evaluate them at a few optimiser steps (batches, not epochs).",
+                "code": "for step in (0, 50, 100, 1000, 1500, 2000, 3000):\n    print(step, round(float(step_down(step)), 4), round(float(halving(step)), 4), round(float(cosine(step)), 6))",
+                "lang": "python",
+                "see": "Rows of step, step-down, exponential and cosine: 0 0.1 0.1 0.0 | 100 0.1 0.0933 0.001 | 1500 0.01 0.0354 0.000527 | 3000 0.001 0.0125 0.0. The cosine schedule climbs to 0.001 by step 100, then falls smoothly to 0."
+              },
+              {
+                "do": "Pass a schedule to an optimiser as its learning rate; the optimiser looks it up at every step.",
+                "code": "opt = keras.optimizers.Adam(learning_rate=cosine)\nprint(type(opt.learning_rate).__name__ if not hasattr(opt.learning_rate, 'numpy') else round(float(opt.learning_rate.numpy()), 6))",
+                "lang": "python",
+                "see": "0.0: the rate at step 0, the start of the warm-up."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Optimisers from scratch, then in Keras",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 50,
+        "goal": "Code momentum, RMSprop and Adam in NumPy, race them against plain SGD on a ravine-shaped loss, check your Adam against keras.optimizers.Adam, then compare six Keras optimisers and a cosine schedule on a real network.",
+        "setup": [
+          "Python with TensorFlow 2.16 or later and scikit-learn, as in Module 1",
+          "The starter file optimizers.py"
+        ],
+        "steps": [
+          {
+            "do": "Read the loss: 0.5 * (w1² + 50 * w2²) is 50 times steeper across w2 than along w1, so plain SGD is only stable for learning rates below 2/50 = 0.04."
+          },
+          {
+            "do": "Complete momentum(): keep the velocity in state[\"v\"], starting from zeros.",
+            "code": "v = beta * state.get(\"v\", np.zeros_like(w)) - lr * g\nstate[\"v\"] = v\nreturn w + v",
+            "lang": "python"
+          },
+          {
+            "do": "Complete rmsprop() and adam() from their TODO comments; Adam counts its steps in state[\"t\"] for the bias correction."
+          },
+          {
+            "do": "Run the script and read the first table.",
+            "code": "python optimizers.py",
+            "lang": "bash",
+            "see": "SGD at 0.01 is still at 1.1e+00 after 100 steps, SGD at 0.039 reaches 3.5e-10 by 300 and SGD at 0.041 diverges; momentum and Adam reach about 1e-12 by 300 steps; RMSprop at 0.1 stalls near 6e-02."
+          },
+          {
+            "do": "Read the check against Keras.",
+            "see": "Our Adam after 5 steps: [-3.501268  1.502956]  keras.optimizers.Adam: [-3.501271  1.502959], and Our Adam matches Keras: True. The tiny difference comes from where Keras adds ε."
+          },
+          {
+            "do": "Read the network comparison: each optimiser trains the same 3 x 128 ReLU network for 15 epochs from the same seed.",
+            "see": "On the course's machine plain SGD at 0.01 ends at a val_loss of about 0.29, while momentum, Nesterov, RMSprop, Adam and Adam with cosine decay all end between about 0.065 and 0.085."
+          },
+          {
+            "do": "Change the cosine schedule to start at 0.01 instead of 0.003, run again, and see whether the faster start is worth it."
+          },
+          {
+            "do": "Write a short ranking of the optimisers on both problems, and explain why RMSprop with a constant learning rate of 0.1 stopped improving on the ravine."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The NumPy optimisers are complete and the ravine table is printed.",
+            "look_for": [
+              "Momentum  lr=0.02",
+              "Adam      lr=0.1"
+            ]
+          },
+          {
+            "text": "Plain SGD diverges just above a learning rate of 2/50 = 0.04, but momentum and Adam reach far lower losses than SGD in the same number of steps.",
+            "look_for": [
+              "SGD       lr=0.041  after 100 steps: diverged"
+            ]
+          },
+          {
+            "text": "The hand-written Adam matches keras.optimizers.Adam step for step.",
+            "look_for": [
+              "Our Adam matches Keras: True"
+            ]
+          },
+          {
+            "text": "Six Keras optimisers are compared on the same network and data.",
+            "look_for": [
+              "SGD + momentum 0.9",
+              "RMSprop lr=0.001",
+              "Adam + cosine decay"
+            ]
+          },
+          {
+            "text": "The write-up ranks the optimisers and explains why RMSprop at a constant 0.1 stops improving.",
+            "look_for": [
+              "RMSprop"
+            ]
+          }
+        ],
+        "submit": "Paste momentum(), rmsprop() and adam(), the full output of python optimizers.py (both cosine starting rates) and your write-up.",
+        "files": [
+          {
+            "path": "optimizers.py",
+            "content": "\"\"\"Optimisers from scratch on a ravine-shaped loss, checked against Keras, then compared on a real network.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nimport tensorflow as tf\nfrom keras import layers\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import train_test_split\n\nCURVATURE = np.array([1.0, 50.0])  # loss = 0.5 * (1 * w1^2 + 50 * w2^2): steep across, shallow along\n\n\ndef loss(w):\n    return 0.5 * float(np.sum(CURVATURE * w ** 2))\n\n\ndef grad(w):\n    return CURVATURE * w\n\n\ndef sgd(w, g, state, lr):\n    return w - lr * g\n\n\ndef momentum(w, g, state, lr, beta=0.9):\n    # TODO: keep a velocity in state[\"v\"] (start at zeros): v = beta * v - lr * g, then return w + v\n    return w\n\n\ndef rmsprop(w, g, state, lr, rho=0.9, eps=1e-7):\n    # TODO: keep a moving average of squared gradients in state[\"s\"]: s = rho * s + (1 - rho) * g**2,\n    #      then return w - lr * g / (sqrt(s) + eps)\n    return w\n\n\ndef adam(w, g, state, lr, beta1=0.9, beta2=0.999, eps=1e-7):\n    # TODO: count steps in state[\"t\"]; m = beta1 * m + (1 - beta1) * g; v = beta2 * v + (1 - beta2) * g**2;\n    #      correct the bias: m_hat = m / (1 - beta1**t), v_hat = v / (1 - beta2**t);\n    #      return w - lr * m_hat / (sqrt(v_hat) + eps)\n    return w\n\n\ndef losses_after(step, lr, checkpoints=(100, 300), start=(-4.0, 2.0)):\n    \"\"\"Run an optimiser from start; return the loss at each checkpoint, or \"diverged\".\"\"\"\n    w, state, out = np.array(start), {}, []\n    for i in range(1, max(checkpoints) + 1):\n        w = step(w, grad(w), state, lr)\n        if not np.isfinite(w).all() or loss(w) > 1e6:\n            return [\"diverged\"] * len(checkpoints)\n        if i in checkpoints:\n            out.append(f\"{loss(w):.1e}\")\n    return out\n\n\ndef check_against_keras(lr=0.1, steps=5):\n    \"\"\"Run our adam() and keras.optimizers.Adam side by side on the same loss.\"\"\"\n    w_ours, state = np.array([-4.0, 2.0]), {}\n    w_keras = tf.Variable([-4.0, 2.0], dtype=tf.float64)\n    opt = keras.optimizers.Adam(learning_rate=lr)\n    for _ in range(steps):\n        w_ours = adam(w_ours, grad(w_ours), state, lr)\n        with tf.GradientTape() as tape:\n            l = 0.5 * tf.reduce_sum(tf.constant(CURVATURE) * w_keras ** 2)\n        opt.apply_gradients([(tape.gradient(l, w_keras), w_keras)])\n    return w_ours, w_keras.numpy()\n\n\ndef compare_on_digits():\n    X, y = load_digits(return_X_y=True)\n    X = X.astype(\"float32\") / 16.0\n    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\n    steps_per_epoch = int(np.ceil(len(X_train) / 32))\n    optimizers = {\n        \"SGD lr=0.01\": lambda: keras.optimizers.SGD(learning_rate=0.01),\n        \"SGD + momentum 0.9\": lambda: keras.optimizers.SGD(learning_rate=0.01, momentum=0.9),\n        \"SGD + Nesterov\": lambda: keras.optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True),\n        \"RMSprop lr=0.001\": lambda: keras.optimizers.RMSprop(learning_rate=0.001),\n        \"Adam lr=0.001\": lambda: keras.optimizers.Adam(learning_rate=0.001),\n        \"Adam + cosine decay\": lambda: keras.optimizers.Adam(\n            learning_rate=keras.optimizers.schedules.CosineDecay(0.003, decay_steps=15 * steps_per_epoch)),\n    }\n    print(f\"\\nA 3 x 128 ReLU network on the digits, 15 epochs each ({steps_per_epoch} steps per epoch)\")\n    for name, make in optimizers.items():\n        keras.utils.set_random_seed(0)\n        model = keras.Sequential([keras.Input(shape=(64,))] +\n                                 [layers.Dense(128, activation=\"relu\", kernel_initializer=\"he_normal\") for _ in range(3)] +\n                                 [layers.Dense(10, activation=\"softmax\")])\n        model.compile(optimizer=make(), loss=\"sparse_categorical_crossentropy\", metrics=[\"accuracy\"])\n        h = model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), verbose=0).history\n        print(f\"{name:22} val_loss after 1 epoch {h['val_loss'][0]:.3f}, after 15 {h['val_loss'][-1]:.3f}; \"\n              f\"val_accuracy {h['val_accuracy'][-1]:.3f}\")\n\n\ndef main():\n    print(\"Loss after 100 and 300 steps from w = (-4, 2) on loss = 0.5 * (w1^2 + 50 * w2^2)\")\n    trials = [(\"SGD\", sgd, 0.01), (\"SGD\", sgd, 0.039), (\"SGD\", sgd, 0.041), (\"Momentum\", momentum, 0.02),\n              (\"RMSprop\", rmsprop, 0.03), (\"RMSprop\", rmsprop, 0.1), (\"Adam\", adam, 0.1)]\n    for name, step, lr in trials:\n        after_100, after_300 = losses_after(step, lr)\n        print(f\"{name:9} lr={lr:<6} after 100 steps: {after_100:9}  after 300 steps: {after_300}\")\n    ours, theirs = check_against_keras()\n    print(\"Our Adam after 5 steps:\", ours.round(6), \" keras.optimizers.Adam:\", theirs.round(6))\n    print(\"Our Adam matches Keras:\", bool(np.allclose(ours, theirs, atol=1e-6)))\n    compare_on_digits()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "state is a dictionary that persists between steps for one run; state.get(\"m\", np.zeros_like(w)) returns zeros the first time.",
+          "Adam's bias correction uses the step number t starting at 1: m_hat = m / (1 - beta1 ** t).",
+          "The digits comparison varies slightly between machines; the NumPy table and the Adam check are exact."
+        ]
+      }
+    },
+    {
+      "title": "Regularisation Strategies",
+      "summary": "Stop deep networks memorising their training data: penalise large weights with L1 and L2, drop units at random, stop training at the right moment, and create more training data with augmentation.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "Weight penalties: L1, L2 and weight decay",
+          "minutes": 12,
+          "objectives": [
+            "Explain how L1 and L2 penalties change what a network learns",
+            "Add regularisers to Keras layers and read the penalty they add",
+            "Distinguish L2 regularisation from decoupled weight decay"
+          ],
+          "key_points": [
+            "L2 regularisation adds λΣw² to the loss and pulls every weight smoothly towards 0; L1 adds λΣ|w| and pushes many weights to exactly 0, giving a sparse model. Both favour simpler functions that are less able to memorise noise.",
+            "In Keras a penalty goes on a layer, Dense(256, kernel_regularizer=keras.regularizers.L2(1e-4)), and model.losses lists the penalty terms. Keras adds them to the loss that fit() and evaluate() report, so compare models with and without penalties on metrics or on the plain loss.",
+            "Keras's L2(l2) adds l2 × Σw², with no factor of ½, so its gradient is 2·l2·w; libraries and papers define the factor differently, so a λ copied from elsewhere may need adjusting.",
+            "With plain SGD an L2 penalty is equivalent to weight decay, shrinking every weight by a constant fraction each step; with adaptive optimisers it isn't, which is why AdamW applies weight decay separately from the gradient.",
+            "Penalise kernels, not biases or batch normalisation's parameters, and tune λ on validation data: too small does nothing and too large makes the network underfit."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "See the penalty a regulariser adds",
+            "steps": [
+              {
+                "do": "Make a Dense layer whose 12 weights are all 0.5, with an L2 penalty of 0.01, and read the penalty Keras adds to the loss.",
+                "code": "import keras\nimport numpy as np\nfrom keras import layers, regularizers\nlayer = layers.Dense(3, kernel_regularizer=regularizers.L2(0.01),\n                     kernel_initializer=keras.initializers.Constant(0.5))\nmodel = keras.Sequential([keras.Input(shape=(4,)), layer])\nprint([round(float(p), 4) for p in model.losses])",
+                "lang": "python",
+                "see": "[0.03]"
+              },
+              {
+                "do": "Work it out by hand: 0.01 times the sum of the squared weights.",
+                "code": "print(round(0.01 * float(np.sum(layer.kernel.numpy() ** 2)), 4))",
+                "lang": "python",
+                "see": "0.03: 0.01 x 12 x 0.25, with no factor of a half."
+              },
+              {
+                "do": "Swap in an L1 penalty: 0.01 times the sum of the absolute weights.",
+                "code": "layer1 = layers.Dense(3, kernel_regularizer=regularizers.L1(0.01),\n                      kernel_initializer=keras.initializers.Constant(0.5))\nmodel1 = keras.Sequential([keras.Input(shape=(4,)), layer1])\nprint([round(float(p), 4) for p in model1.losses])",
+                "lang": "python",
+                "see": "[0.06]"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Dropout",
+          "minutes": 12,
+          "objectives": [
+            "Explain how dropout behaves in training and at inference",
+            "Add dropout to a Keras model and choose a rate",
+            "Use Monte Carlo dropout to estimate uncertainty"
+          ],
+          "key_points": [
+            "Dropout (Srivastava et al., 2014) sets each unit's output to 0 with probability p, the rate, at every training step, and scales the surviving outputs by 1/(1 − p) (inverted dropout) so that each unit's expected output is unchanged.",
+            "At inference nothing is dropped. Keras's Dropout layer acts only when the model runs with training=True, as it does inside fit(); predict() and evaluate() leave it off.",
+            "Because any unit may disappear, units can't rely on particular partners (co-adaptation), and training resembles averaging a huge ensemble of thinned networks that share their weights.",
+            "Typical rates are 0.1 to 0.5, higher for wide dense layers. With dropout the training loss is higher and noisier than without, and training takes more epochs, so judge it on validation metrics.",
+            "Monte Carlo dropout keeps dropout on at prediction time, model(x, training=True), and averages many passes; the spread of those predictions gives a rough measure of the model's uncertainty (Gal and Ghahramani, 2016)."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Watch dropout drop and rescale",
+            "steps": [
+              {
+                "do": "Apply Dropout(0.5) to a row of ten 1s in training mode.",
+                "code": "import keras\nimport numpy as np\ndrop = keras.layers.Dropout(0.5, seed=1)\nx = np.ones((1, 10), dtype=\"float32\")\nprint(drop(x, training=True).numpy())",
+                "lang": "python",
+                "see": "[[2. 0. 2. 0. 0. 0. 0. 2. 0. 2.]]: dropped units are 0 and the survivors are scaled by 1 / (1 - 0.5) = 2."
+              },
+              {
+                "do": "Apply it in inference mode.",
+                "code": "print(drop(x, training=False).numpy())",
+                "lang": "python",
+                "see": "[[1. 1. 1. 1. 1. 1. 1. 1. 1. 1.]]: nothing is dropped and nothing is scaled."
+              },
+              {
+                "do": "Average the training-mode output over many rows: the expected value is unchanged.",
+                "code": "print(round(float(np.mean(drop(np.ones((1000, 10), dtype=\"float32\"), training=True))), 2))",
+                "lang": "python",
+                "see": "1.0"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Early stopping and data augmentation",
+          "minutes": 12,
+          "objectives": [
+            "Configure early stopping so that it keeps the best weights",
+            "Choose label-preserving augmentations and apply them with Keras layers",
+            "Name other regularisers, such as label smoothing"
+          ],
+          "key_points": [
+            "Early stopping treats the number of epochs as a setting chosen on validation data: EarlyStopping(monitor=\"val_loss\", patience=10, restore_best_weights=True) stops after 10 epochs without improvement and returns to the best weights. restore_best_weights defaults to False, which keeps the last, worse, weights.",
+            "Data augmentation trains on random, label-preserving changes to each example, such as small shifts, rotations, zooms, flips and contrast changes for images, so the network sees far more variety than the dataset holds.",
+            "Keras's preprocessing layers (RandomFlip, RandomRotation, RandomTranslation, RandomZoom, RandomContrast) augment inside the model, only when training=True, so evaluation and prediction see the original images.",
+            "An augmentation must not change the right answer: a horizontal flip suits photos of animals but not handwritten digits or text, and rotating a 6 by 180 degrees makes it a 9.",
+            "Other regularisers: label smoothing (CategoricalCrossentropy(label_smoothing=0.1), with one-hot labels) stops the network pushing probabilities to exactly 0 and 1, GaussianNoise on the inputs works like augmentation, and more data or a smaller model often beats them all."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Fight overfitting on a small training set",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 50,
+        "goal": "Make a two-layer network of 256 units memorise 300 handwritten digits, then compare L2 at two strengths, dropout, augmentation and early stopping on validation accuracy and plain cross-entropy.",
+        "setup": [
+          "Python with TensorFlow 2.16 or later and scikit-learn",
+          "The starter file regularisation.py (about three minutes to run on a laptop CPU)"
+        ],
+        "steps": [
+          {
+            "do": "Read load_data() and build(): 300 training images and 540 validation images, and a network that can take an L2 penalty, dropout after each hidden layer and an augmentation layer at the start."
+          },
+          {
+            "do": "Complete the augmentation: a RandomTranslation layer that shifts images by up to one pixel.",
+            "code": "model.add(layers.RandomTranslation(0.125, 0.125, fill_mode=\"constant\"))",
+            "lang": "python"
+          },
+          {
+            "do": "Complete the dropout layer and the early stopping callback from their TODO comments."
+          },
+          {
+            "do": "Run the script.",
+            "code": "python regularisation.py",
+            "lang": "bash",
+            "see": "The baseline reaches training accuracy 1.000 with validation accuracy about 0.94. Early stopping prints Epoch 32: early stopping and Restoring model weights from the end of the best epoch: 22."
+          },
+          {
+            "do": "Compare the rows. Which regularisers raised validation accuracy and lowered the plain cross-entropy, and which did little at this strength?"
+          },
+          {
+            "do": "Read the last line: the same dropout model gives identical outputs twice at inference but different outputs in training mode.",
+            "see": "Dropout off at inference (same output twice): True; on in training (outputs differ): True"
+          },
+          {
+            "do": "Write a short summary of what worked best here and why, and explain why the val_loss Keras reports can't be compared between models with and without an L2 penalty."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The baseline memorises its 300 training images: training accuracy 1.000 with a clear gap to validation.",
+            "look_for": [
+              "baseline                   epochs 150  train acc 1.000"
+            ]
+          },
+          {
+            "text": "L2 at two strengths, dropout and augmentation are each trained and compared on validation accuracy and plain cross-entropy.",
+            "look_for": [
+              "L2 1e-3",
+              "L2 1e-2",
+              "dropout 0.5",
+              "augmentation (shift 1px)"
+            ]
+          },
+          {
+            "text": "Early stopping stops the run and restores the best epoch's weights.",
+            "look_for": [
+              "early stopping",
+              "Restoring model weights from the end of the best epoch"
+            ]
+          },
+          {
+            "text": "The combined run is reported.",
+            "look_for": [
+              "all four together"
+            ]
+          },
+          {
+            "text": "Dropout is shown to be active only in training.",
+            "look_for": [
+              "Dropout off at inference (same output twice): True; on in training (outputs differ): True"
+            ]
+          },
+          {
+            "text": "The write-up says which regularisers helped most here, and why val loss from Keras can't be compared across models with and without L2.",
+            "look_for": [
+              "penalt"
+            ]
+          }
+        ],
+        "submit": "Paste your completed build() and the early stopping callback, the full output of python regularisation.py, and your summary.",
+        "files": [
+          {
+            "path": "regularisation.py",
+            "content": "\"\"\"Make a network overfit a small training set, then rein it in with L2, dropout, augmentation and early stopping.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nfrom keras import layers, regularizers\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import train_test_split\n\nEPOCHS = 150\n\n\ndef load_data():\n    digits = load_digits()\n    images = (digits.images.astype(\"float32\") / 16.0)[..., None]  # (n, 8, 8, 1)\n    X_rest, X_val, y_rest, y_val = train_test_split(images, digits.target, test_size=0.3, random_state=0,\n                                                    stratify=digits.target)\n    # Only 300 training images: a big network can memorise them\n    X_train, _, y_train, _ = train_test_split(X_rest, y_rest, train_size=300, random_state=0, stratify=y_rest)\n    return X_train, y_train, X_val, y_val\n\n\ndef build(l2=0.0, dropout=0.0, augment=False):\n    reg = regularizers.L2(l2) if l2 else None\n    model = keras.Sequential([keras.Input(shape=(8, 8, 1))])\n    if augment:\n        # TODO: add a layers.RandomTranslation layer that shifts images by up to one pixel (1/8 of their\n        #      height and width) and fills the edge with zeros (fill_mode=\"constant\")\n        pass\n    model.add(layers.Flatten())\n    for _ in range(2):\n        model.add(layers.Dense(256, activation=\"relu\", kernel_regularizer=reg))\n        if dropout:\n            # TODO: add a Dropout layer with the given rate after each hidden layer\n            pass\n    model.add(layers.Dense(10, activation=\"softmax\"))\n    model.compile(optimizer=keras.optimizers.Adam(0.001), loss=\"sparse_categorical_crossentropy\",\n                  metrics=[\"accuracy\"])\n    return model\n\n\ndef run(name, data, callbacks=(), **settings):\n    X_train, y_train, X_val, y_val = data\n    keras.utils.set_random_seed(0)\n    model = build(**settings)\n    h = model.fit(X_train, y_train, epochs=EPOCHS, batch_size=32, validation_data=(X_val, y_val),\n                  callbacks=list(callbacks), verbose=0).history\n    train_acc = model.evaluate(X_train, y_train, verbose=0)[1]\n    val_acc = model.evaluate(X_val, y_val, verbose=0)[1]\n    # Keras adds weight penalties to the loss it reports, so measure the plain cross-entropy for a fair comparison\n    val_ce = float(np.mean(keras.losses.sparse_categorical_crossentropy(y_val, model.predict(X_val, verbose=0))))\n    print(f\"{name:26} epochs {len(h['loss']):3d}  train acc {train_acc:.3f}  val acc {val_acc:.3f}  \"\n          f\"gap {train_acc - val_acc:.3f}  val cross-entropy {val_ce:.3f}\")\n\n\ndef main():\n    data = load_data()\n    print(\"Training images\", data[0].shape, \"validation images\", data[2].shape)\n    run(\"baseline\", data)\n    run(\"L2 1e-3\", data, l2=1e-3)\n    run(\"L2 1e-2\", data, l2=1e-2)\n    run(\"dropout 0.5\", data, dropout=0.5)\n    run(\"augmentation (shift 1px)\", data, augment=True)\n    # TODO: early stopping: monitor \"val_loss\" with patience 10 and restore_best_weights=True (verbose=1)\n    stop = None\n    if stop is not None:\n        run(\"early stopping\", data, callbacks=[stop])\n        run(\"all four together\", data, callbacks=[stop], l2=1e-3, dropout=0.5, augment=True)\n\n    model = build(dropout=0.5)\n    x = data[2][:1]\n    same = np.allclose(model(x, training=False), model(x, training=False))\n    differ = not np.allclose(model(x, training=True), model(x, training=True))\n    print(f\"Dropout off at inference (same output twice): {same}; on in training (outputs differ): {differ}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "RandomTranslation(height_factor, width_factor) takes fractions of the image size: 0.125 of 8 pixels is one pixel.",
+          "Keras prints the early stopping messages only when the callback has verbose=1.",
+          "The figures vary slightly between machines; compare rows within your own run."
+        ]
+      }
+    },
+    {
+      "title": "Batch Normalisation",
+      "summary": "Normalise activations inside the network: how batch normalisation computes, learns and switches between training and inference, why it lets networks train faster with higher learning rates, and where it goes wrong.",
+      "instructor": "mei-ling-zhang",
+      "lessons": [
+        {
+          "title": "How batch normalisation works",
+          "minutes": 12,
+          "objectives": [
+            "Describe the batch normalisation computation and its learned scale and shift",
+            "Explain how it behaves in training and in inference",
+            "Place BatchNormalization layers in a Keras model"
+          ],
+          "key_points": [
+            "For each feature (each channel, in a convolutional layer), batch normalisation standardises the input with the mini-batch's mean μ_B and variance σ²_B, x̂ = (x − μ_B)/√(σ²_B + ε), then applies a learned scale and shift, y = γx̂ + β, so the network can undo the normalisation where that helps.",
+            "In training it also keeps moving averages of the mean and variance (in Keras, moving = 0.99 × moving + 0.01 × the batch's value). At inference it uses those averages instead of the batch's statistics, so a prediction doesn't depend on the other examples in the batch.",
+            "Keras's BatchNormalization(momentum=0.99, epsilon=0.001) uses batch statistics when called with training=True, as in fit(), and the moving averages with training=False, as in predict() and evaluate().",
+            "Each BatchNormalization layer holds four values per feature: γ and β are trained, while the moving mean and moving variance aren't, which is why model.summary() reports non-trainable parameters.",
+            "The original paper placed batch normalisation between a layer's weighted sum and its activation; after the activation also works. A layer followed by batch normalisation needs no bias of its own, since β does that job: Dense(64, use_bias=False)."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Count batch normalisation's parameters",
+            "steps": [
+              {
+                "do": "Build a small model with batch normalisation between a bias-free Dense layer and its activation, and print its summary.",
+                "code": "import keras\nfrom keras import layers\nmodel = keras.Sequential([\n    keras.Input(shape=(20,)),\n    layers.Dense(64, use_bias=False),\n    layers.BatchNormalization(),\n    layers.Activation(\"relu\"),\n    layers.Dense(1),\n])\nmodel.summary()",
+                "lang": "python",
+                "see": "dense (Dense) has 1,280 parameters (20 x 64, no bias), batch_normalization 256 (4 x 64), dense_1 65; Total params: 1,601, of which Non-trainable params: 128."
+              },
+              {
+                "do": "List the batch normalisation layer's four variables and which of them are trained.",
+                "code": "bn = model.layers[1]\nprint([v.path.split(\"/\")[-1] for v in bn.trainable_weights], [v.path.split(\"/\")[-1] for v in bn.non_trainable_weights])",
+                "lang": "python",
+                "see": "['gamma', 'beta'] ['moving_mean', 'moving_variance']"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Why it helps, and where it goes wrong",
+          "minutes": 12,
+          "objectives": [
+            "Explain the benefits of batch normalisation and the debate about how it works",
+            "Avoid its pitfalls with small batches, fine-tuning and shifted data",
+            "Choose layer or group normalisation when batch statistics don't suit"
+          ],
+          "key_points": [
+            "Ioffe and Szegedy (2015) introduced batch normalisation to reduce internal covariate shift, the change in each layer's input distribution as earlier layers learn. Later work (Santurkar et al., 2018) argued that its main effect is a smoother loss surface, so how it works is still debated.",
+            "In practice it lets networks train with higher learning rates, makes them far less sensitive to initialisation, and often reaches a given accuracy in many fewer epochs.",
+            "It also regularises slightly: each example's normalisation depends on the other examples in its batch, which adds noise, so networks with batch normalisation often need less dropout.",
+            "It struggles with very small batches, whose statistics are noisy, and when inference data differ from the training data. When fine-tuning a pre-trained model, keep its BatchNormalization layers in inference mode; in Keras, setting trainable = False on such a layer does that.",
+            "Layer normalisation normalises each example across its own features, independently of the batch, so it works with any batch size and with sequences; it's standard in transformers and recurrent networks. Group normalisation, in between, suits vision models trained with small batches."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Batch normalisation by hand and in Keras",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 45,
+        "goal": "Write batch normalisation in NumPy and match Keras's layer in training mode, follow its moving statistics into inference mode, then train an 8-layer sigmoid network with and without it at two learning rates.",
+        "setup": [
+          "Python with TensorFlow 2.16 or later and scikit-learn",
+          "The starter file batchnorm.py"
+        ],
+        "steps": [
+          {
+            "do": "Complete batchnorm_by_hand(): normalise each column with its mean and population variance, then scale by gamma and shift by beta.",
+            "code": "mean, var = x.mean(axis=0), x.var(axis=0)\nreturn gamma * (x - mean) / np.sqrt(var + eps) + beta",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script and read the first block.",
+            "code": "python batchnorm.py",
+            "lang": "bash",
+            "see": "Per-feature means of 0 and standard deviations just under 1 after BN, By hand matches Keras in training mode: True, a moving mean equal to 1% of the batch mean, and Inference mode uses the moving statistics: True."
+          },
+          {
+            "do": "Complete deep_net() for the BN version: Dense(64, use_bias=False), then BatchNormalization, then a sigmoid Activation, eight times."
+          },
+          {
+            "do": "Run again and read the summary and the training table.",
+            "see": "The with_bn summary ends with Non-trainable params: 1,024 (8 layers x 64 features x 2 moving statistics). Each network trains for 10 epochs with SGD and momentum at 0.01 and 0.1."
+          },
+          {
+            "do": "Compare the four rows: how much faster does the BN network learn, and which network can use the larger learning rate?"
+          },
+          {
+            "do": "Write a short explanation of the result, using the training-mode and inference-mode behaviour you checked in the first block."
+          }
+        ],
+        "checks": [
+          {
+            "text": "After batch normalisation each feature has a mean of 0 and a standard deviation close to 1.",
+            "look_for": [
+              "Per-feature mean after BN:"
+            ]
+          },
+          {
+            "text": "The hand-written batch normalisation matches Keras's layer in training mode.",
+            "look_for": [
+              "By hand matches Keras in training mode: True"
+            ]
+          },
+          {
+            "text": "The moving mean moves 1% of the way to the batch mean, and inference mode uses the moving statistics.",
+            "look_for": [
+              "Moving mean after one batch:",
+              "Inference mode uses the moving statistics: True"
+            ]
+          },
+          {
+            "text": "The BN network's summary shows its non-trainable parameters.",
+            "look_for": [
+              "Non-trainable params: 1,024"
+            ]
+          },
+          {
+            "text": "The deep sigmoid network is trained with and without batch normalisation at two learning rates.",
+            "look_for": [
+              "without_bn lr=0.1",
+              "with_bn    lr=0.1"
+            ]
+          },
+          {
+            "text": "The write-up explains the difference batch normalisation made, using the numbers.",
+            "look_for": [
+              "batch normalis"
+            ]
+          }
+        ],
+        "submit": "Paste batchnorm_by_hand() and deep_net(), the full output of python batchnorm.py and your explanation.",
+        "files": [
+          {
+            "path": "batchnorm.py",
+            "content": "\"\"\"Batch normalisation by hand and in Keras, then a deep network trained with and without it.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nfrom keras import layers\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import train_test_split\n\n\ndef batchnorm_by_hand(x, gamma, beta, eps=1e-3):\n    \"\"\"Normalise each column (feature) with the batch's mean and variance, then scale and shift.\"\"\"\n    # TODO: mean and variance of each column (axis=0, the population variance), then\n    #      x_hat = (x - mean) / sqrt(var + eps) and return gamma * x_hat + beta\n    return x\n\n\ndef by_hand_versus_keras():\n    rng = np.random.default_rng(0)\n    x = rng.normal(loc=5.0, scale=3.0, size=(16, 4)).astype(\"float32\")\n    bn = layers.BatchNormalization()  # momentum=0.99, epsilon=0.001 by default\n    out = bn(x, training=True).numpy()\n    print(\"Per-feature mean after BN:\", out.mean(axis=0).round(3), \" std:\", out.std(axis=0).round(3))\n    gamma, beta = bn.gamma.numpy(), bn.beta.numpy()\n    print(\"By hand matches Keras in training mode:\", bool(np.allclose(out, batchnorm_by_hand(x, gamma, beta), atol=1e-5)))\n    expected = 0.99 * 0.0 + 0.01 * x.mean(axis=0)\n    print(\"Moving mean after one batch:\", bn.moving_mean.numpy().round(4), \" expected:\", expected.round(4))\n    infer = bn(x, training=False).numpy()\n    by_moving = (x - bn.moving_mean.numpy()) / np.sqrt(bn.moving_variance.numpy() + 1e-3)\n    print(\"Inference mode uses the moving statistics:\", bool(np.allclose(infer, by_moving, atol=1e-5)))\n\n\ndef deep_net(batchnorm):\n    keras.utils.set_random_seed(0)\n    model = keras.Sequential([keras.Input(shape=(64,))], name=\"with_bn\" if batchnorm else \"without_bn\")\n    for _ in range(8):\n        # TODO: for the BN version, add Dense(64, use_bias=False), then BatchNormalization, then a sigmoid\n        #      Activation; otherwise add Dense(64, activation=\"sigmoid\")\n        model.add(layers.Dense(64, activation=\"sigmoid\"))\n    model.add(layers.Dense(10, activation=\"softmax\"))\n    return model\n\n\ndef train_both():\n    X, y = load_digits(return_X_y=True)\n    X = X.astype(\"float32\") / 16.0\n    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\n    for batchnorm in (False, True):\n        model = deep_net(batchnorm)\n        if batchnorm:\n            model.summary()\n        for lr in (0.01, 0.1):\n            model = deep_net(batchnorm)\n            model.compile(optimizer=keras.optimizers.SGD(learning_rate=lr, momentum=0.9),\n                          loss=\"sparse_categorical_crossentropy\", metrics=[\"accuracy\"])\n            h = model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_val, y_val), verbose=0).history\n            print(f\"{model.name:10} lr={lr:<5} val_accuracy after 2 epochs {h['val_accuracy'][1]:.3f}, \"\n                  f\"after 10 {h['val_accuracy'][-1]:.3f}\")\n\n\nif __name__ == \"__main__\":\n    by_hand_versus_keras()\n    train_both()\n"
+          }
+        ],
+        "hints": [
+          "x.var(axis=0) is the population variance (dividing by n), which is what batch normalisation uses.",
+          "The standard deviation after BN is a little under 1 because ε = 0.001 is added to the variance.",
+          "A sigmoid network without BN learns slowly here whatever the rate: that's the vanishing gradient of Module 1 at work."
+        ]
+      }
+    },
+    {
+      "title": "Practical Optimisation Project",
+      "summary": "Bring every technique together: a dependable recipe for building and training a deep network, tuning the learning rate, batch size and schedule, reading learning curves to debug training, and a final evaluation on a hold-out test set.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "A recipe for training a deep network",
+          "minutes": 12,
+          "objectives": [
+            "Follow a step-by-step recipe that combines initialisation, normalisation and regularisation",
+            "Run experiments that can be compared fairly"
+          ],
+          "key_points": [
+            "Start simple and strong: ReLU (or GELU) layers with He initialisation, batch normalisation, Adam at 0.001, a batch size of 32 to 256, and no regularisation yet; record a baseline score on the validation data first.",
+            "Before long runs, check that the network can overfit one small batch, driving its training loss close to 0. If it can't, there's a bug or too little capacity, and regularisation won't help.",
+            "Then reduce overfitting, cheapest first: more or augmented data, dropout or weight decay, early stopping, a smaller network. Tune the learning rate and its schedule as you go.",
+            "Change one thing at a time, fix the random seeds, log every run's settings and results, and repeat promising runs with a few seeds: a difference smaller than the run-to-run spread means nothing.",
+            "Keep three datasets with separate jobs: training data fits the weights, validation data chooses the settings and when to stop, and the test set is used once, at the end."
+          ]
+        },
+        {
+          "title": "Tuning the learning rate, batch size and schedule",
+          "minutes": 12,
+          "objectives": [
+            "Tune the learning rate first, on a logarithmic scale",
+            "Explain how batch size and learning rate interact",
+            "Choose a schedule and a search strategy"
+          ],
+          "key_points": [
+            "Search learning rates on a logarithmic scale, such as 3 × 10⁻⁴, 10⁻³ and 3 × 10⁻³, rather than evenly spaced values, and tune it before other settings, because their best values depend on it.",
+            "Larger batches give less noisy gradients and use hardware better, and usually tolerate a larger learning rate; a common heuristic for SGD (Goyal et al., 2017) scales the rate in proportion to the batch size, with warm-up. Very large batches can generalise worse without such care.",
+            "Cosine decay to a small final rate, after a short warm-up, is a strong default schedule; ReduceLROnPlateau is a simple adaptive alternative when the number of epochs isn't known in advance.",
+            "Random search over several settings at once usually beats a grid of the same size, because it tries more distinct values of the settings that matter (Bergstra and Bengio, 2012); KerasTuner automates random and Bayesian search for Keras models."
+          ]
+        },
+        {
+          "title": "Reading learning curves and debugging training",
+          "minutes": 12,
+          "objectives": [
+            "Diagnose underfitting, overfitting and a bad learning rate from learning curves",
+            "Run the standard sanity checks on a new network",
+            "Use TerminateOnNaN and TensorBoard while training"
+          ],
+          "key_points": [
+            "Check the first loss: a classifier over C balanced classes that starts out guessing uniformly reports about ln C, 2.30 for 10 classes. A much larger first loss means confident wrong outputs, often from bad initialisation or unscaled inputs.",
+            "Read the curves: both losses high and flat means underfitting (more capacity, longer training or a better learning rate); training loss falling while validation loss rises means overfitting (regularise); a jagged or rising training loss means the rate is too high; a slow, steady decline means it's too low.",
+            "NaN losses usually come from a learning rate that's too high, exploding gradients, log(0) or a division by zero; keras.callbacks.TerminateOnNaN stops training at the first NaN so the cause can be traced.",
+            "keras.callbacks.TensorBoard(log_dir=\"logs/run1\") logs losses and metrics every epoch (and weight histograms if asked); tensorboard --logdir logs then shows several runs' curves side by side in a browser.",
+            "Evaluate the final model once on the hold-out test set and report it beside the validation score: a large gap means the settings were tuned too closely to the validation data."
+          ],
+          "walkthrough": {
+            "tool": "Python with TensorFlow and Keras",
+            "title": "Run the sanity checks on a new network",
+            "steps": [
+              {
+                "do": "Build a small classifier and compare its loss before training with ln 10, the loss of a uniform guess over 10 classes.",
+                "code": "import keras\nimport numpy as np\nfrom keras import layers\nkeras.utils.set_random_seed(0)\nX = np.random.default_rng(0).normal(size=(32, 20)).astype(\"float32\")\ny = np.arange(32) % 10\nmodel = keras.Sequential([keras.Input(shape=(20,)),\n                          layers.Dense(64, activation=\"relu\", kernel_initializer=\"he_normal\"),\n                          layers.Dense(10, activation=\"softmax\")])\nmodel.compile(optimizer=\"adam\", loss=\"sparse_categorical_crossentropy\")\nprint(round(float(model.evaluate(X, y, verbose=0)), 2), round(float(np.log(10)), 2))",
+                "lang": "python",
+                "see": "3.11 2.3: close to ln 10, so the network starts out sensibly unsure."
+              },
+              {
+                "do": "Check that it can overfit this one batch of 32 examples with arbitrary labels.",
+                "code": "h = model.fit(X, y, epochs=300, batch_size=32, verbose=0)\nprint(round(h.history[\"loss\"][-1], 3))",
+                "lang": "python",
+                "see": "0.034: near zero, so the network can learn; a model that can't do this has a bug."
+              },
+              {
+                "do": "Train a copy with an absurd learning rate and TerminateOnNaN.",
+                "code": "bad = keras.models.clone_model(model)\nbad.compile(optimizer=keras.optimizers.SGD(learning_rate=1e6), loss=\"sparse_categorical_crossentropy\")\nh = bad.fit(X, y, epochs=5, verbose=0, callbacks=[keras.callbacks.TerminateOnNaN()])\nprint(len(h.history[\"loss\"]), h.history[\"loss\"])",
+                "lang": "python",
+                "see": "Keras prints Batch N: Invalid loss, terminating training as soon as the loss stops being a number, and the history ends there."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Rescue a badly trained network",
+        "tool": "Python with TensorFlow and Keras",
+        "minutes": 60,
+        "goal": "Diagnose a six-layer network that fails on the digits, using its first loss, its gradient norms and a one-batch overfitting test, then rescue it one change at a time and record what each change does.",
+        "setup": [
+          "Python with TensorFlow 2.16 or later and scikit-learn",
+          "The starter file rescue.py (a few minutes to run once every fix is in)"
+        ],
+        "steps": [
+          {
+            "do": "Read the bad configuration BAD: sigmoid layers, weights drawn with a standard deviation of 2.0 in every layer, SGD at a learning rate of 0.01, and no normalisation or regularisation."
+          },
+          {
+            "do": "Complete diagnose(): print the initial loss next to ln 10, the first and last layers' kernel gradient norms, and the loss after 100 steps on one batch of 32 examples."
+          },
+          {
+            "do": "Run the script with only the bad configuration in the list of steps.",
+            "code": "python rescue.py",
+            "lang": "bash"
+          },
+          {
+            "do": "Add the fixes to the list one at a time, each keeping the ones above: ReLU with He initialisation, Adam at 0.001, batch normalisation, dropout 0.2 with early stopping, and a cosine schedule. Run after each and watch the best validation accuracy."
+          },
+          {
+            "do": "Read the final diagnostics and the test accuracy, measured once at the very end."
+          },
+          {
+            "do": "Write a short report: what each diagnostic showed about the bad network, which change mattered most, and whether the last changes still helped once the network trained well."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The diagnostics run on the bad configuration: first loss against ln 10, gradient norms and the one-batch test.",
+            "look_for": [
+              "initial loss",
+              "a uniform guess over 10 classes gives 2.30",
+              "loss after 100 steps on one batch of 32"
+            ]
+          },
+          {
+            "text": "Every fix is a separate row, each keeping the changes above it.",
+            "look_for": [
+              "+ ReLU and He initialisation",
+              "+ Adam (learning rate 0.001)",
+              "+ batch normalisation"
+            ]
+          },
+          {
+            "text": "Regularisation and a schedule are added last.",
+            "look_for": [
+              "+ dropout 0.2 and early stopping",
+              "+ cosine learning-rate schedule"
+            ]
+          },
+          {
+            "text": "The final configuration passes the same diagnostics, and the test set is used once.",
+            "look_for": [
+              "Diagnosing the final configuration",
+              "Final model, test accuracy (measured once)"
+            ]
+          },
+          {
+            "text": "The write-up names which change mattered most and what each diagnostic showed about the bad network.",
+            "look_for": [
+              "initial loss"
+            ]
+          }
+        ],
+        "submit": "Paste diagnose() and your list of steps, the full output of python rescue.py with every fix in place, and your report.",
+        "files": [
+          {
+            "path": "rescue.py",
+            "content": "\"\"\"Diagnose a badly trained network, then rescue it one change at a time.\"\"\"\n\nimport math\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nimport tensorflow as tf\nfrom keras import layers\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import train_test_split\n\nBAD = {\"activation\": \"sigmoid\", \"init\": \"random_normal_2\", \"batchnorm\": False, \"dropout\": 0.0,\n       \"optimizer\": \"sgd_0.01\", \"schedule\": False, \"early_stopping\": False}\n\n\ndef load_data():\n    X, y = load_digits(return_X_y=True)\n    X = X.astype(\"float32\") / 16.0\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=0, stratify=y)\n    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=0, stratify=y_train)\n    return X_train, y_train, X_val, y_val, X_test, y_test\n\n\ndef make_initializer(name):\n    return keras.initializers.RandomNormal(stddev=2.0) if name == \"random_normal_2\" else name\n\n\ndef make_optimizer(name, schedule, steps):\n    if name == \"sgd_0.01\":\n        return keras.optimizers.SGD(learning_rate=0.01)\n    lr = keras.optimizers.schedules.CosineDecay(0.003, decay_steps=steps) if schedule else 0.001\n    return keras.optimizers.Adam(learning_rate=lr)\n\n\ndef make_model(cfg):\n    keras.utils.set_random_seed(0)\n    model = keras.Sequential([keras.Input(shape=(64,))])\n    for _ in range(6):\n        if cfg[\"batchnorm\"]:\n            model.add(layers.Dense(128, use_bias=False, kernel_initializer=make_initializer(cfg[\"init\"])))\n            model.add(layers.BatchNormalization())\n            model.add(layers.Activation(cfg[\"activation\"]))\n        else:\n            model.add(layers.Dense(128, activation=cfg[\"activation\"], kernel_initializer=make_initializer(cfg[\"init\"])))\n        if cfg[\"dropout\"]:\n            model.add(layers.Dropout(cfg[\"dropout\"]))\n    # The bad initialiser is used for the output layer too; otherwise the output layer keeps Keras's default\n    out_init = make_initializer(cfg[\"init\"]) if cfg[\"init\"] == \"random_normal_2\" else \"glorot_uniform\"\n    model.add(layers.Dense(10, activation=\"softmax\", kernel_initializer=out_init))\n    return model\n\n\ndef diagnose(cfg, X, y):\n    \"\"\"Three quick checks before any long training run.\"\"\"\n    model = make_model(cfg)\n    loss_fn = keras.losses.SparseCategoricalCrossentropy()\n    # TODO: 1. the initial loss on X, y against the loss of a uniform guess, ln(10)\n    # TODO: 2. each Dense layer's kernel gradient norm on this batch, first and last\n    # TODO: 3. can it overfit 32 examples? Train on X[:32] for 100 epochs and report the final loss\n\n\ndef experiment(name, cfg, data, epochs=60):\n    X_train, y_train, X_val, y_val, _, _ = data\n    model = make_model(cfg)\n    steps = epochs * math.ceil(len(X_train) / 32)\n    model.compile(optimizer=make_optimizer(cfg[\"optimizer\"], cfg[\"schedule\"], steps),\n                  loss=\"sparse_categorical_crossentropy\", metrics=[\"accuracy\"])\n    callbacks = [keras.callbacks.TerminateOnNaN()]\n    if cfg[\"early_stopping\"]:\n        callbacks.append(keras.callbacks.EarlyStopping(monitor=\"val_loss\", patience=8, restore_best_weights=True))\n    h = model.fit(X_train, y_train, epochs=epochs, batch_size=32, validation_data=(X_val, y_val), verbose=0,\n                  callbacks=callbacks).history\n    best = int(np.argmax(h[\"val_accuracy\"]))\n    print(f\"{name:34} epochs run {len(h['loss']):2d}  best val_accuracy {h['val_accuracy'][best]:.3f} \"\n          f\"(epoch {best + 1})  last val_loss {h['val_loss'][-1]:.3f}\")\n    return model\n\n\ndef main():\n    data = load_data()\n    X_train, y_train = data[0], data[1]\n    print(\"Diagnosing the bad configuration:\", BAD)\n    diagnose(BAD, X_train[:256], y_train[:256])\n\n    print(\"\\nOne change at a time (each row keeps the changes above it)\")\n    steps = [\n        (\"bad configuration\", {}),\n        # TODO: add one row per fix, each a dict of changes to the configuration:\n        #      (\"+ ReLU and He initialisation\", {\"activation\": \"relu\", \"init\": \"he_normal\"}),\n        #      then Adam, batch normalisation, dropout 0.2 with early stopping, and a cosine schedule\n    ]\n    cfg = dict(BAD)\n    model = None\n    for name, change in steps:\n        cfg.update(change)\n        model = experiment(name, cfg, data)\n\n    print(\"\\nDiagnosing the final configuration:\", cfg)\n    diagnose(cfg, X_train[:256], y_train[:256])\n    X_test, y_test = data[4], data[5]\n    print(f\"Final model, test accuracy (measured once): {model.evaluate(X_test, y_test, verbose=0)[1]:.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "Compare the initial loss with ln 10 = 2.30: a much larger value means the network starts out confidently wrong.",
+          "TerminateOnNaN stops a run whose loss becomes NaN, so a row can show fewer epochs than asked for.",
+          "Small differences between the last rows can be noise: rerun with another seed before trusting them."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Measure vanishing and exploding gradients and fix them with activations, initialisation and clipping; finish the Module 1 lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Move beyond plain SGD: write momentum, RMSprop and Adam, schedule the learning rate and finish the optimiser lab.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Regularise with penalties, dropout, augmentation and early stopping, then add batch normalisation; finish both labs.",
+      "modules": [
+        3,
+        4
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Rescue the badly trained network in Module 5, then the Fashion-MNIST capstone; review with the mock exam and the flashcards.",
+      "modules": [
+        5
+      ]
+    }
+  ],
+  "project": {
+    "title": "Deep network optimisation",
+    "minutes": 360,
+    "brief": "bad_fashion.py trains an eight-layer network on Fashion-MNIST (60,000 training and 10,000 test images of clothing in 10 classes, 28 x 28 greyscale, about 30 MB, downloaded once) and gets stuck at a validation accuracy of about 0.80: its sigmoid layers start with weights drawn far too large, it uses plain SGD at a fixed learning rate, and it has no normalisation or regularisation. Diagnose it first, with its first loss against ln 10, its per-layer gradient norms and a one-batch overfitting test. Then fix it one measured change at a time, using initialisation and activations, batch normalisation, an adaptive optimiser with a tuned learning rate and schedule, and dropout or weight decay with early stopping. Keep the starter's split: 50,000 images for training, 10,000 for validation (chosen with a fixed seed) and the 10,000 test images for one final evaluation. Record every run in an ablation table. A well-tuned MLP reaches about 0.89 test accuracy: the course's reference fix, with four 256-unit ReLU layers, He initialisation, batch normalisation, dropout 0.2, AdamW with cosine decay and early stopping, reached 0.888.",
+    "deliverables": [
+      "A diagnosis of the starter network: its first loss against ln 10, its per-layer gradient norms and its one-batch overfitting test, with what each shows",
+      "An ablation table with one row per change, each keeping the changes before it: best validation accuracy, the epoch it was reached and the training time",
+      "A learning-rate study: at least three rates on a logarithmic scale, or a range test, and the schedule you chose",
+      "Learning curves (training and validation loss by epoch) for the starter network and for your final one",
+      "Your final model's code and summary, and its test accuracy, measured once",
+      "A README.md that explains how to rerun every experiment, which change mattered most and what you'd try next"
+    ],
+    "rubric": [
+      {
+        "name": "Diagnosis",
+        "points": 15,
+        "description": "The three sanity checks are run on the starter network and interpreted correctly."
+      },
+      {
+        "name": "Systematic experiments",
+        "points": 25,
+        "description": "One change at a time with fixed seeds, every run recorded, and conclusions drawn from the table rather than from a single lucky run."
+      },
+      {
+        "name": "Use of the techniques",
+        "points": 20,
+        "description": "Initialisation, normalisation, an adaptive optimiser with a schedule, and regularisation are each applied correctly and their effects measured."
+      },
+      {
+        "name": "Final performance, honestly measured",
+        "points": 20,
+        "description": "Validation data choose the settings and the test set is used once; about 0.89 test accuracy or better earns full marks."
+      },
+      {
+        "name": "Learning curves and analysis",
+        "points": 10,
+        "description": "Curves are plotted and read correctly, naming underfitting, overfitting or learning-rate problems where they appear."
+      },
+      {
+        "name": "Code and README",
+        "points": 10,
+        "description": "Readable, reproducible code and a README that lets someone else rerun the work."
+      }
+    ],
+    "submit": "Paste your diagnosis, the ablation table, the learning-rate study, your final model's code and summary, its test accuracy, your learning curves (or printed histories) and your README.",
+    "files": [
+      {
+        "path": "bad_fashion.py",
+        "content": "\"\"\"Capstone starter: a deep network that trains badly on Fashion-MNIST. Diagnose it and fix it.\"\"\"\n\nimport os\n\nos.environ.setdefault(\"TF_CPP_MIN_LOG_LEVEL\", \"2\")\n\nimport keras\nimport numpy as np\nfrom keras import layers\n\nCLASSES = [\"T-shirt/top\", \"Trouser\", \"Pullover\", \"Dress\", \"Coat\", \"Sandal\", \"Shirt\", \"Sneaker\", \"Bag\", \"Ankle boot\"]\n\n\ndef load_data(validation=10_000):\n    \"\"\"Fashion-MNIST: 60,000 training and 10,000 test images, 28 x 28 greyscale (about 30 MB, downloaded once).\"\"\"\n    (x_train, y_train), (x_test, y_test) = keras.datasets.fashion_mnist.load_data()\n    x_train, x_test = x_train.astype(\"float32\") / 255.0, x_test.astype(\"float32\") / 255.0\n    rng = np.random.default_rng(0)\n    order = rng.permutation(len(x_train))\n    val, train = order[:validation], order[validation:]\n    return (x_train[train], y_train[train]), (x_train[val], y_train[val]), (x_test, y_test)\n\n\ndef build_bad_model():\n    \"\"\"Eight sigmoid layers, weights drawn far too large, and no normalisation or regularisation.\"\"\"\n    model = keras.Sequential([keras.Input(shape=(28, 28)), layers.Flatten()], name=\"bad_network\")\n    for _ in range(8):\n        model.add(layers.Dense(256, activation=\"sigmoid\",\n                               kernel_initializer=keras.initializers.RandomNormal(stddev=1.0)))\n    model.add(layers.Dense(10, activation=\"softmax\"))\n    model.compile(optimizer=keras.optimizers.SGD(learning_rate=0.5), loss=\"sparse_categorical_crossentropy\",\n                  metrics=[\"accuracy\"])\n    return model\n\n\ndef main():\n    keras.utils.set_random_seed(0)\n    (x_train, y_train), (x_val, y_val), (x_test, y_test) = load_data()\n    print(\"train\", x_train.shape, \"validation\", x_val.shape, \"test\", x_test.shape)\n    model = build_bad_model()\n    model.summary()\n    history = model.fit(x_train, y_train, epochs=10, batch_size=256, validation_data=(x_val, y_val), verbose=2)\n    print(f\"Best validation accuracy: {max(history.history['val_accuracy']):.3f}\")\n    # Keep the test set for your final, chosen model:\n    # print(model.evaluate(x_test, y_test, verbose=0))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    ]
+  }
+}
