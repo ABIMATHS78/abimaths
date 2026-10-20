@@ -1,0 +1,1101 @@
+{
+ "slug": "data-engineering-foundations",
+ "title": "Data Engineering Foundations: Batch and Streaming Pipelines",
+ "subtitle": "Build reliable data pipelines in Python and DuckDB: file formats, idempotent and incremental loads, partitioned Parquet, quality checks and a first stream.",
+ "category": "Data Engineering",
+ "kind": "course",
+ "level": "beginner",
+ "instructors": [
+  "ismaile-rahimovi",
+  "idrissa-ouedraogo"
+ ],
+ "skills": [
+  "Data pipelines",
+  "ETL and ELT",
+  "Batch processing",
+  "Stream processing basics",
+  "Parquet and columnar storage",
+  "Idempotent loads",
+  "Incremental loading",
+  "Partitioning",
+  "Data quality checks",
+  "SQL with DuckDB"
+ ],
+ "tools": [
+  "Python 3",
+  "DuckDB",
+  "pandas",
+  "pytest",
+  "cron"
+ ],
+ "outcomes": [
+  "Explain what data engineers build, and choose between batch and streaming, and between ETL and ELT, for a given need",
+  "Choose a file format, and explain how Parquet's columns, row groups and statistics make analytical queries cheaper",
+  "Write loads that are idempotent and incremental, and partition data so that a single day can be replaced",
+  "Build a tested batch pipeline in Python and DuckDB that rejects bad rows with reasons and checks its data before publishing",
+  "Process an event stream in micro-batches with a checkpoint, de-duplication and event-time windows",
+  "Schedule a pipeline with cron, and explain what an orchestrator adds"
+ ],
+ "prerequisites": "Python Programming with PyCharm, or the same Python: functions, files and installing packages with pip. SQL basics (SELECT, WHERE, GROUP BY and joins), as in SQL for Data Analysis with DataGrip. Install Python 3.10 or later and, in a virtual environment, DuckDB, pandas and pytest: python -m pip install duckdb pandas pytest. The labs were tested with DuckDB 1.5, and every dataset comes with them.",
+ "description": "Data engineers build the pipelines that carry data from where it's created to where it's used: from apps, sensors and files into tables that analysts, dashboards and machine learning models can trust. This course teaches the foundations by building them. Working with readings from a network of rain gauges, you'll compare ETL with ELT, batch with streaming, and CSV and JSON with Parquet; write loads that can run twice without doubling the data, that pick up only what's new and that replace a single day's partition; and build a small batch pipeline in Python and DuckDB that rejects bad rows with a reason, checks each day before publishing it, and is covered by tests.\n\nThe last module looks beyond a single script: scheduling with cron and what an orchestrator adds, a stream processed in micro-batches with a checkpoint, de-duplication and event-time windows, and how to choose tools as data grows. Everything runs on a laptop with no cloud account, and the data is synthetic, made for the course. Afterwards, Orchestrating Data Pipelines with Apache Airflow, Analytics Engineering with dbt and DuckDB, Big Data Processing with Apache Spark, Data Quality, Testing and Data Contracts and Real-Time Data Streaming with Apache Kafka each take one part further.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "What data engineers build",
+   "summary": "What a data pipeline is and who depends on it, how batch and streaming differ, and why most teams now load raw data first and transform it where it's stored.",
+   "instructor": "ismaile-rahimovi",
+   "lessons": [
+    {
+     "title": "Pipelines and the people who use them",
+     "minutes": 10,
+     "objectives": [
+      "Describe the stages of a data pipeline, from its sources to the people who use it",
+      "Explain what data engineers are responsible for, compared with analysts and data scientists"
+     ],
+     "key_points": [
+      "A data pipeline moves data from its sources (application databases, files, APIs, sensors, event logs) through ingestion, storage and transformation to where it is used: tables, dashboards, machine learning features or other applications.",
+      "Data engineers build and run that path: data arriving on time, complete and correct, kept secure, and processed at a reasonable cost; analysts and data scientists mostly use what the pipelines produce.",
+      "Good pipelines keep the raw data as it arrived and build cleaned and modelled layers from it, often called raw, staging and marts (or bronze, silver and gold), so any later layer can be rebuilt when logic changes or a bug is found.",
+      "A pipeline is judged by what its users can rely on: freshness (how recent the data is), completeness, correctness, and how quickly problems are noticed and fixed, not only by whether the code ran.",
+      "Much of the work is about failure: sources send late, duplicated or malformed data, jobs stop half-way, and a rerun must not corrupt what was already published."
+     ]
+    },
+    {
+     "title": "Batch and streaming",
+     "minutes": 12,
+     "objectives": [
+      "Distinguish batch processing of bounded data from stream processing of unbounded data",
+      "Choose between them from the latency a use case really needs"
+     ],
+     "key_points": [
+      "Batch processing works on a bounded set of data, such as yesterday's files, on a schedule; it is simpler to build, test and rerun, and suits reports, billing and model training.",
+      "Stream processing works on unbounded data, events handled continuously as they arrive, with results in seconds; it suits fraud alerts, live monitoring and anything that must react before a batch would run.",
+      "Micro-batching sits between the two: a stream is processed in small batches every few seconds or minutes, which is how Spark Structured Streaming works by default.",
+      "Event time is when something happened; processing time is when the pipeline sees it. Events arrive late and out of order, so streaming results are grouped by event time, and the pipeline must decide how long to wait for stragglers.",
+      "Start from the latency users need: if a result every hour or every day is enough, batch is usually cheaper and easier to run, because streaming adds always-on infrastructure, state to manage and harder reprocessing."
+     ]
+    },
+    {
+     "title": "ETL and ELT",
+     "minutes": 12,
+     "objectives": [
+      "Explain the difference between ETL and ELT, and the trade-offs of each",
+      "Explain why keeping the raw data makes a pipeline easier to fix and extend"
+     ],
+     "key_points": [
+      "ETL (extract, transform, load) transforms data before loading it, so only cleaned results reach the destination; it suited warehouses whose storage and compute were expensive, and is still used when data must be filtered or masked before it lands.",
+      "ELT (extract, load, transform) loads the raw data first and transforms it inside the warehouse or lakehouse, usually in SQL; cheap storage and scalable query engines made it the common choice, and tools such as dbt are built around it.",
+      "Because ELT keeps the raw rows, a new question or a fixed bug needs only the transformation to run again, not a fresh extract from a source that may no longer hold the old data.",
+      "Load raw data with every column as text, or with a schema that accepts anything, so a bad value is stored and flagged later instead of making the whole load fail.",
+      "Personal and sensitive data needs care in both patterns: with ELT, raw copies sit in the warehouse, so restrict who can read them and drop or mask fields that aren't needed."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Process the same file with ETL and ELT",
+    "tool": "Python and DuckDB",
+    "minutes": 40,
+    "goal": "Run one day of rain-gauge readings through an ETL path in Python and an ELT path in DuckDB, make both give the same totals, and use the raw rows that ELT keeps to answer a new question.",
+    "setup": [
+     "Python 3.10 or later with DuckDB: python -m pip install duckdb",
+     "Download the starter files etl_vs_elt.py, readings_2024-06-01.csv and stations.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Open readings_2024-06-01.csv and find the four rows that shouldn't count: a station that isn't in stations.csv, a missing rain value, a negative one, and a row that appears twice. The readings are synthetic, made for this course."
+     },
+     {
+      "do": "Run the starter before changing anything.",
+      "code": "python etl_vs_elt.py",
+      "lang": "bash",
+      "see": "ETL: 0 stations, None mm and ELT: 9 stations, 80.4 mm, because neither path has its rules yet."
+     },
+     {
+      "do": "Write clean_rain(): return None for an unknown station, a key already in seen, a rain value that isn't a number (float() raises ValueError) or a negative one. Otherwise add the key to seen and return the rain."
+     },
+     {
+      "do": "In elt(), add the same rules to the SQL: SELECT DISTINCT, JOIN stations AS s USING (station_id), and WHERE TRY_CAST(r.rain_mm AS DOUBLE) >= 0. TRY_CAST gives NULL for anything that isn't a number, and NULL >= 0 isn't true, so missing values are dropped as well."
+     },
+     {
+      "do": "Run it again.",
+      "code": "python etl_vs_elt.py",
+      "lang": "bash",
+      "see": "ETL: 8 stations, 81.4 mm and ELT: 8 stations, 81.4 mm, then the raw, clean and rejected counts and the wettest reading."
+     },
+     {
+      "do": "Query the raw table yourself: ELT kept the row from the unknown station, so you can see exactly what was rejected.",
+      "code": "import duckdb\ncon = duckdb.connect(\"lab1.duckdb\")\ncon.sql(\"SELECT * FROM raw_readings WHERE station_id NOT IN (SELECT station_id FROM stations)\")",
+      "lang": "python",
+      "see": "One row: station 099 at 2024-06-01 12:00:00."
+     },
+     {
+      "do": "The wettest single reading came from data already in the database. Work out what the ETL path would need to do to answer the same question, given that it loaded only daily totals."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Both paths count the same eight stations and the same total rain.",
+      "look_for": [
+       "ETL: 8 stations, 81.4 mm",
+       "ELT: 8 stations, 81.4 mm"
+      ]
+     },
+     {
+      "text": "The raw table keeps all 68 rows, and four are rejected.",
+      "look_for": [
+       "Raw rows kept: 68",
+       "rejected: 4"
+      ]
+     },
+     {
+      "text": "The new question is answered from the data already loaded.",
+      "look_for": [
+       "Wettest reading: 002 Djibo at 12:00, 29.7 mm"
+      ]
+     },
+     {
+      "text": "clean_rain() catches ValueError rather than every exception, and the SQL uses TRY_CAST.",
+      "look_for": [
+       "except ValueError",
+       "TRY_CAST(r.rain_mm AS DOUBLE) >= 0"
+      ]
+     }
+    ],
+    "submit": "Paste your clean_rain() function, your SQL for clean_readings, the output of python etl_vs_elt.py, and a sentence on how the ETL path could answer the wettest-reading question.",
+    "files": [
+     {
+      "path": "etl_vs_elt.py",
+      "content": "\"\"\"The same day of rain-gauge readings, processed two ways.\n\nETL: extract and transform in Python, then load only the result.\nELT: load the raw rows into DuckDB as they are, then transform them there with SQL.\n\"\"\"\n\nimport csv\n\nimport duckdb\n\nRAW_FILE = \"readings_2024-06-01.csv\"\nSTATIONS_FILE = \"stations.csv\"\n\n\ndef clean_rain(row, known_stations, seen):\n    \"\"\"Return the row's rain in mm as a float, or None if the row must be rejected.\n\n    Reject a row whose station isn't known, whose rain_mm is missing, not a number or negative,\n    or whose (station_id, reading_time) has already been seen.\n    \"\"\"\n    # TODO: apply the four rules above; remember each accepted key in seen\n    return None\n\n\ndef etl(con):\n    with open(STATIONS_FILE, newline=\"\", encoding=\"utf-8\") as f:\n        known = {row[\"station_id\"] for row in csv.DictReader(f)}\n    seen, totals = set(), {}\n    with open(RAW_FILE, newline=\"\", encoding=\"utf-8\") as f:\n        for row in csv.DictReader(f):\n            rain = clean_rain(row, known, seen)\n            if rain is not None:\n                totals[row[\"station_id\"]] = totals.get(row[\"station_id\"], 0.0) + rain\n    con.execute(\"CREATE OR REPLACE TABLE etl_station_daily (station_id VARCHAR, rain_mm DOUBLE)\")\n    if totals:\n        con.executemany(\"INSERT INTO etl_station_daily VALUES (?, ?)\", sorted(totals.items()))\n\n\ndef elt(con):\n    # Load: every raw row, every column as text, exactly as it arrived.\n    con.execute(f\"CREATE OR REPLACE TABLE raw_readings AS SELECT * FROM read_csv('{RAW_FILE}', all_varchar = true)\")\n    con.execute(f\"CREATE OR REPLACE TABLE stations AS SELECT * FROM read_csv('{STATIONS_FILE}', all_varchar = true)\")\n    # Transform, in SQL, inside the database.\n    # TODO: add the same rules as clean_rain() to this query: keep known stations only (join to stations),\n    #   keep rows where TRY_CAST(r.rain_mm AS DOUBLE) >= 0, and remove exact duplicate rows (SELECT DISTINCT)\n    con.execute(\"\"\"\n        CREATE OR REPLACE TABLE clean_readings AS\n        SELECT\n            r.station_id,\n            CAST(r.reading_time AS TIMESTAMP) AS reading_time,\n            TRY_CAST(r.rain_mm AS DOUBLE) AS rain_mm,\n            TRY_CAST(r.temp_c AS DOUBLE) AS temp_c\n        FROM raw_readings AS r\n    \"\"\")\n    con.execute(\"\"\"\n        CREATE OR REPLACE TABLE elt_station_daily AS\n        SELECT station_id, SUM(rain_mm) AS rain_mm FROM clean_readings GROUP BY station_id\n    \"\"\")\n\n\ndef summary(con, table):\n    n, total = con.execute(f\"SELECT COUNT(*), ROUND(SUM(rain_mm), 1) FROM {table}\").fetchone()\n    return f\"{n} stations, {total} mm\"\n\n\ndef main():\n    con = duckdb.connect(\"lab1.duckdb\")\n    etl(con)\n    elt(con)\n    print(\"ETL:\", summary(con, \"etl_station_daily\"))\n    print(\"ELT:\", summary(con, \"elt_station_daily\"))\n\n    raw = con.execute(\"SELECT COUNT(*) FROM raw_readings\").fetchone()[0]\n    clean = con.execute(\"SELECT COUNT(*) FROM clean_readings\").fetchone()[0]\n    print(f\"Raw rows kept: {raw}, clean rows: {clean}, rejected: {raw - clean}\")\n\n    # A new question, answered from data already in the database: no need to extract again.\n    sid, name, ts, rain = con.execute(\"\"\"\n        SELECT c.station_id, s.name, c.reading_time, c.rain_mm\n        FROM clean_readings c JOIN stations s USING (station_id)\n        ORDER BY c.rain_mm DESC LIMIT 1\n    \"\"\").fetchone()\n    print(f\"Wettest reading: {sid} {name} at {ts:%H:%M}, {rain} mm\")\n    con.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "readings_2024-06-01.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-01 00:00:00,2.7,20.8\n001,2024-06-01 03:00:00,0.0,21.3\n001,2024-06-01 06:00:00,0.0,21.6\n001,2024-06-01 09:00:00,0.0,25.8\n001,2024-06-01 12:00:00,18.5,28.8\n001,2024-06-01 15:00:00,0.0,31.7\n004,2024-06-01 22:30:00,,24.1\n001,2024-06-01 18:00:00,0.0,29.2\n001,2024-06-01 21:00:00,0.0,26.3\n002,2024-06-01 00:00:00,0.0,23.0\n002,2024-06-01 03:00:00,0.0,20.7\n002,2024-06-01 06:00:00,0.0,22.8\n002,2024-06-01 09:00:00,0.0,25.7\n002,2024-06-01 12:00:00,29.7,28.0\n002,2024-06-01 15:00:00,0.0,30.6\n002,2024-06-01 18:00:00,0.0,29.4\n002,2024-06-01 21:00:00,0.0,25.5\n003,2024-06-01 00:00:00,0.0,22.7\n003,2024-06-01 03:00:00,0.0,21.3\n003,2024-06-01 06:00:00,0.0,22.9\n003,2024-06-01 09:00:00,1.7,23.4\n003,2024-06-01 12:00:00,0.0,28.8\n003,2024-06-01 15:00:00,0.0,31.1\n006,2024-06-01 13:30:00,-1.0,31.2\n003,2024-06-01 18:00:00,0.0,30.1\n003,2024-06-01 21:00:00,0.0,25.5\n004,2024-06-01 00:00:00,0.0,23.0\n004,2024-06-01 03:00:00,0.0,20.8\n004,2024-06-01 06:00:00,0.0,22.4\n004,2024-06-01 09:00:00,0.0,25.8\n004,2024-06-01 12:00:00,0.0,30.5\n099,2024-06-01 12:00:00,0.0,33.0\n004,2024-06-01 15:00:00,0.0,30.9\n004,2024-06-01 18:00:00,6.0,28.8\n004,2024-06-01 21:00:00,0.0,25.8\n005,2024-06-01 00:00:00,0.0,21.8\n005,2024-06-01 03:00:00,0.0,20.3\n005,2024-06-01 06:00:00,0.0,22.4\n005,2024-06-01 09:00:00,0.0,26.1\n005,2024-06-01 12:00:00,0.0,30.5\n005,2024-06-01 15:00:00,0.0,31.5\n005,2024-06-01 18:00:00,0.0,30.0\n005,2024-06-01 21:00:00,0.0,25.4\n006,2024-06-01 00:00:00,0.0,21.7\n006,2024-06-01 03:00:00,0.0,20.4\n007,2024-06-01 03:00:00,0.0,20.3\n006,2024-06-01 06:00:00,8.4,20.6\n006,2024-06-01 09:00:00,0.0,25.3\n006,2024-06-01 12:00:00,3.5,27.8\n006,2024-06-01 15:00:00,0.0,32.5\n006,2024-06-01 18:00:00,0.0,30.2\n006,2024-06-01 21:00:00,0.0,26.1\n007,2024-06-01 00:00:00,0.0,21.7\n007,2024-06-01 03:00:00,0.0,20.3\n007,2024-06-01 06:00:00,0.0,21.8\n007,2024-06-01 09:00:00,3.2,23.3\n007,2024-06-01 12:00:00,0.0,28.5\n007,2024-06-01 15:00:00,0.0,31.1\n007,2024-06-01 18:00:00,0.0,28.8\n007,2024-06-01 21:00:00,0.0,24.7\n008,2024-06-01 00:00:00,0.8,20.3\n008,2024-06-01 03:00:00,0.0,20.0\n008,2024-06-01 06:00:00,0.0,21.2\n008,2024-06-01 09:00:00,0.0,26.3\n008,2024-06-01 12:00:00,0.0,30.0\n008,2024-06-01 15:00:00,0.0,32.3\n008,2024-06-01 18:00:00,0.9,28.4\n008,2024-06-01 21:00:00,6.0,23.3\n"
+     },
+     {
+      "path": "stations.csv",
+      "content": "station_id,name,climate_zone\n001,Dori,Sahelian\n002,Djibo,Sahelian\n003,Ouahigouya,Sudano-Sahelian\n004,Kaya,Sudano-Sahelian\n005,Ouagadougou,Sudano-Sahelian\n006,Koudougou,Sudano-Sahelian\n007,Bobo-Dioulasso,Sudanian\n008,Gaoua,Sudanian\n"
+     }
+    ],
+    "hints": [
+     "float('') raises ValueError just as float('n/a') does, so one except ValueError covers missing and malformed values.",
+     "Check the key against seen first, and add it only once the row has passed every rule.",
+     "If ELT shows 9 stations, the join to stations is missing; if its total is 80.4 mm, the negative value is still being counted."
+    ]
+   }
+  },
+  {
+   "title": "Files and formats",
+   "summary": "Text formats and columnar Parquet: what each keeps, how readers guess types, and how columns, row groups and statistics make analytical queries cheaper.",
+   "instructor": "idrissa-ouedraogo",
+   "lessons": [
+    {
+     "title": "CSV and JSON: text that every system reads",
+     "minutes": 12,
+     "objectives": [
+      "Describe how CSV and JSON Lines store data, and what they leave out",
+      "Avoid the type-guessing mistakes that come with text formats"
+     ],
+     "key_points": [
+      "CSV stores one record per line with fields separated by a delimiter; it has no types and no standard for nulls or dates, and fields that contain the delimiter, quotes or line breaks must be quoted, so every reader has to guess the structure or be told it.",
+      "Readers infer types from the values, and their guesses differ: pandas reads a station ID of 001 as the integer 1, losing the leading zeros, unless told dtype={'station_id': 'string'}, while DuckDB's CSV sniffer kept it as text in this course's tests.",
+      "JSON represents nested objects and arrays of strings, numbers, booleans and null; JSON Lines, one JSON object per line, can be appended to and split for parallel reading, which is why logs and event streams often use it.",
+      "Text formats cost work on every read: values are parsed from strings each time, JSON repeats every key in every record, and a reader must scan whole rows even when it needs one column.",
+      "Declare the schema where data enters (types for IDs, dates and amounts, and the encoding, usually UTF-8) instead of trusting inference, and write dates and times in ISO 8601 form, such as 2024-06-01 15:00:00."
+     ],
+     "walkthrough": {
+      "tool": "Python and DuckDB",
+      "title": "See how DuckDB and pandas read CSV and JSON Lines",
+      "steps": [
+       {
+        "do": "In the folder with the module 1 lab's stations.csv and readings_2024-06-01.csv, start Python and import DuckDB.",
+        "code": "import duckdb",
+        "lang": "python"
+       },
+       {
+        "do": "Ask DuckDB's CSV sniffer what it detected: the delimiter, whether there's a header, and a type for each column.",
+        "code": "duckdb.sql(\"SELECT Delimiter, HasHeader, Columns FROM sniff_csv('stations.csv')\").fetchall()",
+        "lang": "python",
+        "see": "',' and True, with station_id, name and climate_zone all VARCHAR."
+       },
+       {
+        "do": "See the types it chose for the readings.",
+        "code": "duckdb.sql(\"DESCRIBE SELECT * FROM 'readings_2024-06-01.csv'\")",
+        "lang": "python",
+        "see": "station_id VARCHAR, reading_time TIMESTAMP, rain_mm DOUBLE and temp_c DOUBLE."
+       },
+       {
+        "do": "Write the same rows as JSON Lines and print the first line of the file.",
+        "code": "duckdb.sql(\"COPY (SELECT * FROM 'readings_2024-06-01.csv') TO 'readings.jsonl' (FORMAT json)\")\nprint(open(\"readings.jsonl\").readline())",
+        "lang": "python",
+        "see": "{\"station_id\":\"001\",\"reading_time\":\"2024-06-01 00:00:00\",\"rain_mm\":2.7,\"temp_c\":20.8}: every record repeats every key."
+       },
+       {
+        "do": "Read the JSON Lines back. The types come from the JSON values, and DuckDB recognises the timestamp text.",
+        "code": "duckdb.sql(\"DESCRIBE SELECT * FROM 'readings.jsonl'\")",
+        "lang": "python",
+        "see": "The same four types as the CSV, including reading_time TIMESTAMP."
+       },
+       {
+        "do": "Compare pandas, which also guesses from the values.",
+        "code": "import pandas as pd\npd.read_csv(\"stations.csv\").dtypes",
+        "lang": "python",
+        "see": "station_id int64: 001 has become the number 1."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Parquet and columnar storage",
+     "minutes": 12,
+     "objectives": [
+      "Explain how a columnar file is laid out, and why that speeds up analytical queries",
+      "Read a Parquet file's schema and statistics"
+     ],
+     "key_points": [
+      "Parquet is an open, binary, columnar file format: rows are split into row groups, and within each row group every column's values are stored together as a column chunk, compressed and encoded on its own.",
+      "The file's footer holds the schema, a physical type such as INT64 and a logical type such as TIMESTAMP for every column, plus statistics for each column chunk, such as its minimum, maximum and null count, so readers needn't guess types.",
+      "Column pruning: a query that uses two columns reads only those columns' chunks. Predicate pushdown: a filter such as reading_time >= '2024-06-23' skips row groups whose maximum is earlier, which works best when the data is sorted by that column.",
+      "The values in one column are alike, so dictionary and run-length encoding plus a codec such as Snappy or Zstandard (zstd) often make a Parquet file several times smaller than the same data as CSV.",
+      "Parquet suits data written once and read many times; its files are immutable, so changing a row means rewriting a file, which is why data is updated by replacing whole files or partitions, or through a table format."
+     ],
+     "walkthrough": {
+      "tool": "Python and DuckDB",
+      "title": "Look inside a Parquet file",
+      "steps": [
+       {
+        "do": "In the same folder, write the readings as Parquet.",
+        "code": "import duckdb\nduckdb.sql(\"COPY (SELECT * FROM 'readings_2024-06-01.csv') TO 'readings.parquet' (FORMAT parquet)\")",
+        "lang": "python"
+       },
+       {
+        "do": "Read the schema stored in the file's footer.",
+        "code": "duckdb.sql(\"SELECT name, type, converted_type FROM parquet_schema('readings.parquet')\")",
+        "lang": "python",
+        "see": "reading_time is stored as INT64 with the logical type TIMESTAMP_MICROS (microseconds); station_id is a BYTE_ARRAY marked UTF8."
+       },
+       {
+        "do": "Read the statistics kept for each column chunk.",
+        "code": "duckdb.sql(\"SELECT path_in_schema, stats_min_value, stats_max_value, compression FROM parquet_metadata('readings.parquet')\")",
+        "lang": "python",
+        "see": "One row group, so one row per column: station_id from 001 to 099, rain_mm from -1.0 to 29.7, each compressed with SNAPPY, DuckDB's default."
+       },
+       {
+        "do": "Query the file directly. Only the two columns the query names are read.",
+        "code": "duckdb.sql(\"SELECT station_id, SUM(rain_mm) AS rain_mm FROM 'readings.parquet' WHERE rain_mm >= 0 GROUP BY ALL ORDER BY 2 DESC LIMIT 3\")",
+        "lang": "python",
+        "see": "Station 002 first, with 29.7 mm."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Schemas, compression and table formats",
+     "minutes": 10,
+     "objectives": [
+      "Choose column types and a compression codec for a dataset",
+      "Explain what open table formats add on top of data files"
+     ],
+     "key_points": [
+      "Choose types for meaning: DATE and TIMESTAMP for times (and say whether a timestamp is UTC or local), DECIMAL rather than floating point for money, and text for identifiers that look like numbers, such as postcodes and IDs with leading zeros.",
+      "Snappy compresses and decompresses quickly with a moderate ratio and is a common default; Zstandard usually makes smaller files for a little more CPU; gzip is slower; choose by whether storage or CPU costs more for the workload.",
+      "Schemas change: adding a nullable column is usually safe for readers, while renaming or removing a column, or changing its type, breaks them, so changes are agreed with consumers and made backwards compatible where possible.",
+      "Avro is a row-oriented binary format with its schema embedded, widely used for event messages; ORC is a columnar format like Parquet, common in the Hadoop and Hive world.",
+      "Open table formats (Delta Lake, Apache Iceberg and Apache Hudi) keep a transaction log or metadata over a set of data files, usually Parquet, adding atomic commits, schema evolution, time travel to earlier versions and safe concurrent writes."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Compare CSV, JSON Lines and Parquet",
+    "tool": "Python and DuckDB",
+    "minutes": 40,
+    "goal": "Write a month of readings in three formats, see what each keeps and how big each is, and use Parquet's metadata to find the row groups a query can skip.",
+    "setup": [
+     "Python 3.10 or later with DuckDB and pandas: python -m pip install duckdb pandas",
+     "Download the starter files make_readings.py and compare_formats.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Generate the data: a month of hourly readings from eight gauges, 5,760 rows.",
+      "code": "python make_readings.py",
+      "lang": "bash",
+      "see": "Wrote readings_june.csv"
+     },
+     {
+      "do": "Complete TODO 1 with three COPY statements, one per format. Write the Parquet file from SELECT * FROM readings ORDER BY reading_time with (FORMAT parquet, ROW_GROUP_SIZE 2048)."
+     },
+     {
+      "do": "Complete TODO 2: read the CSV with pandas again, this time with dtype={\"station_id\": \"string\"}, and print the first value."
+     },
+     {
+      "do": "Complete TODO 3: count the row groups whose maximum reading_time is earlier than '2024-06-23'. The statistics come back as ISO-formatted text, so comparing strings works."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python compare_formats.py",
+      "lang": "bash",
+      "see": "5760 rows in every format, then the types, the three row groups and the sizes."
+     },
+     {
+      "do": "Compare the sizes: why is JSON Lines the largest? Then compare the three Parquet codecs at the end. Exact byte counts depend on your DuckDB version; the order doesn't."
+     },
+     {
+      "do": "The sorted Parquet file is bigger than readings_snappy.parquet, which keeps the source's order (station by station). Explain why the order of rows changes the size, and which order suits a query for one station or for the last week."
+     }
+    ],
+    "checks": [
+     {
+      "text": "All three files hold all 5,760 rows.",
+      "look_for": [
+       "'csv': 5760",
+       "'jsonl': 5760",
+       "'parquet': 5760"
+      ]
+     },
+     {
+      "text": "pandas guesses that station_id is a number and loses the leading zeros, and keeps them when told it's a string.",
+      "look_for": [
+       "int64: first value 1",
+       "a string: first value 001"
+      ]
+     },
+     {
+      "text": "Parquet stores the timestamp's type in the file.",
+      "look_for": [
+       "INT64 (TIMESTAMP_MICROS)"
+      ]
+     },
+     {
+      "text": "The file has three row groups, and a query for the last week of June can skip two of them.",
+      "look_for": [
+       "Row group 2: 1664 rows",
+       "skip 2 of 3 row groups"
+      ]
+     },
+     {
+      "text": "Parquet is the smallest file and JSON Lines the largest.",
+      "look_for": [
+       "Parquet smaller than CSV: True",
+       "CSV smaller than JSON Lines: True"
+      ]
+     }
+    ],
+    "submit": "Paste your three COPY statements and your code for TODOs 2 and 3, the output of python compare_formats.py, and a few sentences on which format you'd choose for this data, and why.",
+    "files": [
+     {
+      "path": "make_readings.py",
+      "content": "\"\"\"Write readings_june.csv: synthetic hourly readings from eight rain gauges for June 2024 (5,760 rows).\n\nOnly random.random() is used, so every Python version writes exactly the same file.\n\"\"\"\n\nimport math\nimport random\nfrom datetime import date, timedelta\n\nSTATIONS = [(\"001\", 277, 0.12), (\"002\", 306, 0.12), (\"003\", 336, 0.18), (\"004\", 298, 0.18),\n            (\"005\", 306, 0.18), (\"006\", 299, 0.18), (\"007\", 432, 0.26), (\"008\", 335, 0.26)]\n\nrng = random.Random(2024)\nwith open(\"readings_june.csv\", \"w\", encoding=\"utf-8\") as f:\n    f.write(\"station_id,reading_time,rain_mm,temp_c\\n\")\n    for d in range(30):\n        day = date(2024, 6, 1) + timedelta(days=d)\n        for sid, elev, wet in STATIONS:\n            for h in range(24):\n                rain = round(-math.log(1 - rng.random()) * 5.0, 1) if rng.random() < wet / 3 else 0.0\n                temp = 27.0 + 5.5 * math.sin((h - 9) / 24 * 2 * math.pi) - elev / 300 + (rng.random() - 0.5) * 2\n                f.write(f\"{sid},{day} {h:02d}:00:00,{rain:.1f},{temp - (2 if rain else 0):.1f}\\n\")\nprint(\"Wrote readings_june.csv\")\n"
+     },
+     {
+      "path": "compare_formats.py",
+      "content": "\"\"\"Write the same readings as CSV, JSON Lines and Parquet, then compare what each format keeps.\"\"\"\n\nimport csv\nimport os\n\nimport duckdb\nimport pandas as pd\n\nos.makedirs(\"out\", exist_ok=True)\ncon = duckdb.connect()\n# Read the source with station_id as text, so the leading zeros (001, 002...) survive.\ncon.execute(\"\"\"CREATE TABLE readings AS\n               SELECT * FROM read_csv('readings_june.csv', types = {'station_id': 'VARCHAR'})\"\"\")\n\n# TODO 1: write the table three times with COPY ... TO:\n#   out/readings.csv with a header, out/readings.jsonl with (FORMAT json), and\n#   out/readings.parquet with (FORMAT parquet, ROW_GROUP_SIZE 2048), sorted by reading_time\n\nfiles = {\"csv\": \"out/readings.csv\", \"jsonl\": \"out/readings.jsonl\", \"parquet\": \"out/readings.parquet\"}\ncounts = {k: con.execute(f\"SELECT COUNT(*) FROM '{p}'\").fetchone()[0] for k, p in files.items()}\nprint(\"Rows:\", counts)\n\n# CSV is only text: the csv module returns strings, and every other reader guesses the types.\nwith open(\"out/readings.csv\", newline=\"\", encoding=\"utf-8\") as f:\n    print(\"csv module, first row:\", next(csv.DictReader(f)))\nguessed = pd.read_csv(\"out/readings.csv\")\nprint(f\"pandas guessed station_id as {guessed['station_id'].dtype}: first value {guessed['station_id'].iloc[0]}\")\n# TODO 2: read out/readings.csv with pandas again, telling it station_id is a string\n#   (dtype={\"station_id\": \"string\"}), and print the first value the same way\n\n# Parquet keeps the schema in the file's footer: a physical type and a logical type for every column.\nfor name, ptype, ctype in con.execute(\"\"\"\n        SELECT name, type, converted_type FROM parquet_schema('out/readings.parquet')\n        WHERE name <> 'duckdb_schema'\"\"\").fetchall():\n    print(f\"Parquet column {name:12} stored as {ptype} ({ctype})\")\n\n# ...and min/max statistics for every column in every row group.\ngroups = con.execute(\"\"\"\n    SELECT row_group_id, row_group_num_rows, stats_min_value, stats_max_value\n    FROM parquet_metadata('out/readings.parquet')\n    WHERE path_in_schema = 'reading_time' ORDER BY row_group_id\"\"\").fetchall()\nfor gid, rows, lo, hi in groups:\n    print(f\"Row group {gid}: {rows} rows, reading_time {lo} to {hi}\")\n# TODO 3: a query with WHERE reading_time >= '2024-06-23' can skip every row group whose maximum\n#   is earlier than that. Count them into skippable.\nskippable = 0\nprint(f\"For reading_time >= '2024-06-23' a reader can skip {skippable} of {len(groups)} row groups\")\n\n# Column pruning: a query that needs one column reads only that column's chunks.\nchunks = dict(con.execute(\"\"\"SELECT path_in_schema, SUM(total_compressed_size)\n                             FROM parquet_metadata('out/readings.parquet') GROUP BY 1\"\"\").fetchall())\nprint(f\"SUM(rain_mm) reads {chunks['rain_mm'] / sum(chunks.values()):.0%} of the column data\")\n\nsizes = {k: os.path.getsize(p) for k, p in files.items()}\nprint(\"Sizes in bytes:\", sizes)\nprint(\"Parquet smaller than CSV:\", sizes[\"parquet\"] < sizes[\"csv\"])\nprint(\"CSV smaller than JSON Lines:\", sizes[\"csv\"] < sizes[\"jsonl\"])\nfor codec in [\"uncompressed\", \"snappy\", \"zstd\"]:\n    con.execute(f\"COPY readings TO 'out/readings_{codec}.parquet' (FORMAT parquet, COMPRESSION {codec})\")\n    print(f\"Parquet with {codec}: {os.path.getsize(f'out/readings_{codec}.parquet')} bytes\")\n"
+     }
+    ],
+    "hints": [
+     "COPY readings TO 'out/readings.csv' (HEADER) writes a header row; (FORMAT json) writes one JSON object per line.",
+     "DuckDB writes rows in chunks of 2,048, so row groups come out in multiples of that; ROW_GROUP_SIZE 2048 gives three groups here.",
+     "If only one row group appears, check that ROW_GROUP_SIZE 2048 is inside the parentheses of the Parquet COPY, after FORMAT parquet."
+    ]
+   }
+  },
+  {
+   "title": "Loading data reliably",
+   "summary": "Loads that can be retried and rerun without corrupting data, that pick up only what's new, and partitions that let one day be replaced on its own.",
+   "instructor": "ismaile-rahimovi",
+   "lessons": [
+    {
+     "title": "Idempotent loads",
+     "minutes": 12,
+     "objectives": [
+      "Explain why pipelines must be safe to rerun, and what makes a load idempotent",
+      "Write an idempotent load with delete-and-insert in a transaction, or with an upsert"
+     ],
+     "key_points": [
+      "An operation is idempotent when running it twice has the same effect as running it once; pipelines need this because retries, reruns after a fix and backfills all run the same load again.",
+      "A plain INSERT that appends is not idempotent: running it twice duplicates every row, and the duplicates silently double every total built on them.",
+      "Delete-then-insert replaces a whole slice, such as one day: delete the day's rows and insert the new ones inside one transaction, so readers see either the old day or the new one, never a half-loaded mix.",
+      "An upsert (or merge) on a key updates the rows that exist and inserts the rest; in DuckDB that's INSERT ... ON CONFLICT (key) DO UPDATE or INSERT OR REPLACE, which need a primary key or unique constraint on the key.",
+      "Make each run depend only on its inputs, such as the date it processes, never on the clock: a job that works out 'yesterday' from now() loads a different day when it's rerun tomorrow."
+     ],
+     "walkthrough": {
+      "tool": "Python and DuckDB",
+      "title": "Upsert a row by its key",
+      "steps": [
+       {
+        "do": "Create a table of each station's latest reading, keyed by station_id, and add a row.",
+        "code": "import duckdb\ncon = duckdb.connect()\ncon.execute(\"CREATE TABLE latest (station_id VARCHAR PRIMARY KEY, last_reading TIMESTAMP, rain_mm DOUBLE)\")\ncon.execute(\"INSERT INTO latest VALUES ('001', '2024-06-01 21:00:00', 0.0)\")",
+        "lang": "python"
+       },
+       {
+        "do": "Insert a newer reading for the same station with a plain INSERT.",
+        "code": "con.execute(\"INSERT INTO latest VALUES ('001', '2024-06-02 00:00:00', 1.4)\")",
+        "lang": "python",
+        "see": "A ConstraintException about a duplicate key: the primary key refuses a second row for 001."
+       },
+       {
+        "do": "Do it as an upsert: on a conflict, update the existing row with the new values (excluded holds the row that was being inserted).",
+        "code": "con.execute(\"\"\"INSERT INTO latest VALUES ('001', '2024-06-02 00:00:00', 1.4)\n    ON CONFLICT (station_id) DO UPDATE\n    SET last_reading = excluded.last_reading, rain_mm = excluded.rain_mm\"\"\")\ncon.sql(\"SELECT * FROM latest\")",
+        "lang": "python",
+        "see": "One row for 001, now 2024-06-02 00:00:00 and 1.4 mm. Run it again and nothing changes."
+       },
+       {
+        "do": "INSERT OR REPLACE is the short form when every column should be replaced.",
+        "code": "con.execute(\"INSERT OR REPLACE INTO latest VALUES ('001', '2024-06-02 03:00:00', 0.2)\")",
+        "lang": "python",
+        "see": "Still one row for 001, now from 03:00."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Full and incremental loads",
+     "minutes": 12,
+     "objectives": [
+      "Compare full reloads with incremental loads",
+      "Track a watermark, and handle late-arriving data with a lookback window"
+     ],
+     "key_points": [
+      "A full load (full refresh) reloads everything on every run; it's simple and corrects any past mistake, but its cost grows with the data, so it suits small tables such as reference lists.",
+      "An incremental load fetches only what changed since the last run, using a watermark: the highest value already loaded of a column that only increases, such as an updated_at time, an ID or a file's date, saved in a state table.",
+      "Late data defeats a naive watermark: a row stamped 23:59 but committed after the run has moved past it is never loaded, so incremental loads usually re-read a lookback window, such as the last two days, and rely on idempotent writes to absorb the overlap.",
+      "Rows deleted in the source are invisible to an updated_at watermark; change data capture (CDC), which reads the source database's change log, captures inserts, updates and deletes in order.",
+      "Move the watermark only after the data is safely loaded: if a run stops in between, the next run loads the same files again, which is harmless only because the load is idempotent."
+     ]
+    },
+    {
+     "title": "Partitioning",
+     "minutes": 12,
+     "objectives": [
+      "Explain how partitioning by a column lets readers skip data and writers replace it",
+      "Choose a partition column and a granularity"
+     ],
+     "key_points": [
+      "Partitioning splits a table's files into folders by the value of a column, usually a date, in the Hive style reading_date=2024-06-01/; the value comes from the folder name rather than being stored in every file.",
+      "Partition pruning: a query that filters on the partition column reads only the matching folders, so one day of a five-year table means reading one of about 1,800 folders.",
+      "Partitions make reruns cheap and safe: a job that rebuilds 2024-06-02 deletes and rewrites only that folder, which is the file version of delete-then-insert for one day.",
+      "Partition by a column that most queries filter on and that has a moderate number of values: partitioning by a high-cardinality column such as a customer ID creates many tiny files, and every file adds work to list, open and plan.",
+      "Aim for files of tens to hundreds of megabytes; if partitions would be tiny, choose a coarser grain such as month, or don't partition and rely on sorting and Parquet's row group statistics instead."
+     ],
+     "walkthrough": {
+      "tool": "Python and DuckDB",
+      "title": "Write and read a partitioned dataset",
+      "steps": [
+       {
+        "do": "In the folder with the module 3 lab's landing files, load the three days into a table with a reading_date column.",
+        "code": "import duckdb\ncon = duckdb.connect()\ncon.execute(\"\"\"CREATE TABLE r AS SELECT *, CAST(reading_time AS DATE) AS reading_date\n    FROM read_csv('landing/*.csv', types = {'station_id': 'VARCHAR'})\"\"\")",
+        "lang": "python"
+       },
+       {
+        "do": "Write it as Parquet, partitioned by reading_date.",
+        "code": "con.execute(\"COPY r TO 'lake' (FORMAT parquet, PARTITION_BY (reading_date))\")",
+        "lang": "python",
+        "see": "Folders lake/reading_date=2024-06-01 to lake/reading_date=2024-06-03, each holding data_0.parquet."
+       },
+       {
+        "do": "Run the same COPY again.",
+        "see": "An IO Error saying the lake directory is not empty: DuckDB won't add files to an existing dataset unless an option such as OVERWRITE_OR_IGNORE or OVERWRITE says what to do."
+       },
+       {
+        "do": "Read the dataset back. The folder names become a reading_date column.",
+        "code": "con.sql(\"SELECT reading_date, COUNT(*) FROM read_parquet('lake/*/*.parquet', hive_partitioning = true) GROUP BY ALL ORDER BY 1\")",
+        "lang": "python",
+        "see": "Three dates with 64 rows each."
+       },
+       {
+        "do": "Check which columns a data file holds.",
+        "code": "con.sql(\"SELECT name FROM parquet_schema('lake/reading_date=2024-06-01/data_0.parquet')\")",
+        "lang": "python",
+        "see": "station_id, reading_time, rain_mm and temp_c (under the schema's root): reading_date is only in the folder name."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Make loads idempotent and incremental",
+    "tool": "Python and DuckDB",
+    "minutes": 50,
+    "goal": "Watch an append double a day's data, then write an idempotent daily load, an incremental load driven by a watermark, and a partition writer that replaces a day instead of adding to it.",
+    "setup": [
+     "Python 3.10 or later with DuckDB: python -m pip install duckdb",
+     "Download the starter files into one folder, keeping the landing and corrections folders"
+    ],
+    "steps": [
+     {
+      "do": "Run the starter. Section 1 appends the same file twice.",
+      "code": "python load_lab.py",
+      "lang": "bash",
+      "see": "rows for 2024-06-01: 128 (the file has 64); later sections show 0 rows or nothing loaded, and section 5 fails because write_partition() isn't written yet."
+     },
+     {
+      "do": "Write load_day(): begin a transaction, delete the day's rows with a ? parameter, insert the file's rows, and commit; on any exception, roll back and raise it again."
+     },
+     {
+      "do": "Write load_new_days(): load each landing file whose date is later than the watermark, then save the newest date loaded. Dates written as YYYY-MM-DD sort correctly as text."
+     },
+     {
+      "do": "Write write_partition(): remove the day's folder if it exists, create it, and COPY the day's rows, without reading_date, to data.parquet inside it."
+     },
+     {
+      "do": "Run the script again.",
+      "code": "python load_lab.py",
+      "lang": "bash",
+      "see": "64 rows after loading a day twice, nothing new on the second incremental run, the correction applied, and three partitions of 64 rows."
+     },
+     {
+      "do": "Run it a third time and compare: the output is identical, because the script, like every load in it, is idempotent."
+     },
+     {
+      "do": "Section 4 reloads a corrected file for 2024-06-02. Explain why the incremental load alone would never have picked it up, and what a lookback window would change."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Appending twice doubles the day; the idempotent load doesn't.",
+      "look_for": [
+       "rows for 2024-06-01: 128",
+       "rows for 2024-06-01: 64"
+      ]
+     },
+     {
+      "text": "The incremental load picks up the three days once, then finds nothing new.",
+      "look_for": [
+       "run 1 loaded: ['2024-06-01', '2024-06-02', '2024-06-03']",
+       "run 2 loaded: nothing new",
+       "watermark: 2024-06-03, rows: 192"
+      ]
+     },
+     {
+      "text": "Reloading the corrected file replaces the day rather than adding to it.",
+      "look_for": [
+       "11.2 mm before, 5.5 mm after",
+       "rows for the day: 64"
+      ]
+     },
+     {
+      "text": "The lake has one file per day, and 2024-06-02 still has 64 rows after being written twice.",
+      "look_for": [
+       "reading_date=2024-06-02/data.parquet",
+       "('2024-06-02', 64)"
+      ]
+     },
+     {
+      "text": "load_day() uses a transaction and a query parameter.",
+      "look_for": [
+       "con.begin()",
+       "con.rollback()",
+       "reading_date = ?"
+      ]
+     }
+    ],
+    "submit": "Paste your load_day(), load_new_days() and write_partition() functions, the output of python load_lab.py, and your answer about the corrected file.",
+    "files": [
+     {
+      "path": "load_lab.py",
+      "content": "\"\"\"Load daily rain-gauge files into DuckDB: append, idempotent and incremental loads, plus a partitioned copy.\"\"\"\n\nimport glob\nimport os\nimport shutil\n\nimport duckdb\n\nDB = \"warehouse.duckdb\"\n\n\ndef setup(con):\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS readings (\n        station_id VARCHAR, reading_time TIMESTAMP, rain_mm DOUBLE, temp_c DOUBLE, reading_date DATE)\"\"\")\n    con.execute(\"CREATE TABLE IF NOT EXISTS load_state (source VARCHAR PRIMARY KEY, watermark DATE)\")\n\n\ndef select_file(path):\n    \"\"\"A query that reads one landing file with the right types and adds its reading_date.\"\"\"\n    return f\"\"\"SELECT station_id, reading_time, rain_mm, temp_c, CAST(reading_time AS DATE) AS reading_date\n               FROM read_csv('{path}', types = {{'station_id': 'VARCHAR', 'reading_time': 'TIMESTAMP'}})\"\"\"\n\n\ndef day_of(path):\n    \"\"\"landing/readings_2024-06-01.csv -> 2024-06-01\"\"\"\n    return os.path.basename(path).removeprefix(\"readings_\").removesuffix(\".csv\")\n\n\ndef load_append(con, path):\n    \"\"\"The naive load: append whatever the file holds.\"\"\"\n    con.execute(f\"INSERT INTO readings {select_file(path)}\")\n\n\ndef load_day(con, day, path):\n    \"\"\"Idempotent load: replace the day's rows in one transaction, so running it again changes nothing.\"\"\"\n    # TODO: start a transaction with con.begin(); delete the rows whose reading_date is day\n    #   (use a ? parameter); insert the file's rows with select_file(path); then con.commit().\n    #   If anything fails, call con.rollback() and re-raise the error.\n    pass\n\n\ndef load_new_days(con, folder=\"landing\"):\n    \"\"\"Incremental load: only the days after the watermark, then move the watermark forward.\"\"\"\n    row = con.execute(\"SELECT watermark FROM load_state WHERE source = 'readings'\").fetchone()\n    watermark = str(row[0]) if row else \"\"\n    # TODO: for each file in sorted(glob.glob(f\"{folder}/readings_*.csv\")) whose day_of(path) is\n    #   later than watermark, call load_day. Then, if any day was loaded, save the newest one with\n    #   INSERT OR REPLACE INTO load_state VALUES ('readings', ?). Return the list of days loaded.\n    return []\n\n\ndef write_partition(con, day, lake=\"lake/readings\"):\n    \"\"\"Overwrite one date partition of the Parquet copy: remove its folder, then write it again.\"\"\"\n    folder = f\"{lake}/reading_date={day}\"\n    # TODO: remove folder if it exists (shutil.rmtree), create it (os.makedirs), then COPY that day's\n    #   rows, without the reading_date column (SELECT * EXCLUDE (reading_date)), to folder/data.parquet\n\n\ndef rows_for(con, day):\n    return con.execute(\"SELECT COUNT(*) FROM readings WHERE reading_date = ?\", [day]).fetchone()[0]\n\n\ndef main():\n    # Start from nothing each time, so this script can be run again and again.\n    for path in [DB, DB + \".wal\"]:\n        if os.path.exists(path):\n            os.remove(path)\n    shutil.rmtree(\"lake\", ignore_errors=True)\n    con = duckdb.connect(DB)\n    setup(con)\n\n    print(\"1. Append the same file twice\")\n    load_append(con, \"landing/readings_2024-06-01.csv\")\n    load_append(con, \"landing/readings_2024-06-01.csv\")\n    print(f\"   rows for 2024-06-01: {rows_for(con, '2024-06-01')} (the file has 64)\")\n    con.execute(\"DELETE FROM readings\")\n\n    print(\"2. Idempotent load, run twice\")\n    load_day(con, \"2024-06-01\", \"landing/readings_2024-06-01.csv\")\n    load_day(con, \"2024-06-01\", \"landing/readings_2024-06-01.csv\")\n    print(f\"   rows for 2024-06-01: {rows_for(con, '2024-06-01')}\")\n\n    print(\"3. Incremental loads\")\n    print(\"   run 1 loaded:\", load_new_days(con))\n    print(\"   run 2 loaded:\", load_new_days(con) or \"nothing new\")\n    state = con.execute(\"SELECT watermark FROM load_state\").fetchone()\n    watermark = state[0] if state else None\n    total = con.execute(\"SELECT COUNT(*) FROM readings\").fetchone()[0]\n    print(f\"   watermark: {watermark}, rows: {total}\")\n\n    print(\"4. A corrected file for 2024-06-02 arrives\")\n    rain_008 = \"SELECT ROUND(SUM(rain_mm), 1) FROM readings WHERE station_id = '008' AND reading_date = '2024-06-02'\"\n    before = con.execute(rain_008).fetchone()[0]\n    load_day(con, \"2024-06-02\", \"corrections/readings_2024-06-02.csv\")\n    after = con.execute(rain_008).fetchone()[0]\n    print(f\"   station 008 on 2024-06-02: {before} mm before, {after} mm after; \"\n          f\"rows for the day: {rows_for(con, '2024-06-02')}\")\n\n    print(\"5. A partitioned Parquet copy\")\n    for day in [\"2024-06-01\", \"2024-06-02\", \"2024-06-03\"]:\n        write_partition(con, day)\n    write_partition(con, \"2024-06-02\")  # a rerun overwrites the partition; it doesn't add to it\n    for path in sorted(glob.glob(\"lake/readings/*/*.parquet\")):\n        print(\"  \", path)\n    lake = \"read_parquet('lake/readings/*/*.parquet', hive_partitioning = true)\"\n    per_day = con.execute(f\"SELECT reading_date, COUNT(*) FROM {lake} GROUP BY 1 ORDER BY 1\").fetchall()\n    print(\"   rows per partition:\", [(str(d), n) for d, n in per_day])\n    con.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "landing/readings_2024-06-01.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-01 00:00:00,2.7,20.8\n001,2024-06-01 03:00:00,0.0,21.3\n001,2024-06-01 06:00:00,0.0,21.6\n001,2024-06-01 09:00:00,0.0,25.8\n001,2024-06-01 12:00:00,18.5,28.8\n001,2024-06-01 15:00:00,0.0,31.7\n001,2024-06-01 18:00:00,0.0,29.2\n001,2024-06-01 21:00:00,0.0,26.3\n002,2024-06-01 00:00:00,0.0,23.0\n002,2024-06-01 03:00:00,0.0,20.7\n002,2024-06-01 06:00:00,0.0,22.8\n002,2024-06-01 09:00:00,0.0,25.7\n002,2024-06-01 12:00:00,29.7,28.0\n002,2024-06-01 15:00:00,0.0,30.6\n002,2024-06-01 18:00:00,0.0,29.4\n002,2024-06-01 21:00:00,0.0,25.5\n003,2024-06-01 00:00:00,0.0,22.7\n003,2024-06-01 03:00:00,0.0,21.3\n003,2024-06-01 06:00:00,0.0,22.9\n003,2024-06-01 09:00:00,1.7,23.4\n003,2024-06-01 12:00:00,0.0,28.8\n003,2024-06-01 15:00:00,0.0,31.1\n003,2024-06-01 18:00:00,0.0,30.1\n003,2024-06-01 21:00:00,0.0,25.5\n004,2024-06-01 00:00:00,0.0,23.0\n004,2024-06-01 03:00:00,0.0,20.8\n004,2024-06-01 06:00:00,0.0,22.4\n004,2024-06-01 09:00:00,0.0,25.8\n004,2024-06-01 12:00:00,0.0,30.5\n004,2024-06-01 15:00:00,0.0,30.9\n004,2024-06-01 18:00:00,6.0,28.8\n004,2024-06-01 21:00:00,0.0,25.8\n005,2024-06-01 00:00:00,0.0,21.8\n005,2024-06-01 03:00:00,0.0,20.3\n005,2024-06-01 06:00:00,0.0,22.4\n005,2024-06-01 09:00:00,0.0,26.1\n005,2024-06-01 12:00:00,0.0,30.5\n005,2024-06-01 15:00:00,0.0,31.5\n005,2024-06-01 18:00:00,0.0,30.0\n005,2024-06-01 21:00:00,0.0,25.4\n006,2024-06-01 00:00:00,0.0,21.7\n006,2024-06-01 03:00:00,0.0,20.4\n006,2024-06-01 06:00:00,8.4,20.6\n006,2024-06-01 09:00:00,0.0,25.3\n006,2024-06-01 12:00:00,3.5,27.8\n006,2024-06-01 15:00:00,0.0,32.5\n006,2024-06-01 18:00:00,0.0,30.2\n006,2024-06-01 21:00:00,0.0,26.1\n007,2024-06-01 00:00:00,0.0,21.7\n007,2024-06-01 03:00:00,0.0,20.3\n007,2024-06-01 06:00:00,0.0,21.8\n007,2024-06-01 09:00:00,3.2,23.3\n007,2024-06-01 12:00:00,0.0,28.5\n007,2024-06-01 15:00:00,0.0,31.1\n007,2024-06-01 18:00:00,0.0,28.8\n007,2024-06-01 21:00:00,0.0,24.7\n008,2024-06-01 00:00:00,0.8,20.3\n008,2024-06-01 03:00:00,0.0,20.0\n008,2024-06-01 06:00:00,0.0,21.2\n008,2024-06-01 09:00:00,0.0,26.3\n008,2024-06-01 12:00:00,0.0,30.0\n008,2024-06-01 15:00:00,0.0,32.3\n008,2024-06-01 18:00:00,0.9,28.4\n008,2024-06-01 21:00:00,6.0,23.3\n"
+     },
+     {
+      "path": "landing/readings_2024-06-02.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-02 00:00:00,0.0,22.8\n001,2024-06-02 03:00:00,0.0,19.8\n001,2024-06-02 06:00:00,2.7,19.9\n001,2024-06-02 09:00:00,0.0,25.3\n001,2024-06-02 12:00:00,0.0,29.9\n001,2024-06-02 15:00:00,0.0,32.3\n001,2024-06-02 18:00:00,0.0,29.1\n001,2024-06-02 21:00:00,12.2,24.3\n002,2024-06-02 00:00:00,0.0,22.1\n002,2024-06-02 03:00:00,0.0,19.9\n002,2024-06-02 06:00:00,0.1,19.4\n002,2024-06-02 09:00:00,0.0,25.4\n002,2024-06-02 12:00:00,0.0,30.1\n002,2024-06-02 15:00:00,0.0,32.5\n002,2024-06-02 18:00:00,0.0,29.2\n002,2024-06-02 21:00:00,0.0,26.0\n003,2024-06-02 00:00:00,0.0,22.7\n003,2024-06-02 03:00:00,9.9,17.7\n003,2024-06-02 06:00:00,0.0,22.6\n003,2024-06-02 09:00:00,0.0,26.8\n003,2024-06-02 12:00:00,0.0,29.8\n003,2024-06-02 15:00:00,0.0,30.9\n003,2024-06-02 18:00:00,0.0,29.5\n003,2024-06-02 21:00:00,0.0,26.7\n004,2024-06-02 00:00:00,0.0,22.6\n004,2024-06-02 03:00:00,0.0,20.8\n004,2024-06-02 06:00:00,0.0,21.3\n004,2024-06-02 09:00:00,0.0,25.1\n004,2024-06-02 12:00:00,0.0,30.5\n004,2024-06-02 15:00:00,2.3,29.5\n004,2024-06-02 18:00:00,0.8,27.5\n004,2024-06-02 21:00:00,0.0,26.4\n005,2024-06-02 00:00:00,0.0,22.7\n005,2024-06-02 03:00:00,0.0,19.8\n005,2024-06-02 06:00:00,0.0,21.7\n005,2024-06-02 09:00:00,0.0,26.9\n005,2024-06-02 12:00:00,0.0,29.1\n005,2024-06-02 15:00:00,0.0,31.7\n005,2024-06-02 18:00:00,0.0,30.0\n005,2024-06-02 21:00:00,0.0,25.9\n006,2024-06-02 00:00:00,0.0,22.5\n006,2024-06-02 03:00:00,0.0,19.5\n006,2024-06-02 06:00:00,0.0,23.1\n006,2024-06-02 09:00:00,0.0,26.2\n006,2024-06-02 12:00:00,0.0,29.1\n006,2024-06-02 15:00:00,1.5,29.9\n006,2024-06-02 18:00:00,1.8,28.6\n006,2024-06-02 21:00:00,0.0,26.7\n007,2024-06-02 00:00:00,4.4,19.4\n007,2024-06-02 03:00:00,0.0,19.4\n007,2024-06-02 06:00:00,0.3,19.3\n007,2024-06-02 09:00:00,0.0,25.2\n007,2024-06-02 12:00:00,3.4,28.1\n007,2024-06-02 15:00:00,0.0,31.8\n007,2024-06-02 18:00:00,0.0,30.0\n007,2024-06-02 21:00:00,0.0,25.6\n008,2024-06-02 00:00:00,0.0,21.5\n008,2024-06-02 03:00:00,0.0,20.1\n008,2024-06-02 06:00:00,9.0,20.2\n008,2024-06-02 09:00:00,0.0,26.8\n008,2024-06-02 12:00:00,0.0,29.9\n008,2024-06-02 15:00:00,1.7,29.1\n008,2024-06-02 18:00:00,0.5,27.9\n008,2024-06-02 21:00:00,0.0,25.9\n"
+     },
+     {
+      "path": "landing/readings_2024-06-03.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-03 00:00:00,0.0,22.0\n001,2024-06-03 03:00:00,0.0,19.9\n001,2024-06-03 06:00:00,0.0,22.3\n001,2024-06-03 09:00:00,0.0,26.0\n001,2024-06-03 12:00:00,0.0,29.3\n001,2024-06-03 15:00:00,0.0,32.3\n001,2024-06-03 18:00:00,0.0,30.5\n001,2024-06-03 21:00:00,0.0,25.5\n002,2024-06-03 00:00:00,0.0,23.1\n002,2024-06-03 03:00:00,1.4,19.5\n002,2024-06-03 06:00:00,0.0,21.3\n002,2024-06-03 09:00:00,0.0,25.7\n002,2024-06-03 12:00:00,0.0,30.1\n002,2024-06-03 15:00:00,0.0,32.4\n002,2024-06-03 18:00:00,0.0,30.5\n002,2024-06-03 21:00:00,0.0,26.2\n003,2024-06-03 00:00:00,0.0,22.0\n003,2024-06-03 03:00:00,4.0,18.0\n003,2024-06-03 06:00:00,0.0,21.8\n003,2024-06-03 09:00:00,0.0,26.5\n003,2024-06-03 12:00:00,0.0,29.8\n003,2024-06-03 15:00:00,0.0,31.6\n003,2024-06-03 18:00:00,0.0,29.6\n003,2024-06-03 21:00:00,0.6,23.0\n004,2024-06-03 00:00:00,0.0,23.1\n004,2024-06-03 03:00:00,0.0,19.8\n004,2024-06-03 06:00:00,3.2,20.2\n004,2024-06-03 09:00:00,7.4,23.8\n004,2024-06-03 12:00:00,0.0,30.5\n004,2024-06-03 15:00:00,0.0,31.9\n004,2024-06-03 18:00:00,0.0,30.2\n004,2024-06-03 21:00:00,0.0,26.4\n005,2024-06-03 00:00:00,0.0,21.4\n005,2024-06-03 03:00:00,0.0,20.4\n005,2024-06-03 06:00:00,4.8,20.5\n005,2024-06-03 09:00:00,0.0,26.6\n005,2024-06-03 12:00:00,0.0,29.5\n005,2024-06-03 15:00:00,0.0,30.8\n005,2024-06-03 18:00:00,0.0,29.7\n005,2024-06-03 21:00:00,0.4,23.1\n006,2024-06-03 00:00:00,0.0,22.7\n006,2024-06-03 03:00:00,0.0,19.9\n006,2024-06-03 06:00:00,0.0,22.7\n006,2024-06-03 09:00:00,0.0,25.9\n006,2024-06-03 12:00:00,0.4,27.9\n006,2024-06-03 15:00:00,0.0,31.0\n006,2024-06-03 18:00:00,7.0,28.7\n006,2024-06-03 21:00:00,0.0,26.9\n007,2024-06-03 00:00:00,1.7,20.5\n007,2024-06-03 03:00:00,0.0,20.8\n007,2024-06-03 06:00:00,13.8,19.5\n007,2024-06-03 09:00:00,0.0,26.5\n007,2024-06-03 12:00:00,0.0,29.9\n007,2024-06-03 15:00:00,0.0,31.7\n007,2024-06-03 18:00:00,0.0,30.2\n007,2024-06-03 21:00:00,0.0,24.7\n008,2024-06-03 00:00:00,2.7,20.4\n008,2024-06-03 03:00:00,0.4,18.5\n008,2024-06-03 06:00:00,0.0,21.8\n008,2024-06-03 09:00:00,0.0,25.5\n008,2024-06-03 12:00:00,4.8,27.3\n008,2024-06-03 15:00:00,0.0,32.2\n008,2024-06-03 18:00:00,0.5,27.3\n008,2024-06-03 21:00:00,0.0,26.6\n"
+     },
+     {
+      "path": "corrections/readings_2024-06-02.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-02 00:00:00,0.0,22.8\n001,2024-06-02 03:00:00,0.0,19.8\n001,2024-06-02 06:00:00,2.7,19.9\n001,2024-06-02 09:00:00,0.0,25.3\n001,2024-06-02 12:00:00,0.0,29.9\n001,2024-06-02 15:00:00,0.0,32.3\n001,2024-06-02 18:00:00,0.0,29.1\n001,2024-06-02 21:00:00,12.2,24.3\n002,2024-06-02 00:00:00,0.0,22.1\n002,2024-06-02 03:00:00,0.0,19.9\n002,2024-06-02 06:00:00,0.1,19.4\n002,2024-06-02 09:00:00,0.0,25.4\n002,2024-06-02 12:00:00,0.0,30.1\n002,2024-06-02 15:00:00,0.0,32.5\n002,2024-06-02 18:00:00,0.0,29.2\n002,2024-06-02 21:00:00,0.0,26.0\n003,2024-06-02 00:00:00,0.0,22.7\n003,2024-06-02 03:00:00,9.9,17.7\n003,2024-06-02 06:00:00,0.0,22.6\n003,2024-06-02 09:00:00,0.0,26.8\n003,2024-06-02 12:00:00,0.0,29.8\n003,2024-06-02 15:00:00,0.0,30.9\n003,2024-06-02 18:00:00,0.0,29.5\n003,2024-06-02 21:00:00,0.0,26.7\n004,2024-06-02 00:00:00,0.0,22.6\n004,2024-06-02 03:00:00,0.0,20.8\n004,2024-06-02 06:00:00,0.0,21.3\n004,2024-06-02 09:00:00,0.0,25.1\n004,2024-06-02 12:00:00,0.0,30.5\n004,2024-06-02 15:00:00,2.3,29.5\n004,2024-06-02 18:00:00,0.8,27.5\n004,2024-06-02 21:00:00,0.0,26.4\n005,2024-06-02 00:00:00,0.0,22.7\n005,2024-06-02 03:00:00,0.0,19.8\n005,2024-06-02 06:00:00,0.0,21.7\n005,2024-06-02 09:00:00,0.0,26.9\n005,2024-06-02 12:00:00,0.0,29.1\n005,2024-06-02 15:00:00,0.0,31.7\n005,2024-06-02 18:00:00,0.0,30.0\n005,2024-06-02 21:00:00,0.0,25.9\n006,2024-06-02 00:00:00,0.0,22.5\n006,2024-06-02 03:00:00,0.0,19.5\n006,2024-06-02 06:00:00,0.0,23.1\n006,2024-06-02 09:00:00,0.0,26.2\n006,2024-06-02 12:00:00,0.0,29.1\n006,2024-06-02 15:00:00,1.5,29.9\n006,2024-06-02 18:00:00,1.8,28.6\n006,2024-06-02 21:00:00,0.0,26.7\n007,2024-06-02 00:00:00,4.4,19.4\n007,2024-06-02 03:00:00,0.0,19.4\n007,2024-06-02 06:00:00,0.3,19.3\n007,2024-06-02 09:00:00,0.0,25.2\n007,2024-06-02 12:00:00,3.4,28.1\n007,2024-06-02 15:00:00,0.0,31.8\n007,2024-06-02 18:00:00,0.0,30.0\n007,2024-06-02 21:00:00,0.0,25.6\n008,2024-06-02 00:00:00,0.0,21.5\n008,2024-06-02 03:00:00,0.0,20.1\n008,2024-06-02 06:00:00,4.5,20.2\n008,2024-06-02 09:00:00,0.0,26.8\n008,2024-06-02 12:00:00,0.0,29.9\n008,2024-06-02 15:00:00,0.8,29.1\n008,2024-06-02 18:00:00,0.2,27.9\n008,2024-06-02 21:00:00,0.0,25.9\n"
+     }
+    ],
+    "hints": [
+     "con.begin(), con.commit() and con.rollback() control a transaction on a DuckDB connection.",
+     "An empty watermark ('') is earlier than any date, so the first run loads every file.",
+     "Save the watermark once, after the loop, with the last day loaded; if nothing was loaded, leave it alone.",
+     "If 2024-06-02 shows 128 rows in the lake, the folder wasn't removed before the file was written."
+    ]
+   }
+  },
+  {
+   "title": "A batch pipeline in Python and DuckDB",
+   "summary": "Structure a pipeline as small, testable steps, transform in SQL with DuckDB, check each day's data before publishing it, and test the whole thing.",
+   "instructor": "idrissa-ouedraogo",
+   "lessons": [
+    {
+     "title": "Designing a batch pipeline",
+     "minutes": 12,
+     "objectives": [
+      "Structure a pipeline as extract, transform, check and load steps that each do one thing",
+      "Make a run reproducible from its parameters and visible in its logs"
+     ],
+     "key_points": [
+      "Split a pipeline into steps with clear inputs and outputs, such as extract, transform, quality checks and load, so each step can be tested, rerun and timed on its own.",
+      "Pass the date being processed as a parameter, such as --date 2024-06-01, so any day can be rerun or backfilled and every step works on the same slice of data.",
+      "Keep data in layers: raw as it arrived, clean with types and rules applied, rejected rows with the reason each failed, and published tables (marts) that users query.",
+      "Log what every run did (rows read, kept and rejected, checks passed), record it in a run table, and exit with a non-zero status on failure so a scheduler or orchestrator can tell it failed.",
+      "Keep configuration such as paths and connection details out of the code, in arguments, environment variables or a config file, and never commit passwords or keys."
+     ]
+    },
+    {
+     "title": "Transforming data with SQL in DuckDB",
+     "minutes": 12,
+     "objectives": [
+      "Read files directly with DuckDB and transform them with SQL",
+      "Cast values safely and remove duplicates by key"
+     ],
+     "key_points": [
+      "DuckDB is an in-process analytical database: it runs inside a Python program with no server, keeps a database in one file or in memory, and queries CSV, JSON and Parquet files directly, many at once with a glob such as 'landing/*.csv'.",
+      "CAST fails the whole query on one bad value (Conversion Error: Could not convert string 'n/a' to DOUBLE); TRY_CAST returns NULL instead, so bad values can be found and rejected with a reason rather than stopping the run.",
+      "Remove duplicates by key with a window function: ROW_NUMBER() OVER (PARTITION BY station_id, reading_time ORDER BY ...) numbers the copies of each key, and keeping number 1, for example with QUALIFY, keeps one row per key.",
+      "A LEFT JOIN to a reference table finds rows whose key is unknown, because the reference columns come back NULL; an inner join would drop those rows silently and hide the problem.",
+      "Build each layer with CREATE TABLE AS or INSERT ... SELECT, and write Parquet with COPY ... TO; DuckDB uses every CPU core by default and can process data larger than memory by spilling to disk."
+     ],
+     "walkthrough": {
+      "tool": "Python and DuckDB",
+      "title": "Find bad values and duplicates with TRY_CAST and QUALIFY",
+      "steps": [
+       {
+        "do": "In the folder with the module 4 lab's landing files, read every file at once, with the file name as a column.",
+        "code": "import duckdb\nduckdb.sql(\"SELECT filename, COUNT(*) FROM read_csv('landing/*.csv', filename = true, all_varchar = true) GROUP BY ALL ORDER BY 1\")",
+        "lang": "python",
+        "see": "Three files with 68 rows each."
+       },
+       {
+        "do": "Try a strict cast, then a forgiving one.",
+        "code": "duckdb.sql(\"SELECT CAST('n/a' AS DOUBLE)\")\nduckdb.sql(\"SELECT TRY_CAST('n/a' AS DOUBLE)\")",
+        "lang": "python",
+        "see": "Conversion Error: Could not convert string 'n/a' to DOUBLE, then NULL."
+       },
+       {
+        "do": "Find the rows whose rain value isn't a usable number.",
+        "code": "duckdb.sql(\"\"\"SELECT station_id, reading_time, rain_mm\n    FROM read_csv('landing/readings_2024-06-01.csv', all_varchar = true)\n    WHERE TRY_CAST(rain_mm AS DOUBLE) IS NULL OR TRY_CAST(rain_mm AS DOUBLE) < 0\"\"\")",
+        "lang": "python",
+        "see": "Two rows: station 004 at 22:30 with no value (an empty field is read as NULL), and station 006 at 13:30 with -1.0."
+       },
+       {
+        "do": "Keep one row per station and time with QUALIFY, and count what's left.",
+        "code": "duckdb.sql(\"\"\"SELECT COUNT(*) FROM (\n    SELECT * FROM read_csv('landing/readings_2024-06-01.csv', all_varchar = true)\n    QUALIFY ROW_NUMBER() OVER (PARTITION BY station_id, reading_time ORDER BY reading_time) = 1)\"\"\")",
+        "lang": "python",
+        "see": "67: the one duplicate is gone."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Checking data before publishing it",
+     "minutes": 12,
+     "objectives": [
+      "Write data quality checks for completeness, validity, uniqueness and consistency",
+      "Decide when a failed check should stop a run, and when rows should be set aside"
+     ],
+     "key_points": [
+      "Check the data, not only the code: completeness (did every station send its eight readings?), validity (are values in range?), uniqueness (one row per key?), consistency (is every key in its reference table?) and freshness (is the newest data recent enough?).",
+      "Row-level rules send bad rows to a rejected (quarantine) table with a reason, so the good rows still flow and the bad ones can be inspected, fixed at the source and loaded again.",
+      "Dataset-level checks guard what gets published: when one fails, such as too few rows or a station missing, stop before the load, so users keep the last correct data rather than today's wrong data.",
+      "Record every run's counts and check results, and alert on failures and on unusual changes, such as the rejected share jumping from 1% to 20%, which usually means something changed upstream.",
+      "Tests check the pipeline's logic on small, hand-made inputs with known answers; quality checks check each day's real data; a pipeline needs both."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build the rain-gauge pipeline",
+    "tool": "Python and DuckDB",
+    "minutes": 60,
+    "goal": "Finish a daily batch pipeline that loads raw files, gives every bad row a reason, checks each day before publishing it to a mart and a partitioned Parquet lake, and passes its tests.",
+    "setup": [
+     "Python 3.10 or later with DuckDB and pytest: python -m pip install duckdb pytest",
+     "Download the starter files into one folder, keeping the landing folder"
+    ],
+    "steps": [
+     {
+      "do": "Read pipeline.py from the top: connect() creates the tables, replace_day() is module 3's idempotent delete-then-insert, and run() calls extract, transform, quality_checks and load for one day."
+     },
+     {
+      "do": "Run the tests before changing anything.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "2 failed, 1 passed: the reasons and one of the checks aren't written yet."
+     },
+     {
+      "do": "In transform(), replace NULL AS reason with a CASE expression that names the first rule a row breaks: unknown station, bad timestamp, missing rain, negative rain, then duplicate."
+     },
+     {
+      "do": "In quality_checks(), add unique_station_time and all_stations_reported. Each check counts the rows or stations that break it and passes when the count is 0."
+     },
+     {
+      "do": "Run the tests again.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "3 passed"
+     },
+     {
+      "do": "Run the pipeline for every day, then print the report.",
+      "code": "python pipeline.py --all\npython report.py",
+      "lang": "bash",
+      "see": "Each day: raw 68, clean 64, rejected 4, checks 5/5 passed; the report shows 24 rows in station_daily and 192 rows in 3 partitions."
+     },
+     {
+      "do": "Rerun one day and print the report again. Nothing changes.",
+      "code": "python pipeline.py --date 2024-06-02\npython report.py",
+      "lang": "bash"
+     },
+     {
+      "do": "Break the data on purpose: delete three of station 003's lines from landing/readings_2024-06-03.csv, rerun that day, and print its exit code (in PowerShell, echo $LASTEXITCODE).",
+      "code": "python pipeline.py --date 2024-06-03\necho $?\npython report.py",
+      "lang": "bash",
+      "see": "checks 4/5 passed, an ERROR line, exit code 1, the run logged as failed: all_stations_reported, and station_daily still holding the last good figures."
+     },
+     {
+      "do": "Put the three lines back (or download the file again) and rerun the day, so it's published again."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The tests pass.",
+      "look_for": [
+       "3 passed"
+      ]
+     },
+     {
+      "text": "Every day keeps 64 rows, rejects 4 and passes all five checks.",
+      "look_for": [
+       "2024-06-01: raw 68, clean 64, rejected 4, checks 5/5 passed",
+       "2024-06-03: raw 68, clean 64, rejected 4, checks 5/5 passed"
+      ]
+     },
+     {
+      "text": "Each kind of bad row is rejected with its reason, three of each over the three days.",
+      "look_for": [
+       "rejected as duplicate: 3",
+       "rejected as missing rain: 3",
+       "rejected as negative rain: 3",
+       "rejected as unknown station: 3"
+      ]
+     },
+     {
+      "text": "The mart and the lake hold the three days.",
+      "look_for": [
+       "station_daily rows: 24",
+       "lake: 192 rows in 3 partitions",
+       "wet day: 2024-06-01 002 Djibo 29.7 mm"
+      ]
+     },
+     {
+      "text": "With readings missing, the completeness check fails and nothing is published for that day.",
+      "look_for": [
+       "checks 4/5 passed",
+       "failed: all_stations_reported",
+       "exit code 1"
+      ]
+     }
+    ],
+    "submit": "Paste your CASE expression and your two new checks, the pytest summary, the output of python pipeline.py --all and python report.py, and the output of the run with readings removed.",
+    "files": [
+     {
+      "path": "pipeline.py",
+      "content": "\"\"\"A daily batch pipeline for rain-gauge readings.\n\nlanding CSV -> raw_readings -> clean_readings (+ rejected_readings) -> quality checks\n            -> station_daily (the mart) and lake/readings/reading_date=.../data.parquet\n\nRun one day:    python pipeline.py --date 2024-06-01\nRun every day:  python pipeline.py --all\n\"\"\"\n\nimport argparse\nimport glob\nimport logging\nimport os\nimport shutil\nimport sys\n\nimport duckdb\n\nDB = \"rain.duckdb\"\nREADINGS_PER_STATION = 8  # one every three hours\nlog = logging.getLogger(\"pipeline\")\n\n\nclass QualityError(Exception):\n    \"\"\"Raised when a quality check fails, so nothing is published for that day.\"\"\"\n\n\ndef connect(path=DB):\n    con = duckdb.connect(path)\n    con.execute(\"\"\"CREATE OR REPLACE TABLE stations AS\n                   SELECT * FROM read_csv('stations.csv', types = {'station_id': 'VARCHAR'})\"\"\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS raw_readings (\n        station_id VARCHAR, reading_time VARCHAR, rain_mm VARCHAR, temp_c VARCHAR,\n        _row BIGINT, _source_file VARCHAR, _run_date DATE)\"\"\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS clean_readings (\n        station_id VARCHAR, reading_time TIMESTAMP, rain_mm DOUBLE, temp_c DOUBLE, reading_date DATE)\"\"\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS rejected_readings (\n        station_id VARCHAR, reading_time VARCHAR, rain_mm VARCHAR, temp_c VARCHAR, reason VARCHAR, reading_date DATE)\"\"\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS station_daily (\n        reading_date DATE, station_id VARCHAR, name VARCHAR, rain_mm DOUBLE, max_temp_c DOUBLE, readings BIGINT)\"\"\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS pipeline_runs (\n        run_date DATE, raw_rows BIGINT, clean_rows BIGINT, rejected_rows BIGINT, status VARCHAR)\"\"\")\n    return con\n\n\ndef replace_day(con, table, date_column, day, select_sql, params=()):\n    \"\"\"Idempotent write: delete the day's rows and insert the new ones in one transaction.\"\"\"\n    con.begin()\n    try:\n        con.execute(f\"DELETE FROM {table} WHERE {date_column} = ?\", [day])\n        con.execute(f\"INSERT INTO {table} {select_sql}\", list(params))\n        con.commit()\n    except Exception:\n        con.rollback()\n        raise\n\n\ndef extract(con, day):\n    \"\"\"Copy the day's landing file into raw_readings as text, exactly as it arrived.\"\"\"\n    path = f\"landing/readings_{day}.csv\"\n    replace_day(con, \"raw_readings\", \"_run_date\", day, f\"\"\"\n        SELECT station_id, reading_time, rain_mm, temp_c, ROW_NUMBER() OVER () AS _row,\n               '{path}' AS _source_file, DATE '{day}' AS _run_date\n        FROM read_csv('{path}', all_varchar = true)\"\"\")\n    return con.execute(\"SELECT COUNT(*) FROM raw_readings WHERE _run_date = ?\", [day]).fetchone()[0]\n\n\ndef transform(con, day):\n    \"\"\"Type the raw rows, give every bad row a reason, and split them into clean and rejected.\"\"\"\n    con.execute(\"\"\"\n        CREATE OR REPLACE TEMP TABLE checked AS\n        WITH typed AS (\n            SELECT r.*,\n                   TRY_CAST(r.reading_time AS TIMESTAMP) AS ts,\n                   TRY_CAST(r.rain_mm AS DOUBLE) AS rain,\n                   TRY_CAST(r.temp_c AS DOUBLE) AS temp,\n                   s.station_id IS NOT NULL AS known_station,\n                   ROW_NUMBER() OVER (PARTITION BY r.station_id, r.reading_time ORDER BY r._row) AS copy_number\n            FROM raw_readings AS r\n            LEFT JOIN stations AS s ON r.station_id = s.station_id\n            WHERE r._run_date = ?\n        )\n        SELECT *,\n            NULL AS reason  -- TODO: a CASE expression giving each bad row its reason (see below)\n        FROM typed\n    \"\"\", [day])\n    # TODO (above): replace NULL AS reason with a CASE expression that gives, in this order:\n    #   'unknown station' when not known_station, 'bad timestamp' when ts is null,\n    #   'missing rain' when rain is null, 'negative rain' when rain < 0,\n    #   'duplicate' when copy_number > 1, and NULL (no reason) for a good row.\n    replace_day(con, \"clean_readings\", \"reading_date\", day, \"\"\"\n        SELECT station_id, ts, rain, temp, CAST(ts AS DATE) FROM checked WHERE reason IS NULL\"\"\")\n    replace_day(con, \"rejected_readings\", \"reading_date\", day, \"\"\"\n        SELECT station_id, reading_time, rain_mm, temp_c, reason, ? FROM checked WHERE reason IS NOT NULL\"\"\",\n                [day])\n\n\ndef quality_checks(con, day):\n    \"\"\"Return a list of (check name, passed) for the day's clean rows.\"\"\"\n    one = lambda sql: con.execute(sql, [day]).fetchone()[0]  # noqa: E731\n    checks = [\n        (\"rows_present\", one(\"SELECT COUNT(*) FROM clean_readings WHERE reading_date = ?\") > 0),\n        (\"no_null_keys\", one(\"\"\"SELECT COUNT(*) FROM clean_readings WHERE reading_date = ?\n                                AND (station_id IS NULL OR reading_time IS NULL)\"\"\") == 0),\n        (\"rain_in_range\", one(\"\"\"SELECT COUNT(*) FROM clean_readings WHERE reading_date = ?\n                                 AND NOT rain_mm BETWEEN 0 AND 200\"\"\") == 0),\n    ]\n    # TODO: add two more checks to the list:\n    #   unique_station_time: no (station_id, reading_time) appears twice in the day's clean rows\n    #   all_stations_reported: every station in stations has READINGS_PER_STATION clean rows that day\n    return checks\n\n\ndef load(con, day):\n    \"\"\"Publish the day: rebuild its rows in the mart and overwrite its partition in the lake.\"\"\"\n    replace_day(con, \"station_daily\", \"reading_date\", day, \"\"\"\n        SELECT c.reading_date, c.station_id, s.name, ROUND(SUM(c.rain_mm), 1), MAX(c.temp_c), COUNT(*)\n        FROM clean_readings AS c JOIN stations AS s ON c.station_id = s.station_id\n        WHERE c.reading_date = ? GROUP BY ALL\"\"\", [day])\n    folder = f\"lake/readings/reading_date={day}\"\n    shutil.rmtree(folder, ignore_errors=True)\n    os.makedirs(folder)\n    con.execute(f\"\"\"COPY (SELECT * EXCLUDE (reading_date) FROM clean_readings WHERE reading_date = '{day}')\n                    TO '{folder}/data.parquet' (FORMAT parquet)\"\"\")\n\n\ndef run(con, day):\n    raw = extract(con, day)\n    transform(con, day)\n    clean = con.execute(\"SELECT COUNT(*) FROM clean_readings WHERE reading_date = ?\", [day]).fetchone()[0]\n    checks = quality_checks(con, day)\n    failed = [name for name, ok in checks if not ok]\n    status = \"failed: \" + \", \".join(failed) if failed else \"published\"\n    replace_day(con, \"pipeline_runs\", \"run_date\", day, \"SELECT ?, ?, ?, ?, ?\", [day, raw, clean, raw - clean, status])\n    log.info(\"%s: raw %d, clean %d, rejected %d, checks %d/%d passed\",\n             day, raw, clean, raw - clean, len(checks) - len(failed), len(checks))\n    if failed:\n        raise QualityError(f\"{day}: {', '.join(failed)}\")\n    load(con, day)\n\n\ndef main(argv=None):\n    logging.basicConfig(level=logging.INFO, format=\"%(levelname)s %(message)s\")\n    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])\n    group = parser.add_mutually_exclusive_group(required=True)\n    group.add_argument(\"--date\", help=\"the day to process, as YYYY-MM-DD\")\n    group.add_argument(\"--all\", action=\"store_true\", help=\"process every file in landing/\")\n    args = parser.parse_args(argv)\n    days = [args.date] if args.date else sorted(\n        os.path.basename(p)[9:19] for p in glob.glob(\"landing/readings_*.csv\"))\n    con = connect()\n    try:\n        for day in days:\n            run(con, day)\n    except QualityError as e:\n        log.error(\"quality checks failed, nothing published for %s\", e)\n        return 1\n    finally:\n        con.close()\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+     },
+     {
+      "path": "report.py",
+      "content": "\"\"\"Print what the pipeline has published: the run log, the rejected rows and the wettest station-days.\"\"\"\n\nimport glob\n\nimport duckdb\n\ncon = duckdb.connect(\"rain.duckdb\", read_only=True)\nfor day, raw, clean, rejected, status in con.execute(\"SELECT * FROM pipeline_runs ORDER BY run_date\").fetchall():\n    print(f\"run {day}: raw {raw}, clean {clean}, rejected {rejected}, {status}\")\nfor reason, n in con.execute(\"SELECT reason, COUNT(*) FROM rejected_readings GROUP BY 1 ORDER BY 1\").fetchall():\n    print(f\"rejected as {reason}: {n}\")\nprint(\"station_daily rows:\", con.execute(\"SELECT COUNT(*) FROM station_daily\").fetchone()[0])\nfor day, sid, name, rain in con.execute(\"\"\"SELECT reading_date, station_id, name, rain_mm FROM station_daily\n                                          ORDER BY rain_mm DESC, station_id LIMIT 3\"\"\").fetchall():\n    print(f\"wet day: {day} {sid} {name} {rain} mm\")\nif glob.glob(\"lake/readings/*/*.parquet\"):\n    lake = con.execute(\"\"\"SELECT COUNT(*), COUNT(DISTINCT reading_date)\n                          FROM read_parquet('lake/readings/*/*.parquet', hive_partitioning = true)\"\"\").fetchone()\n    print(f\"lake: {lake[0]} rows in {lake[1]} partitions\")\nelse:\n    print(\"lake: no partitions written yet\")\n"
+     },
+     {
+      "path": "test_pipeline.py",
+      "content": "\"\"\"Tests for pipeline.py. Run them with:  python -m pytest -q\"\"\"\n\nimport pytest\n\nimport pipeline\n\nHEADER = \"station_id,reading_time,rain_mm,temp_c\\n\"\n\n\ndef good_rows(day=\"2024-06-01\"):\n    return [f\"001,{day} {h:02d}:00:00,0.0,25.0\" for h in range(0, 24, 3)]\n\n\ndef write_day(rows, day=\"2024-06-01\"):\n    with open(f\"landing/readings_{day}.csv\", \"w\", encoding=\"utf-8\") as f:\n        f.write(HEADER + \"\\n\".join(rows) + \"\\n\")\n\n\n@pytest.fixture\ndef con(tmp_path, monkeypatch):\n    \"\"\"A fresh in-memory database in an empty folder with one station.\"\"\"\n    monkeypatch.chdir(tmp_path)\n    (tmp_path / \"stations.csv\").write_text(\"station_id,name,climate_zone\\n001,Dori,Sahelian\\n\")\n    (tmp_path / \"landing\").mkdir()\n    con = pipeline.connect(\":memory:\")\n    yield con\n    con.close()\n\n\ndef test_bad_rows_get_reasons(con):\n    rows = good_rows()\n    rows += [rows[0], \"001,2024-06-01 01:00:00,,25.0\", \"001,2024-06-01 02:00:00,-1.0,25.0\",\n             \"099,2024-06-01 03:00:00,0.0,25.0\"]\n    write_day(rows)\n    pipeline.extract(con, \"2024-06-01\")\n    pipeline.transform(con, \"2024-06-01\")\n    reasons = dict(con.execute(\"SELECT reason, COUNT(*) FROM rejected_readings GROUP BY reason\").fetchall())\n    assert reasons == {\"duplicate\": 1, \"missing rain\": 1, \"negative rain\": 1, \"unknown station\": 1}\n\n\ndef test_rerun_gives_the_same_tables(con):\n    write_day(good_rows())\n    pipeline.run(con, \"2024-06-01\")\n    pipeline.run(con, \"2024-06-01\")\n    assert con.execute(\"SELECT COUNT(*) FROM clean_readings\").fetchone()[0] == 8\n    assert con.execute(\"SELECT COUNT(*) FROM station_daily\").fetchone()[0] == 1\n\n\ndef test_missing_readings_stop_the_load(con):\n    write_day(good_rows()[:5])  # three of the day's eight readings are missing\n    with pytest.raises(pipeline.QualityError):\n        pipeline.run(con, \"2024-06-01\")\n    assert con.execute(\"SELECT COUNT(*) FROM station_daily\").fetchone()[0] == 0\n"
+     },
+     {
+      "path": "stations.csv",
+      "content": "station_id,name,climate_zone\n001,Dori,Sahelian\n002,Djibo,Sahelian\n003,Ouahigouya,Sudano-Sahelian\n004,Kaya,Sudano-Sahelian\n005,Ouagadougou,Sudano-Sahelian\n006,Koudougou,Sudano-Sahelian\n007,Bobo-Dioulasso,Sudanian\n008,Gaoua,Sudanian\n"
+     },
+     {
+      "path": "landing/readings_2024-06-01.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-01 00:00:00,2.7,20.8\n001,2024-06-01 03:00:00,0.0,21.3\n001,2024-06-01 06:00:00,0.0,21.6\n001,2024-06-01 09:00:00,0.0,25.8\n001,2024-06-01 12:00:00,18.5,28.8\n001,2024-06-01 15:00:00,0.0,31.7\n004,2024-06-01 22:30:00,,24.1\n001,2024-06-01 18:00:00,0.0,29.2\n001,2024-06-01 21:00:00,0.0,26.3\n002,2024-06-01 00:00:00,0.0,23.0\n002,2024-06-01 03:00:00,0.0,20.7\n002,2024-06-01 06:00:00,0.0,22.8\n002,2024-06-01 09:00:00,0.0,25.7\n002,2024-06-01 12:00:00,29.7,28.0\n002,2024-06-01 15:00:00,0.0,30.6\n002,2024-06-01 18:00:00,0.0,29.4\n002,2024-06-01 21:00:00,0.0,25.5\n003,2024-06-01 00:00:00,0.0,22.7\n003,2024-06-01 03:00:00,0.0,21.3\n003,2024-06-01 06:00:00,0.0,22.9\n003,2024-06-01 09:00:00,1.7,23.4\n003,2024-06-01 12:00:00,0.0,28.8\n003,2024-06-01 15:00:00,0.0,31.1\n006,2024-06-01 13:30:00,-1.0,31.2\n003,2024-06-01 18:00:00,0.0,30.1\n003,2024-06-01 21:00:00,0.0,25.5\n004,2024-06-01 00:00:00,0.0,23.0\n004,2024-06-01 03:00:00,0.0,20.8\n004,2024-06-01 06:00:00,0.0,22.4\n004,2024-06-01 09:00:00,0.0,25.8\n004,2024-06-01 12:00:00,0.0,30.5\n099,2024-06-01 12:00:00,0.0,33.0\n004,2024-06-01 15:00:00,0.0,30.9\n004,2024-06-01 18:00:00,6.0,28.8\n004,2024-06-01 21:00:00,0.0,25.8\n005,2024-06-01 00:00:00,0.0,21.8\n005,2024-06-01 03:00:00,0.0,20.3\n005,2024-06-01 06:00:00,0.0,22.4\n005,2024-06-01 09:00:00,0.0,26.1\n005,2024-06-01 12:00:00,0.0,30.5\n005,2024-06-01 15:00:00,0.0,31.5\n005,2024-06-01 18:00:00,0.0,30.0\n005,2024-06-01 21:00:00,0.0,25.4\n006,2024-06-01 00:00:00,0.0,21.7\n006,2024-06-01 03:00:00,0.0,20.4\n007,2024-06-01 03:00:00,0.0,20.3\n006,2024-06-01 06:00:00,8.4,20.6\n006,2024-06-01 09:00:00,0.0,25.3\n006,2024-06-01 12:00:00,3.5,27.8\n006,2024-06-01 15:00:00,0.0,32.5\n006,2024-06-01 18:00:00,0.0,30.2\n006,2024-06-01 21:00:00,0.0,26.1\n007,2024-06-01 00:00:00,0.0,21.7\n007,2024-06-01 03:00:00,0.0,20.3\n007,2024-06-01 06:00:00,0.0,21.8\n007,2024-06-01 09:00:00,3.2,23.3\n007,2024-06-01 12:00:00,0.0,28.5\n007,2024-06-01 15:00:00,0.0,31.1\n007,2024-06-01 18:00:00,0.0,28.8\n007,2024-06-01 21:00:00,0.0,24.7\n008,2024-06-01 00:00:00,0.8,20.3\n008,2024-06-01 03:00:00,0.0,20.0\n008,2024-06-01 06:00:00,0.0,21.2\n008,2024-06-01 09:00:00,0.0,26.3\n008,2024-06-01 12:00:00,0.0,30.0\n008,2024-06-01 15:00:00,0.0,32.3\n008,2024-06-01 18:00:00,0.9,28.4\n008,2024-06-01 21:00:00,6.0,23.3\n"
+     },
+     {
+      "path": "landing/readings_2024-06-02.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-02 00:00:00,0.0,22.8\n001,2024-06-02 03:00:00,0.0,19.8\n001,2024-06-02 06:00:00,2.7,19.9\n007,2024-06-02 06:00:00,0.3,19.3\n001,2024-06-02 09:00:00,0.0,25.3\n001,2024-06-02 12:00:00,0.0,29.9\n099,2024-06-02 12:00:00,0.0,33.0\n001,2024-06-02 15:00:00,0.0,32.3\n001,2024-06-02 18:00:00,0.0,29.1\n001,2024-06-02 21:00:00,12.2,24.3\n002,2024-06-02 00:00:00,0.0,22.1\n002,2024-06-02 03:00:00,0.0,19.9\n002,2024-06-02 06:00:00,0.1,19.4\n002,2024-06-02 09:00:00,0.0,25.4\n002,2024-06-02 12:00:00,0.0,30.1\n002,2024-06-02 15:00:00,0.0,32.5\n002,2024-06-02 18:00:00,0.0,29.2\n002,2024-06-02 21:00:00,0.0,26.0\n003,2024-06-02 00:00:00,0.0,22.7\n003,2024-06-02 03:00:00,9.9,17.7\n003,2024-06-02 06:00:00,0.0,22.6\n003,2024-06-02 09:00:00,0.0,26.8\n003,2024-06-02 12:00:00,0.0,29.8\n003,2024-06-02 15:00:00,0.0,30.9\n003,2024-06-02 18:00:00,0.0,29.5\n003,2024-06-02 21:00:00,0.0,26.7\n004,2024-06-02 00:00:00,0.0,22.6\n004,2024-06-02 03:00:00,0.0,20.8\n004,2024-06-02 06:00:00,0.0,21.3\n004,2024-06-02 09:00:00,0.0,25.1\n004,2024-06-02 12:00:00,0.0,30.5\n004,2024-06-02 15:00:00,2.3,29.5\n004,2024-06-02 18:00:00,0.8,27.5\n004,2024-06-02 21:00:00,0.0,26.4\n005,2024-06-02 00:00:00,0.0,22.7\n005,2024-06-02 03:00:00,0.0,19.8\n005,2024-06-02 06:00:00,0.0,21.7\n005,2024-06-02 09:00:00,0.0,26.9\n005,2024-06-02 12:00:00,0.0,29.1\n005,2024-06-02 15:00:00,0.0,31.7\n005,2024-06-02 18:00:00,0.0,30.0\n005,2024-06-02 21:00:00,0.0,25.9\n006,2024-06-02 00:00:00,0.0,22.5\n006,2024-06-02 03:00:00,0.0,19.5\n006,2024-06-02 06:00:00,0.0,23.1\n006,2024-06-02 09:00:00,0.0,26.2\n006,2024-06-02 12:00:00,0.0,29.1\n006,2024-06-02 15:00:00,1.5,29.9\n006,2024-06-02 18:00:00,1.8,28.6\n006,2024-06-02 21:00:00,0.0,26.7\n004,2024-06-02 22:30:00,,24.1\n007,2024-06-02 00:00:00,4.4,19.4\n007,2024-06-02 03:00:00,0.0,19.4\n007,2024-06-02 06:00:00,0.3,19.3\n007,2024-06-02 09:00:00,0.0,25.2\n007,2024-06-02 12:00:00,3.4,28.1\n007,2024-06-02 15:00:00,0.0,31.8\n006,2024-06-02 13:30:00,-1.0,31.2\n007,2024-06-02 18:00:00,0.0,30.0\n007,2024-06-02 21:00:00,0.0,25.6\n008,2024-06-02 00:00:00,0.0,21.5\n008,2024-06-02 03:00:00,0.0,20.1\n008,2024-06-02 06:00:00,9.0,20.2\n008,2024-06-02 09:00:00,0.0,26.8\n008,2024-06-02 12:00:00,0.0,29.9\n008,2024-06-02 15:00:00,1.7,29.1\n008,2024-06-02 18:00:00,0.5,27.9\n008,2024-06-02 21:00:00,0.0,25.9\n"
+     },
+     {
+      "path": "landing/readings_2024-06-03.csv",
+      "content": "station_id,reading_time,rain_mm,temp_c\n001,2024-06-03 00:00:00,0.0,22.0\n001,2024-06-03 03:00:00,0.0,19.9\n001,2024-06-03 06:00:00,0.0,22.3\n001,2024-06-03 09:00:00,0.0,26.0\n001,2024-06-03 12:00:00,0.0,29.3\n001,2024-06-03 15:00:00,0.0,32.3\n001,2024-06-03 18:00:00,0.0,30.5\n001,2024-06-03 21:00:00,0.0,25.5\n006,2024-06-03 13:30:00,-1.0,31.2\n002,2024-06-03 00:00:00,0.0,23.1\n002,2024-06-03 03:00:00,1.4,19.5\n002,2024-06-03 06:00:00,0.0,21.3\n002,2024-06-03 09:00:00,0.0,25.7\n002,2024-06-03 12:00:00,0.0,30.1\n002,2024-06-03 15:00:00,0.0,32.4\n004,2024-06-03 22:30:00,,24.1\n002,2024-06-03 18:00:00,0.0,30.5\n002,2024-06-03 21:00:00,0.0,26.2\n003,2024-06-03 00:00:00,0.0,22.0\n003,2024-06-03 03:00:00,4.0,18.0\n003,2024-06-03 06:00:00,0.0,21.8\n003,2024-06-03 09:00:00,0.0,26.5\n003,2024-06-03 12:00:00,0.0,29.8\n003,2024-06-03 15:00:00,0.0,31.6\n003,2024-06-03 18:00:00,0.0,29.6\n003,2024-06-03 21:00:00,0.6,23.0\n004,2024-06-03 00:00:00,0.0,23.1\n004,2024-06-03 03:00:00,0.0,19.8\n005,2024-06-03 03:00:00,0.0,20.4\n004,2024-06-03 06:00:00,3.2,20.2\n004,2024-06-03 09:00:00,7.4,23.8\n004,2024-06-03 12:00:00,0.0,30.5\n099,2024-06-03 12:00:00,0.0,33.0\n004,2024-06-03 15:00:00,0.0,31.9\n004,2024-06-03 18:00:00,0.0,30.2\n004,2024-06-03 21:00:00,0.0,26.4\n005,2024-06-03 00:00:00,0.0,21.4\n005,2024-06-03 03:00:00,0.0,20.4\n005,2024-06-03 06:00:00,4.8,20.5\n005,2024-06-03 09:00:00,0.0,26.6\n005,2024-06-03 12:00:00,0.0,29.5\n005,2024-06-03 15:00:00,0.0,30.8\n005,2024-06-03 18:00:00,0.0,29.7\n005,2024-06-03 21:00:00,0.4,23.1\n006,2024-06-03 00:00:00,0.0,22.7\n006,2024-06-03 03:00:00,0.0,19.9\n006,2024-06-03 06:00:00,0.0,22.7\n006,2024-06-03 09:00:00,0.0,25.9\n006,2024-06-03 12:00:00,0.4,27.9\n006,2024-06-03 15:00:00,0.0,31.0\n006,2024-06-03 18:00:00,7.0,28.7\n006,2024-06-03 21:00:00,0.0,26.9\n007,2024-06-03 00:00:00,1.7,20.5\n007,2024-06-03 03:00:00,0.0,20.8\n007,2024-06-03 06:00:00,13.8,19.5\n007,2024-06-03 09:00:00,0.0,26.5\n007,2024-06-03 12:00:00,0.0,29.9\n007,2024-06-03 15:00:00,0.0,31.7\n007,2024-06-03 18:00:00,0.0,30.2\n007,2024-06-03 21:00:00,0.0,24.7\n008,2024-06-03 00:00:00,2.7,20.4\n008,2024-06-03 03:00:00,0.4,18.5\n008,2024-06-03 06:00:00,0.0,21.8\n008,2024-06-03 09:00:00,0.0,25.5\n008,2024-06-03 12:00:00,4.8,27.3\n008,2024-06-03 15:00:00,0.0,32.2\n008,2024-06-03 18:00:00,0.5,27.3\n008,2024-06-03 21:00:00,0.0,26.6\n"
+     }
+    ],
+    "hints": [
+     "A CASE expression returns the result of the first WHEN that's true, so the order of the rules decides which reason a row gets.",
+     "For all_stations_reported, start from stations and LEFT JOIN the day's counts, so a station with no rows at all still appears; coalesce(c.n, 0) turns its NULL count into 0.",
+     "GROUP BY ALL groups by every column that isn't aggregated, which keeps the duplicate check short."
+    ]
+   }
+  },
+  {
+   "title": "Scheduling, streaming and scaling up",
+   "summary": "Run pipelines on a schedule and see what an orchestrator adds, process an event stream in micro-batches, and choose tools as data grows.",
+   "instructor": "ismaile-rahimovi",
+   "lessons": [
+    {
+     "title": "Scheduling and orchestration",
+     "minutes": 12,
+     "objectives": [
+      "Schedule a pipeline with cron, and explain its limits",
+      "Explain what an orchestrator adds: dependencies, retries, backfills and monitoring"
+     ],
+     "key_points": [
+      "cron runs commands on a schedule of five fields (minute, hour, day of month, month, day of week): 15 6 * * * runs at 06:15 every day. It comes with Linux and macOS and is fine for a single job on one machine.",
+      "cron knows nothing about dependencies between jobs, doesn't retry, keeps no history of runs and can't easily rerun a range of past dates, so failures have to be noticed some other way.",
+      "An orchestrator runs a workflow as a DAG (directed acyclic graph) of tasks: each task starts when the tasks it depends on have succeeded, and tasks that don't depend on each other can run in parallel.",
+      "Orchestrators add retries with delays, alerts, a history and logs for every run, and backfills (runs for past dates), which work only if each task processes the date it is given and is idempotent.",
+      "Widely used open-source orchestrators include Apache Airflow, Dagster and Prefect; they schedule and watch the work, while the heavy processing happens in the tools they call, such as DuckDB, Spark or a warehouse."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Order tasks as a DAG, and schedule the pipeline with cron",
+      "steps": [
+       {
+        "do": "Order the pipeline's tasks with Python's graphlib, which sorts a DAG so every task comes after the tasks it depends on.",
+        "code": "from graphlib import TopologicalSorter\n\ndeps = {\n    \"transform\": {\"extract_readings\", \"extract_stations\"},\n    \"quality_checks\": {\"transform\"},\n    \"load_mart\": {\"quality_checks\"},\n    \"write_lake\": {\"quality_checks\"},\n}\nprint(list(TopologicalSorter(deps).static_order()))",
+        "lang": "python",
+        "see": "Both extracts first, then transform and quality_checks, then load_mart and write_lake, which could run in parallel."
+       },
+       {
+        "do": "On Linux or macOS, create a folder for the logs, then open your crontab for editing.",
+        "code": "mkdir -p ~/rain/logs\ncrontab -e",
+        "lang": "bash"
+       },
+       {
+        "do": "Add a line that runs the pipeline at 06:15 every day for the day before, appending its output to a log. In a crontab, every % must be written as \\%.",
+        "code": "15 6 * * * cd $HOME/rain && .venv/bin/python pipeline.py --date $(date -d yesterday +\\%F) >> logs/pipeline.log 2>&1",
+        "lang": "bash",
+        "see": "That's GNU date on Linux; on macOS use date -v-1d +\\%F. On Windows, Task Scheduler does the same job."
+       },
+       {
+        "do": "List your crontab to check the line was saved.",
+        "code": "crontab -l",
+        "lang": "bash"
+       },
+       {
+        "do": "After 06:15, read the end of the log.",
+        "code": "tail logs/pipeline.log",
+        "lang": "bash",
+        "see": "An INFO line for the day, or an ERROR line if a check failed."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Streams: events, offsets and windows",
+     "minutes": 14,
+     "objectives": [
+      "Explain how an event log, offsets and consumer checkpoints work",
+      "Group events into event-time windows, and handle duplicates and late events"
+     ],
+     "key_points": [
+      "An event stream is an append-only log of records, such as a Kafka topic; consumers read it in order and track their position as an offset, so after a restart they carry on from the last committed offset instead of starting again.",
+      "Delivery is usually at-least-once: after a failure some events are delivered again, so consumers de-duplicate by an event ID or make their writes idempotent.",
+      "Committing results and the new offset in one transaction gives exactly-once results for that sink: both are saved or neither is, so a crash between them can't double-count or skip events.",
+      "A tumbling window groups events into fixed, non-overlapping intervals of event time, such as 08:00-08:10; sliding (or hopping) windows overlap, and a session window closes after a gap in activity.",
+      "A watermark is the pipeline's estimate of how far event time has got, such as the latest event time seen minus five minutes; a window is closed and published once the watermark passes its end, and events arriving after that are late.",
+      "Handle late events on purpose: drop them, set them aside, or update the published result; allowing more lateness gives more complete results but publishes them later."
+     ]
+    },
+    {
+     "title": "Choosing tools as data grows",
+     "minutes": 10,
+     "objectives": [
+      "Recognise when one machine is enough and when distributed processing is needed",
+      "Describe what warehouses, lakehouses and transformation tools each add"
+     ],
+     "key_points": [
+      "One machine goes a long way: DuckDB or pandas on a laptop or a single server handles many gigabytes and is simpler and cheaper to run than a cluster; move on when jobs no longer fit the time or memory available.",
+      "Distributed engines such as Apache Spark split data into partitions processed in parallel on many machines; they handle far more data, but bring cluster costs, network shuffles and harder debugging.",
+      "Cloud data warehouses such as BigQuery, Snowflake and Amazon Redshift run SQL over large tables as managed services; a lakehouse keeps open files such as Parquet in object storage, under a table format, and lets several engines query them.",
+      "dbt organises SQL transformations in the warehouse as tested, documented models that run in dependency order; ingestion tools copy data from common sources into the warehouse, so less extraction code is written by hand.",
+      "Choose tools by the data's size, the freshness users need, the team's skills and the budget, and keep this course's foundations whatever the tools: raw data kept, idempotent and incremental loads, partitions, quality checks and clear ownership."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Process a stream in micro-batches",
+    "tool": "Python and DuckDB",
+    "minutes": 45,
+    "goal": "Consume an hour of rain-gauge events in micro-batches: skip redelivered events, group the rest into 10-minute event-time windows, set late events aside, and resume after a crash with exactly the same result.",
+    "setup": [
+     "Python 3.10 or later with DuckDB: python -m pip install duckdb",
+     "Download the starter files make_events.py and consumer.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Generate the stream: an hour of tipping-bucket events from three gauges, in the order they arrived. Each event is one tip of a gauge's bucket, 0.2 mm of rain.",
+      "code": "python make_events.py",
+      "lang": "bash",
+      "see": "Wrote 285 events to events.jsonl"
+     },
+     {
+      "do": "Look at the first lines of events.jsonl: station 007's tip 0002 arrives before tip 0001, so events come out of order."
+     },
+     {
+      "do": "Write window_start(): round the minutes down to a multiple of 10, with seconds and microseconds set to 0, using ts.replace()."
+     },
+     {
+      "do": "In process_batch(), skip an event whose event_id is already in the seen table, counting it as a duplicate; otherwise insert its ID into seen."
+     },
+     {
+      "do": "Simulate a crash: process two batches and stop.",
+      "code": "python consumer.py --reset --max-batches 2",
+      "lang": "bash",
+      "see": "Two batches, Stopped at offset 100 of 285, the 08:00-08:10 windows closed and the 08:10-08:20 windows still open."
+     },
+     {
+      "do": "Start the consumer again, without --reset: it resumes from its checkpoint.",
+      "code": "python consumer.py",
+      "lang": "bash",
+      "see": "Starting at offset 100, four more batches, and Accepted 268 events; 2 late events set aside."
+     },
+     {
+      "do": "Compare with a clean run from the start.",
+      "code": "python consumer.py --reset",
+      "lang": "bash",
+      "see": "Exactly the same windows and totals as the crash-and-resume run."
+     },
+     {
+      "do": "Change ALLOWED_LATENESS to timedelta(minutes=15) and run with --reset. What happens to the late events, and to the number of windows still open at the end?"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The crashed run stops at offset 100 and the restarted one resumes there.",
+      "look_for": [
+       "Stopped at offset 100 of 285",
+       "Starting at offset 100"
+      ]
+     },
+     {
+      "text": "Duplicates are skipped batch by batch.",
+      "look_for": [
+       "Batch at offsets 0-49: 47 new, 3 duplicates, 0 late"
+      ]
+     },
+     {
+      "text": "Events are grouped into 10-minute windows by event time.",
+      "look_for": [
+       "08:00-08:10 station 005: 26 tips, 5.2 mm (closed)",
+       "08:10-08:20 station 005: 18 tips, 3.6 mm (closed)"
+      ]
+     },
+     {
+      "text": "After resuming, every event is counted once and the late ones are set aside.",
+      "look_for": [
+       "Accepted 268 events; 2 late events set aside"
+      ]
+     }
+    ],
+    "submit": "Paste window_start() and your duplicate check, the output of the crashed run, the resumed run and the clean run, and your answer about ALLOWED_LATENESS.",
+    "files": [
+     {
+      "path": "make_events.py",
+      "content": "\"\"\"Write events.jsonl: one hour of tipping-bucket events from three rain gauges, in the order they arrive.\n\nEach event is one tip of a gauge's bucket (0.2 mm of rain). Most arrive within 90 seconds of happening,\na few arrive more than ten minutes late, and some are delivered twice. Only random.random() is used,\nso every Python version writes exactly the same file.\n\"\"\"\n\nimport json\nfrom datetime import datetime, timedelta\n\nimport random\n\nrng = random.Random(7)\nstart = datetime(2024, 6, 1, 8, 0, 0)\nevents = []\nfor station, tips in [(\"001\", 70), (\"005\", 110), (\"007\", 90)]:\n    times = sorted(int(rng.random() * 3600) for _ in range(tips))\n    for seq, t in enumerate(times, 1):\n        happened = start + timedelta(seconds=t)\n        delay = 600 + int(rng.random() * 300) if rng.random() < 0.03 else int(rng.random() * 90)\n        event = {\"event_id\": f\"{station}-{seq:04d}\", \"station_id\": station,\n                 \"event_time\": happened.isoformat(), \"rain_mm\": 0.2}\n        events.append((happened + timedelta(seconds=delay), event))\n        if rng.random() < 0.04:  # delivered again a little later\n            events.append((happened + timedelta(seconds=delay + 30 + int(rng.random() * 90)), event))\nevents.sort(key=lambda pair: (pair[0], pair[1][\"event_id\"]))\nwith open(\"events.jsonl\", \"w\", encoding=\"utf-8\") as f:\n    for _arrived, event in events:\n        f.write(json.dumps(event) + \"\\n\")\nprint(f\"Wrote {len(events)} events to events.jsonl\")\n"
+     },
+     {
+      "path": "consumer.py",
+      "content": "\"\"\"Consume rain-gauge events in micro-batches: a checkpoint, de-duplication and 10-minute event-time windows.\n\npython consumer.py                   process every new event, then stop\npython consumer.py --max-batches 2   stop after two batches, as if the consumer had crashed\npython consumer.py --reset           forget the checkpoint and all state, and start again\n\"\"\"\n\nimport argparse\nimport json\nimport os\nfrom datetime import datetime, timedelta\n\nimport duckdb\n\nEVENTS = \"events.jsonl\"\nSTATE = \"stream_state.duckdb\"\nBATCH_SIZE = 50\nWINDOW = timedelta(minutes=10)\nALLOWED_LATENESS = timedelta(minutes=5)\n\n\ndef window_start(ts):\n    \"\"\"The start of the 10-minute tumbling window that ts falls in: 08:47:12 -> 08:40:00.\"\"\"\n    # TODO: return ts with its minutes rounded down to a multiple of 10, and seconds and microseconds set to 0\n    return ts\n\n\ndef setup(con):\n    con.execute(\"CREATE TABLE IF NOT EXISTS checkpoint (next_offset BIGINT, max_event_time TIMESTAMP)\")\n    con.execute(\"CREATE TABLE IF NOT EXISTS seen (event_id VARCHAR PRIMARY KEY)\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS accepted (\n        event_id VARCHAR, station_id VARCHAR, event_time TIMESTAMP, rain_mm DOUBLE, window_start TIMESTAMP)\"\"\")\n    con.execute(\"CREATE TABLE IF NOT EXISTS late_events (event_id VARCHAR, station_id VARCHAR, event_time TIMESTAMP)\")\n    if con.execute(\"SELECT COUNT(*) FROM checkpoint\").fetchone()[0] == 0:\n        con.execute(\"INSERT INTO checkpoint VALUES (0, NULL)\")\n\n\ndef process_batch(con, lines, offset, watermark):\n    \"\"\"Process one batch in a single transaction: the results and the new checkpoint commit together.\"\"\"\n    counts = {\"new\": 0, \"duplicates\": 0, \"late\": 0}\n    max_time = con.execute(\"SELECT max_event_time FROM checkpoint\").fetchone()[0]\n    con.begin()\n    for line in lines:\n        e = json.loads(line)\n        ts = datetime.fromisoformat(e[\"event_time\"])\n        # TODO: if e[\"event_id\"] is already in the seen table, count it as a duplicate and skip it\n        #   (continue); otherwise insert it into seen\n        start = window_start(ts)\n        if watermark is not None and start + WINDOW <= watermark:\n            # Its window has already closed: set it aside instead of changing a published result.\n            con.execute(\"INSERT INTO late_events VALUES (?, ?, ?)\", [e[\"event_id\"], e[\"station_id\"], ts])\n            counts[\"late\"] += 1\n            continue\n        con.execute(\"INSERT INTO accepted VALUES (?, ?, ?, ?, ?)\",\n                    [e[\"event_id\"], e[\"station_id\"], ts, e[\"rain_mm\"], start])\n        counts[\"new\"] += 1\n        max_time = ts if max_time is None else max(max_time, ts)\n    con.execute(\"DELETE FROM checkpoint\")\n    con.execute(\"INSERT INTO checkpoint VALUES (?, ?)\", [offset + len(lines), max_time])\n    con.commit()\n    return counts\n\n\ndef report(con, watermark):\n    print(\"Windows (event time):\")\n    for start, station, tips, rain in con.execute(\"\"\"\n            SELECT window_start, station_id, COUNT(*), ROUND(SUM(rain_mm), 1)\n            FROM accepted GROUP BY ALL ORDER BY window_start, station_id\"\"\").fetchall():\n        state = \"closed\" if watermark is not None and start + WINDOW <= watermark else \"open\"\n        print(f\"  {start:%H:%M}-{start + WINDOW:%H:%M} station {station}: {tips} tips, {rain} mm ({state})\")\n    accepted, late = (con.execute(f\"SELECT COUNT(*) FROM {t}\").fetchone()[0] for t in [\"accepted\", \"late_events\"])\n    print(f\"Accepted {accepted} events; {late} late events set aside\")\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--max-batches\", type=int, default=None)\n    parser.add_argument(\"--reset\", action=\"store_true\")\n    args = parser.parse_args()\n    if args.reset:\n        for path in [STATE, STATE + \".wal\"]:\n            if os.path.exists(path):\n                os.remove(path)\n    con = duckdb.connect(STATE)\n    setup(con)\n    offset = con.execute(\"SELECT next_offset FROM checkpoint\").fetchone()[0]\n    print(f\"Starting at offset {offset}\")\n    with open(EVENTS, encoding=\"utf-8\") as f:\n        lines = f.readlines()\n    batches = 0\n    duplicates = 0\n    while offset < len(lines) and (args.max_batches is None or batches < args.max_batches):\n        max_time = con.execute(\"SELECT max_event_time FROM checkpoint\").fetchone()[0]\n        watermark = max_time - ALLOWED_LATENESS if max_time else None\n        batch = lines[offset:offset + BATCH_SIZE]\n        counts = process_batch(con, batch, offset, watermark)\n        duplicates += counts[\"duplicates\"]\n        print(f\"Batch at offsets {offset}-{offset + len(batch) - 1}: {counts['new']} new, \"\n              f\"{counts['duplicates']} duplicates, {counts['late']} late\")\n        offset += len(batch)\n        batches += 1\n    max_time = con.execute(\"SELECT max_event_time FROM checkpoint\").fetchone()[0]\n    watermark = max_time - ALLOWED_LATENESS if max_time else None\n    print(f\"Stopped at offset {offset} of {len(lines)}; watermark {watermark}\")\n    report(con, watermark)\n    con.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "ts.minute % 10 is how far into its window an event is: 47 % 10 is 7, so 08:47 belongs to the 08:40 window.",
+     "con.execute(\"SELECT 1 FROM seen WHERE event_id = ?\", [event_id]).fetchone() returns None for a new ID.",
+     "Each batch's watermark comes from the batches before it, and the checkpoint is committed with the batch's results, so a restarted consumer sees exactly the same batches as before."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Pipelines, batch and streaming, ETL and ELT; process one file both ways in the lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "CSV, JSON Lines and Parquet; compare the three formats in the lab.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Idempotent and incremental loads and partitions; finish the loading lab.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Build, check and test the rain-gauge pipeline.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Scheduling, orchestration and streaming; process the event stream in micro-batches.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the capstone pipeline, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Build a week-long rain-gauge pipeline",
+  "minutes": 420,
+  "brief": "A network of eight rain gauges sends one CSV file a day, and a team planning reservoir releases needs daily figures per station and per climate zone that it can trust. Generate a week of data with make_capstone_data.py, then build a batch pipeline in Python and DuckDB (your module 4 lab is a good start) that loads every file, keeps the raw rows, rejects bad rows with a reason, checks each day before publishing it, and publishes a station_daily mart, a zone_daily mart and a partitioned Parquet lake. The data has the problems real feeds have: duplicates; missing, negative and malformed values; a station that isn't on the list; a day when one station stops reporting; a file whose columns arrive in a different order; and a correction for 2024-06-02 that arrives a week later. Loads must be idempotent and incremental (driven by a watermark), every run must be logged, and a short design note explains your choices, including whether any part needs streaming.",
+  "deliverables": [
+   "The pipeline code, with extract, transform, checks and load as separate functions, runnable for one date, for every new file, and for a corrected file",
+   "At least four pytest tests, all passing, covering rejected rows, an idempotent rerun, a failed check and the reordered columns",
+   "The output of a run over the whole week, of a second run that finds nothing new, and of loading the correction for 2024-06-02",
+   "Query results: the run log, the rejected rows counted by reason, and zone_daily for the week",
+   "A README that explains how to install and run the pipeline, with a crontab line (or orchestrator schedule) to run it daily",
+   "A design note of about a page: ETL or ELT, how reruns, the late correction and the incomplete day are handled, whether any part needs streaming, and what would change with 100 times the data"
+  ],
+  "rubric": [
+   {
+    "name": "Correct results",
+    "points": 25,
+    "description": "The marts match the data: bad rows are excluded, the reordered file is read by column name, and the correction replaces 2024-06-02's figures everywhere."
+   },
+   {
+    "name": "Idempotent and incremental",
+    "points": 20,
+    "description": "Rerunning any day changes nothing; a watermark picks up only new files; reloading a corrected day replaces it in the database and in its lake partition."
+   },
+   {
+    "name": "Data quality",
+    "points": 20,
+    "description": "Every rejected row has a reason; dataset checks stop 2024-06-04 from being published with a station missing (or publish it clearly flagged, with the choice explained); every run is recorded."
+   },
+   {
+    "name": "Code and tests",
+    "points": 20,
+    "description": "Small, named steps with the date as a parameter; no hard-coded secrets or absolute paths; clear logs and a non-zero exit code on failure; at least four meaningful tests that pass."
+   },
+   {
+    "name": "Design and documentation",
+    "points": 15,
+    "description": "Someone else can run the pipeline from the README, and the design note explains the choices and their trade-offs clearly and correctly."
+   }
+  ],
+  "submit": "Paste your code (each file with its name), your tests and the pytest summary, the run outputs and query results from the deliverables, your README and your design note. A link to a repository is welcome too.",
+  "files": [
+   {
+    "path": "make_capstone_data.py",
+    "content": "\"\"\"Write the capstone's data: a week of rain-gauge files with the problems real feeds have.\n\nCreates stations.csv, landing/readings_2024-06-01.csv ... readings_2024-06-07.csv and, a week later,\ncorrections/readings_2024-06-02.csv. The readings are synthetic. Only random.random() is used, so every\nPython version writes exactly the same files.\n\"\"\"\n\nimport math\nimport os\nimport random\nfrom datetime import date, timedelta\n\nSTATIONS = [(\"001\", \"Dori\", \"Sahelian\", 0.12), (\"002\", \"Djibo\", \"Sahelian\", 0.12),\n            (\"003\", \"Ouahigouya\", \"Sudano-Sahelian\", 0.18), (\"004\", \"Kaya\", \"Sudano-Sahelian\", 0.18),\n            (\"005\", \"Ouagadougou\", \"Sudano-Sahelian\", 0.18), (\"006\", \"Koudougou\", \"Sudano-Sahelian\", 0.18),\n            (\"007\", \"Bobo-Dioulasso\", \"Sudanian\", 0.26), (\"008\", \"Gaoua\", \"Sudanian\", 0.26)]\nrng = random.Random(2406)\n\n\ndef pick(items):\n    return items[int(rng.random() * len(items))]\n\n\ndef day_rows(day):\n    rows = []\n    for sid, _name, _zone, wet in STATIONS:\n        for h in range(0, 24, 3):\n            rain = round(-math.log(1 - rng.random()) * 5.0, 1) if rng.random() < wet else 0.0\n            temp = 26.0 + 5.5 * math.sin((h - 9) / 24 * 2 * math.pi) + (rng.random() - 0.5) * 2 - (2 if rain else 0)\n            rows.append([sid, f\"{day} {h:02d}:00:00\", f\"{rain:.1f}\", f\"{temp:.1f}\"])\n    return rows\n\n\ndef add_problems(rows, day):\n    bad = [pick(rows)[:],  # an exact duplicate\n           [pick(STATIONS)[0], f\"{day} 10:30:00\", \"\", \"30.5\"],  # missing rain\n           [pick(STATIONS)[0], f\"{day} 11:30:00\", \"-0.4\", \"31.0\"],  # negative rain\n           [\"0\" + str(10 + int(rng.random() * 80)), f\"{day} 12:00:00\", \"0.0\", \"32.0\"],  # unknown station\n           [pick(STATIONS)[0], f\"{day}T25:00\", \"0.0\", \"29.0\"]]  # malformed timestamp\n    for row in bad[: 2 + int(rng.random() * 4)]:\n        rows.insert(int(rng.random() * len(rows)), row)\n    return rows\n\n\ndef write(path, rows, header=(\"station_id\", \"reading_time\", \"rain_mm\", \"temp_c\")):\n    os.makedirs(os.path.dirname(path) or \".\", exist_ok=True)\n    with open(path, \"w\", encoding=\"utf-8\") as f:\n        f.write(\",\".join(header) + \"\\n\")\n        for r in rows:\n            f.write(\",\".join(r) + \"\\n\")\n\n\nwith open(\"stations.csv\", \"w\", encoding=\"utf-8\") as f:\n    f.write(\"station_id,name,climate_zone\\n\" + \"\".join(f\"{s},{n},{z}\\n\" for s, n, z, _w in STATIONS))\nfor d in range(7):\n    day = str(date(2024, 6, 1) + timedelta(days=d))\n    clean = day_rows(day)\n    rows = add_problems([r[:] for r in clean], day)\n    if day == \"2024-06-04\":  # station 003's modem failed in the afternoon: three readings never arrive\n        rows = [r for r in rows if not (r[0] == \"003\" and r[1] >= f\"{day} 15:00:00\")]\n    if day == \"2024-06-05\":  # a firmware update swapped the column order\n        write(f\"landing/readings_{day}.csv\", [[r[0], r[1], r[3], r[2]] for r in rows],\n              header=(\"station_id\", \"reading_time\", \"temp_c\", \"rain_mm\"))\n        continue\n    write(f\"landing/readings_{day}.csv\", rows)\n    if day == \"2024-06-02\":  # a week later: station 006's readings were re-checked and corrected\n        fixed = [[r[0], r[1], f\"{float(r[2]) * 1.5:.1f}\" if r[0] == \"006\" else r[2], r[3]] for r in clean]\n        write(f\"corrections/readings_{day}.csv\", fixed)\nprint(\"Wrote stations.csv, 7 files in landing/ and 1 in corrections/\")\n"
+   }
+  ]
+ }
+}
