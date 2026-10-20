@@ -1,0 +1,1043 @@
+{
+  "slug": "terraform-infrastructure-as-code",
+  "title": "Infrastructure as Code with Terraform",
+  "subtitle": "Describe infrastructure in code, and plan, apply, test and share it safely with Terraform: providers, variables, modules, remote state with locking, workspaces, CI pipelines, drift and import.",
+  "category": "Cloud & DevOps",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "lachlanee-mitchell",
+    "katarina-novakova"
+  ],
+  "skills": [
+    "Terraform",
+    "Infrastructure as code",
+    "HCL",
+    "Terraform modules",
+    "Remote state and locking",
+    "Terraform testing",
+    "CI/CD for infrastructure",
+    "Drift detection",
+    "Secrets management"
+  ],
+  "tools": [
+    "Terraform",
+    "Docker",
+    "PostgreSQL",
+    "GitHub Actions"
+  ],
+  "outcomes": [
+    "Write Terraform configurations with providers, resources, variables, outputs and expressions",
+    "Keep state safe in a remote backend with locking, and refactor it with moved and removed blocks",
+    "Build reusable modules and run several environments with workspaces or separate root modules",
+    "Test configurations with fmt, validate and terraform test, and plan and apply them in a CI pipeline",
+    "Detect drift, import existing resources and protect the secrets that state contains"
+  ],
+  "prerequisites": "Comfort on the command line (Linux Command Line Essentials covers it) and with Git (Git and GitHub Workflows for Teams helps). Install Terraform 1.11 or later (the labs were checked with 1.16) and Docker. Every lab uses providers that need no cloud account; Cloud Computing Fundamentals helps you map the ideas onto a cloud provider.",
+  "description": "Clicking through a cloud console doesn't scale: nobody can review it, repeat it or say exactly what changed last Tuesday. Terraform describes infrastructure as code, so it can be reviewed, versioned, tested and applied the same way every time. This course teaches Terraform hands-on, on your own laptop, with providers that need no cloud account: local files, random values, Docker containers and a PostgreSQL server for shared state.\n\nYou'll write configurations with providers, resources, variables, outputs and expressions; read plans and know before you apply whether a change updates or replaces; move state to a remote backend and watch locking stop two runs from colliding; refactor safely with moved blocks; and build a reusable module that runs nginx containers in dev and prod workspaces. The last module covers what makes Terraform safe for a team: formatting and validation gates, unit tests with mock providers, plan-and-apply pipelines in CI, drift detection, importing resources created by hand, and keeping secrets out of state and code. Every module ends with a lab whose expected output you can check, and the capstone has you codify a small platform end to end, from module tests to a CI workflow.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Terraform Foundations: Providers, Resources and the Workflow",
+      "summary": "What infrastructure as code is and how Terraform works: providers and their versions, resources and the dependency graph, and the init, plan, apply and destroy workflow.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Infrastructure as code, and how Terraform works",
+          "minutes": 12,
+          "objectives": [
+            "Explain what infrastructure as code gives a team",
+            "Describe Terraform's declarative workflow, from configuration to real resources"
+          ],
+          "key_points": [
+            "Infrastructure as code describes servers, networks, databases and their settings in text files kept in version control, so every change is reviewed, repeatable and recorded, unlike clicks in a console that nobody can reproduce.",
+            "Terraform is declarative: you describe the end state you want in HCL (HashiCorp Configuration Language) files ending in .tf, and Terraform works out the create, update and delete calls needed to reach it.",
+            "Providers are plugins that turn resources into API calls for one platform, such as AWS, Azure, Kubernetes, Docker or the local file system; thousands are published in the Terraform Registry.",
+            "Terraform records what it manages in state and compares configuration, state and the real world on every plan, so applying the same configuration twice changes nothing the second time.",
+            "The workflow is: write the configuration, terraform init to download providers and modules, terraform plan to preview the changes, terraform apply to make them and, when you're finished, terraform destroy.",
+            "Terraform has been under the Business Source License since version 1.6; OpenTofu, a Linux Foundation project, is an open-source fork with the same language and workflow for most configurations."
+          ]
+        },
+        {
+          "title": "Providers, versions and the lock file",
+          "minutes": 12,
+          "objectives": [
+            "Declare and pin the providers a configuration needs",
+            "Explain what the dependency lock file records, and why to commit it"
+          ],
+          "key_points": [
+            "The terraform block's required_providers names each provider with a source address, such as hashicorp/random (short for registry.terraform.io/hashicorp/random), and a version constraint; required_version constrains Terraform itself.",
+            "Version constraints use = for an exact version, >= and <= for ranges, and ~> 2.9 for 2.9 or any later 2.x release, which allows fixes and new features but not a new major version with breaking changes.",
+            "terraform init downloads the selected providers into the .terraform folder and writes .terraform.lock.hcl, which records each provider's exact version and checksums: commit the lock file, never the .terraform folder.",
+            "With the lock file in place, everyone and every pipeline gets the same provider versions; terraform init -upgrade moves to the newest versions the constraints allow and rewrites the file, a change to review like any other.",
+            "A provider block configures a provider, such as its region or credentials; an alias lets one configuration use a provider twice, for example in two regions. Reusable modules shouldn't configure providers themselves."
+          ]
+        },
+        {
+          "title": "Resources, plans and the dependency graph",
+          "minutes": 13,
+          "objectives": [
+            "Read a plan and predict whether a change updates or replaces a resource",
+            "Explain how Terraform orders and parallelises its changes"
+          ],
+          "key_points": [
+            "A resource block declares one object by type and name, such as resource \"local_file\" \"index\"; you set its arguments, and the provider fills in attributes such as IDs, some known only after apply.",
+            "Referring to another resource's attribute, as in random_pet.site.id, creates an implicit dependency. Terraform builds a graph from these references and changes independent resources in parallel, 10 at a time by default.",
+            "depends_on adds an explicit dependency for the rare case Terraform can't see from references, such as an application that needs a permission to exist first; use a reference whenever there is one.",
+            "Plan symbols say what will happen: + create, ~ update in place, -/+ destroy and re-create (replace) and - destroy; # forces replacement marks the argument that can't be changed in place.",
+            "The lifecycle block changes the defaults: create_before_destroy builds the replacement first, prevent_destroy refuses to destroy, ignore_changes leaves listed arguments alone, and replace_triggered_by replaces a resource when another one changes.",
+            "terraform plan -out=tfplan saves a plan, and terraform apply tfplan applies exactly that plan, so what was reviewed is what runs."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Read a plan three ways",
+            "steps": [
+              {
+                "do": "In the module 1 lab's folder, save a plan to a file instead of only printing it.",
+                "code": "terraform plan -out=tfplan",
+                "lang": "bash",
+                "see": "Saved the plan to: tfplan"
+              },
+              {
+                "do": "Show the saved plan again, as a person would read it.",
+                "code": "terraform show tfplan",
+                "lang": "bash"
+              },
+              {
+                "do": "Show it as JSON, the form scripts and policy tools read, and pick out each resource's actions.",
+                "code": "terraform show -json tfplan | jq '.resource_changes[] | {address, actions: .change.actions}'",
+                "lang": "bash",
+                "see": "Objects such as {\"address\": \"local_file.index\", \"actions\": [\"create\"]}; a replacement lists \"delete\" and \"create\"."
+              },
+              {
+                "do": "Print the dependency graph in the DOT format; paste it into a Graphviz viewer to see it drawn.",
+                "code": "terraform graph | head -n 20",
+                "lang": "bash"
+              },
+              {
+                "do": "Apply exactly the plan you saved.",
+                "code": "terraform apply tfplan",
+                "lang": "bash"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build, change and destroy local infrastructure",
+        "tool": "Terraform",
+        "minutes": 60,
+        "goal": "Run the whole Terraform workflow with providers that need no cloud account: create a random name and a web page that uses it, then make a change that updates in place and one that forces a replacement, and destroy everything.",
+        "setup": [
+          "Terraform 1.11 or later: terraform version prints it",
+          "A terminal and a text editor",
+          "Download the starter file main.tf into an empty folder called tf-first"
+        ],
+        "steps": [
+          {
+            "do": "Check your Terraform version, then initialise the folder: Terraform downloads the local and random providers and writes the lock file.",
+            "code": "terraform version\nterraform init\ncat .terraform.lock.hcl",
+            "lang": "bash",
+            "see": "Installing hashicorp/local and hashicorp/random, Terraform has been successfully initialized!, and a lock file with each provider's version and hashes."
+          },
+          {
+            "do": "Check formatting and validity before planning.",
+            "code": "terraform fmt -check\nterraform validate",
+            "lang": "bash",
+            "see": "No files listed by fmt, then Success! The configuration is valid."
+          },
+          {
+            "do": "Preview the changes.",
+            "code": "terraform plan",
+            "lang": "bash",
+            "see": "Three resources to create and Plan: 3 to add, 0 to change, 0 to destroy."
+          },
+          {
+            "do": "Apply them (type yes when asked), then look at what was made.",
+            "code": "terraform apply\ncat site/index.html\nterraform output site_name",
+            "lang": "bash",
+            "see": "Apply complete! Resources: 3 added, 0 changed, 0 destroyed. and a page that says hello from a two-word name."
+          },
+          {
+            "do": "In main.tf, change terraform_data.release's version from 1.0.0 to 1.1.0, then plan and apply.",
+            "code": "terraform plan\nterraform apply",
+            "lang": "bash",
+            "see": "terraform_data.release will be updated in-place and Plan: 0 to add, 1 to change, 0 to destroy."
+          },
+          {
+            "do": "Now change the page's text from Hello from to Welcome from, then plan and apply.",
+            "code": "terraform plan\nterraform apply",
+            "lang": "bash",
+            "see": "local_file.index must be replaced, # forces replacement beside content, and Plan: 1 to add, 0 to change, 1 to destroy."
+          },
+          {
+            "do": "List what Terraform manages, and show one resource's recorded attributes.",
+            "code": "terraform state list\nterraform state show random_pet.site",
+            "lang": "bash"
+          },
+          {
+            "do": "Destroy everything (type yes).",
+            "code": "terraform destroy",
+            "lang": "bash",
+            "see": "Destroy complete! Resources: 3 destroyed."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The folder initialises with pinned providers and a lock file.",
+            "look_for": [
+              "Terraform has been successfully initialized!",
+              "hashicorp/random"
+            ]
+          },
+          {
+            "text": "The first plan and apply create three resources.",
+            "look_for": [
+              "Plan: 3 to add, 0 to change, 0 to destroy.",
+              "Apply complete! Resources: 3 added"
+            ]
+          },
+          {
+            "text": "A change to terraform_data's input updates it in place.",
+            "look_for": [
+              "updated in-place",
+              "Plan: 0 to add, 1 to change, 0 to destroy."
+            ]
+          },
+          {
+            "text": "A change to the file's content forces its replacement.",
+            "look_for": [
+              "must be replaced",
+              "forces replacement"
+            ]
+          },
+          {
+            "text": "Everything is destroyed at the end.",
+            "look_for": [
+              "Destroy complete! Resources: 3 destroyed."
+            ]
+          }
+        ],
+        "submit": "Paste the output of steps 1 and 3 to 8, and a sentence explaining why the content change replaced the file while the version change didn't replace terraform_data.",
+        "files": [
+          {
+            "path": "main.tf",
+            "content": "terraform {\n  required_version = \">= 1.11.0\"\n\n  required_providers {\n    local = {\n      source  = \"hashicorp/local\"\n      version = \"~> 2.9\"\n    }\n    random = {\n      source  = \"hashicorp/random\"\n      version = \"~> 3.9\"\n    }\n  }\n}\n\n# A random two-word name, such as \"proud-otter\".\nresource \"random_pet\" \"site\" {\n  length = 2\n}\n\n# A file whose content refers to the pet's name: an implicit dependency.\nresource \"local_file\" \"index\" {\n  filename = \"${path.module}/site/index.html\"\n  content  = \"<h1>Hello from ${random_pet.site.id}</h1>\\n\"\n}\n\n# terraform_data is built in: no provider needed. Its input can change without replacing it.\nresource \"terraform_data\" \"release\" {\n  input = {\n    version = \"1.0.0\"\n    page    = local_file.index.filename\n  }\n}\n\noutput \"site_name\" {\n  value = random_pet.site.id\n}\n"
+          }
+        ],
+        "hints": [
+          "If init can't reach registry.terraform.io, check your proxy settings, or that your network allows it.",
+          "Plan shows (known after apply) for values such as the pet's name, because the provider only decides them during apply.",
+          "If apply says the plan is stale, something changed the state since you planned: plan again."
+        ]
+      }
+    },
+    {
+      "title": "Variables, Outputs and Expressions",
+      "summary": "Make configurations reusable with typed, validated input variables and per-environment tfvars files, compute values with locals and expressions, create many similar resources with for_each and count, and publish outputs.",
+      "instructor": "katarina-novakova",
+      "lessons": [
+        {
+          "title": "Input variables and tfvars files",
+          "minutes": 12,
+          "objectives": [
+            "Declare typed, validated input variables",
+            "Supply values for different environments, and predict which value wins"
+          ],
+          "key_points": [
+            "A variable block declares an input with a type (string, number, bool, list, map, set, object or tuple), a description and, optionally, a default; a variable without a default must be given a value.",
+            "A validation block (a condition and an error_message) rejects bad values before anything is planned, such as an environment that isn't dev or prod; object types can make attributes optional, with defaults, as optional(number, 1).",
+            "Values come from, in rising precedence: TF_VAR_name environment variables, terraform.tfvars, *.auto.tfvars files in name order, then -var and -var-file options in the order given; later sources override earlier ones.",
+            "sensitive = true keeps a variable's value out of plan and apply output, but the value is still stored in plain text in the state and in saved plan files.",
+            "Keep a .tfvars file per environment, such as dev.tfvars and prod.tfvars, in version control, but never put secrets in them: pass secrets in environment variables or read them from a secret manager."
+          ]
+        },
+        {
+          "title": "Locals, outputs and expressions",
+          "minutes": 12,
+          "objectives": [
+            "Compute values with locals, functions and for expressions",
+            "Publish outputs and use them from scripts and other modules"
+          ],
+          "key_points": [
+            "A locals block names an expression, such as local.total_replicas, so it's written once and reused; unlike a variable, a local value can't be set from outside the module.",
+            "Expressions include string templates (\"${var.environment}-api\"), conditionals (condition ? a : b), for expressions ([for s in var.names : upper(s)] or {for k, v in var.services : k => v.port}) and splats (local_file.config[*].filename).",
+            "Terraform has built-in functions, such as format, join, merge, lookup, contains, length, sum, cidrsubnet, jsonencode and file, but no user-defined ones; terraform console evaluates expressions against your configuration.",
+            "An output block publishes a value after apply: terraform output shows the outputs, terraform output -json gives them to scripts, and a calling module reads them as module.NAME.OUTPUT.",
+            "Marking an output sensitive hides it in the summary, but terraform output -json still prints it, and the value is in the state in plain text."
+          ]
+        },
+        {
+          "title": "count, for_each, dynamic blocks and data sources",
+          "minutes": 13,
+          "objectives": [
+            "Create several similar resources with count or for_each, and choose between them",
+            "Read existing information with data sources"
+          ],
+          "key_points": [
+            "count = N creates N instances addressed by number (local_file.config[0]); for_each over a map or a set of strings creates one per key (local_file.config[\"api\"]), with each.key and each.value inside the block.",
+            "Prefer for_each when the items have names: removing an item from the middle of a list shifts every later index, so count destroys and re-creates those resources, while for_each touches only the key removed.",
+            "Use count for identical copies, with count.index for the number, or as an on-off switch: count = var.enabled ? 1 : 0.",
+            "A dynamic block generates repeated nested blocks, such as one rule per port, from a collection; use it sparingly, because plain blocks are easier to read.",
+            "A data source (a data block) reads something Terraform doesn't manage, such as an existing network, an image ID or a file, as data.TYPE.NAME.ATTRIBUTE, and is read during plan when its arguments are known."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Try expressions in terraform console",
+            "steps": [
+              {
+                "do": "In the module 2 lab's folder, open the console with the dev values loaded.",
+                "code": "terraform console -var-file=dev.tfvars",
+                "lang": "bash"
+              },
+              {
+                "do": "Split a network into subnets.",
+                "code": "cidrsubnet(\"10.0.0.0/16\", 8, 2)",
+                "lang": "hcl",
+                "see": "\"10.0.2.0/24\""
+              },
+              {
+                "do": "Turn the services map into a list of name:port strings.",
+                "code": "[for name, s in var.services : \"${name}:${s.port}\"]",
+                "lang": "hcl",
+                "see": "\"api:8080\" and \"worker:9090\""
+              },
+              {
+                "do": "Read the optional attribute's default, and a local value.",
+                "code": "var.services.api.replicas\nlocal.total_replicas",
+                "lang": "hcl",
+                "see": "1 and 2"
+              },
+              {
+                "do": "Leave the console.",
+                "code": "exit",
+                "lang": "hcl"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Parameterise a configuration for two environments",
+        "tool": "Terraform",
+        "minutes": 60,
+        "goal": "Use typed and validated variables, per-environment tfvars files, for_each and outputs to generate configuration for a set of services, and see why one state shouldn't hold two environments.",
+        "setup": [
+          "Terraform 1.11 or later",
+          "Download the starter files main.tf, variables.tf, outputs.tf, dev.tfvars and prod.tfvars into a folder called tf-vars"
+        ],
+        "steps": [
+          {
+            "do": "Initialise, then plan with the dev values.",
+            "code": "terraform init\nterraform plan -var-file=dev.tfvars",
+            "lang": "bash",
+            "see": "A password and a file for each of api and worker: Plan: 4 to add, 0 to change, 0 to destroy."
+          },
+          {
+            "do": "Apply, and read a generated file.",
+            "code": "terraform apply -var-file=dev.tfvars\ncat out/dev/api.env",
+            "lang": "bash",
+            "see": "total_replicas = 2, api_keys = <sensitive>, and SERVICE=api, ENVIRONMENT=dev, PORT=8080 in the file."
+          },
+          {
+            "do": "Read the outputs as a script would, including the sensitive one.",
+            "code": "terraform output -json config_files\nterraform output -json api_keys",
+            "lang": "bash",
+            "see": "{\"api\":\"./out/dev/api.env\",\"worker\":\"./out/dev/worker.env\"}, then both keys in plain text: sensitive only hides values in summaries."
+          },
+          {
+            "do": "Try an environment the validation doesn't allow.",
+            "code": "terraform plan -var-file=dev.tfvars -var environment=test",
+            "lang": "bash",
+            "see": "Error: Invalid value for variable, with the message The environment must be \"dev\" or \"prod\"."
+          },
+          {
+            "do": "Add a scheduler service on port 7070 to dev.tfvars, and plan: only the new key's resources appear, because for_each tracks instances by key.",
+            "code": "terraform plan -var-file=dev.tfvars",
+            "lang": "bash",
+            "see": "Plan: 2 to add, 0 to change, 0 to destroy."
+          },
+          {
+            "do": "Remove the scheduler again, then plan prod in the same folder, without applying. It wants to replace dev's files with prod's, because both environments share one state.",
+            "code": "terraform plan -var-file=prod.tfvars",
+            "lang": "bash",
+            "see": "Plan: 4 to add, 0 to change, 2 to destroy."
+          },
+          {
+            "do": "Evaluate a few expressions in the console (one per line; type exit to leave).",
+            "code": "terraform console -var-file=prod.tfvars",
+            "lang": "bash",
+            "see": "Try cidrsubnet(\"10.0.0.0/16\", 8, 2), local.total_replicas and upper(var.owner): \"10.0.2.0/24\", 7 and \"PLATFORM-TEAM\"."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The dev plan and apply create a password and a file per service.",
+            "look_for": [
+              "Plan: 4 to add, 0 to change, 0 to destroy.",
+              "total_replicas = 2"
+            ]
+          },
+          {
+            "text": "The sensitive output is hidden in the summary but readable as JSON.",
+            "look_for": [
+              "api_keys = <sensitive>",
+              "\"api\":\"./out/dev/api.env\""
+            ]
+          },
+          {
+            "text": "The validation rejects an unknown environment.",
+            "look_for": [
+              "Invalid value for variable"
+            ]
+          },
+          {
+            "text": "for_each adds only the new service's resources.",
+            "look_for": [
+              "Plan: 2 to add, 0 to change, 0 to destroy."
+            ]
+          },
+          {
+            "text": "Planning prod in dev's state would destroy dev's files.",
+            "look_for": [
+              "Plan: 4 to add, 0 to change, 2 to destroy."
+            ]
+          },
+          {
+            "text": "Expressions are evaluated in the console.",
+            "look_for": [
+              "10.0.2.0/24",
+              "PLATFORM-TEAM"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output of steps 1 to 7, and two sentences: what would go wrong if you applied prod here, and how module 4 will avoid it?",
+        "files": [
+          {
+            "path": "main.tf",
+            "content": "terraform {\n  required_version = \">= 1.11.0\"\n\n  required_providers {\n    local = {\n      source  = \"hashicorp/local\"\n      version = \"~> 2.9\"\n    }\n    random = {\n      source  = \"hashicorp/random\"\n      version = \"~> 3.9\"\n    }\n  }\n}\n\nlocals {\n  total_replicas = sum([for s in var.services : s.replicas])\n}\n\n# One API key per service: for_each makes one instance per map key.\nresource \"random_password\" \"api_key\" {\n  for_each = var.services\n\n  length  = 24\n  special = false\n}\n\nresource \"local_file\" \"service_config\" {\n  for_each = var.services\n\n  filename        = \"${path.module}/out/${var.environment}/${each.key}.env\"\n  file_permission = \"0640\"\n  content         = <<-EOT\n    SERVICE=${each.key}\n    ENVIRONMENT=${var.environment}\n    PORT=${each.value.port}\n    REPLICAS=${each.value.replicas}\n    OWNER=${var.owner}\n  EOT\n}\n"
+          },
+          {
+            "path": "variables.tf",
+            "content": "variable \"environment\" {\n  description = \"The environment to configure: dev or prod.\"\n  type        = string\n\n  validation {\n    condition     = contains([\"dev\", \"prod\"], var.environment)\n    error_message = \"The environment must be \\\"dev\\\" or \\\"prod\\\".\"\n  }\n}\n\nvariable \"services\" {\n  description = \"The services to configure, with their port and number of replicas.\"\n  type = map(object({\n    port     = number\n    replicas = optional(number, 1)\n  }))\n}\n\nvariable \"owner\" {\n  description = \"The team that owns these services.\"\n  type        = string\n  default     = \"platform-team\"\n}\n"
+          },
+          {
+            "path": "outputs.tf",
+            "content": "output \"config_files\" {\n  description = \"The configuration file written for each service.\"\n  value       = { for name, f in local_file.service_config : name => f.filename }\n}\n\noutput \"total_replicas\" {\n  description = \"Replicas across all services.\"\n  value       = local.total_replicas\n}\n\noutput \"api_keys\" {\n  description = \"Each service's API key.\"\n  value       = { for name, p in random_password.api_key : name => p.result }\n  sensitive   = true\n}\n"
+          },
+          {
+            "path": "dev.tfvars",
+            "content": "environment = \"dev\"\n\nservices = {\n  api    = { port = 8080 }\n  worker = { port = 9090 }\n}\n"
+          },
+          {
+            "path": "prod.tfvars",
+            "content": "environment = \"prod\"\n\nservices = {\n  api    = { port = 8080, replicas = 3 }\n  worker = { port = 9090, replicas = 2 }\n  web    = { port = 80, replicas = 2 }\n}\n"
+          }
+        ],
+        "hints": [
+          "Each map entry in a tfvars file needs a port; replicas is optional and defaults to 1.",
+          "If console can't find var.services, start it with -var-file, as variables have no default.",
+          "The api keys are generated once and kept in state: re-applying doesn't change them."
+        ]
+      }
+    },
+    {
+      "title": "State, Backends and Locking",
+      "summary": "What Terraform's state holds and why it matters, how to keep it in a shared remote backend with locking, and how to refactor and repair it safely with moved and removed blocks.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "What state is, and why it matters",
+          "minutes": 12,
+          "objectives": [
+            "Explain what Terraform records in state and what it uses it for",
+            "Inspect state safely from the command line"
+          ],
+          "key_points": [
+            "State maps each resource address in your configuration to the real object it manages, by ID, and records its attributes, so Terraform knows what exists, what changed and what to destroy.",
+            "Every plan refreshes the state from the real infrastructure, compares it with the configuration and proposes only the differences; without state, Terraform couldn't tell its objects from anyone else's.",
+            "By default state is terraform.tfstate in the working folder: JSON with a serial number that rises on every write and a lineage that identifies its history. Never edit it by hand.",
+            "terraform state list lists the managed resources, terraform state show ADDRESS shows one, and terraform show prints the whole state, or a saved plan, in readable form.",
+            "State holds every attribute in plain text, including passwords, keys and connection strings marked sensitive, so treat a state file as a secret: never commit it to Git or send it to anyone."
+          ]
+        },
+        {
+          "title": "Remote backends and state locking",
+          "minutes": 13,
+          "objectives": [
+            "Configure a remote backend and migrate existing state to it",
+            "Explain how locking prevents corrupted state, and what to do about a stuck lock"
+          ],
+          "key_points": [
+            "A backend decides where state is stored. Teams use a remote one, such as Amazon S3, Azure Blob Storage (azurerm), Google Cloud Storage (gcs), PostgreSQL (pg) or HCP Terraform, so people and pipelines all work from the same state.",
+            "A backend block can't use variables. Leave it partial, as backend \"pg\" {}, and supply the settings with -backend-config files or the backend's environment variables, such as PG_CONN_STR, which also keeps credentials out of the code.",
+            "Changing the backend block needs terraform init again; with -migrate-state, init copies the existing state to the new backend after asking you to confirm.",
+            "While a command that can write state runs, the backend holds a lock, so a second plan or apply fails with Error acquiring the state lock instead of corrupting the state; -lock-timeout=90s makes it wait instead.",
+            "Backends lock differently: S3 with a lock file beside the state when use_lockfile = true (its DynamoDB locking is deprecated), azurerm with a blob lease, gcs with a lock file, and pg with database advisory locks.",
+            "terraform force-unlock LOCK_ID releases a lock left by a crashed run. Use it only when you're sure no other run is still active, or two runs could write the state at once."
+          ]
+        },
+        {
+          "title": "Refactoring and repairing state",
+          "minutes": 12,
+          "objectives": [
+            "Rename and restructure resources without destroying them",
+            "Take resources out of Terraform's management safely"
+          ],
+          "key_points": [
+            "Renaming a resource or moving it into a module changes its address, so Terraform would destroy the old object and create a new one, unless you record the change in a moved block, with from and to addresses.",
+            "With a moved block the plan reports that the resource has moved and proposes no changes; keep moved blocks while anyone might still apply an older state, and they record the history too.",
+            "A removed block (Terraform 1.7+) with lifecycle { destroy = false } takes a resource out of the state without destroying the real object, for example when another configuration takes it over.",
+            "terraform state mv and terraform state rm do the same from the command line, but change the state at once, with no plan and no review, so prefer moved and removed blocks, which go through both.",
+            "To share values between configurations, publish them as outputs and read them with the terraform_remote_state data source, or better through a data source or parameter store, so consumers don't need to read the whole state."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Move state to PostgreSQL and see locking at work",
+        "tool": "Terraform",
+        "minutes": 75,
+        "goal": "Start with local state, migrate it to a PostgreSQL backend running in Docker, make two runs compete for the lock, refactor a resource with a moved block, and see each workspace stored as its own state.",
+        "setup": [
+          "Terraform 1.11 or later, and Docker",
+          "Two terminal windows open in the same folder, called tf-state",
+          "Download the starter file main.tf into that folder"
+        ],
+        "steps": [
+          {
+            "do": "Start a PostgreSQL server in Docker to hold the state. The password is for this lab only.",
+            "code": "docker run -d --name tfstate -e POSTGRES_PASSWORD=lab-only -e POSTGRES_DB=terraform_backend -p 5432:5432 postgres:17-alpine",
+            "lang": "bash"
+          },
+          {
+            "do": "Apply with the default local backend, and look at the state it wrote.",
+            "code": "terraform init\nterraform apply -auto-approve\nls\nterraform state list",
+            "lang": "bash",
+            "see": "Apply complete! Resources: 2 added, a terraform.tfstate file, and local_file.report and time_sleep.hold."
+          },
+          {
+            "do": "Uncomment backend \"pg\" {} in main.tf, give the connection string in an environment variable, and migrate the state (answer yes).",
+            "code": "export PG_CONN_STR=\"postgres://postgres:lab-only@localhost:5432/terraform_backend?sslmode=disable\"\nterraform init -migrate-state",
+            "lang": "bash",
+            "see": "Successfully configured the backend \"pg\"! Terraform will automatically use this backend..."
+          },
+          {
+            "do": "Check that Terraform reads the state from PostgreSQL, then delete the old local copies.",
+            "code": "terraform state list\ndocker exec tfstate psql -U postgres -d terraform_backend -c 'select name from terraform_remote_state.states;'\nrm terraform.tfstate terraform.tfstate.backup",
+            "lang": "bash",
+            "see": "The same two resources, and one row named default."
+          },
+          {
+            "do": "Make two runs compete. In the first terminal, start an apply that holds the lock for 60 seconds; at once, in the second (with the same PG_CONN_STR exported), try to plan.",
+            "code": "terraform apply -auto-approve -var hold_seconds=60\n# in the second terminal:\nterraform plan",
+            "lang": "bash",
+            "see": "The second run fails with Error: Error acquiring the state lock and Workspace is already locked: default."
+          },
+          {
+            "do": "In the second terminal, wait for the lock instead.",
+            "code": "terraform plan -var hold_seconds=60 -lock-timeout=90s",
+            "lang": "bash",
+            "see": "Acquiring state lock. This may take a few moments..., then No changes once the first apply finishes."
+          },
+          {
+            "do": "Set the sleep back to its default, then refactor: rename the resource local_file.report to local_file.inventory_report in main.tf, add a moved block from the old address to the new one, and plan.",
+            "code": "terraform apply -auto-approve\nterraform plan",
+            "lang": "bash",
+            "see": "local_file.report has moved to local_file.inventory_report, and Plan: 0 to add, 0 to change, 0 to destroy."
+          },
+          {
+            "do": "Apply the move, then create a second workspace and see it stored as a second row.",
+            "code": "terraform apply -auto-approve\nterraform state list\nterraform workspace new staging\ndocker exec tfstate psql -U postgres -d terraform_backend -c 'select name from terraform_remote_state.states;'\nterraform workspace select default",
+            "lang": "bash",
+            "see": "local_file.inventory_report in the list, and rows default and staging."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The state is migrated to the pg backend.",
+            "look_for": [
+              "Successfully configured the backend \"pg\"!"
+            ]
+          },
+          {
+            "text": "A second run is refused while the first holds the lock.",
+            "look_for": [
+              "Error acquiring the state lock",
+              "already locked"
+            ]
+          },
+          {
+            "text": "The moved block renames the resource without replacing it.",
+            "look_for": [
+              "has moved to",
+              "Plan: 0 to add, 0 to change, 0 to destroy."
+            ]
+          },
+          {
+            "text": "Each workspace is stored as its own state.",
+            "look_for": [
+              "staging"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 2 to 8, including both terminals in step 5.",
+        "files": [
+          {
+            "path": "main.tf",
+            "content": "terraform {\n  required_version = \">= 1.11.0\"\n\n  # Step 3 adds the backend: uncomment these lines, then run terraform init -migrate-state.\n  # backend \"pg\" {}\n\n  required_providers {\n    local = {\n      source  = \"hashicorp/local\"\n      version = \"~> 2.9\"\n    }\n    time = {\n      source  = \"hashicorp/time\"\n      version = \"~> 0.14\"\n    }\n  }\n}\n\nvariable \"hold_seconds\" {\n  description = \"How long the apply holds the state lock, for the locking experiment.\"\n  type        = number\n  default     = 1\n}\n\nresource \"local_file\" \"report\" {\n  filename = \"${path.module}/out/report.txt\"\n  content  = \"Inventory report\\n\"\n}\n\n# Waits while it's created, so an apply keeps the state lock long enough to see locking at work.\nresource \"time_sleep\" \"hold\" {\n  create_duration = \"${var.hold_seconds}s\"\n  triggers = {\n    seconds = var.hold_seconds\n  }\n}\n"
+          }
+        ],
+        "hints": [
+          "pq: SSL is not enabled on the server means the connection string is missing ?sslmode=disable, which is fine for a local lab server and wrong for a real one.",
+          "If init says the backend configuration changed, you edited the backend block: run terraform init -migrate-state again.",
+          "Never use -lock=false to get round a lock in real work: find out who holds it first."
+        ]
+      }
+    },
+    {
+      "title": "Modules, Workspaces and Environments",
+      "summary": "Package infrastructure as reusable modules with clear inputs and outputs, share and version them, and run one configuration as several environments with workspaces or separate root modules.",
+      "instructor": "katarina-novakova",
+      "lessons": [
+        {
+          "title": "Writing reusable modules",
+          "minutes": 13,
+          "objectives": [
+            "Structure a module with a clear interface of inputs and outputs",
+            "Call a module and use its outputs"
+          ],
+          "key_points": [
+            "Every configuration is a module: the root module is the folder you run Terraform in, and a child module is any folder of .tf files it calls with a module block.",
+            "A good module does one job through a small interface: variables.tf for its inputs (typed, described and validated), outputs.tf for what callers need, versions.tf for its provider requirements, and a README with an example.",
+            "Call a module with module \"web\" { source = \"./modules/web\" ... }, passing its inputs as arguments, and read its outputs as module.web.urls; run terraform init after adding or changing a module's source.",
+            "Modules declare the providers they need but don't configure them: the root module configures each provider once and passes it on, implicitly or through the module block's providers argument.",
+            "Modules accept count and for_each like resources. Moving existing resources into a module changes their addresses, so add moved blocks from the old addresses to module.NAME.TYPE.NAME."
+          ]
+        },
+        {
+          "title": "Sharing and versioning modules",
+          "minutes": 11,
+          "objectives": [
+            "Use modules from registries and Git with pinned versions",
+            "Version your own modules so callers can upgrade safely"
+          ],
+          "key_points": [
+            "A module's source can be a local path, the Terraform Registry (namespace/name/provider, such as terraform-aws-modules/vpc/aws), a Git repository (git::https://...?ref=v1.2.0) or a private registry.",
+            "Pin registry modules with version, such as version = \"~> 5.0\", and Git modules with a tag or commit in ref, so an upstream change can't reach your infrastructure unreviewed.",
+            "Version your own modules semantically: a new major version for breaking changes to inputs or outputs, a minor version for new optional features, a patch for fixes.",
+            "Read a public module before you use it, as you would any dependency: what it creates, what permissions it needs and how actively it's maintained.",
+            "Compose small modules in the root module rather than building one module with dozens of switches, and keep environment-specific values out of modules so one version serves every environment."
+          ]
+        },
+        {
+          "title": "Workspaces and environments",
+          "minutes": 12,
+          "objectives": [
+            "Keep separate state for one configuration with CLI workspaces",
+            "Choose between workspaces and separate root modules for environments"
+          ],
+          "key_points": [
+            "A workspace is a named state for one configuration: terraform workspace new dev creates it and switches to it, select switches, list shows all of them with the current one starred, and show prints the current one.",
+            "terraform.workspace holds the current workspace's name, so a configuration can look up settings per workspace, such as replicas for dev and prod, in a map.",
+            "The local backend keeps workspace states under terraform.tfstate.d/NAME, pg stores a row per workspace, and S3 stores them under env:/NAME/ unless workspace_key_prefix is set.",
+            "Workspaces suit environments that are nearly identical and share a backend and credentials; when they differ in accounts, credentials, approvals or providers, give each its own root module calling the same versioned modules.",
+            "The default workspace always exists and can't be deleted; guard against applying in the wrong one, for example with a precondition that fails when terraform.workspace has no settings."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "A Docker web module across two workspaces",
+        "tool": "Terraform",
+        "minutes": 75,
+        "goal": "Use a reusable module that runs nginx containers with the Docker provider, and deploy it as dev and prod from one configuration with workspaces, each with its own state, size and ports.",
+        "setup": [
+          "Terraform 1.11 or later, and Docker running",
+          "Download the starter files main.tf and the modules/web folder (versions.tf, variables.tf, main.tf and outputs.tf) into a folder called tf-web"
+        ],
+        "steps": [
+          {
+            "do": "Read the module's four files and the root main.tf: note the inputs, the outputs, and how the root picks settings with terraform.workspace. Then initialise.",
+            "code": "terraform init",
+            "lang": "bash",
+            "see": "kreuzwerker/docker and hashicorp/local installed, and the module ./modules/web."
+          },
+          {
+            "do": "Plan in the default workspace: the guard stops it.",
+            "code": "terraform plan",
+            "lang": "bash",
+            "see": "Resource precondition failed: Workspace \"default\" has no settings..."
+          },
+          {
+            "do": "Create the dev workspace, then apply and call the container.",
+            "code": "terraform workspace new dev\nterraform apply -auto-approve\ncurl -s localhost:8081",
+            "lang": "bash",
+            "see": "Created and switched to workspace \"dev\"!, Apply complete! Resources: 5 added, and <h1>Hello from dev</h1>"
+          },
+          {
+            "do": "Create prod, apply, and call both of its replicas.",
+            "code": "terraform workspace new prod\nterraform apply -auto-approve\ncurl -s localhost:8091\ncurl -s localhost:8092\ndocker ps --format '{{.Names}}'",
+            "lang": "bash",
+            "see": "Hello from prod twice, and containers shop-dev-web-0, shop-prod-web-0 and shop-prod-web-1."
+          },
+          {
+            "do": "See where each workspace's state lives.",
+            "code": "terraform workspace list\nls terraform.tfstate.d",
+            "lang": "bash",
+            "see": "default, dev and prod (starred), and folders dev and prod."
+          },
+          {
+            "do": "Grow prod to 3 replicas in main.tf's settings and plan: only one container is added.",
+            "code": "terraform plan",
+            "lang": "bash",
+            "see": "Plan: 1 to add, 0 to change, 0 to destroy."
+          },
+          {
+            "do": "Try 9 replicas: the module's validation refuses. Then set prod back to 2.",
+            "code": "terraform plan",
+            "lang": "bash",
+            "see": "Invalid value for variable ... replicas must be between 1 and 5."
+          },
+          {
+            "do": "Destroy prod and dev, and go back to the default workspace.",
+            "code": "terraform destroy -auto-approve\nterraform workspace select dev\nterraform destroy -auto-approve\nterraform workspace select default",
+            "lang": "bash",
+            "see": "Destroy complete! twice, and no shop- containers left in docker ps."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The guard stops a plan in the default workspace.",
+            "look_for": [
+              "has no settings"
+            ]
+          },
+          {
+            "text": "dev is applied in its own workspace and serves its page.",
+            "look_for": [
+              "Created and switched to workspace \"dev\"!",
+              "Hello from dev"
+            ]
+          },
+          {
+            "text": "prod runs two replicas from the same module.",
+            "look_for": [
+              "Hello from prod",
+              "shop-prod-web-1"
+            ]
+          },
+          {
+            "text": "Growing prod adds only the new container, and the module rejects too many replicas.",
+            "look_for": [
+              "Plan: 1 to add, 0 to change, 0 to destroy.",
+              "replicas must be between 1 and 5"
+            ]
+          },
+          {
+            "text": "Both environments are destroyed afterwards.",
+            "look_for": [
+              "Destroy complete!"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output of steps 2 to 8, and two sentences: when would you give dev and prod separate root modules instead of workspaces?",
+        "files": [
+          {
+            "path": "main.tf",
+            "content": "terraform {\n  required_version = \">= 1.11.0\"\n\n  required_providers {\n    docker = {\n      source  = \"kreuzwerker/docker\"\n      version = \"~> 4.6\"\n    }\n  }\n}\n\nprovider \"docker\" {}\n\n# One set of settings per workspace; terraform.workspace picks the right one.\nlocals {\n  settings = {\n    dev  = { replicas = 1, base_port = 8081, message = \"Hello from dev\" }\n    prod = { replicas = 2, base_port = 8091, message = \"Hello from prod\" }\n  }\n  known = contains(keys(local.settings), terraform.workspace)\n  env   = local.settings[local.known ? terraform.workspace : \"dev\"]\n}\n\nmodule \"web\" {\n  source = \"./modules/web\"\n\n  name      = \"shop-${terraform.workspace}\"\n  replicas  = local.env.replicas\n  base_port = local.env.base_port\n  message   = local.env.message\n}\n\n# Stops a plan, with a clear message, in a workspace without settings, such as \"default\".\nresource \"terraform_data\" \"workspace_guard\" {\n  input = terraform.workspace\n\n  lifecycle {\n    precondition {\n      condition     = local.known\n      error_message = \"Workspace \\\"${terraform.workspace}\\\" has no settings: run terraform workspace select dev (or prod).\"\n    }\n  }\n}\n\noutput \"urls\" {\n  value = module.web.urls\n}\n"
+          },
+          {
+            "path": "modules/web/versions.tf",
+            "content": "terraform {\n  required_version = \">= 1.11.0\"\n\n  required_providers {\n    docker = {\n      source  = \"kreuzwerker/docker\"\n      version = \"~> 4.6\"\n    }\n    local = {\n      source  = \"hashicorp/local\"\n      version = \"~> 2.9\"\n    }\n  }\n}\n"
+          },
+          {
+            "path": "modules/web/variables.tf",
+            "content": "variable \"name\" {\n  description = \"Prefix for every resource the module creates, such as shop-dev.\"\n  type        = string\n}\n\nvariable \"replicas\" {\n  description = \"How many web containers to run.\"\n  type        = number\n  default     = 1\n\n  validation {\n    condition     = var.replicas >= 1 && var.replicas <= 5\n    error_message = \"replicas must be between 1 and 5.\"\n  }\n}\n\nvariable \"base_port\" {\n  description = \"Host port for the first container; each further replica uses the next port.\"\n  type        = number\n}\n\nvariable \"message\" {\n  description = \"Text for the page the containers serve.\"\n  type        = string\n}\n"
+          },
+          {
+            "path": "modules/web/main.tf",
+            "content": "resource \"docker_network\" \"this\" {\n  name = \"${var.name}-net\"\n}\n\nresource \"docker_image\" \"nginx\" {\n  name         = \"nginx:1.31-alpine\"\n  keep_locally = true\n}\n\nresource \"local_file\" \"index\" {\n  filename = \"${path.root}/build/${var.name}/index.html\"\n  content  = \"<h1>${var.message}</h1>\\n\"\n}\n\nresource \"docker_container\" \"web\" {\n  count = var.replicas\n\n  name  = \"${var.name}-web-${count.index}\"\n  image = docker_image.nginx.image_id\n\n  ports {\n    internal = 80\n    external = var.base_port + count.index\n  }\n\n  networks_advanced {\n    name = docker_network.this.name\n  }\n\n  volumes {\n    host_path      = abspath(dirname(local_file.index.filename))\n    container_path = \"/usr/share/nginx/html\"\n    read_only      = true\n  }\n}\n"
+          },
+          {
+            "path": "modules/web/outputs.tf",
+            "content": "output \"urls\" {\n  description = \"Where each replica can be reached from your computer.\"\n  value       = [for c in docker_container.web : \"http://localhost:${c.ports[0].external}\"]\n}\n\noutput \"network\" {\n  description = \"The Docker network the containers share.\"\n  value       = docker_network.this.name\n}\n"
+          }
+        ],
+        "hints": [
+          "Cannot connect to the Docker daemon means Docker isn't running, or uses a non-default socket: set host in the provider \"docker\" block, or DOCKER_HOST, to its address.",
+          "port is already allocated means another program uses port 8081 or 8091: stop it, or change base_port in the settings.",
+          "If curl shows 403 Forbidden, nginx can't see the page: on Docker Desktop, the folder must be one it shares with containers, such as one under your home folder."
+        ]
+      }
+    },
+    {
+      "title": "Testing, CI, Drift and Security",
+      "summary": "Check and test configurations before they change anything, run plan and apply in a CI pipeline, detect and resolve drift, import existing resources, and protect the secrets in state.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Static checks and terraform test",
+          "minutes": 13,
+          "objectives": [
+            "Catch mistakes before planning with formatting, validation and linting",
+            "Write unit tests for a module with terraform test and mock providers"
+          ],
+          "key_points": [
+            "terraform fmt rewrites files in the standard style; fmt -check -recursive only lists the files that need it and exits with a non-zero code, which makes it a cheap first gate in CI.",
+            "terraform validate checks syntax, references and types without calling any API; it needs terraform init, which can run as init -backend=false in CI. Linters such as TFLint add provider-specific checks.",
+            "terraform test (Terraform 1.6+) runs .tftest.hcl files: each run block plans or applies the configuration with given variables and checks its assert conditions, and expect_failures confirms that bad input is rejected.",
+            "mock_provider (Terraform 1.7+) replaces a provider with fake responses, so tests run offline in seconds and create nothing; with real providers, runs that apply create real resources and destroy them afterwards.",
+            "Inside a configuration, preconditions and postconditions in a lifecycle block stop a plan or apply when an assumption fails, while check blocks (Terraform 1.5+) report failed assertions as warnings."
+          ]
+        },
+        {
+          "title": "Plan and apply in CI",
+          "minutes": 12,
+          "objectives": [
+            "Design a pipeline that plans every change and applies only reviewed plans",
+            "Run Terraform non-interactively and securely in automation"
+          ],
+          "key_points": [
+            "A typical pipeline runs fmt -check, validate and terraform test on every pull request, then a plan that reviewers read beside the code change; nothing is applied until the change is approved and merged.",
+            "Save the plan (terraform plan -out=tfplan) and apply that file after approval (terraform apply tfplan), so what was reviewed is what runs; Terraform refuses a saved plan as stale if the state changed in between.",
+            "In automation, set TF_INPUT=false (or pass -input=false) so Terraform never waits for an answer; plan -detailed-exitcode exits with 0 for no changes, 1 for an error and 2 when there are changes.",
+            "Run one plan or apply per state at a time: the backend's lock protects the state, and the pipeline's concurrency settings stop runs queueing against it.",
+            "Give pipelines short-lived credentials through OIDC federation with the cloud provider, not long-lived keys stored as secrets, with a read-only role for plans and a stronger one only for applies.",
+            "Plan files and plan output can contain secrets, so keep plan artifacts private and short-lived. Services such as HCP Terraform and Atlantis run this workflow for you."
+          ]
+        },
+        {
+          "title": "Drift detection and import",
+          "minutes": 12,
+          "objectives": [
+            "Detect and resolve drift between real infrastructure and code",
+            "Bring existing resources under Terraform's management with import blocks"
+          ],
+          "key_points": [
+            "Drift is a difference between the real infrastructure and what the state and configuration say, usually from changes made by hand or by another tool; a plan finds it while refreshing.",
+            "terraform plan -refresh-only shows only what changed outside Terraform, and terraform apply -refresh-only accepts those changes into the state without touching the infrastructure, when the outside change was right.",
+            "Detect drift on a schedule by running terraform plan -detailed-exitcode in a pipeline and alerting on exit code 2; then decide each case: revert it with apply, or change the code to match.",
+            "An import block (Terraform 1.5+), with to as the resource address and id as the object's ID, brings an existing object into the state through an ordinary plan and apply; the older terraform import command does it without a plan.",
+            "Write the matching resource block yourself, or let terraform plan -generate-config-out=generated.tf draft it (still marked experimental), then edit it until the plan after the import shows no changes."
+          ]
+        },
+        {
+          "title": "Securing state and secrets",
+          "minutes": 12,
+          "objectives": [
+            "Protect state, which holds secrets in plain text",
+            "Keep secrets out of code, state and logs where possible"
+          ],
+          "key_points": [
+            "Keep state only in a backend with encryption at rest, tight access control and versioning, such as an S3 bucket with versioning on, so you can recover from mistakes and only the people and pipelines that need it can read it.",
+            "Keep secrets out of .tf and .tfvars files and out of Git: read them at run time from a secret manager or environment variables, and list .terraform/, *.tfstate* and any secret .tfvars in .gitignore.",
+            "Ephemeral values (Terraform 1.10+), such as ephemeral variables and ephemeral resources, exist only during a run and are never written to state or plan files; write-only arguments (Terraform 1.11+) hand such values to resources without storing them.",
+            "sensitive only hides values in output; they're still in the state. OpenTofu can also encrypt state on the client before it's stored.",
+            "Scan configurations for insecure settings with tools such as Checkov or Trivy, and enforce rules as policy as code, such as Open Policy Agent checking the JSON from terraform show -json tfplan.",
+            "Give each run the least privilege it needs, review plans for deletions and replacements of anything that holds data, and protect the most important resources with prevent_destroy."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Test, check and repair your configurations",
+        "tool": "Terraform",
+        "minutes": 90,
+        "goal": "Gate changes with fmt, validate and unit tests that use mock providers, detect and repair drift, import a resource created by hand, and see for yourself that secrets sit in state in plain text.",
+        "setup": [
+          "Your tf-web folder from module 4 and your tf-vars folder from module 2 (applied with dev.tfvars)",
+          "Terraform 1.11 or later, and Docker running",
+          "Download the starter file web.tftest.hcl"
+        ],
+        "steps": [
+          {
+            "do": "In tf-web, run the static checks. Add a badly indented block to main.tf first, to see fmt catch it.",
+            "code": "terraform fmt -check -recursive\nterraform fmt -recursive\nterraform validate",
+            "lang": "bash",
+            "see": "fmt -check lists main.tf, fmt fixes it, then Success! The configuration is valid."
+          },
+          {
+            "do": "Put web.tftest.hcl in modules/web/tests/, and run the module's tests: mock providers stand in for Docker.",
+            "code": "mkdir -p modules/web/tests && cp web.tftest.hcl modules/web/tests/\ncd modules/web\nterraform init\nterraform test",
+            "lang": "bash",
+            "see": "run \"replicas_get_consecutive_ports\"... pass, two more passes, and Success! 3 passed, 0 failed."
+          },
+          {
+            "do": "Break the module on purpose: in modules/web/main.tf add + 1 to the external port, run the tests, read the failure, then undo the change and go back to tf-web.",
+            "code": "terraform test\ncd ../..",
+            "lang": "bash",
+            "see": "run \"replicas_get_consecutive_ports\"... fail, Error: Test assertion failed and a diff of the ports."
+          },
+          {
+            "do": "Drift: in tf-vars, change out/dev/api.env by hand, then ask Terraform what changed outside it.",
+            "code": "echo 'PORT=1234' >> out/dev/api.env\nterraform plan -refresh-only -var-file=dev.tfvars",
+            "lang": "bash",
+            "see": "Note: Objects have changed outside of Terraform, and local_file.service_config[\"api\"] has been deleted (the local provider treats a changed file as gone)."
+          },
+          {
+            "do": "Use the exit code a drift check would, then repair and check again.",
+            "code": "terraform plan -detailed-exitcode -var-file=dev.tfvars; echo \"exit code $?\"\nterraform apply -auto-approve -var-file=dev.tfvars\nterraform plan -detailed-exitcode -var-file=dev.tfvars; echo \"exit code $?\"",
+            "lang": "bash",
+            "see": "exit code 2, Apply complete! Resources: 1 added, then No changes and exit code 0."
+          },
+          {
+            "do": "Import: in tf-web (dev workspace), create a network by hand, then write a resource for it and an import block with its ID.",
+            "code": "terraform workspace select dev\ndocker network create legacy-net\ndocker network inspect legacy-net --format '{{.ID}}'\n# add to main.tf:\n# resource \"docker_network\" \"legacy\" { name = \"legacy-net\" }\n# import {\n#   to = docker_network.legacy\n#   id = \"PASTE-THE-ID\"\n# }\nterraform plan",
+            "lang": "bash",
+            "see": "docker_network.legacy will be imported, and Plan: 1 to import, ..."
+          },
+          {
+            "do": "Apply the import, then plan again. If the plan still shows changes to the network, add those attributes to the resource block until it shows none: that's how code is made to match reality.",
+            "code": "terraform apply\nterraform plan",
+            "lang": "bash",
+            "see": "Apply complete! Resources: 1 imported, then No changes once the block matches."
+          },
+          {
+            "do": "See a secret in the state: tf-vars' API keys are marked sensitive, yet the state file holds them in plain text.",
+            "code": "cd ../tf-vars\npython3 -c \"import json; s = json.load(open('terraform.tfstate')); print([i['attributes']['result'] for r in s['resources'] if r['type'] == 'random_password' for i in r['instances']])\"",
+            "lang": "bash",
+            "see": "Two 24-character keys, readable by anyone who can read the state."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The configuration passes fmt and validate.",
+            "look_for": [
+              "Success! The configuration is valid."
+            ]
+          },
+          {
+            "text": "The module's tests pass with mock providers, and a deliberate bug fails them.",
+            "look_for": [
+              "Success! 3 passed, 0 failed.",
+              "Test assertion failed"
+            ]
+          },
+          {
+            "text": "Drift is detected and repaired.",
+            "look_for": [
+              "Objects have changed outside of Terraform",
+              "exit code 2"
+            ]
+          },
+          {
+            "text": "The hand-made network is imported.",
+            "look_for": [
+              "1 imported"
+            ]
+          },
+          {
+            "text": "The secrets are shown to be in the state.",
+            "look_for": [
+              "random_password"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 1 to 8, and two sentences on how you'd keep those API keys safer: in the backend, and with Terraform's own features.",
+        "files": [
+          {
+            "path": "web.tftest.hcl",
+            "content": "# Unit tests for the web module. The mock providers stand in for Docker and the file system,\n# so the tests run anywhere, in seconds, and create nothing.\nmock_provider \"docker\" {}\nmock_provider \"local\" {}\n\nvariables {\n  name      = \"test\"\n  replicas  = 2\n  base_port = 9000\n  message   = \"hello\"\n}\n\nrun \"replicas_get_consecutive_ports\" {\n  command = plan\n\n  assert {\n    condition     = [for c in docker_container.web : c.ports[0].external] == [9000, 9001]\n    error_message = \"Each replica must publish the next host port.\"\n  }\n\n  assert {\n    condition     = docker_container.web[1].name == \"test-web-1\"\n    error_message = \"Containers must be named <name>-web-<index>.\"\n  }\n}\n\nrun \"rejects_too_many_replicas\" {\n  command = plan\n\n  variables {\n    replicas = 9\n  }\n\n  expect_failures = [var.replicas]\n}\n\nrun \"outputs_one_url_per_replica\" {\n  command = apply\n\n  assert {\n    condition     = output.urls == [\"http://localhost:9000\", \"http://localhost:9001\"]\n    error_message = \"The urls output must list one address per replica.\"\n  }\n}\n"
+          }
+        ],
+        "hints": [
+          "terraform test runs in the folder that holds the tests folder: modules/web here, not tf-web.",
+          "If import can't find the network, check the ID: docker network inspect prints the full ID, which is what the provider expects.",
+          "On Windows, run the commands in Git Bash or WSL; in PowerShell use $LASTEXITCODE instead of $?."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn how Terraform works, and run init, plan, apply and destroy on local resources.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Parameterise configurations with variables, tfvars, expressions, for_each and outputs.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Move state to a PostgreSQL backend, see locking work, and refactor with moved blocks.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Use a reusable Docker module, and run it as dev and prod with workspaces.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Add fmt, validate and terraform test gates, detect drift, import a resource and look at secrets in state.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the capstone, and review with the mock exam and flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Codify a local platform end to end",
+    "minutes": 480,
+    "brief": "Your team wants its local demo platform managed entirely with Terraform. Extend the web module from module 4, or write your own, so that one module creates a Docker network, nginx containers serving a generated page, and a Redis container whose password comes from random_password. Run it as dev and prod (with workspaces or a root module each), with state in the PostgreSQL backend and locking on. Gate it with fmt, validate and terraform test using mock providers, and adapt the starter GitHub Actions workflow so pull requests are checked and planned and main is applied only after approval. Show drift detection and an import of a resource created by hand, and write down how state and secrets are protected.",
+    "deliverables": [
+      "The module, with variables (typed, described and validated), outputs, versions.tf and a README",
+      "The root configuration for dev and prod, using the pg backend",
+      "A tests folder whose terraform test run passes, including at least one expect_failures test",
+      "The GitHub Actions workflow, adapted from terraform.yml, and the output of its checks run locally (fmt -check, validate, test)",
+      "Output showing an apply in each environment, a drift check exiting with code 2 then 0, and an import",
+      "A .gitignore and a SECURITY.md: where state lives, who can read it, which secrets it holds and how you'd keep them out"
+    ],
+    "rubric": [
+      {
+        "name": "Module design",
+        "points": 20,
+        "description": "One clear job, a small typed and validated interface, useful outputs, no provider configuration inside, and a README with an example."
+      },
+      {
+        "name": "Tests",
+        "points": 15,
+        "description": "terraform test passes with mock providers; tests cover naming, ports or counts and a rejected input; a deliberate bug makes them fail."
+      },
+      {
+        "name": "Environments and state",
+        "points": 20,
+        "description": "dev and prod are isolated (workspaces or separate roots), state is in the pg backend with locking, and moving between environments can't destroy the other's resources."
+      },
+      {
+        "name": "CI pipeline",
+        "points": 20,
+        "description": "Checks and plan on pull requests, a saved plan applied only after approval on main, concurrency limited per state, and no long-lived credentials in the workflow."
+      },
+      {
+        "name": "Drift and import",
+        "points": 10,
+        "description": "Drift is detected with -detailed-exitcode and resolved deliberately; the import leaves a plan with no changes."
+      },
+      {
+        "name": "Security and documentation",
+        "points": 15,
+        "description": "Secrets are kept out of code and Git, the risks of secrets in state are explained with mitigations, and the README lets a colleague run it."
+      }
+    ],
+    "submit": "Paste your module and root configuration, the test file, the workflow, .gitignore and SECURITY.md, then the outputs listed in the deliverables.",
+    "files": [
+      {
+        "path": "terraform.yml",
+        "content": "# .github/workflows/terraform.yml: checks every pull request, applies main after approval.\nname: terraform\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\npermissions:\n  contents: read\n\n# Never run two plans or applies against the same state at once.\nconcurrency:\n  group: terraform-state\n  cancel-in-progress: false\n\nenv:\n  TF_IN_AUTOMATION: \"true\"\n  TF_INPUT: \"false\"\n\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v5\n      - uses: hashicorp/setup-terraform@v3\n        with:\n          terraform_version: 1.16.6\n          terraform_wrapper: false\n      - name: Format\n        run: terraform fmt -check -recursive\n      - name: Validate\n        run: |\n          terraform init -backend=false\n          terraform validate\n      - name: Module tests\n        working-directory: modules/web\n        run: |\n          terraform init -backend=false\n          terraform test\n\n  plan:\n    needs: check\n    runs-on: ubuntu-latest\n    env:\n      PG_CONN_STR: ${{ secrets.PG_CONN_STR }}\n      TF_WORKSPACE: dev\n    steps:\n      - uses: actions/checkout@v5\n      - uses: hashicorp/setup-terraform@v3\n        with:\n          terraform_version: 1.16.6\n          terraform_wrapper: false\n      - run: terraform init\n      - name: Plan\n        id: plan\n        run: |\n          set +e\n          terraform plan -out=tfplan -detailed-exitcode\n          code=$?\n          echo \"exitcode=$code\" >> \"$GITHUB_OUTPUT\"\n          if [ \"$code\" -eq 1 ]; then exit 1; fi\n          exit 0\n      - run: terraform show -no-color tfplan > plan.txt\n      - uses: actions/upload-artifact@v4\n        with:\n          name: tfplan\n          path: |\n            tfplan\n            plan.txt\n\n  apply:\n    needs: plan\n    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n    runs-on: ubuntu-latest\n    environment: dev   # add required reviewers to this environment in the repository's settings\n    env:\n      PG_CONN_STR: ${{ secrets.PG_CONN_STR }}\n      TF_WORKSPACE: dev\n    steps:\n      - uses: actions/checkout@v5\n      - uses: hashicorp/setup-terraform@v3\n        with:\n          terraform_version: 1.16.6\n          terraform_wrapper: false\n      - run: terraform init\n      - uses: actions/download-artifact@v4\n        with:\n          name: tfplan\n      - name: Apply the reviewed plan\n        run: terraform apply tfplan\n"
+      }
+    ]
+  }
+}
