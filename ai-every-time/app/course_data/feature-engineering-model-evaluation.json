@@ -1,0 +1,1341 @@
+{
+  "slug": "feature-engineering-model-evaluation",
+  "title": "Feature Engineering and Model Evaluation",
+  "subtitle": "Prepare real, messy data for machine learning, evaluate models reliably with cross-validation, tune them honestly, and wrap it all in leak-proof scikit-learn pipelines.",
+  "category": "Machine Learning",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "marisolo-garcia",
+    "zawadi-mutembo"
+  ],
+  "skills": [
+    "Feature scaling",
+    "Missing-value imputation",
+    "Categorical encoding",
+    "Target encoding",
+    "Cross-validation",
+    "Hyperparameter tuning",
+    "Nested cross-validation",
+    "scikit-learn pipelines",
+    "Data leakage prevention"
+  ],
+  "tools": [
+    "JupyterLab",
+    "Python 3",
+    "scikit-learn",
+    "pandas",
+    "NumPy",
+    "SciPy",
+    "joblib"
+  ],
+  "outcomes": [
+    "Apply and compare scaling and normalisation techniques, and tame skewed features and outliers",
+    "Impute missing values while keeping the information that missingness carries",
+    "Encode categorical variables appropriately, including high-cardinality features with leak-free target encoding",
+    "Implement k-fold, stratified, group and time-series cross-validation for robust evaluation",
+    "Optimise hyperparameters with grid, randomised and halving searches, and evaluate tuning with nested cross-validation",
+    "Construct scikit-learn pipelines that prevent data leakage, from raw columns to a saved model"
+  ],
+  "prerequisites": "Classical Classification and Clustering (or Machine Learning Foundations with Python): train/test splits, scikit-learn models and cross_val_score. Comfortable pandas. Install Python 3 with pandas, scikit-learn (1.3 or later for TargetEncoder; the outputs shown come from 1.9) and JupyterLab; SciPy and joblib come with scikit-learn. Every dataset comes with the labs.",
+  "description": "Models are only as good as the data they're given and the way they're judged. This course covers both halves, in scikit-learn. On the data side you scale features and learn when it matters, tame skewed values and outliers, fill in missing values while keeping the signal that missingness itself carries, and turn categories into numbers: one-hot and ordinal encoding, grouping rare levels, target encoding done without leaking the answer, and features from dates, text and interactions. On the evaluation side you use k-fold, stratified, group and time-series cross-validation, read several metrics and training scores at once, tune hyperparameters with grid, randomised and halving searches, and measure the tuning itself with nested cross-validation.\n\nEverything comes together in pipelines: ColumnTransformer for mixed columns, custom steps, tuning preprocessing and model together, and saving the result as one object, with experiments that show how leakage inflates scores when a step is fitted in the wrong place. The labs work on a made-up club's season-ticket renewals, where every technique makes a measurable difference, and every lesson has a JupyterLab walkthrough with real outputs. The capstone is a robust, tuned pipeline for a new, messy dataset, evaluated honestly.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Data Scaling & Preprocessing",
+      "summary": "Put numeric features on comparable scales, tame skew and outliers, and fill in missing values in ways that keep the information missingness carries, with every step fitted on training data only.",
+      "instructor": "marisolo-garcia",
+      "lessons": [
+        {
+          "title": "Why scale, and which scaler",
+          "minutes": 12,
+          "objectives": [
+            "Explain which models need scaled features, and why",
+            "Choose between StandardScaler, MinMaxScaler and RobustScaler"
+          ],
+          "key_points": [
+            "Scaling stops features with large ranges from dominating. Distance-based models (k-NN, k-means, SVMs), models trained by gradient descent and regularised linear models all depend on the features' scales; tree-based models don't, because each split compares one feature with a threshold.",
+            "StandardScaler removes the mean and scales to unit variance, z = (x − mean) / standard deviation. It suits roughly symmetric features, but one extreme value inflates the standard deviation and squeezes the other values together.",
+            "MinMaxScaler maps each feature to a range, [0, 1] by default. An outlier sets the end of the range, so the rest bunch up: with the values 1, 2, 3, 4 and 100, the first four land between 0 and 0.03.",
+            "RobustScaler subtracts the median and divides by the interquartile range, so outliers barely affect how the other values are scaled; MaxAbsScaler divides by the largest absolute value and keeps sparse data sparse.",
+            "Fit a scaler on the training data only and reuse its learned statistics (mean_ and scale_) on validation and test data; fitting it on all the data leaks information from the test set.",
+            "On the season-ticket data in the lab, k-NN's cross-validated ROC AUC rises from 0.517 unscaled to about 0.60 with any of the three scalers: scaling at all matters far more than which scaler."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Three scalers and an outlier",
+            "steps": [
+              {
+                "do": "Scale five values, one of them an outlier, three ways.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler\n\nx = np.array([[1.0], [2.0], [3.0], [4.0], [100.0]])\nfor scaler in (StandardScaler(), MinMaxScaler(), RobustScaler()):\n    print(f\"{type(scaler).__name__:<15}\", scaler.fit_transform(x).ravel().round(2))",
+                "lang": "python",
+                "see": "StandardScaler squeezes the first four between -0.54 and -0.46, MinMaxScaler between 0 and 0.03; RobustScaler spreads them from -1 to 0.5 and leaves the outlier at 48.5."
+              },
+              {
+                "do": "Fit on training data and apply the same statistics to a test value.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "train, test = np.array([[10.0], [20.0], [30.0]]), np.array([[40.0]])\nscaler = StandardScaler().fit(train)\nprint(scaler.mean_, scaler.scale_.round(3), scaler.transform(test).round(3))",
+                "lang": "python",
+                "see": "[20.] [8.165] [[2.449]]: the test value is scaled with the training mean and standard deviation."
+              },
+              {
+                "do": "Check that a decision tree doesn't care about scaling.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_wine\nfrom sklearn.tree import DecisionTreeClassifier\n\nX, y = load_wine(return_X_y=True)\nZ = StandardScaler().fit_transform(X)\nraw = DecisionTreeClassifier(random_state=0).fit(X, y).predict(X)\nscaled = DecisionTreeClassifier(random_state=0).fit(Z, y).predict(Z)\nprint((raw == scaled).all())",
+                "lang": "python",
+                "see": "True: the same splits, at scaled thresholds."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Skewed features and outliers",
+          "minutes": 10,
+          "objectives": [
+            "Reduce right skew with log, power and quantile transforms",
+            "Handle outliers with limits learned from the training data"
+          ],
+          "key_points": [
+            "Many real features are right-skewed, with a long tail of large values, such as incomes, distances, counts and prices; skew lets a few large values dominate linear models and squeezes the rest together after scaling.",
+            "np.log1p(x), the logarithm of 1 + x, compresses large values and copes with zeros: on a log-normal sample it cuts the skewness from 3.87 to −0.07.",
+            "PowerTransformer learns a Yeo-Johnson transform (Box-Cox needs strictly positive values) that makes a feature as close to normal as it can, then standardises it; QuantileTransformer maps values through their ranks to a uniform or normal distribution, which also tames outliers.",
+            "Decide what an outlier is before acting: a data error should be fixed or removed, but a real extreme, such as a member who moved 300 km away, carries information; clipping (winsorising) caps it at a quantile learned from the training data.",
+            "FunctionTransformer(np.log1p) puts a fixed transform inside a pipeline, while fitted transformers such as PowerTransformer learn their parameters from the training folds only."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Log, power and quantile transforms",
+            "steps": [
+              {
+                "do": "Measure the skewness of a log-normal sample before and after log1p.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom scipy.stats import skew\n\nrng = np.random.default_rng(0)\nincome = np.exp(rng.normal(10, 1, 1000))\nprint(round(skew(income), 2), round(skew(np.log1p(income)), 2))",
+                "lang": "python",
+                "see": "3.87 before, -0.07 after."
+              },
+              {
+                "do": "Try a power and a quantile transform on the same column.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.preprocessing import PowerTransformer, QuantileTransformer\n\ncol = income.reshape(-1, 1)\nfor t in (PowerTransformer(), QuantileTransformer(output_distribution=\"normal\", n_quantiles=200, random_state=0)):\n    print(type(t).__name__, round(skew(t.fit_transform(col).ravel()), 2))",
+                "lang": "python",
+                "see": "Skewness 0.0 and -0.01: both make the column close to symmetric."
+              },
+              {
+                "do": "Clip the last 200 values at the 1st and 99th percentiles of the first 800, the training part.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "low, high = np.quantile(income[:800], [0.01, 0.99])\nclipped = np.clip(income[800:], low, high)\nprint(round(income[800:].max()), round(clipped.max()), round(high))",
+                "lang": "python",
+                "see": "The largest test value, 264840, is capped at the training limit, 214880."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Missing values: imputation and indicators",
+          "minutes": 12,
+          "objectives": [
+            "Fill missing values with SimpleImputer, KNNImputer or IterativeImputer",
+            "Keep the information that missingness itself carries"
+          ],
+          "key_points": [
+            "Values can be missing completely at random, at random given the other features, or for reasons tied to the missing value itself; only in the first case does the fact that a value is missing carry no information.",
+            "Dropping incomplete rows wastes data and can bias it: on the season-ticket data it keeps 82.4% of members and raises the renewal rate from 0.712 to 0.754, because members with a missing match count renew far less often (0.295).",
+            "Imputation handles missing data: SimpleImputer fills each column with its mean, median, most frequent value or a constant, learned in fit. The median resists outliers, and most_frequent works for categories too.",
+            "add_indicator=True adds a 0/1 column for each feature that had gaps, so the model can learn from missingness itself: on the season-ticket data it lifts logistic regression's ROC AUC from 0.642 to 0.710.",
+            "KNNImputer fills a gap from the most similar rows, and IterativeImputer models each feature from the others (after from sklearn.experimental import enable_iterative_imputer); they can be more accurate but are slower, and need scaled features.",
+            "HistGradientBoosting models accept NaN directly, learning at each split which side the missing values should go."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Four ways to fill a gap",
+            "steps": [
+              {
+                "do": "Fill one gap with four SimpleImputer strategies.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.impute import SimpleImputer\n\ncol = np.array([[1.0], [2.0], [np.nan], [4.0], [10.0], [2.0]])\nfor strategy in (\"mean\", \"median\", \"most_frequent\"):\n    print(strategy, SimpleImputer(strategy=strategy).fit_transform(col).ravel())\nprint(\"constant\", SimpleImputer(strategy=\"constant\", fill_value=-1).fit_transform(col).ravel())",
+                "lang": "python",
+                "see": "The gap becomes 3.8 (mean, pulled up by the 10), 2 (median and most frequent) or -1."
+              },
+              {
+                "do": "Add a missing indicator.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "print(SimpleImputer(strategy=\"median\", add_indicator=True).fit_transform(col))",
+                "lang": "python",
+                "see": "A second column of 0s with a 1 in the row that was missing."
+              },
+              {
+                "do": "Fill a gap from the other feature: the second column is twice the first.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.experimental import enable_iterative_imputer  # noqa: F401\nfrom sklearn.impute import IterativeImputer, KNNImputer\n\nX = np.array([[1.0, 2.0], [2.0, 4.0], [3.0, 6.0], [4.0, np.nan], [5.0, 10.0]])\nprint(SimpleImputer().fit_transform(X)[3], KNNImputer(n_neighbors=2).fit_transform(X)[3],\n      IterativeImputer(random_state=0).fit_transform(X)[3].round(2))",
+                "lang": "python",
+                "see": "The mean gives 5.5; the k-NN and iterative imputers give 8, the value the pattern implies."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Scale and impute the season-ticket data",
+        "tool": "JupyterLab",
+        "minutes": 60,
+        "goal": "Measure how scaling, a log transform and four ways of filling gaps change the cross-validated ROC AUC of models of season-ticket renewals, and show how dropping incomplete rows would bias the data.",
+        "setup": [
+          "Python 3 with pandas, scikit-learn and JupyterLab (python -m pip install pandas scikit-learn jupyterlab; SciPy and joblib come with scikit-learn)",
+          "Download the starter files preprocess.py and season_tickets.csv (420 made-up holders of season tickets at a made-up club, and whether they renewed) into one folder; the later labs use the same CSV"
+        ],
+        "steps": [
+          {
+            "do": "Open preprocess.py and run it once as it is, to see the data.",
+            "code": "python preprocess.py",
+            "lang": "bash",
+            "see": "Members: 420 renewal rate: 0.712, 33 missing ages and 44 missing match counts, and distance_km with a mean of 18.8, a median of 11.1 and a maximum of 329.6: a long right tail."
+          },
+          {
+            "do": "Do the first TODO, k-NN with each scaler, and run it again.",
+            "see": "ROC AUC 0.517 with no scaling, 0.600 standard, 0.603 min-max and 0.590 robust."
+          },
+          {
+            "do": "Read line 2.",
+            "see": "Median distance after min-max scaling: 0.031; after log1p, then min-max: 0.359. The outliers had squeezed almost every member close to 0."
+          },
+          {
+            "do": "Do the second TODO: logistic regression with four imputers.",
+            "see": "median 0.642, median + indicator 0.710, k-NN 0.652 and iterative 0.649."
+          },
+          {
+            "do": "Read the last lines.",
+            "see": "{False: 0.761, True: 0.295}: members whose match count is missing renew far less often. Dropping incomplete rows keeps 82.4% of members, with a renewal rate of 0.754."
+          },
+          {
+            "do": "Write three sentences: why the indicator helped so much more than a cleverer imputer, why the choice of scaler mattered so little next to scaling at all, and what training only on complete rows would do to a model of renewals."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The data and its gaps are described.",
+            "look_for": [
+              "Members: 420 renewal rate: 0.712",
+              "'matches': 44"
+            ]
+          },
+          {
+            "text": "k-NN is compared with no scaling and three scalers.",
+            "look_for": [
+              "none      ROC AUC 0.517",
+              "standard  ROC AUC 0.600",
+              "min-max   ROC AUC 0.603"
+            ]
+          },
+          {
+            "text": "The effect of outliers on min-max scaling, and of log1p, is measured.",
+            "look_for": [
+              "Median distance after min-max scaling: 0.031; after log1p, then min-max: 0.359"
+            ]
+          },
+          {
+            "text": "Four imputation methods are compared, and the missing indicator helps.",
+            "look_for": [
+              "median              ROC AUC 0.642",
+              "median + indicator  ROC AUC 0.710"
+            ]
+          },
+          {
+            "text": "Dropping incomplete rows is shown to bias the renewal rate.",
+            "look_for": [
+              "{False: 0.761, True: 0.295}",
+              "keeps 82.4% of members, with a renewal rate of 0.754"
+            ]
+          },
+          {
+            "text": "The sentences explain informative missingness, scaling versus the choice of scaler, and the bias from dropping rows.",
+            "look_for": [
+              "indicator"
+            ]
+          }
+        ],
+        "submit": "Paste your preprocess.py, its output and your three sentences.",
+        "hints": [
+          "'passthrough' in place of a step skips it, which makes 'no scaling' easy to compare.",
+          "Scalers keep NaN as NaN, so a scaler can come before KNNImputer or IterativeImputer.",
+          "from sklearn.experimental import enable_iterative_imputer must run before IterativeImputer is imported."
+        ],
+        "files": [
+          {
+            "path": "preprocess.py",
+            "content": "\"\"\"Scale and impute the season-ticket data: which scaler and which way of filling gaps help, and why?\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.experimental import enable_iterative_imputer  # noqa: F401  (IterativeImputer is still experimental)\nfrom sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import StratifiedKFold, cross_val_score\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler\n\ndf = pd.read_csv(\"season_tickets.csv\")\nnumeric = [\"tenure\", \"age\", \"distance_km\", \"price\", \"matches\"]\nX, y = df[numeric], df[\"renewed\"]\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\n\n\ndef auc(model, data=X):\n    return cross_val_score(model, data, y, cv=cv, scoring=\"roc_auc\").mean()\n\n\nprint(\"Members:\", len(df), \"renewal rate:\", round(y.mean(), 3))\nprint(\"Missing values:\", X.isna().sum().to_dict())\nprint(X.describe().loc[[\"mean\", \"50%\", \"max\"]].round(1))\n\nprint(\"1. k-NN (15 neighbours) with each scaler:\")\n# TODO: for each (name, scaler) in [(\"none\", \"passthrough\"), (\"standard\", StandardScaler()), (\"min-max\", MinMaxScaler()),\n#       (\"robust\", RobustScaler())], score make_pipeline(SimpleImputer(strategy=\"median\"), scaler,\n#       KNeighborsClassifier(n_neighbors=15)) with auc() and print  f\"   {name:<9} ROC AUC {score:.3f}\"\npass\n\nminmax = MinMaxScaler().fit_transform(X[[\"distance_km\"]]).ravel()\nlogged = MinMaxScaler().fit_transform(np.log1p(X[[\"distance_km\"]])).ravel()\nprint(f\"2. Median distance after min-max scaling: {np.median(minmax):.3f}; after log1p, then min-max: {np.median(logged):.3f}\")\n\nprint(\"3. Logistic regression with each way of filling the gaps:\")\n# TODO: for each (name, imputer) in [(\"median\", SimpleImputer(strategy=\"median\")),\n#       (\"median + indicator\", SimpleImputer(strategy=\"median\", add_indicator=True)), (\"k-NN\", KNNImputer()),\n#       (\"iterative\", IterativeImputer(random_state=0))], score make_pipeline(StandardScaler(), imputer,\n#       LogisticRegression(max_iter=1000)) and print  f\"   {name:<19} ROC AUC {score:.3f}\"\npass\n\nprint(\"4. Who renews, among members with and without a missing matches count:\")\nprint(df.groupby(df[\"matches\"].isna())[\"renewed\"].mean().round(3).to_dict())\ncomplete = X.notna().all(axis=1)\nprint(f\"   Dropping incomplete rows keeps {complete.mean():.1%} of members, with a renewal rate of {y[complete].mean():.3f}\")\n"
+          },
+          {
+            "path": "season_tickets.csv",
+            "content": "tenure,age,distance_km,price,matches,stand,tier,payment,area,seat_block,renewed\n2,57,6.2,319,12,West,bronze,card,Z03,B085,1\n11,39,1.5,295,12,Family,bronze,card,Z07,B093,1\n2,35,20.2,475,8,North,silver,card,Z08,B050,1\n13,66,29.3,359,8,East,bronze,card,Z15,B007,1\n4,37,2.8,482,,South,silver,card,Z42,B089,1\n5,51,11.8,283,6,North,bronze,direct_debit,Z01,B054,0\n8,41,13.0,483,7,West,silver,cash,Z04,B032,1\n4,43,2.7,338,11,North,bronze,card,Z03,B071,0\n2,30,6.5,431,3,Family,silver,direct_debit,Z01,B043,0\n2,31,27.3,303,18,North,bronze,card,Z07,B143,1\n1,58,12.0,304,,South,bronze,direct_debit,Z03,B031,0\n7,27,10.2,502,15,Family,silver,card,Z36,B143,1\n3,46,25.5,309,11,South,bronze,card,Z01,B125,1\n1,26,6.3,313,12,West,bronze,card,Z03,B056,1\n11,39,2.4,333,8,West,bronze,direct_debit,Z16,B116,1\n2,42,257.1,499,8,Family,silver,card,Z01,B028,1\n3,21,5.4,468,9,North,silver,direct_debit,Z20,B120,0\n2,57,10.1,752,4,South,gold,card,Z02,B054,1\n5,40,25.8,336,17,South,bronze,direct_debit,Z03,B103,0\n5,58,12.7,347,1,East,bronze,direct_debit,Z06,B139,0\n5,30,11.7,313,16,Family,bronze,card,Z25,B040,1\n2,,6.3,470,17,East,silver,card,Z17,B110,1\n2,72,16.3,656,18,West,gold,card,Z35,B028,1\n2,45,59.5,414,7,Family,silver,direct_debit,Z21,B060,1\n2,34,6.5,357,11,South,bronze,direct_debit,Z07,B149,1\n1,48,4.2,318,,South,bronze,card,Z10,B017,1\n1,,13.1,658,6,South,gold,card,Z02,B136,1\n17,39,5.7,471,9,South,silver,card,Z04,B039,1\n17,,11.4,344,14,North,bronze,card,Z26,B105,1\n2,34,10.5,324,10,West,bronze,card,Z02,B134,1\n1,48,15.3,354,10,Family,bronze,direct_debit,Z02,B020,1\n2,37,12.1,274,11,East,bronze,direct_debit,Z16,B123,1\n7,31,13.3,319,6,South,bronze,card,Z10,B112,1\n8,53,28.6,473,9,North,silver,card,Z02,B020,1\n1,40,4.8,362,17,East,bronze,direct_debit,Z01,B024,1\n5,76,10.8,335,11,North,bronze,direct_debit,Z01,B046,1\n1,39,13.4,501,8,West,silver,card,Z45,B009,1\n4,33,3.9,519,7,South,silver,direct_debit,Z01,B073,1\n6,35,4.9,339,18,South,bronze,direct_debit,Z02,B122,1\n22,47,7.9,434,16,East,silver,direct_debit,Z01,B066,1\n2,33,6.8,733,5,Family,gold,card,Z04,B016,1\n9,26,25.4,340,12,West,bronze,card,Z03,B101,1\n11,63,11.5,316,15,Family,bronze,direct_debit,Z16,B050,1\n13,26,108.3,333,0,East,bronze,direct_debit,Z34,B088,0\n1,62,7.7,370,8,Family,bronze,direct_debit,Z01,B029,0\n4,44,8.1,345,3,South,bronze,direct_debit,Z01,B015,0\n20,28,63.1,318,,West,bronze,direct_debit,Z37,B094,1\n3,64,6.6,498,,Family,silver,card,Z16,B017,0\n9,39,60.2,667,10,North,gold,card,Z06,B007,1\n4,29,0.9,495,15,West,silver,direct_debit,Z04,B094,1\n8,43,6.1,480,18,West,silver,direct_debit,Z18,B040,1\n4,59,31.9,702,15,South,gold,card,Z01,B128,1\n1,51,37.3,265,10,South,bronze,direct_debit,Z05,B107,1\n1,53,15.0,436,9,Family,silver,direct_debit,Z01,B093,1\n1,65,6.2,402,1,East,bronze,direct_debit,Z04,B007,0\n2,45,9.3,683,9,South,gold,cash,Z06,B113,0\n17,47,19.5,316,10,North,bronze,card,Z07,B140,1\n5,39,13.5,337,19,West,bronze,card,Z04,B026,1\n9,23,22.4,473,17,North,silver,card,Z26,B123,0\n5,40,241.3,331,,North,bronze,direct_debit,Z18,B128,0\n6,63,20.4,427,15,East,silver,card,Z13,B002,1\n9,19,29.3,480,14,East,silver,card,Z01,B085,1\n14,59,124.5,320,16,North,bronze,direct_debit,Z23,B085,1\n13,45,18.8,426,12,East,silver,cash,Z32,B065,0\n9,30,18.5,435,11,Family,silver,cash,Z02,B012,0\n1,43,5.4,717,8,East,gold,direct_debit,Z30,B051,1\n3,65,3.6,295,9,West,bronze,cash,Z01,B008,1\n1,35,1.7,457,4,Family,silver,cash,Z30,B122,0\n4,52,15.3,333,12,South,bronze,card,Z02,B127,1\n8,57,53.3,309,11,West,bronze,card,Z26,B049,0\n1,30,9.7,254,10,East,bronze,direct_debit,Z39,B092,1\n2,50,1.4,308,,Family,bronze,cash,Z22,B122,1\n3,,12.3,310,10,East,bronze,cash,Z01,B127,0\n2,36,8.9,309,,West,bronze,direct_debit,Z06,B061,0\n8,51,7.8,515,14,West,silver,card,Z05,B029,1\n3,37,43.2,702,4,North,gold,direct_debit,Z04,B130,0\n6,34,28.5,666,12,South,gold,card,Z29,B084,1\n4,26,35.0,398,16,Family,bronze,card,Z06,B071,1\n5,47,5.6,318,8,South,bronze,direct_debit,Z13,B015,1\n15,36,14.2,274,7,South,bronze,direct_debit,Z01,B003,1\n15,35,4.4,464,11,Family,silver,direct_debit,Z03,B039,1\n1,27,26.5,442,8,East,silver,direct_debit,Z05,B077,1\n10,24,4.3,293,14,West,bronze,cash,Z14,B045,1\n3,32,29.1,478,,South,silver,card,Z01,B018,0\n1,51,13.0,289,2,North,bronze,card,Z01,B136,1\n3,,12.8,512,17,South,silver,cash,Z02,B087,1\n4,61,3.4,487,6,North,silver,cash,Z01,B147,1\n17,47,18.7,466,11,West,silver,card,Z21,B041,1\n3,44,2.5,308,15,East,bronze,direct_debit,Z42,B007,1\n1,26,3.9,317,11,East,bronze,direct_debit,Z18,B075,0\n10,,5.0,318,14,North,bronze,card,Z01,B138,1\n1,23,55.6,296,11,Family,bronze,card,Z26,B044,1\n4,49,11.5,502,19,West,silver,direct_debit,Z17,B137,1\n10,64,6.1,267,10,Family,bronze,card,Z35,B095,1\n4,39,16.1,325,19,North,bronze,card,Z01,B102,1\n3,33,71.0,490,8,South,silver,cash,Z02,B134,1\n9,42,9.3,488,7,Family,silver,direct_debit,Z01,B071,1\n1,54,4.5,509,1,East,silver,card,Z01,B053,1\n5,60,4.3,455,8,North,silver,card,Z16,B014,0\n3,50,10.1,501,9,Family,silver,card,Z31,B085,1\n22,28,40.5,421,13,East,silver,card,Z03,B083,1\n9,33,9.4,450,10,West,silver,direct_debit,Z42,B079,1\n1,45,8.7,440,,North,silver,direct_debit,Z01,B093,0\n2,25,4.8,340,,North,bronze,card,Z04,B075,0\n4,39,4.2,250,13,Family,bronze,direct_debit,Z01,B006,1\n7,71,24.3,345,6,North,bronze,direct_debit,Z01,B065,0\n3,28,13.9,319,2,South,bronze,cash,Z02,B064,0\n3,57,14.6,461,15,South,silver,card,Z24,B014,1\n13,30,3.5,647,14,Family,gold,card,Z10,B097,1\n16,38,16.4,309,17,North,bronze,card,Z31,B001,1\n3,41,329.6,548,6,South,silver,direct_debit,Z01,B149,0\n12,22,35.4,251,11,North,bronze,direct_debit,Z31,B109,1\n3,41,24.5,300,8,North,bronze,direct_debit,Z01,B100,1\n1,59,8.7,492,17,North,silver,card,Z07,B127,0\n4,51,13.6,329,0,North,bronze,card,Z09,B024,1\n6,51,13.5,327,5,North,bronze,cash,Z04,B061,0\n12,32,9.6,303,,North,bronze,cash,Z04,B050,0\n17,40,5.2,316,3,South,bronze,direct_debit,Z01,B121,1\n8,45,21.4,283,,South,bronze,cash,Z42,B018,0\n8,51,63.8,717,12,Family,gold,card,Z13,B082,1\n7,,9.7,457,5,West,silver,card,Z01,B124,1\n7,29,38.9,299,5,Family,bronze,direct_debit,Z02,B056,1\n8,64,8.0,340,7,South,bronze,direct_debit,Z02,B132,0\n19,38,7.9,469,8,South,silver,direct_debit,Z03,B103,0\n3,39,10.2,346,17,North,bronze,direct_debit,Z02,B036,1\n1,26,8.2,461,4,Family,silver,direct_debit,Z01,B025,1\n2,41,22.7,454,10,Family,silver,card,Z01,B131,0\n2,39,26.4,306,11,North,bronze,direct_debit,Z01,B116,0\n3,26,1.3,465,6,North,silver,card,Z42,B031,0\n9,38,20.0,303,14,North,bronze,card,Z39,B101,1\n1,44,14.3,327,17,North,bronze,direct_debit,Z15,B021,0\n3,,42.3,325,5,Family,bronze,card,Z35,B046,0\n9,52,5.1,474,10,Family,silver,direct_debit,Z32,B002,1\n2,29,11.6,496,7,North,silver,card,Z25,B135,1\n1,54,27.7,330,13,South,bronze,direct_debit,Z22,B081,1\n2,40,21.4,503,9,North,silver,direct_debit,Z01,B125,1\n1,47,35.6,311,12,North,bronze,card,Z13,B121,0\n9,18,5.6,677,14,South,gold,cash,Z01,B146,1\n1,44,6.1,477,13,North,silver,direct_debit,Z20,B038,0\n2,41,16.7,532,12,West,silver,direct_debit,Z03,B118,1\n9,54,3.5,364,12,South,bronze,direct_debit,Z09,B108,1\n9,27,14.9,326,9,Family,bronze,direct_debit,Z22,B148,1\n5,60,22.0,454,14,North,silver,direct_debit,Z02,B007,1\n13,28,13.7,710,6,West,gold,card,Z02,B146,1\n1,59,3.5,362,7,East,bronze,card,Z01,B062,1\n17,50,6.5,534,9,South,silver,direct_debit,Z01,B062,1\n5,32,8.0,500,8,East,silver,cash,Z01,B128,1\n2,70,14.5,284,,East,bronze,card,Z01,B002,1\n9,26,12.6,658,17,Family,gold,direct_debit,Z21,B056,1\n6,40,7.3,462,,East,silver,card,Z08,B086,0\n22,45,2.7,354,12,South,bronze,direct_debit,Z11,B124,1\n1,49,2.4,466,19,East,silver,direct_debit,Z01,B057,1\n5,45,4.6,336,19,North,bronze,direct_debit,Z03,B048,0\n4,52,4.4,434,8,Family,silver,card,Z15,B101,1\n6,48,6.1,504,13,North,silver,card,Z14,B062,0\n2,42,4.3,704,15,North,gold,direct_debit,Z11,B134,1\n1,30,8.9,297,2,South,bronze,direct_debit,Z01,B101,1\n4,38,6.2,312,,South,bronze,direct_debit,Z30,B050,1\n3,54,11.8,465,9,Family,silver,direct_debit,Z01,B149,0\n12,27,10.0,326,6,South,bronze,direct_debit,Z05,B113,1\n4,43,16.1,466,9,North,silver,card,Z12,B056,1\n3,16,4.6,454,13,West,silver,card,Z02,B055,1\n6,33,4.9,681,19,South,gold,direct_debit,Z23,B012,1\n4,21,4.1,298,3,East,bronze,card,Z05,B040,1\n17,58,10.8,699,,South,gold,direct_debit,Z12,B081,1\n8,18,17.9,677,6,North,gold,direct_debit,Z18,B067,1\n4,39,25.2,294,11,North,bronze,direct_debit,Z01,B047,0\n2,51,11.4,295,,North,bronze,direct_debit,Z01,B082,0\n5,50,8.9,303,0,South,bronze,direct_debit,Z19,B133,1\n7,52,18.1,686,17,West,gold,direct_debit,Z31,B088,1\n8,56,9.6,314,18,North,bronze,card,Z13,B108,1\n26,48,4.5,286,18,North,bronze,direct_debit,Z08,B064,1\n2,53,18.1,304,5,North,bronze,direct_debit,Z16,B146,1\n3,41,7.1,686,7,East,gold,direct_debit,Z03,B123,1\n3,42,3.1,340,10,South,bronze,card,Z30,B024,0\n2,19,8.6,515,15,South,silver,direct_debit,Z03,B132,1\n3,44,5.1,323,6,North,bronze,card,Z11,B147,0\n4,,9.7,357,14,North,bronze,card,Z03,B013,1\n4,,5.6,528,11,North,silver,direct_debit,Z01,B141,1\n2,,7.7,335,14,Family,bronze,direct_debit,Z38,B069,1\n1,43,6.1,747,16,North,gold,direct_debit,Z04,B130,1\n2,57,9.0,645,,North,gold,card,Z01,B044,0\n1,58,15.8,327,3,West,bronze,direct_debit,Z05,B072,1\n2,22,12.1,682,15,North,gold,card,Z02,B104,1\n6,48,10.0,677,10,South,gold,direct_debit,Z07,B108,1\n5,33,22.6,293,13,South,bronze,direct_debit,Z01,B053,1\n30,46,3.4,292,4,South,bronze,card,Z08,B085,1\n5,16,11.4,486,8,South,silver,card,Z18,B108,1\n4,54,25.4,455,18,South,silver,card,Z06,B124,1\n6,37,15.6,318,7,North,bronze,direct_debit,Z06,B011,1\n7,45,24.5,452,6,South,silver,direct_debit,Z01,B080,1\n5,,4.8,387,11,West,bronze,cash,Z29,B090,1\n5,29,24.9,485,16,South,silver,direct_debit,Z01,B120,0\n5,49,5.7,449,5,Family,silver,direct_debit,Z16,B097,1\n3,36,24.6,429,,North,silver,direct_debit,Z02,B093,0\n8,33,12.2,403,14,North,silver,direct_debit,Z06,B135,1\n5,51,241.6,659,11,North,gold,direct_debit,Z03,B142,0\n2,41,5.3,502,11,North,silver,direct_debit,Z30,B093,1\n2,33,8.4,459,7,South,silver,direct_debit,Z19,B128,0\n1,54,2.3,671,1,East,gold,card,Z09,B034,0\n3,34,13.4,717,2,North,gold,direct_debit,Z05,B126,1\n1,42,18.2,308,11,Family,bronze,direct_debit,Z30,B029,1\n1,52,13.6,322,6,South,bronze,direct_debit,Z17,B015,0\n1,54,25.0,470,11,South,silver,card,Z04,B044,1\n2,58,16.6,335,8,South,bronze,direct_debit,Z35,B090,0\n3,64,11.4,318,15,North,bronze,card,Z11,B050,1\n5,43,16.0,295,14,North,bronze,card,Z24,B023,1\n8,32,6.7,302,10,East,bronze,card,Z08,B141,1\n5,63,21.7,509,14,North,silver,direct_debit,Z01,B071,1\n1,60,12.9,338,9,East,bronze,card,Z01,B108,1\n12,38,13.5,337,15,South,bronze,cash,Z01,B149,1\n7,51,9.3,369,15,West,bronze,direct_debit,Z21,B084,1\n4,37,6.5,671,,Family,gold,card,Z07,B062,0\n6,22,4.9,344,8,Family,bronze,cash,Z26,B078,1\n4,55,8.3,425,5,West,silver,direct_debit,Z15,B051,1\n1,46,18.5,327,11,South,bronze,cash,Z14,B096,0\n6,44,2.5,464,1,East,silver,direct_debit,Z23,B061,1\n23,64,11.5,477,8,South,silver,direct_debit,Z04,B024,1\n8,61,179.4,463,11,North,silver,direct_debit,Z15,B017,1\n2,34,12.6,374,,East,bronze,direct_debit,Z11,B096,0\n1,28,9.5,321,,South,bronze,direct_debit,Z41,B055,0\n14,17,14.7,512,18,North,silver,card,Z07,B084,1\n13,42,9.7,304,,North,bronze,card,Z22,B140,1\n7,37,11.8,487,11,East,silver,card,Z10,B025,0\n8,47,12.4,312,8,Family,bronze,card,Z04,B045,1\n1,42,5.0,297,17,Family,bronze,direct_debit,Z02,B007,1\n9,33,28.7,314,14,Family,bronze,card,Z01,B098,1\n2,37,13.1,338,14,East,bronze,direct_debit,Z01,B134,0\n1,22,26.9,737,3,West,gold,card,Z37,B099,0\n3,58,12.7,484,13,South,silver,cash,Z12,B030,0\n1,35,25.9,283,9,West,bronze,direct_debit,Z16,B150,1\n10,50,11.6,356,9,Family,bronze,direct_debit,Z17,B091,1\n1,33,126.1,678,13,South,gold,direct_debit,Z06,B054,0\n7,43,28.0,501,9,North,silver,direct_debit,Z01,B124,1\n5,50,32.3,449,6,East,silver,card,Z05,B097,1\n8,38,10.7,324,16,Family,bronze,direct_debit,Z08,B063,1\n5,31,3.3,333,12,East,bronze,card,Z02,B064,1\n17,72,8.8,483,10,West,silver,direct_debit,Z22,B146,1\n3,39,17.1,510,0,East,silver,direct_debit,Z36,B044,0\n4,49,12.6,295,10,North,bronze,direct_debit,Z03,B064,0\n3,41,7.2,519,7,North,silver,card,Z01,B141,1\n7,32,6.2,442,15,Family,silver,card,Z40,B116,1\n2,59,4.2,369,7,Family,bronze,card,Z01,B132,1\n9,47,7.8,726,8,West,gold,card,Z01,B058,1\n1,46,18.4,499,9,East,silver,direct_debit,Z43,B027,1\n2,16,18.9,276,0,South,bronze,card,Z03,B143,1\n3,46,18.5,499,14,North,silver,direct_debit,Z09,B065,0\n1,53,9.5,464,,Family,silver,card,Z18,B111,0\n2,46,12.9,464,,West,silver,cash,Z01,B087,0\n10,40,10.9,323,,South,bronze,direct_debit,Z01,B036,1\n3,58,15.4,742,,Family,gold,direct_debit,Z09,B133,0\n2,,13.7,472,9,South,silver,direct_debit,Z12,B105,1\n10,50,17.7,432,,East,silver,direct_debit,Z17,B001,0\n5,55,9.8,658,13,South,gold,card,Z09,B025,1\n6,55,10.2,334,,West,bronze,card,Z01,B132,0\n11,25,309.9,459,17,South,silver,cash,Z43,B126,1\n7,,29.7,308,12,East,bronze,direct_debit,Z08,B066,1\n2,32,2.0,532,11,East,silver,direct_debit,Z16,B002,0\n1,16,13.9,314,8,East,bronze,card,Z01,B038,0\n4,46,13.9,311,9,North,bronze,direct_debit,Z02,B105,0\n7,19,20.2,440,14,South,silver,direct_debit,Z08,B095,1\n9,36,1.9,437,12,North,silver,direct_debit,Z04,B150,1\n2,16,255.1,287,10,Family,bronze,cash,Z05,B014,0\n6,29,7.2,324,7,East,bronze,direct_debit,Z05,B082,1\n14,,10.9,528,13,South,silver,direct_debit,Z02,B080,1\n2,42,4.0,297,15,West,bronze,card,Z02,B001,1\n2,35,24.1,322,3,Family,bronze,card,Z10,B128,1\n3,30,22.2,335,,East,bronze,direct_debit,Z11,B063,0\n5,30,16.5,277,13,South,bronze,direct_debit,Z15,B150,1\n24,62,19.0,309,19,South,bronze,card,Z21,B058,1\n5,36,3.9,659,11,North,gold,direct_debit,Z04,B082,1\n11,41,8.7,322,15,North,bronze,direct_debit,Z04,B010,1\n6,66,1.6,454,,North,silver,card,Z27,B104,1\n4,19,21.1,296,8,North,bronze,card,Z15,B100,1\n2,16,24.2,417,8,East,silver,card,Z01,B063,0\n3,29,13.4,315,13,North,bronze,direct_debit,Z24,B135,0\n8,37,4.4,323,14,North,bronze,direct_debit,Z01,B116,0\n1,27,10.0,338,8,North,bronze,card,Z06,B115,1\n1,41,20.9,313,11,North,bronze,direct_debit,Z23,B033,0\n2,41,3.7,526,10,Family,silver,card,Z29,B096,1\n6,22,11.7,643,12,North,gold,direct_debit,Z01,B136,1\n3,44,17.2,300,9,West,bronze,card,Z10,B022,0\n2,23,5.4,275,10,West,bronze,direct_debit,Z33,B140,1\n3,51,6.3,497,13,West,silver,direct_debit,Z06,B029,1\n1,45,25.1,362,,North,bronze,direct_debit,Z04,B055,0\n3,,18.0,696,9,North,gold,card,Z08,B068,1\n9,53,30.3,354,12,North,bronze,direct_debit,Z36,B067,1\n3,39,12.2,720,2,Family,gold,direct_debit,Z03,B058,0\n3,46,4.6,283,16,Family,bronze,direct_debit,Z02,B147,0\n1,44,9.6,300,,Family,bronze,direct_debit,Z14,B120,0\n2,32,6.1,309,11,Family,bronze,card,Z04,B087,1\n1,23,8.2,461,9,West,silver,card,Z04,B150,1\n1,56,14.6,644,18,North,gold,direct_debit,Z02,B027,1\n10,62,32.9,280,11,Family,bronze,direct_debit,Z03,B044,1\n7,36,11.4,382,14,South,bronze,card,Z01,B015,1\n9,,44.0,369,11,Family,bronze,cash,Z01,B054,0\n1,36,3.6,316,6,West,bronze,card,Z06,B145,0\n3,55,8.7,322,,East,bronze,card,Z01,B108,0\n13,58,10.4,612,12,West,gold,direct_debit,Z06,B099,1\n3,31,1.9,272,9,South,bronze,direct_debit,Z01,B104,0\n13,37,2.8,274,7,West,bronze,direct_debit,Z01,B080,1\n17,35,7.8,304,8,West,bronze,cash,Z01,B085,1\n1,45,11.2,323,6,South,bronze,direct_debit,Z31,B043,1\n3,52,14.4,355,17,East,bronze,direct_debit,Z01,B041,1\n5,,10.9,289,16,South,bronze,direct_debit,Z02,B013,1\n3,38,8.1,469,12,West,silver,direct_debit,Z22,B146,1\n3,29,3.5,432,9,South,silver,card,Z12,B106,1\n3,49,10.6,306,13,East,bronze,direct_debit,Z04,B118,1\n2,50,36.3,268,13,South,bronze,direct_debit,Z02,B133,1\n1,37,14.5,717,6,Family,gold,direct_debit,Z01,B097,1\n7,44,5.9,327,10,North,bronze,direct_debit,Z02,B090,0\n30,47,11.4,472,12,South,silver,direct_debit,Z02,B051,1\n1,53,14.4,299,,West,bronze,card,Z41,B023,0\n10,43,27.6,482,,East,silver,card,Z03,B066,0\n4,48,6.7,314,16,East,bronze,direct_debit,Z02,B076,1\n1,44,15.3,656,13,South,gold,direct_debit,Z09,B133,1\n1,29,16.0,454,,South,silver,direct_debit,Z01,B038,0\n4,51,8.1,497,,North,silver,direct_debit,Z31,B133,0\n1,43,9.5,460,10,East,silver,direct_debit,Z01,B036,1\n2,,7.4,268,6,North,bronze,direct_debit,Z04,B013,1\n2,27,10.8,703,11,North,gold,card,Z35,B103,1\n18,33,12.7,370,13,North,bronze,direct_debit,Z01,B011,0\n4,46,4.0,327,16,North,bronze,direct_debit,Z09,B099,1\n2,20,9.2,657,3,South,gold,card,Z05,B126,1\n14,40,34.2,672,9,North,gold,card,Z01,B122,0\n18,36,10.2,497,10,West,silver,direct_debit,Z21,B138,1\n7,37,2.4,498,18,South,silver,direct_debit,Z01,B131,1\n1,39,32.4,697,9,West,gold,card,Z01,B026,1\n12,,8.6,324,19,West,bronze,card,Z40,B002,1\n3,43,11.8,496,7,Family,silver,direct_debit,Z06,B119,0\n8,43,15.7,702,17,West,gold,card,Z01,B034,1\n7,,7.6,290,,East,bronze,card,Z10,B130,1\n6,61,4.6,622,11,East,gold,direct_debit,Z12,B023,1\n8,47,5.8,319,9,North,bronze,direct_debit,Z06,B142,1\n9,54,12.8,491,10,North,silver,direct_debit,Z31,B014,1\n4,16,10.2,360,17,South,bronze,card,Z22,B045,0\n4,49,8.3,297,13,North,bronze,direct_debit,Z03,B138,1\n1,56,55.8,463,8,West,silver,direct_debit,Z35,B118,1\n3,53,12.6,278,6,North,bronze,direct_debit,Z02,B034,1\n11,45,22.1,448,18,South,silver,card,Z05,B071,1\n2,37,55.2,507,17,North,silver,cash,Z06,B081,1\n7,37,11.6,766,10,West,gold,direct_debit,Z20,B001,0\n9,42,7.6,324,16,North,bronze,direct_debit,Z28,B018,1\n2,48,8.5,336,12,West,bronze,cash,Z14,B131,1\n8,,11.5,352,5,North,bronze,direct_debit,Z01,B149,1\n6,41,43.1,458,9,South,silver,direct_debit,Z03,B032,1\n19,,24.3,700,12,South,gold,card,Z02,B121,1\n3,66,8.9,521,9,West,silver,direct_debit,Z38,B044,1\n8,,6.7,276,8,South,bronze,direct_debit,Z02,B128,0\n10,16,19.0,515,7,South,silver,cash,Z11,B057,1\n3,61,43.9,528,17,West,silver,card,Z06,B112,1\n2,55,6.6,363,5,Family,bronze,card,Z03,B080,1\n3,44,37.2,353,11,North,bronze,direct_debit,Z04,B102,1\n6,55,13.6,301,15,North,bronze,cash,Z01,B109,1\n2,48,10.7,506,14,North,silver,card,Z04,B047,0\n10,31,8.7,411,,East,silver,direct_debit,Z02,B117,1\n2,44,6.2,283,0,Family,bronze,card,Z06,B098,1\n8,26,7.4,333,7,South,bronze,cash,Z14,B079,0\n2,34,28.3,485,10,South,silver,direct_debit,Z01,B145,1\n4,31,3.5,487,19,South,silver,direct_debit,Z01,B132,1\n11,44,7.5,483,17,North,silver,card,Z11,B052,1\n4,56,10.3,330,12,West,bronze,card,Z01,B084,1\n5,34,4.3,444,14,East,silver,card,Z02,B032,1\n3,48,7.2,362,6,West,bronze,direct_debit,Z09,B034,0\n4,16,3.5,319,11,South,bronze,card,Z37,B138,1\n1,28,17.3,464,13,Family,silver,direct_debit,Z06,B039,1\n4,49,17.5,485,19,North,silver,card,Z01,B150,1\n3,54,3.5,469,12,North,silver,direct_debit,Z23,B033,1\n2,54,31.8,491,15,West,silver,direct_debit,Z05,B093,1\n1,56,4.7,292,7,South,bronze,card,Z05,B082,1\n3,21,2.3,293,16,North,bronze,card,Z33,B008,1\n2,,2.6,261,13,Family,bronze,card,Z06,B106,1\n3,16,14.8,651,9,Family,gold,direct_debit,Z08,B034,1\n9,40,1.6,299,6,West,bronze,direct_debit,Z09,B064,0\n12,45,9.4,298,5,South,bronze,direct_debit,Z06,B083,1\n13,38,12.3,535,10,South,silver,card,Z11,B023,1\n3,30,22.1,489,17,East,silver,card,Z02,B129,1\n12,48,7.8,470,2,South,silver,cash,Z09,B136,1\n5,49,25.4,504,8,North,silver,direct_debit,Z19,B128,0\n29,44,7.3,359,12,North,bronze,card,Z06,B014,1\n1,34,20.9,336,13,West,bronze,card,Z01,B095,1\n8,43,4.7,285,11,South,bronze,direct_debit,Z05,B130,0\n5,,12.8,668,5,East,gold,direct_debit,Z03,B077,0\n4,45,7.9,344,3,South,bronze,direct_debit,Z25,B023,1\n8,,11.7,430,11,South,silver,direct_debit,Z33,B138,1\n9,42,58.0,292,8,East,bronze,card,Z12,B023,0\n9,23,10.1,433,,South,silver,direct_debit,Z12,B053,0\n3,38,10.5,300,11,East,bronze,direct_debit,Z04,B117,1\n3,47,11.2,442,14,West,silver,card,Z10,B035,1\n5,,13.2,300,13,South,bronze,card,Z22,B058,1\n1,45,1.8,328,11,North,bronze,direct_debit,Z09,B118,1\n9,33,18.2,268,3,South,bronze,direct_debit,Z42,B135,1\n5,,3.5,554,14,North,silver,direct_debit,Z35,B065,1\n3,47,2.1,332,13,South,bronze,card,Z02,B133,1\n6,44,11.0,306,6,West,bronze,direct_debit,Z09,B102,1\n16,52,3.8,515,7,North,silver,card,Z11,B005,0\n9,52,12.2,333,9,South,bronze,direct_debit,Z03,B054,1\n6,43,24.2,489,14,South,silver,card,Z40,B054,1\n2,55,10.2,324,13,North,bronze,card,Z02,B039,1\n18,51,4.5,320,11,North,bronze,card,Z12,B102,1\n3,45,10.9,468,8,Family,silver,card,Z12,B100,1\n12,42,50.9,317,6,South,bronze,direct_debit,Z23,B099,1\n4,28,10.6,495,13,North,silver,direct_debit,Z05,B007,1\n6,45,41.0,325,11,East,bronze,direct_debit,Z05,B032,1\n11,,32.2,500,11,East,silver,card,Z01,B007,1\n1,31,3.9,479,15,South,silver,card,Z04,B078,1\n2,60,20.6,341,7,North,bronze,card,Z13,B149,1\n1,42,3.5,344,1,Family,bronze,cash,Z04,B059,0\n1,28,15.8,309,11,West,bronze,direct_debit,Z01,B127,0\n3,37,15.8,457,7,North,silver,direct_debit,Z32,B093,1\n13,,8.7,356,12,East,bronze,card,Z34,B132,1\n2,42,2.9,312,11,South,bronze,cash,Z06,B101,0\n1,32,7.5,703,8,South,gold,card,Z29,B089,0\n15,42,7.7,316,9,South,bronze,direct_debit,Z01,B105,1\n4,23,14.7,448,6,North,silver,card,Z13,B045,0\n4,36,9.5,286,6,South,bronze,direct_debit,Z02,B042,1\n6,,15.1,321,,South,bronze,direct_debit,Z03,B072,0\n9,33,7.8,459,9,Family,silver,card,Z17,B146,1\n2,,2.8,300,,East,bronze,card,Z30,B088,1\n2,52,9.7,468,14,West,silver,direct_debit,Z35,B108,1\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Categorical Encoding",
+      "summary": "Turn categories and text into numbers: one-hot encoding for unordered categories, ordinal encoding for ordered ones, grouping or target encoding for many categories, and simple features from dates, text and interactions.",
+      "instructor": "marisolo-garcia",
+      "lessons": [
+        {
+          "title": "One-hot and ordinal encoding",
+          "minutes": 12,
+          "objectives": [
+            "Choose between one-hot and ordinal encoding",
+            "Handle unknown and rare categories with OneHotEncoder"
+          ],
+          "key_points": [
+            "Models require numerical input, so categories must become numbers, and how matters: the codes 0, 1 and 2 for unordered categories invent an order and spacing that linear and distance-based models will use.",
+            "One-hot encoding creates one binary column per category. handle_unknown='ignore' encodes a category never seen in training as all zeros instead of raising an error, and drop='if_binary' keeps a single column for a yes/no feature.",
+            "Ordinal encoding is for ordered categories, such as bronze < silver < gold. Give the order with OrdinalEncoder(categories=[['bronze', 'silver', 'gold']]), because by default it sorts alphabetically: bronze 0, gold 1, silver 2.",
+            "Rare categories get their own one-hot column but almost no data: min_frequency or max_categories groups them into one infrequent column (named infrequent_sklearn), and handle_unknown='infrequent_if_exist' sends new categories there too.",
+            "Tree ensembles can work with ordinal codes even for unordered categories, and HistGradientBoosting supports categorical features natively; linear models and k-NN need one-hot encoding."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Encoders and their options",
+            "steps": [
+              {
+                "do": "One-hot encode colours, then transform a colour the encoder has never seen.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.preprocessing import OneHotEncoder\n\ncolours = np.array([[\"red\"], [\"green\"], [\"blue\"], [\"green\"]])\nenc = OneHotEncoder(handle_unknown=\"ignore\", sparse_output=False).fit(colours)\nprint(enc.get_feature_names_out(), enc.transform([[\"green\"], [\"purple\"]]))",
+                "lang": "python",
+                "see": "Three columns, x0_blue to x0_red; green is [0. 1. 0.] and the unknown purple [0. 0. 0.]."
+              },
+              {
+                "do": "Encode tiers with the default order, then with the right one.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.preprocessing import OrdinalEncoder\n\ntiers = np.array([[\"bronze\"], [\"gold\"], [\"silver\"], [\"gold\"]])\nprint(OrdinalEncoder().fit_transform(tiers).ravel(),\n      OrdinalEncoder(categories=[[\"bronze\", \"silver\", \"gold\"]]).fit_transform(tiers).ravel())",
+                "lang": "python",
+                "see": "[0. 1. 2. 1.] alphabetically, with gold below silver, then [0. 2. 1. 2.] in the real order."
+              },
+              {
+                "do": "Group rare towns, and keep one column for a yes/no feature.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "towns = np.array([[\"Leeds\"]] * 5 + [[\"York\"]] * 3 + [[\"Ripon\"]] + [[\"Selby\"]])\nrare = OneHotEncoder(min_frequency=2, handle_unknown=\"infrequent_if_exist\", sparse_output=False).fit(towns)\nprint(rare.get_feature_names_out(), rare.transform([[\"Ripon\"], [\"Hull\"]]))\nprint(OneHotEncoder(drop=\"if_binary\", sparse_output=False).fit_transform([[\"yes\"], [\"no\"], [\"yes\"]]).ravel())",
+                "lang": "python",
+                "see": "Ripon and Selby share x0_infrequent_sklearn, where the unseen Hull goes too; yes/no becomes one column, [1. 0. 1.]."
+              }
+            ]
+          }
+        },
+        {
+          "title": "High-cardinality features and target encoding",
+          "minutes": 12,
+          "objectives": [
+            "Explain target encoding and its leakage risk",
+            "Use TargetEncoder's cross fitting and smoothing"
+          ],
+          "key_points": [
+            "A feature with many categories, such as a postcode or a seat block, one-hot encodes into many sparse columns. Alternatives are grouping rare levels, count (frequency) encoding, hashing, or target encoding.",
+            "Target encoding uses the target variable: it replaces each category with the mean target for that category, shrunk towards the overall mean when the category is rare (smoothing), giving one informative column.",
+            "Computed on all the data before splitting, it leaks the answer, because each row's own label is inside its encoding: on a column of 150 random seat blocks with no real signal, that naive encoding scores a ROC AUC of 0.877; done properly, 0.530.",
+            "scikit-learn's TargetEncoder (version 1.3 and later) prevents this with cross fitting: fit_transform encodes each fold's rows with means learned on the other folds, while transform, used on new data, applies encodings learned on all the training data. Keep it inside the pipeline.",
+            "smooth='auto' chooses the shrinkage from the data. For repeatable results pass cv a splitter with a random_state, as in cv=StratifiedKFold(5, shuffle=True, random_state=0) (before version 1.9, set TargetEncoder's own random_state instead)."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Target encoding, two ways",
+            "steps": [
+              {
+                "do": "Target-encode three categories with smoothing.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.model_selection import KFold\nfrom sklearn.preprocessing import TargetEncoder\n\nX = np.array([[\"a\"]] * 6 + [[\"b\"]] * 4 + [[\"c\"]] * 2)\ny = np.array([1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 1, 0])\nenc = TargetEncoder(smooth=2.0, cv=KFold(n_splits=3, shuffle=True, random_state=0))\ncross_fitted = enc.fit_transform(X, y).ravel()\nprint(enc.categories_[0], np.round(enc.encodings_[0], 3), round(enc.target_mean_, 3))",
+                "lang": "python",
+                "see": "Encodings [0.771 0.361 0.542] around an overall mean of 0.583: c, with only 2 rows, stays close to the mean."
+              },
+              {
+                "do": "Compare the cross-fitted training values with transform's.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "print(cross_fitted.round(3))\nprint(enc.transform(X).ravel().round(3))",
+                "lang": "python",
+                "see": "fit_transform gives rows of the same category different values, each from the other folds; transform gives every a 0.771, every b 0.361 and every c 0.542."
+              },
+              {
+                "do": "Count encoding, for comparison: each category replaced by how often it occurs.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import pandas as pd\n\ntowns = pd.Series([\"Leeds\"] * 5 + [\"York\"] * 3 + [\"Ripon\", \"Selby\"])\nprint(towns.map(towns.value_counts()).tolist())",
+                "lang": "python",
+                "see": "[5, 5, 5, 5, 5, 3, 3, 3, 1, 1]"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Dates, text and interactions",
+          "minutes": 10,
+          "objectives": [
+            "Turn dates and cyclical values into numeric features",
+            "Create interaction and text features"
+          ],
+          "key_points": [
+            "Dates become features through their parts, such as the month, the day of the week and the day of the year (pandas' .dt accessors), or through durations, such as days since the last purchase.",
+            "Cyclical features, such as months or hours, wrap round, so encode them as the sine and cosine of an angle: December and January are then as close as June and July (0.518 apart), and January and July the furthest apart (2.0).",
+            "Short text columns can become bag-of-words counts with CountVectorizer or TfidfVectorizer, applied to that column inside a ColumnTransformer.",
+            "Interactions, such as products and ratios of features, let linear models capture effects that depend on two features together; PolynomialFeatures(interaction_only=True) creates every pairwise product.",
+            "Every created feature must be computable at prediction time from information available then; a feature built from the future, or from the label, leaks."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Months on a circle, words and products",
+            "steps": [
+              {
+                "do": "Put the months on a circle and measure three distances.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nmonths = np.arange(1, 13)\nangle = 2 * np.pi * (months - 1) / 12\nsin, cos = np.sin(angle), np.cos(angle)\ndist = lambda a, b: round(float(np.hypot(sin[a - 1] - sin[b - 1], cos[a - 1] - cos[b - 1])), 3)\nprint(dist(12, 1), dist(6, 7), dist(1, 7))",
+                "lang": "python",
+                "see": "0.518 0.518 2.0"
+              },
+              {
+                "do": "Take date parts with pandas.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import pandas as pd\n\ndates = pd.to_datetime(pd.Series([\"2026-01-05\", \"2026-03-14\", \"2026-12-31\"]))\nprint(pd.DataFrame({\"month\": dates.dt.month, \"weekday\": dates.dt.dayofweek, \"day_of_year\": dates.dt.dayofyear}))",
+                "lang": "python",
+                "see": "Monday 5 January is weekday 0 and day 5; 31 December is day 365."
+              },
+              {
+                "do": "Create pairwise products, and word counts from short comments.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.feature_extraction.text import CountVectorizer\nfrom sklearn.preprocessing import PolynomialFeatures\n\npoly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False).fit([[1, 2, 3]])\nprint(poly.get_feature_names_out([\"tenure\", \"matches\", \"price\"]))\nwords = CountVectorizer().fit([\"great seats\", \"cold seats, great view\"])\nprint(words.get_feature_names_out(), words.transform([\"great great view\"]).toarray())",
+                "lang": "python",
+                "see": "The three features plus 'tenure matches', 'tenure price' and 'matches price'; then counts [[0 2 0 1]] for cold, great, seats and view."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Encode the categories",
+        "tool": "JupyterLab",
+        "minutes": 60,
+        "goal": "Compare one-hot and ordinal encoding for an ordered feature, compare three encodings for a feature with 44 categories, and catch naive target encoding leaking the label into a column of pure noise.",
+        "setup": [
+          "Your lab folder from the module 1 lab, with season_tickets.csv in it",
+          "Download the starter file encode.py into it"
+        ],
+        "steps": [
+          {
+            "do": "Open encode.py and do the first TODO: tier one-hot encoded, then as ordinal codes."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python encode.py",
+            "lang": "bash",
+            "see": "OneHotEncoder ROC AUC 0.730 with 18 columns; OrdinalEncoder 0.733 with 16."
+          },
+          {
+            "do": "Do the second TODO: three encodings of area, and rerun.",
+            "see": "44 codes, 34 of them with fewer than 10 members; one-hot 0.718 with 62 columns, rare codes grouped 0.728 with 29, target encoding 0.732 with 19."
+          },
+          {
+            "do": "Do the third TODO: TargetEncoder inside the pipeline, against means computed on all the rows.",
+            "see": "Means computed before splitting: ROC AUC 0.877. TargetEncoder inside the pipeline: ROC AUC 0.530."
+          },
+          {
+            "do": "Write three sentences: why ordinal codes suit tier, why grouping rare areas helped one-hot encoding, and how a column of random seat blocks reached a ROC AUC of 0.877."
+          }
+        ],
+        "checks": [
+          {
+            "text": "tier is compared as one-hot and as ordinal codes.",
+            "look_for": [
+              "OneHotEncoder   ROC AUC 0.730, 18 columns",
+              "OrdinalEncoder  ROC AUC 0.733, 16 columns"
+            ]
+          },
+          {
+            "text": "The area codes are counted.",
+            "look_for": [
+              "44 codes, 34 of them with fewer than 10 members"
+            ]
+          },
+          {
+            "text": "Three encodings of area are compared by score and number of columns.",
+            "look_for": [
+              "one-hot                ROC AUC 0.718, 62 columns",
+              "one-hot, rare grouped  ROC AUC 0.728, 29 columns",
+              "target                 ROC AUC 0.732, 19 columns"
+            ]
+          },
+          {
+            "text": "Naive target encoding leaks, and TargetEncoder's cross fitting doesn't.",
+            "look_for": [
+              "Means computed before splitting: ROC AUC 0.877",
+              "TargetEncoder inside the pipeline: ROC AUC 0.530"
+            ]
+          },
+          {
+            "text": "The sentences explain the order in tier, the noise of rare one-hot columns, and how each row's own label leaked into its encoding.",
+            "look_for": [
+              "leak"
+            ]
+          }
+        ],
+        "submit": "Paste your encode.py, its output and your three sentences.",
+        "hints": [
+          "ColumnTransformer takes (name, transformer, columns) triples; columns it isn't given are dropped by default.",
+          "TargetEncoder needs the labels: fit_transform(X, y). A pipeline passes them on for you.",
+          "The number of columns is prep.fit_transform(df, y).shape[1]."
+        ],
+        "files": [
+          {
+            "path": "encode.py",
+            "content": "\"\"\"Encode the categories of the season-ticket data, and catch target encoding leaking the answer.\"\"\"\n\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import StratifiedKFold, cross_val_score\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, TargetEncoder\n\ndf = pd.read_csv(\"season_tickets.csv\")\ny = df[\"renewed\"]\nnumeric = [\"tenure\", \"age\", \"distance_km\", \"price\", \"matches\"]\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nnum_pipe = make_pipeline(SimpleImputer(strategy=\"median\", add_indicator=True), StandardScaler())\n\n\ndef score(prep, data=df):\n    \"\"\"Cross-validated ROC AUC of logistic regression after the given preprocessing, and its number of columns.\"\"\"\n    model = make_pipeline(prep, LogisticRegression(max_iter=1000))\n    return cross_val_score(model, data, y, cv=cv, scoring=\"roc_auc\").mean(), prep.fit_transform(data, y).shape[1]\n\n\nprint(\"1. tier (bronze < silver < gold), one-hot or ordinal:\")\n# TODO: for each encoder in (OneHotEncoder(handle_unknown=\"ignore\"), OrdinalEncoder(categories=[[\"bronze\", \"silver\", \"gold\"]])),\n#       build ColumnTransformer([(\"num\", num_pipe, numeric), (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"),\n#       [\"stand\", \"payment\"]), (\"tier\", encoder, [\"tier\"])]) and print its score() as\n#       f\"   {type(encoder).__name__:<15} ROC AUC {auc:.3f}, {columns} columns\"\npass\n\ncounts = df[\"area\"].value_counts()\nprint(f\"2. area: {len(counts)} codes, {int((counts < 10).sum())} of them with fewer than 10 members\")\nencoders = {\"one-hot\": OneHotEncoder(handle_unknown=\"ignore\"),\n            \"one-hot, rare grouped\": OneHotEncoder(handle_unknown=\"infrequent_if_exist\", min_frequency=10),\n            \"target\": TargetEncoder(cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=0))}\n# TODO: for each encoder, add (\"area\", encoder, [\"area\"]) to the transformers (with tier one-hot encoded alongside\n#       stand and payment) and print  f\"   {name:<22} ROC AUC {auc:.3f}, {columns} columns\"\npass\n\nprint(\"3. seat_block: 150 random block codes that carry no information about renewing\")\nnaive = df.groupby(\"seat_block\")[\"renewed\"].transform(\"mean\").to_frame()   # computed on ALL the rows, labels included\nleaky = cross_val_score(LogisticRegression(), naive, y, cv=cv, scoring=\"roc_auc\").mean()\n# TODO: score make_pipeline(TargetEncoder(cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=0)), LogisticRegression())\n#       on df[[\"seat_block\"]] with cross_val_score, and print both results\npass\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Cross-Validation Techniques",
+      "summary": "Estimate performance reliably without overfitting to a single test split: k-fold and stratified k-fold, groups and time order, repeated runs, several metrics at once, and what all those fits cost.",
+      "instructor": "zawadi-mutembo",
+      "lessons": [
+        {
+          "title": "k-fold and stratified k-fold",
+          "minutes": 12,
+          "objectives": [
+            "Explain how k-fold cross-validation works and when to stratify",
+            "Choose k, and read the spread of the fold scores"
+          ],
+          "key_points": [
+            "K-fold splits the data into k subsets, the folds; each fold is the test set once while the model trains on the other k − 1, so every row is tested exactly once, and the k scores are averaged.",
+            "Stratified k-fold maintains class proportions in every fold: with 10 positives in 100 rows, KFold without shuffling can put all 10 in the last fold, while StratifiedKFold puts 2 in each.",
+            "KFold and StratifiedKFold don't shuffle by default, so data sorted by label or by time gives nonsense folds; pass shuffle=True with a random_state, unless the order itself matters, as with time.",
+            "An integer cv, such as cv=5, means StratifiedKFold(5) without shuffling for classifiers and KFold(5) for regressors.",
+            "Averaging over folds reduces the variance of the performance estimate compared with one split, and the spread of the fold scores shows how much the result depends on which rows were held out.",
+            "It is computationally more expensive, k fits instead of one; 5 or 10 folds are the usual choice, with more folds giving each model more training data but taking longer."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Where the positives go",
+            "steps": [
+              {
+                "do": "Count the positives in each test fold for an imbalanced label.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.model_selection import KFold, StratifiedKFold\n\ny = np.array([0] * 90 + [1] * 10)\nX = np.zeros((100, 1))\nfor splitter in (KFold(n_splits=5), StratifiedKFold(n_splits=5)):\n    print(type(splitter).__name__, [int(y[test].sum()) for _, test in splitter.split(X, y)])",
+                "lang": "python",
+                "see": "KFold [0, 0, 0, 0, 10]: all positives in the last fold. StratifiedKFold [2, 2, 2, 2, 2]."
+              },
+              {
+                "do": "See what cv=5 means for a classifier.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.model_selection import check_cv\n\nprint(check_cv(5, y, classifier=True))",
+                "lang": "python",
+                "see": "StratifiedKFold(n_splits=5, random_state=None, shuffle=False)"
+              },
+              {
+                "do": "Compare 3, 5 and 10 shuffled stratified folds on the breast cancer data.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import cross_val_score\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nXb, yb = load_breast_cancer(return_X_y=True)\nmodel = make_pipeline(StandardScaler(), LogisticRegression())\nfor k in (3, 5, 10):\n    s = cross_val_score(model, Xb, yb, cv=StratifiedKFold(n_splits=k, shuffle=True, random_state=0))\n    print(k, s.mean().round(3), s.std().round(3))",
+                "lang": "python",
+                "see": "Means of 0.977 to 0.979 every time, while the spread grows from 0.009 to 0.019 as the folds get smaller."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Groups, time and repeated cross-validation",
+          "minutes": 12,
+          "objectives": [
+            "Keep related rows together with group k-fold",
+            "Respect time order with TimeSeriesSplit",
+            "Get steadier estimates with repeated cross-validation"
+          ],
+          "key_points": [
+            "When several rows come from one entity, such as the sessions of one player or the visits of one patient, random folds put the same entity in training and test, and the model scores well just by recognising it. GroupKFold keeps each group in a single fold.",
+            "In the lab's made-up sessions data, where the label has nothing to do with the features, 1-nearest-neighbour scores 0.955 accuracy with shuffled KFold and 0.487, about chance, with GroupKFold.",
+            "For time-ordered data, TimeSeriesSplit trains on the past and tests on the period after it, with a growing training window; gap leaves rows out between training and test, and test_size fixes each test window.",
+            "RepeatedStratifiedKFold reruns stratified k-fold with different shuffles, such as 5 folds × 10 repeats = 50 scores, for a steadier mean and a clearer view of the spread.",
+            "Leave-one-out uses n folds of one row each: nearly all the data trains each model, but it costs n fits and its estimate can vary a lot."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Groups, gaps and repeats",
+            "steps": [
+              {
+                "do": "Split 18 sessions from six players with GroupKFold, and check that no player is on both sides.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.model_selection import GroupKFold\n\ngroups = np.repeat([\"Ana\", \"Ben\", \"Chi\", \"Dev\", \"Eli\", \"Fay\"], 3)\nX = np.zeros((18, 1))\nfor train, test in GroupKFold(n_splits=3).split(X, groups=groups):\n    print(sorted(set(groups[test].tolist())), set(groups[train]) & set(groups[test]))",
+                "lang": "python",
+                "see": "Two players per test fold, and set(): no player in both."
+              },
+              {
+                "do": "Split ten time steps with a gap of one between training and test.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.model_selection import TimeSeriesSplit\n\nfor train, test in TimeSeriesSplit(n_splits=3, test_size=2, gap=1).split(np.arange(10)):\n    print(train.tolist(), test.tolist())",
+                "lang": "python",
+                "see": "[0, 1, 2] then [4, 5]; [0 … 4] then [6, 7]; [0 … 6] then [8, 9]: always the past, one step apart."
+              },
+              {
+                "do": "Count the fits for repeated k-fold and for leave-one-out.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.model_selection import LeaveOneOut, RepeatedStratifiedKFold\n\nprint(RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=0).get_n_splits(), LeaveOneOut().get_n_splits(np.zeros((20, 1))))",
+                "lang": "python",
+                "see": "50 20"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Metrics, training scores and learning curves",
+          "minutes": 10,
+          "objectives": [
+            "Score cross-validation with several metrics at once",
+            "Diagnose overfitting with training scores and learning curves"
+          ],
+          "key_points": [
+            "scoring chooses the metric, such as 'roc_auc', 'f1', 'balanced_accuracy' or 'neg_log_loss'. Error metrics are negated, as in 'neg_mean_absolute_error', so that higher is always better.",
+            "cross_validate returns a dictionary with fit times, score times and the test scores of several metrics at once, plus the training scores with return_train_score=True.",
+            "A large gap between training and test scores signals overfitting: an unpruned tree scores a training ROC AUC of 1.000 and a test ROC AUC of 0.555 on the season-ticket data, where logistic regression scores 0.730 and 0.711.",
+            "learning_curve trains on growing subsets: a test score still rising at the full size means more data would help; training and test scores meeting at a low level mean the model is too simple.",
+            "Compare models on the same folds by passing the same cv object, and look at the spread as well as the mean: differences smaller than the fold-to-fold spread may be noise."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Scores beyond accuracy",
+            "steps": [
+              {
+                "do": "Cross-validate a regression with a negated error metric.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_diabetes\nfrom sklearn.linear_model import LinearRegression\nfrom sklearn.model_selection import cross_val_score\n\nX, y = load_diabetes(return_X_y=True)\nprint(cross_val_score(LinearRegression(), X, y, cv=5, scoring=\"neg_mean_absolute_error\").round(1))",
+                "lang": "python",
+                "see": "[-43.  -44.8 -48.2 -43.  -42.4]: mean absolute errors of 42 to 48, negated."
+              },
+              {
+                "do": "Get two metrics and the training scores in one call.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import StratifiedKFold, cross_validate, learning_curve\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nXb, yb = load_breast_cancer(return_X_y=True)\nmodel = make_pipeline(StandardScaler(), LogisticRegression())\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nr = cross_validate(model, Xb, yb, cv=cv, scoring=[\"roc_auc\", \"recall\"], return_train_score=True)\nprint(sorted(r), r[\"test_recall\"].mean().round(3), r[\"train_recall\"].mean().round(3))",
+                "lang": "python",
+                "see": "Keys from fit_time to train_roc_auc, and a test recall of 0.992 against 0.995 in training: almost no gap."
+              },
+              {
+                "do": "Draw a learning curve at 10%, 30% and 100% of the training folds.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "sizes, train_scores, test_scores = learning_curve(model, Xb, yb, cv=cv, train_sizes=[0.1, 0.3, 1.0])\nprint(sizes, train_scores.mean(axis=1).round(3), test_scores.mean(axis=1).round(3))",
+                "lang": "python",
+                "see": "With 45, 136 and 455 rows the test accuracy climbs 0.873, 0.951, 0.979 towards the training accuracy: more data helped."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Validate it properly",
+        "tool": "JupyterLab",
+        "minutes": 60,
+        "goal": "See unshuffled k-fold fail on sorted data, measure how much a cross-validated score moves, diagnose an overfitting tree with training scores, and watch GroupKFold expose a model that only recognises players.",
+        "setup": [
+          "Your lab folder from the module 1 lab, with season_tickets.csv in it",
+          "Download the starter file validate.py into it"
+        ],
+        "steps": [
+          {
+            "do": "Open validate.py and do the first TODO: the accuracy of each fold, for KFold without shuffling and for shuffled StratifiedKFold, on the rows sorted by label."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python validate.py",
+            "lang": "bash",
+            "see": "KFold, no shuffle: [0.024 0.619 0.857 0.929 0.94 ], wildly uneven. StratifiedKFold, shuffled: [0.714 0.786 0.75  0.714 0.786]."
+          },
+          {
+            "do": "Do the second TODO: repeated stratified k-fold.",
+            "see": "Five shuffles give means from 0.7 to 0.717; Repeated 5 x 10: mean 0.704, std 0.067."
+          },
+          {
+            "do": "Do the third TODO: cross_validate with training scores.",
+            "see": "Logistic regression: train 0.730, test 0.711. The unpruned tree: train 1.000, test 0.555."
+          },
+          {
+            "do": "Do the fourth TODO: KFold against GroupKFold on the sessions data.",
+            "see": "KFold accuracy 0.955; GroupKFold accuracy 0.487."
+          },
+          {
+            "do": "Read the time splits at the end.",
+            "see": "Training windows of 3, 6 and 9 months, each tested on the next 3."
+          },
+          {
+            "do": "Write three sentences: why the first fold of the sorted KFold scores 0.024, what a standard deviation of 0.067 means when comparing two models, and why GroupKFold's 0.487 is the honest number."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Unshuffled k-fold on sorted rows gives uneven, misleading folds.",
+            "look_for": [
+              "KFold, no shuffle          [0.024 0.619 0.857 0.929 0.94 ]"
+            ]
+          },
+          {
+            "text": "The spread of the estimate is measured with repeated stratified k-fold.",
+            "look_for": [
+              "Repeated 5 x 10: mean 0.704, std 0.067"
+            ]
+          },
+          {
+            "text": "Training and test scores expose the overfitting tree.",
+            "look_for": [
+              "unpruned tree        train ROC AUC 1.000  test ROC AUC 0.555"
+            ]
+          },
+          {
+            "text": "GroupKFold removes the optimism of mixing a player's sessions across folds.",
+            "look_for": [
+              "KFold accuracy 0.955",
+              "GroupKFold accuracy 0.487"
+            ]
+          },
+          {
+            "text": "Time-ordered splits are printed.",
+            "look_for": [
+              "train [0, 1, 2, 3, 4, 5, 6, 7, 8] test [9, 10, 11]"
+            ]
+          },
+          {
+            "text": "The sentences explain the all-one-class first fold, compare a difference with the 0.067 spread, and explain why groups must stay together.",
+            "look_for": [
+              "group"
+            ]
+          }
+        ],
+        "submit": "Paste your validate.py, its output and your three sentences.",
+        "hints": [
+          "cross_val_score(model, X, y, cv=splitter) accepts any splitter object.",
+          "GroupKFold needs the groups: cross_val_score(..., cv=GroupKFold(n_splits=5), groups=groups).",
+          "r = cross_validate(...) gives r['train_roc_auc'] and r['test_roc_auc'], one value per fold."
+        ],
+        "files": [
+          {
+            "path": "validate.py",
+            "content": "\"\"\"Validate properly: k-fold v stratified folds, the spread of scores, train v test scores, groups and time.\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import (GroupKFold, KFold, RepeatedStratifiedKFold, StratifiedKFold, TimeSeriesSplit,\n                                     cross_val_score, cross_validate)\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.tree import DecisionTreeClassifier\n\ndf = pd.read_csv(\"season_tickets.csv\")\nX, y = df[[\"tenure\", \"age\", \"distance_km\", \"price\", \"matches\"]], df[\"renewed\"]\nmodel = make_pipeline(SimpleImputer(strategy=\"median\", add_indicator=True), StandardScaler(), LogisticRegression())\n\nprint(\"1. The rows sorted by the label, then split without and with stratification and shuffling:\")\norder = np.argsort(y.to_numpy(), kind=\"stable\")\nXs, ys = X.iloc[order], y.iloc[order]\n# TODO: print the accuracy of each of the 5 folds for KFold(n_splits=5) (no shuffling) and for\n#       StratifiedKFold(n_splits=5, shuffle=True, random_state=0), with cross_val_score(model, Xs, ys, cv=...)\npass\n\nprint(\"2. How much the estimate moves:\")\nmeans = [cross_val_score(model, X, y, cv=StratifiedKFold(5, shuffle=True, random_state=s), scoring=\"roc_auc\").mean()\n         for s in range(5)]\nprint(\"   5-fold ROC AUC with five different shuffles:\", np.round(means, 3))\n# TODO: run RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=0) and print the mean and standard\n#       deviation of its 50 ROC AUC scores:  f\"   Repeated 5 x 10: mean {m:.3f}, std {s:.3f}\"\npass\n\nprint(\"3. Several metrics, with training scores:\")\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\ntree = make_pipeline(SimpleImputer(strategy=\"median\"), DecisionTreeClassifier(random_state=0))\n# TODO: for the logistic model and the unpruned tree, run cross_validate(..., cv=cv, scoring=[\"roc_auc\", \"accuracy\"],\n#       return_train_score=True) and print the mean train and test ROC AUC\npass\n\nprint(\"4. Groups: 40 made-up players, 10 training sessions each, one label per player\")\nrng = np.random.RandomState(0)\nprofile = rng.normal(size=(40, 5))\ngroups = np.repeat(np.arange(40), 10)\nXg = profile[groups] + rng.normal(scale=0.3, size=(400, 5))\nyg = rng.randint(0, 2, 40)[groups]          # the label has nothing to do with the features\nknn = KNeighborsClassifier(n_neighbors=1)\n# TODO: compare KFold(n_splits=5, shuffle=True, random_state=0) with GroupKFold(n_splits=5), passing groups=groups\npass\n\nprint(\"5. Time: 12 months, 3 splits\")\nfor train, test in TimeSeriesSplit(n_splits=3).split(np.arange(12)):\n    print(\"   train\", train.tolist(), \"test\", test.tolist())\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Hyperparameter Tuning",
+      "summary": "Search systematically for the best model settings: exhaustive grid search, randomised search over distributions, successive halving, and nested cross-validation to measure the whole tuning process honestly.",
+      "instructor": "zawadi-mutembo",
+      "lessons": [
+        {
+          "title": "Hyperparameters and grid search",
+          "minutes": 12,
+          "objectives": [
+            "Tell hyperparameters from learned parameters",
+            "Run GridSearchCV and read its results"
+          ],
+          "key_points": [
+            "Hyperparameters are set before training, in the constructor, such as C, max_depth or n_neighbors; parameters such as coef_ are learned by fit. get_params() lists the hyperparameters, and pipeline steps prefix their names, as in svc__C.",
+            "GridSearchCV tries all combinations of the values given and scores each by cross-validation: 3 values of C and 3 of gamma with 5 folds mean 45 fits. With refit=True, the default, it then refits the best combination on all the data.",
+            "best_params_, best_score_ and best_estimator_ give the winner, and cv_results_ holds every candidate's mean and standard deviation, worth reading because near-ties are common.",
+            "Space values of C, gamma, alpha or learning rates on a log scale, such as 0.01, 0.1, 1 and 10, and widen the grid when the best value sits on its edge.",
+            "A grid grows multiplicatively with every hyperparameter, so it suits a few hyperparameters with a few values each; set scoring to the metric that matters, and n_jobs=-1 to use every core."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "A grid for an SVM",
+            "steps": [
+              {
+                "do": "Look at a hyperparameter before fitting and a learned parameter after.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.linear_model import LogisticRegression\n\nX, y = load_breast_cancer(return_X_y=True)\nmodel = LogisticRegression(C=0.5, max_iter=5000)\nprint(model.get_params()[\"C\"], hasattr(model, \"coef_\"))\nmodel.fit(X, y)\nprint(model.coef_.shape, hasattr(model, \"coef_\"))",
+                "lang": "python",
+                "see": "0.5 False, then (1, 30) True: coef_ only exists after fit."
+              },
+              {
+                "do": "Search 3 × 3 values of C and gamma with 5 folds.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import pandas as pd\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.svm import SVC\n\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\ngrid = {\"svc__C\": [0.1, 1, 10], \"svc__gamma\": [0.001, 0.01, 0.1]}\nsearch = GridSearchCV(make_pipeline(StandardScaler(), SVC()), grid, cv=cv, scoring=\"roc_auc\").fit(X, y)\nprint(len(search.cv_results_[\"params\"]) * cv.get_n_splits(), search.best_params_, round(search.best_score_, 4))",
+                "lang": "python",
+                "see": "45 fits; the best is C=10, gamma=0.01, with a ROC AUC of 0.9958. C=10 is the grid's largest value: widen it."
+              },
+              {
+                "do": "Read the top three candidates.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "top = pd.DataFrame(search.cv_results_).sort_values(\"rank_test_score\")\nprint(top[[\"param_svc__C\", \"param_svc__gamma\", \"mean_test_score\", \"std_test_score\"]].head(3).round(4).to_string(index=False))",
+                "lang": "python",
+                "see": "0.9958, 0.9949 and 0.9949, each with a spread of about 0.005: a near-tie."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Randomised search and successive halving",
+          "minutes": 12,
+          "objectives": [
+            "Search distributions with RandomizedSearchCV",
+            "Save time with successive halving"
+          ],
+          "key_points": [
+            "RandomizedSearchCV samples n_iter candidates from distributions instead of trying every combination, so its cost is set by the budget, not by the number of hyperparameters.",
+            "For the same budget, random search tries more distinct values of each hyperparameter than a grid, which helps when only a few of them really matter.",
+            "Give continuous hyperparameters distributions, such as scipy.stats.loguniform(0.01, 100) for C and randint(3, 32) for a number of leaves, and set random_state for repeatable samples.",
+            "Successive halving (HalvingGridSearchCV and HalvingRandomSearchCV, after from sklearn.experimental import enable_halving_search_cv) starts many candidates on a small budget, such as a few samples, and keeps the best third (factor=3) for each bigger round.",
+            "On the season-ticket data in the lab, a grid of 18 candidates and a random search of 18, the same number of fits, reach similar best scores: 0.694 and 0.687."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Random draws and halving rounds",
+            "steps": [
+              {
+                "do": "Draw six values of C from a log-uniform distribution.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from scipy.stats import loguniform\n\nprint(loguniform(1e-3, 1e3).rvs(size=6, random_state=0).round(4))",
+                "lang": "python",
+                "see": "Values spread across orders of magnitude, from 0.3483 to 19.5495."
+              },
+              {
+                "do": "Search nine random candidates for an SVM.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.model_selection import RandomizedSearchCV, StratifiedKFold\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.svm import SVC\n\nX, y = load_breast_cancer(return_X_y=True)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\ndists = {\"svc__C\": loguniform(0.01, 100), \"svc__gamma\": loguniform(1e-4, 1)}\nsearch = RandomizedSearchCV(make_pipeline(StandardScaler(), SVC()), dists, n_iter=9, cv=cv, scoring=\"roc_auc\",\n                            random_state=0).fit(X, y)\nprint({k: round(float(v), 4) for k, v in search.best_params_.items()}, round(search.best_score_, 4))",
+                "lang": "python",
+                "see": "C=14.6859 and gamma=0.013, values no grid listed, with a ROC AUC of 0.9959."
+              },
+              {
+                "do": "Run successive halving over 16 candidates.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.experimental import enable_halving_search_cv  # noqa: F401\nfrom sklearn.model_selection import HalvingGridSearchCV\n\ngrid = {\"svc__C\": [0.1, 1, 10, 100], \"svc__gamma\": [0.0001, 0.001, 0.01, 0.1]}\nhalving = HalvingGridSearchCV(make_pipeline(StandardScaler(), SVC()), grid, cv=cv, factor=3, random_state=0).fit(X, y)\nprint(halving.n_candidates_, halving.n_resources_, halving.best_params_)",
+                "lang": "python",
+                "see": "16, 6 and then 2 candidates, trained on 63, 189 and 567 samples."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Nested cross-validation",
+          "minutes": 10,
+          "objectives": [
+            "Explain why best_score_ is optimistic",
+            "Evaluate a tuning process with nested cross-validation"
+          ],
+          "key_points": [
+            "best_score_ is biased upwards: the same folds both choose the hyperparameters and score them, so with many candidates some win partly by luck.",
+            "Nested cross-validation evaluates the tuning process: an outer loop splits the data, an inner GridSearchCV tunes on each outer training set, and the outer test folds, never seen by the tuning, give the estimate: cross_val_score(GridSearchCV(...), X, y, cv=outer).",
+            "On random data with no signal, a 20-candidate SVM grid reports a best_score_ of 0.525 while nested cross-validation gives 0.475; on the season-ticket data the grid's 0.694 becomes 0.659 nested.",
+            "Nested cross-validation estimates how well the whole procedure does, not one set of hyperparameters; the final model is then tuned with the same procedure on all the training data.",
+            "It is expensive, outer folds × inner folds × candidates fits (5 × 5 × 20 = 500 here), so use it to report performance and compare procedures rather than at every step."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Tuning on pure noise",
+            "steps": [
+              {
+                "do": "Tune an SVM on 120 rows of random features and a random label.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_score\nfrom sklearn.svm import SVC\n\nrng = np.random.RandomState(0)\nX, y = rng.normal(size=(120, 10)), rng.randint(0, 2, 120)\ngrid = {\"C\": [0.01, 0.1, 1, 10, 100], \"gamma\": [0.001, 0.01, 0.1, 1]}\ninner = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nsearch = GridSearchCV(SVC(), grid, cv=inner).fit(X, y)\nprint(round(search.best_score_, 3))",
+                "lang": "python",
+                "see": "0.525: above chance, by luck alone."
+              },
+              {
+                "do": "Score the same tuning procedure with nested cross-validation, and count the fits.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "outer = StratifiedKFold(n_splits=5, shuffle=True, random_state=1)\nnested = cross_val_score(GridSearchCV(SVC(), grid, cv=inner), X, y, cv=outer)\nprint(nested.round(3), round(nested.mean(), 3))\nprint(outer.get_n_splits() * inner.get_n_splits() * len(search.cv_results_[\"params\"]))",
+                "lang": "python",
+                "see": "Outer scores averaging 0.475, the honest answer for data with no signal, from 500 fits."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Tune a gradient boosting pipeline",
+        "tool": "JupyterLab",
+        "minutes": 75,
+        "goal": "Tune HistGradientBoostingClassifier inside a full preprocessing pipeline for the season-ticket data, with a grid and with randomised search on the same budget, then measure the tuned procedure honestly with nested cross-validation.",
+        "setup": [
+          "Your lab folder from the module 1 lab, with season_tickets.csv in it",
+          "Download the starter file tune.py into it; the nested part takes about a minute"
+        ],
+        "steps": [
+          {
+            "do": "Open tune.py, then run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python tune.py",
+            "lang": "bash",
+            "see": "Default settings: ROC AUC 0.652; the TODO sections print nothing until you write them."
+          },
+          {
+            "do": "Do the grid TODO and rerun.",
+            "see": "Grid: 18 candidates, best 0.694 with learning_rate 0.03, max_leaf_nodes 4 and no L2 regularisation: small trees that learn slowly win on 420 rows."
+          },
+          {
+            "do": "Do the randomised-search TODO.",
+            "see": "Random: 18 candidates, best 0.687 with learning_rate 0.0818, max_leaf_nodes 3 and min_samples_leaf 36."
+          },
+          {
+            "do": "Do the nested cross-validation TODO.",
+            "see": "Nested CV: [0.619 0.739 0.64  0.676 0.62 ], mean 0.659, against the grid's best_score_ of 0.694."
+          },
+          {
+            "do": "Write three sentences: which number you would report as the tuned model's expected ROC AUC and why, why both searches chose small trees here, and how you would spend a bigger tuning budget."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The default model is scored first.",
+            "look_for": [
+              "Default settings: ROC AUC 0.652"
+            ]
+          },
+          {
+            "text": "The grid search covers 18 candidates.",
+            "look_for": [
+              "Grid: 18 candidates",
+              "best 0.694",
+              "'model__learning_rate': 0.03"
+            ]
+          },
+          {
+            "text": "The randomised search uses the same budget.",
+            "look_for": [
+              "Random: 18 candidates",
+              "best 0.687"
+            ]
+          },
+          {
+            "text": "Nested cross-validation measures the tuning procedure.",
+            "look_for": [
+              "Nested CV: [0.619 0.739 0.64  0.676 0.62 ], mean 0.659"
+            ]
+          },
+          {
+            "text": "The sentences report the nested estimate rather than best_score_, and explain why.",
+            "look_for": [
+              "nested"
+            ]
+          }
+        ],
+        "submit": "Paste your tune.py, its output and your three sentences.",
+        "hints": [
+          "Parameter names follow the pipeline: model__learning_rate is the learning_rate of the step named model.",
+          "loguniform and randint come from scipy.stats; RandomizedSearchCV draws from them with its random_state.",
+          "For nested cross-validation, pass the whole GridSearchCV object to cross_val_score as the model."
+        ],
+        "files": [
+          {
+            "path": "tune.py",
+            "content": "\"\"\"Tune a gradient boosting pipeline: grid search, randomised search with the same budget, then nested CV.\"\"\"\n\nimport time\n\nimport pandas as pd\nfrom scipy.stats import loguniform, randint\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.ensemble import HistGradientBoostingClassifier\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold, cross_val_score\nfrom sklearn.pipeline import Pipeline, make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder\n\ndf = pd.read_csv(\"season_tickets.csv\")\nX, y = df.drop(columns=[\"renewed\", \"seat_block\"]), df[\"renewed\"]\nprep = ColumnTransformer([\n    (\"num\", make_pipeline(SimpleImputer(strategy=\"median\", add_indicator=True), StandardScaler()),\n     [\"tenure\", \"age\", \"distance_km\", \"price\", \"matches\"]),\n    (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), [\"stand\", \"payment\", \"tier\"]),\n    (\"area\", TargetEncoder(cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=0)), [\"area\"]),\n])\npipe = Pipeline([(\"prep\", prep), (\"model\", HistGradientBoostingClassifier(random_state=0))])\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nprint(f\"Default settings: ROC AUC {cross_val_score(pipe, X, y, cv=cv, scoring='roc_auc').mean():.3f}\")\n\ngrid = {\"model__learning_rate\": [0.03, 0.1, 0.3], \"model__max_leaf_nodes\": [4, 8, 16],\n        \"model__l2_regularization\": [0.0, 1.0]}\n# TODO: run GridSearchCV(pipe, grid, cv=cv, scoring=\"roc_auc\") on X, y; print the number of candidates, the time it\n#       took, best_params_ and best_score_ (3 places)\npass\n\ndists = {\"model__learning_rate\": loguniform(0.01, 0.5), \"model__max_leaf_nodes\": randint(3, 32),\n         \"model__l2_regularization\": loguniform(1e-3, 10), \"model__min_samples_leaf\": randint(5, 60)}\n# TODO: run RandomizedSearchCV(pipe, dists, n_iter=18, cv=cv, scoring=\"roc_auc\", random_state=0) and print the same\npass\n\n# TODO: nested cross-validation: score GridSearchCV(pipe, grid, cv=cv, scoring=\"roc_auc\") itself with\n#       cross_val_score(..., cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=1), scoring=\"roc_auc\"),\n#       and compare its mean with the grid's best_score_\npass\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "scikit-learn Pipelines",
+      "summary": "Chain preprocessing and modelling so that every step runs in the right order on the right data: ColumnTransformer for mixed columns, leak-proof cross-validation, custom steps, tuning preprocessing and model together, and saving the whole workflow as one object.",
+      "instructor": "marisolo-garcia",
+      "lessons": [
+        {
+          "title": "Pipelines and ColumnTransformer for mixed data",
+          "minutes": 12,
+          "objectives": [
+            "Prepare numeric and categorical columns differently in one ColumnTransformer",
+            "Name and reach the parameters of nested steps"
+          ],
+          "key_points": [
+            "Pipelines encapsulate workflows: a Pipeline chains transformers and a final model, so fit runs every step in order on the training data, and predict applies the same fitted steps to new data.",
+            "ColumnTransformer sends different columns to different transformers, by name or with make_column_selector(dtype_include='number'); remainder='drop', the default, drops the other columns, and remainder='passthrough' keeps them.",
+            "set_output(transform='pandas') makes the steps return DataFrames with feature names, such as num__age and cat__tier_gold, and get_feature_names_out() lists them: the easiest way to check what the model sees.",
+            "Step names build parameter paths: make_pipeline names steps after their classes in lower case, so the imputer inside a ColumnTransformer's num step is columntransformer__num__simpleimputer__strategy.",
+            "A pipeline simplifies deployment: one object to fit, cross-validate, tune, save and load, with no preprocessing code to repeat at prediction time."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "One transformer for every column",
+            "steps": [
+              {
+                "do": "Prepare a small mixed table: impute and scale the numbers, one-hot encode the tier, drop the rest.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer, make_column_selector\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\ndf = pd.DataFrame({\"age\": [23, 41, np.nan, 35], \"price\": [320, 690, 480, 330],\n                   \"tier\": [\"bronze\", \"gold\", \"silver\", \"bronze\"], \"note\": [\"a\", \"b\", \"c\", \"d\"]})\nprep = ColumnTransformer([\n    (\"num\", make_pipeline(SimpleImputer(strategy=\"median\"), StandardScaler()), make_column_selector(dtype_include=\"number\")),\n    (\"cat\", OneHotEncoder(sparse_output=False), [\"tier\"]),\n], remainder=\"drop\")\nprep.set_output(transform=\"pandas\")\nprint(prep.fit_transform(df).round(2))",
+                "lang": "python",
+                "see": "Columns num__age, num__price, cat__tier_bronze, cat__tier_gold and cat__tier_silver; note is dropped."
+              },
+              {
+                "do": "Find the parameter paths of a nested step.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.linear_model import LogisticRegression\n\npipe = make_pipeline(prep, LogisticRegression())\nprint([name for name in pipe.get_params() if name.endswith(\"strategy\") or name.endswith(\"__C\")])",
+                "lang": "python",
+                "see": "['columntransformer__num__simpleimputer__strategy', 'logisticregression__C']"
+              },
+              {
+                "do": "Keep the other columns instead of dropping them.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "prep.set_params(remainder=\"passthrough\")\nprint(prep.fit_transform(df).columns.tolist())",
+                "lang": "python",
+                "see": "The same five columns plus remainder__note."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Leakage, and how pipelines prevent it",
+          "minutes": 12,
+          "objectives": [
+            "Recognise data leakage during cross-validation",
+            "Explain why preprocessing must be fitted inside each training fold"
+          ],
+          "key_points": [
+            "Data leakage is information from outside the training data, often from the test folds or the label itself, reaching the model during training, which makes scores look better than the model will do on new data.",
+            "Any step that learns from data, such as scaling, imputing, encoding, selecting features or resampling, leaks if it is fitted before the split. Pipelines prevent data leakage during CV: cross-validation refits every step on each training fold.",
+            "The size of a leak depends on how much the step learns: scaling the breast cancer data before cross-validation changes nothing measurable (0.9789 both ways), but choosing 20 of 5,000 random features on all 100 rows lifts cross-validated accuracy on a random label to 0.830, against 0.510 inside the pipeline.",
+            "Target leakage comes from features that wouldn't exist at prediction time, such as a 'renewal letter sent' column filled in after the outcome: one such column drives a cross-validated ROC AUC to 0.9995. Scores that look too good usually are.",
+            "Other leaks: duplicate rows split across folds, rows of one entity in both training and test (use groups), and future information in time series (use TimeSeriesSplit)."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "A harmless leak and a fatal one",
+            "steps": [
+              {
+                "do": "Scale before cross-validation, then inside the pipeline.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import StratifiedKFold, cross_val_score\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nX, y = load_breast_cancer(return_X_y=True)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nleaky = cross_val_score(LogisticRegression(max_iter=5000), StandardScaler().fit_transform(X), y, cv=cv).mean()\nclean = cross_val_score(make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000)), X, y, cv=cv).mean()\nprint(round(leaky, 4), round(clean, 4))",
+                "lang": "python",
+                "see": "0.9789 0.9789: a scaler learns too little to matter here, but the habit protects you when a step learns more."
+              },
+              {
+                "do": "Add a column that is only filled in after the outcome is known.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.metrics import roc_auc_score\nfrom sklearn.model_selection import cross_val_predict\n\nrng = np.random.RandomState(0)\nletter_sent = y * (rng.rand(len(y)) < 0.95)\nproba = cross_val_predict(make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000)), np.column_stack([X, letter_sent]), y,\n                          cv=cv, method=\"predict_proba\")[:, 1]\nprint(round(roc_auc_score(y, proba), 4))",
+                "lang": "python",
+                "see": "0.9995: nearly perfect, and useless, because the column won't exist when the prediction is needed."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Custom steps, tuning everything together, and saving",
+          "minutes": 12,
+          "objectives": [
+            "Write a custom transformer that learns in fit",
+            "Tune preprocessing choices and models together",
+            "Save and reload a fitted pipeline safely"
+          ],
+          "key_points": [
+            "FunctionTransformer wraps a fixed function, such as np.log1p, as a step; a custom transformer class with fit and transform, inheriting from BaseEstimator and TransformerMixin, handles steps that learn from data, such as clipping limits.",
+            "Learn state only in fit, from the data passed to it, and store it in attributes ending in an underscore; let __init__ only store hyperparameters, so that clone and get_params work and GridSearchCV can copy the step.",
+            "OneToOneFeatureMixin gives a custom transformer get_feature_names_out for one output column per input column, so it works with set_output(transform='pandas'); record feature_names_in_ in fit when the input has column names.",
+            "A pipeline can tune preprocessing and model together: a grid can change a step's settings (prep__num__simpleimputer__strategy), replace a step ('scale': [StandardScaler(), RobustScaler()]) or skip it ('passthrough'), and a list of grids can compare model families.",
+            "joblib.dump saves a fitted pipeline and joblib.load restores it; load files only from sources you trust, because loading can run code, and load with the scikit-learn version that saved it."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "A step of your own, and a grid over steps",
+            "steps": [
+              {
+                "do": "Write a transformer that learns each column's median in fit, and check that clone can copy it.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.base import BaseEstimator, OneToOneFeatureMixin, TransformerMixin, clone\n\n\nclass CentreOnMedian(OneToOneFeatureMixin, TransformerMixin, BaseEstimator):\n    \"\"\"Subtract each column's training median.\"\"\"\n\n    def fit(self, X, y=None):\n        self.median_ = np.median(np.asarray(X, dtype=float), axis=0)\n        self.n_features_in_ = np.asarray(X).shape[1]\n        return self\n\n    def transform(self, X):\n        return np.asarray(X, dtype=float) - self.median_\n\n\nstep = CentreOnMedian().fit([[1.0], [2.0], [10.0]])\nprint(step.median_, step.transform([[5.0]]), clone(step).get_params())",
+                "lang": "python",
+                "see": "[2.] [[3.]] {}: the median learned in fit, applied in transform; no hyperparameters to copy."
+              },
+              {
+                "do": "Let one grid choose the scaler, C, and even the model family.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.preprocessing import RobustScaler, StandardScaler\n\nX, y = load_breast_cancer(return_X_y=True)\npipe = Pipeline([(\"scale\", StandardScaler()), (\"model\", LogisticRegression(max_iter=5000))])\ngrid = [{\"scale\": [StandardScaler(), RobustScaler()], \"model__C\": [0.1, 1]},\n        {\"scale\": [\"passthrough\"], \"model\": [RandomForestClassifier(random_state=0)]}]\nsearch = GridSearchCV(pipe, grid, cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=0), scoring=\"roc_auc\").fit(X, y)\nprint(search.best_params_, round(search.best_score_, 4))",
+                "lang": "python",
+                "see": "{'model__C': 0.1, 'scale': RobustScaler()} 0.9955: logistic regression with RobustScaler beat the forest."
+              },
+              {
+                "do": "Save the best pipeline, load it back, and note the version that saved it.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import joblib\nimport sklearn\n\njoblib.dump(search.best_estimator_, \"model.joblib\")\nprint(type(joblib.load(\"model.joblib\")).__name__, sklearn.__version__)",
+                "lang": "python",
+                "see": "Pipeline, and your scikit-learn version: keep it with the saved file."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build a leak-proof pipeline",
+        "tool": "JupyterLab",
+        "minutes": 75,
+        "goal": "Watch feature selection leak through cross-validation, then build, tune, test once and save a complete season-ticket pipeline with a custom clipping step, pandas output and target encoding.",
+        "setup": [
+          "Your lab folder from the module 1 lab, with season_tickets.csv in it",
+          "Download the starter file pipeline.py into it"
+        ],
+        "steps": [
+          {
+            "do": "Open pipeline.py and do the first TODO: feature selection inside a pipeline. Run the script.",
+            "code": "python pipeline.py",
+            "lang": "bash",
+            "see": "Selected before CV: accuracy 0.830; selected inside the pipeline: 0.510. Then NotImplementedError from ClipQuantiles."
+          },
+          {
+            "do": "Write ClipQuantiles.fit and transform, learning the limits in fit."
+          },
+          {
+            "do": "Rerun and read the prepared training data.",
+            "see": "Prepared training data: (315, 17), with names from distance__distance_km to area__area, including num__missingindicator_age and num__missingindicator_matches."
+          },
+          {
+            "do": "Do the tuning TODO.",
+            "see": "Best: C=1 with median imputation, CV ROC AUC 0.745; Test ROC AUC, once: 0.632."
+          },
+          {
+            "do": "Read the last line.",
+            "see": "Renewal probabilities [0.021 0.963]: a new bronze member paying cash who lives 85 km away, and a gold member of 12 seasons in the Family stand from an area the model has never seen."
+          },
+          {
+            "do": "Write three sentences: why the test score is lower than the cross-validated one and which you trust more here, why ClipQuantiles must learn its limits in fit, and what the model does with the unseen area Z99."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Feature selection fitted before cross-validation leaks; inside the pipeline it doesn't.",
+            "look_for": [
+              "Selected before CV: accuracy 0.830; selected inside the pipeline: 0.510"
+            ]
+          },
+          {
+            "text": "The full ColumnTransformer, with the custom step, produces named columns.",
+            "look_for": [
+              "Prepared training data: (315, 17)",
+              "num__missingindicator_matches",
+              "area__area"
+            ]
+          },
+          {
+            "text": "Preprocessing and model are tuned together on the training set, then tested once.",
+            "look_for": [
+              "'prep__num__simpleimputer__strategy': 'median'",
+              "CV ROC AUC 0.745",
+              "Test ROC AUC, once: 0.632"
+            ]
+          },
+          {
+            "text": "The saved pipeline reloads and predicts new members, including an unseen area.",
+            "look_for": [
+              "renewal probabilities for two new members: [0.021 0.963]"
+            ]
+          },
+          {
+            "text": "The sentences weigh a 105-row test set against cross-validation, explain fitting limits on training data only, and describe target encoding's fallback to the mean for unseen categories.",
+            "look_for": [
+              "test"
+            ]
+          }
+        ],
+        "submit": "Paste your pipeline.py, its output and your three sentences.",
+        "hints": [
+          "np.nanquantile ignores missing values when it learns the limits.",
+          "The grid's keys follow the step names: prep__num__simpleimputer__strategy and model__C.",
+          "TargetEncoder encodes a category it never saw, such as Z99, with the training target mean."
+        ],
+        "files": [
+          {
+            "path": "pipeline.py",
+            "content": "\"\"\"Build a leak-proof pipeline: see leakage happen, then prepare, tune, test and save the season-ticket model.\"\"\"\n\nimport joblib\nimport numpy as np\nimport pandas as pd\nfrom sklearn.base import BaseEstimator, OneToOneFeatureMixin, TransformerMixin\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.feature_selection import SelectKBest, f_classif\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_score, train_test_split\nfrom sklearn.pipeline import Pipeline, make_pipeline\nfrom sklearn.preprocessing import FunctionTransformer, OneHotEncoder, OrdinalEncoder, StandardScaler, TargetEncoder\n\nprint(\"1. Leakage: 100 rows of 5,000 random features and a random label\")\nrng = np.random.RandomState(0)\nX_noise, y_noise = rng.normal(size=(100, 5000)), rng.randint(0, 2, 100)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nchosen = SelectKBest(f_classif, k=20).fit_transform(X_noise, y_noise)   # chosen using ALL the labels\nwrong = cross_val_score(LogisticRegression(), chosen, y_noise, cv=cv).mean()\n# TODO: score make_pipeline(SelectKBest(f_classif, k=20), LogisticRegression()) on X_noise, y_noise the same way\npass\nprint(f\"   Selected before CV: accuracy {wrong:.3f}; selected inside the pipeline: {right:.3f}\")\n\n\nclass ClipQuantiles(OneToOneFeatureMixin, TransformerMixin, BaseEstimator):\n    \"\"\"Clip each column to the low and high quantiles learned in fit, from the training data only.\"\"\"\n\n    def __init__(self, low=0.01, high=0.99):\n        self.low, self.high = low, high\n\n    def fit(self, X, y=None):\n        # TODO: store np.nanquantile(X, self.low, axis=0) in self.low_ and the high quantile in self.high_\n        if hasattr(X, \"columns\"):  # remember the column names, so that pandas output keeps them\n            self.feature_names_in_ = np.asarray(X.columns, dtype=object)\n        X = np.asarray(X, dtype=float)\n        self.n_features_in_ = X.shape[1]\n        raise NotImplementedError\n        return self\n\n    def transform(self, X):\n        raise NotImplementedError\n\n\ndf = pd.read_csv(\"season_tickets.csv\")\nX, y = df.drop(columns=[\"renewed\", \"seat_block\"]), df[\"renewed\"]\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\nprep = ColumnTransformer([\n    (\"distance\", make_pipeline(ClipQuantiles(), FunctionTransformer(np.log1p, feature_names_out=\"one-to-one\"),\n                               StandardScaler()), [\"distance_km\"]),\n    (\"num\", make_pipeline(SimpleImputer(strategy=\"median\", add_indicator=True), StandardScaler()),\n     [\"tenure\", \"age\", \"price\", \"matches\"]),\n    (\"nominal\", OneHotEncoder(handle_unknown=\"ignore\", sparse_output=False), [\"stand\", \"payment\"]),\n    (\"tier\", OrdinalEncoder(categories=[[\"bronze\", \"silver\", \"gold\"]]), [\"tier\"]),\n    (\"area\", TargetEncoder(cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=0)), [\"area\"]),\n])\nprep.set_output(transform=\"pandas\")\nprint(\"2. Prepared training data:\", prep.fit_transform(X_train, y_train).shape)\nprint(\"  \", list(prep.get_feature_names_out()))\n\npipe = Pipeline([(\"prep\", prep), (\"model\", LogisticRegression(max_iter=1000))])\ngrid = {\"prep__num__simpleimputer__strategy\": [\"mean\", \"median\"], \"model__C\": [0.03, 0.1, 0.3, 1, 3]}\n# TODO: tune pipe with GridSearchCV(pipe, grid, cv=cv, scoring=\"roc_auc\") on the TRAINING set; print best_params_\n#       and best_score_, then score the best model once on the test set with search.score(X_test, y_test)\npass\n\njoblib.dump(search.best_estimator_, \"renewal_model.joblib\")\nloaded = joblib.load(\"renewal_model.joblib\")\nnew = pd.DataFrame({\"tenure\": [1, 12], \"age\": [23, None], \"distance_km\": [85.0, 4.2], \"price\": [330, 700],\n                    \"matches\": [None, 17], \"stand\": [\"North\", \"Family\"], \"tier\": [\"bronze\", \"gold\"],\n                    \"payment\": [\"cash\", \"direct_debit\"], \"area\": [\"Z03\", \"Z99\"]})\nprint(\"4. Saved and reloaded; renewal probabilities for two new members:\", loaded.predict_proba(new)[:, 1].round(3))\n"
+          }
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Scaling, skew, missing values and categorical encoding: finish the module 1 and 2 labs on the season-ticket data.",
+      "modules": [
+        1,
+        2
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Cross-validation techniques and hyperparameter tuning, including nested cross-validation: finish the module 3 and 4 labs.",
+      "modules": [
+        3,
+        4
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Pipelines: ColumnTransformer, leakage, custom steps and saving; finish the module 5 lab.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Build the robust pipeline capstone on the enrolments data, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Robust pipeline construction",
+    "minutes": 360,
+    "brief": "Build and tune a complete scikit-learn pipeline that predicts whether a learner completes an online course, from enrolments.csv: 360 made-up learners with their weekly study hours, earlier courses, age, country, device, sign-up month, whether they paid, their average quiz score and their forum posts. The data is messy on purpose: missing ages and quiz scores (and a missing quiz score may itself be telling), skewed hours and post counts, 24 countries of very different sizes, and a cyclical month. Hold out a stratified test set first. Build one Pipeline whose ColumnTransformer handles every column, with a reason for each choice: imputation, with indicators where missingness may matter; transforms for skew; scaling; one-hot encoding for device and paid; target encoding or grouping for country; and sine and cosine features for the month. Compare at least two model families, tune their hyperparameters and at least one preprocessing choice with GridSearchCV or RandomizedSearchCV, and report the tuned procedure's performance with nested cross-validation on the training set. Only then fit the final model, score it once on the test set and save it with joblib. Finally, show with one deliberate experiment how a leak, such as target encoding or imputation fitted before the split, would have inflated your scores.",
+    "deliverables": [
+      "Your code: the split, the ColumnTransformer and Pipeline, the searches, nested cross-validation, the single test and the saved model",
+      "A table of each model family's nested cross-validation ROC AUC, mean and standard deviation",
+      "The chosen preprocessing and hyperparameters, with the test-set ROC AUC and a classification report",
+      "The leakage experiment: the same model scored with a step fitted before the split, and the difference it makes",
+      "A report of 400 to 700 words explaining each preprocessing choice, the evaluation, and the limits of a 90-row test set"
+    ],
+    "rubric": [
+      {
+        "name": "No leakage",
+        "points": 25,
+        "description": "Every learned step is inside the pipeline, the test set is held out from the start and used once, and target encoding uses cross fitting."
+      },
+      {
+        "name": "Preprocessing choices",
+        "points": 20,
+        "description": "Every column is handled appropriately (missingness, skew, scale, categories and the cyclical month), with a reason for each choice."
+      },
+      {
+        "name": "Tuning and model comparison",
+        "points": 20,
+        "description": "At least two model families tuned with cross-validation over sensible search spaces, including at least one preprocessing choice."
+      },
+      {
+        "name": "Honest evaluation",
+        "points": 20,
+        "description": "Nested cross-validation reported with its spread, the single test score read in light of the small test set, and the leakage experiment shown and explained."
+      },
+      {
+        "name": "Code and report",
+        "points": 15,
+        "description": "Reproducible code with random_state set throughout, a saved model that reloads and predicts, and a clear, measured report."
+      }
+    ],
+    "submit": "Paste your code, its output (the nested cross-validation table, best settings, test results and leakage experiment) and your report.",
+    "files": [
+      {
+        "path": "robust_pipeline.py",
+        "content": "\"\"\"Capstone starter: a robust, leak-proof pipeline that predicts course completion. Fill in the TODOs, then extend it.\"\"\"\n\nimport joblib\nimport numpy as np\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import classification_report\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_score, train_test_split\nfrom sklearn.pipeline import Pipeline, make_pipeline\nfrom sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler, TargetEncoder\n\ndf = pd.read_csv(\"enrolments.csv\")\nX, y = df.drop(columns=\"completed\"), df[\"completed\"]\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\n\n\ndef month_features(months):\n    \"\"\"The month as a point on a circle, so that December sits next to January.\"\"\"\n    angle = 2 * np.pi * (np.asarray(months, dtype=float) - 1) / 12\n    return np.column_stack([np.sin(angle), np.cos(angle)])\n\n\n# TODO: one ColumnTransformer for every column: impute (with indicators where missingness may carry meaning), take\n#       logs of the skewed hours and posts, scale the numbers, one-hot encode device and paid, target-encode country,\n#       and turn signup_month into month_features with FunctionTransformer\nprep = None\npipe = Pipeline([(\"prep\", prep), (\"model\", LogisticRegression(max_iter=1000))])\ngrid = {\"model__C\": [0.01, 0.1, 1, 10]}  # TODO: widen the search, and try at least one other model family\n\n# TODO: nested cross-validation of the whole tuning procedure on the training set, then the tuning itself, then one\n#       test-set score, a classification report and the saved model\npass\n"
+      },
+      {
+        "path": "enrolments.csv",
+        "content": "hours_per_week,prior_courses,age,country,device,signup_month,paid,quiz_avg,forum_posts,completed\n3.6,2,45,IN,mobile,1,no,37.1,3,1\n3.4,0,38,GH,laptop,9,yes,,0,0\n6.9,2,28,GB,mobile,3,yes,86.2,0,1\n1.7,2,26,NG,laptop,8,no,40.0,6,1\n5.7,0,29,GB,mobile,9,yes,85.8,0,1\n1.3,2,39,MX,laptop,3,no,74.5,2,1\n3.2,1,22,NG,mobile,12,yes,72.8,7,1\n3.2,4,35,IN,mobile,11,no,82.5,0,0\n7.2,1,39,VN,laptop,11,no,55.5,0,0\n3.6,1,37,IN,laptop,1,no,77.2,1,1\n2.5,4,33,GB,mobile,7,no,61.2,0,0\n8.4,4,18,ZA,tablet,8,no,77.2,1,1\n9.6,1,38,NG,mobile,2,yes,40.3,9,1\n2.4,2,45,DE,mobile,1,yes,56.1,1,1\n5.6,3,41,PK,laptop,10,no,67.8,1,1\n2.8,2,32,PK,mobile,8,yes,50.8,1,0\n4.0,3,26,US,laptop,9,yes,65.9,2,1\n4.3,1,25,VN,laptop,3,no,61.1,0,0\n1.7,3,29,VN,laptop,1,no,72.8,1,1\n3.8,2,,NG,tablet,11,yes,,1,0\n1.9,1,17,PK,tablet,1,no,63.8,1,0\n2.0,2,17,DE,mobile,7,no,,0,0\n2.8,1,24,PK,laptop,5,yes,76.7,0,1\n1.1,0,32,ZA,laptop,1,no,43.3,3,0\n1.5,1,40,BR,mobile,6,no,59.0,0,0\n4.2,2,49,VN,laptop,8,yes,76.3,0,1\n5.4,3,38,PK,mobile,2,yes,57.7,2,1\n6.1,0,38,BR,mobile,11,yes,90.3,5,1\n2.8,1,51,PK,tablet,1,no,53.2,1,0\n5.6,1,28,MX,mobile,9,no,69.6,2,0\n9.4,1,48,MX,mobile,9,no,46.5,4,1\n7.4,2,44,MX,mobile,11,no,68.9,1,0\n1.6,2,31,PK,laptop,3,no,55.7,1,1\n1.3,2,37,DE,mobile,12,yes,73.5,0,1\n4.7,2,,US,mobile,5,no,66.9,10,0\n7.7,2,32,PH,mobile,12,yes,48.8,5,1\n3.6,2,40,FR,mobile,7,no,59.0,2,0\n6.5,0,34,DE,laptop,9,no,,0,0\n4.3,2,38,ES,mobile,8,yes,82.5,0,1\n4.2,2,34,VN,tablet,3,no,40.3,4,1\n4.4,2,32,ZA,tablet,4,no,77.5,1,1\n4.2,3,24,ID,laptop,8,yes,62.7,0,1\n2.8,2,42,DE,tablet,3,no,89.1,2,1\n11.1,0,,VN,mobile,11,yes,31.2,0,1\n6.4,1,38,VN,laptop,2,no,,3,1\n2.6,0,24,IN,laptop,8,no,56.8,5,0\n3.1,4,,GB,laptop,12,no,60.7,0,1\n2.0,2,39,ID,laptop,6,yes,49.8,1,1\n4.9,1,51,ID,mobile,4,yes,47.4,0,0\n1.6,1,36,VN,laptop,5,no,,0,0\n3.0,1,22,IN,laptop,6,yes,57.9,1,1\n5.7,2,38,ES,laptop,11,no,89.4,3,1\n5.1,2,19,VN,mobile,6,no,,0,0\n5.2,2,37,US,mobile,11,no,54.5,1,1\n1.8,1,48,VN,laptop,1,yes,70.7,0,1\n5.8,3,36,VN,laptop,5,no,67.8,0,1\n3.4,0,22,NG,laptop,7,no,58.9,2,1\n8.1,0,38,VN,mobile,8,yes,90.2,0,1\n3.1,0,25,NG,laptop,5,no,77.5,0,0\n10.1,3,28,BR,mobile,6,yes,77.5,1,1\n4.7,2,18,VN,laptop,9,no,76.7,4,1\n5.7,0,30,TR,laptop,1,no,80.7,1,1\n2.9,0,34,IN,laptop,12,no,52.7,3,1\n2.9,2,41,IN,laptop,11,no,42.2,7,1\n2.9,1,39,BR,laptop,4,no,40.6,1,0\n6.7,2,,VN,mobile,10,yes,42.7,8,0\n2.8,2,37,NG,mobile,11,no,48.1,3,0\n3.4,2,41,ZA,mobile,10,yes,57.6,1,0\n7.4,0,32,JP,mobile,12,no,,7,0\n5.0,0,29,ZA,mobile,5,no,54.7,1,1\n3.1,2,31,JP,mobile,8,yes,,2,0\n4.4,0,22,PH,mobile,2,yes,52.6,4,1\n1.6,1,38,ES,tablet,4,no,77.0,2,1\n1.5,0,49,VN,laptop,4,no,64.7,3,1\n4.8,1,26,IN,laptop,2,yes,64.0,4,1\n19.2,3,35,NG,tablet,8,yes,53.4,5,1\n12.3,1,34,NG,mobile,3,no,,5,1\n16.6,0,20,FR,tablet,6,no,55.7,4,1\n5.2,0,42,NG,mobile,4,yes,50.7,1,0\n2.7,0,31,NG,laptop,1,no,54.6,0,1\n7.0,2,37,BR,laptop,9,no,47.4,1,0\n1.8,1,29,EG,laptop,5,no,56.3,2,0\n0.7,4,,DE,laptop,12,no,73.9,5,1\n4.7,1,28,NG,laptop,9,yes,,2,0\n6.8,0,45,BR,mobile,10,yes,,0,0\n5.6,2,33,NG,laptop,4,yes,45.4,0,1\n9.3,2,27,GB,tablet,12,yes,69.3,0,1\n5.8,0,34,US,laptop,6,yes,59.7,2,1\n4.5,1,35,IN,mobile,3,no,65.2,0,0\n1.9,1,37,US,laptop,4,no,,3,0\n3.4,0,,PK,laptop,11,no,44.5,0,0\n1.8,0,31,ES,tablet,8,yes,81.4,0,1\n2.9,1,19,VN,laptop,1,no,63.7,0,0\n11.5,1,24,GB,mobile,7,yes,54.6,1,1\n4.2,2,17,NG,mobile,9,yes,57.8,5,1\n4.6,3,32,VN,mobile,9,no,,0,0\n2.4,4,38,PL,mobile,9,yes,51.1,1,1\n17.5,0,46,GB,laptop,10,no,75.3,1,1\n1.1,2,22,VN,laptop,7,no,,4,0\n2.1,0,27,NG,mobile,1,yes,45.8,0,0\n6.5,2,,NG,mobile,7,yes,74.5,10,1\n2.3,0,29,JP,laptop,3,no,75.7,3,1\n2.3,1,35,US,laptop,3,no,50.0,4,0\n5.0,4,33,IT,mobile,10,yes,63.5,1,1\n5.7,0,,NG,mobile,7,no,81.0,0,1\n5.5,1,29,GB,mobile,2,yes,72.7,2,1\n2.2,2,46,PK,mobile,10,yes,66.1,6,1\n5.8,1,38,GB,laptop,3,yes,95.9,1,1\n1.8,3,48,BD,laptop,10,yes,47.4,0,1\n2.1,1,35,EG,laptop,5,no,,0,0\n2.0,1,24,US,mobile,11,no,43.6,0,1\n4.5,1,36,VN,laptop,10,no,71.1,4,1\n3.0,1,30,JP,mobile,3,no,,0,0\n2.1,0,34,BR,mobile,12,no,66.8,6,1\n3.7,2,43,US,mobile,7,no,,4,0\n2.0,1,52,VN,mobile,1,no,71.1,0,1\n2.7,2,35,GB,laptop,8,yes,80.4,2,1\n3.0,1,27,IN,mobile,1,no,,3,0\n2.6,2,37,NG,laptop,3,yes,42.0,7,1\n2.0,1,35,BD,tablet,12,no,,7,0\n1.7,0,31,VN,laptop,5,no,83.4,0,1\n7.1,2,28,IN,mobile,3,yes,73.4,6,1\n1.1,1,29,VN,mobile,1,yes,56.2,0,1\n4.4,2,29,ZA,mobile,6,no,52.7,3,1\n2.3,1,21,VN,mobile,5,yes,,0,0\n2.4,3,38,VN,laptop,11,no,86.3,2,1\n1.3,2,35,PK,mobile,10,yes,80.2,0,0\n3.6,1,33,TR,tablet,3,no,85.0,9,1\n2.6,1,17,ES,mobile,7,yes,,1,0\n6.9,2,30,VN,laptop,11,yes,69.6,6,1\n2.6,3,42,US,laptop,4,yes,88.7,0,1\n1.9,1,37,VN,laptop,10,yes,62.0,7,1\n1.8,1,24,PK,mobile,2,yes,58.4,0,1\n6.5,1,30,BD,mobile,10,no,56.0,0,1\n5.2,1,37,VN,laptop,2,no,,2,0\n3.0,0,29,IN,laptop,2,no,59.4,8,1\n9.9,2,37,VN,laptop,1,yes,47.5,3,1\n4.3,2,18,BD,laptop,4,no,61.7,0,1\n3.1,2,33,VN,tablet,8,no,,8,0\n5.0,2,38,DE,mobile,8,no,58.2,3,0\n1.9,4,17,VN,laptop,5,no,,2,0\n3.9,1,38,IN,mobile,1,yes,94.0,2,1\n1.9,1,25,EG,mobile,10,yes,72.7,0,1\n5.2,2,27,US,mobile,9,no,58.0,0,0\n5.4,0,26,VN,mobile,5,no,46.0,1,0\n3.4,1,,US,laptop,5,yes,67.1,2,0\n7.0,1,36,ES,laptop,5,yes,53.1,0,1\n2.4,1,28,EG,laptop,8,yes,58.5,2,1\n5.1,2,,IT,laptop,1,no,88.3,3,1\n3.4,0,33,PH,laptop,9,yes,88.9,2,1\n1.8,2,32,MX,laptop,4,no,55.0,1,0\n5.5,3,32,GB,mobile,1,no,,0,0\n10.2,3,17,GB,mobile,3,no,62.2,0,0\n23.5,0,40,PH,mobile,3,no,82.6,0,0\n3.9,3,36,US,laptop,12,no,63.4,0,1\n4.9,2,,FR,mobile,12,yes,74.0,0,1\n10.2,0,,DE,laptop,3,yes,,9,1\n2.0,0,,IN,laptop,7,no,61.0,0,0\n9.1,0,,IT,mobile,4,no,56.7,2,1\n1.4,2,30,NG,mobile,10,no,,0,0\n1.8,2,38,BR,mobile,4,yes,42.9,1,0\n3.2,1,25,KE,mobile,7,yes,,0,0\n2.9,1,37,VN,laptop,9,no,77.5,2,0\n6.6,3,22,PH,mobile,7,no,41.8,3,0\n1.9,0,36,MX,mobile,1,yes,90.7,0,1\n3.4,0,23,IN,mobile,5,no,,1,0\n3.0,1,17,VN,laptop,10,no,,5,0\n4.0,1,25,IT,laptop,2,no,82.6,3,1\n5.3,0,26,ZA,laptop,10,no,88.6,1,1\n6.4,3,22,MX,tablet,10,no,71.0,0,1\n4.4,3,33,PL,laptop,2,yes,91.8,1,1\n4.6,0,27,ES,mobile,2,yes,76.3,4,1\n3.8,1,46,NG,laptop,3,yes,67.5,1,1\n1.4,1,28,PK,mobile,4,no,36.0,3,0\n1.2,1,34,NG,laptop,4,no,79.1,0,1\n4.6,2,34,GH,laptop,7,no,56.7,0,1\n1.6,1,23,IN,mobile,5,no,65.9,10,0\n2.3,0,38,IN,mobile,10,no,55.7,6,0\n4.2,4,41,VN,laptop,11,no,58.4,1,1\n3.0,2,32,NG,laptop,5,no,52.5,3,0\n2.3,3,39,GB,laptop,9,no,91.7,2,1\n2.1,1,35,GB,laptop,6,yes,46.9,2,1\n3.8,1,17,NG,mobile,1,no,41.9,3,0\n8.9,2,39,VN,laptop,6,no,65.5,3,1\n1.3,2,17,NG,mobile,6,no,55.2,3,0\n3.2,3,32,MX,mobile,9,no,79.5,3,1\n6.5,3,21,VN,mobile,8,yes,75.5,0,1\n4.3,1,17,BR,mobile,5,no,70.0,0,1\n2.6,2,25,VN,mobile,7,no,,3,0\n3.7,2,19,NG,mobile,2,no,65.9,2,1\n4.7,3,34,TR,laptop,6,no,59.4,2,1\n6.8,0,29,EG,laptop,10,no,66.9,2,1\n1.4,2,17,MX,tablet,8,no,,2,0\n2.2,0,17,VN,mobile,2,no,68.2,2,1\n4.3,0,24,TR,tablet,4,no,66.2,0,0\n4.8,4,44,EG,laptop,10,no,56.9,1,0\n4.2,3,29,PH,laptop,10,yes,86.3,0,1\n4.7,3,38,VN,laptop,4,yes,78.0,0,1\n6.2,1,42,NG,laptop,2,yes,59.6,3,1\n4.8,2,34,BR,mobile,2,no,,13,1\n17.1,0,29,TR,mobile,5,no,74.3,0,1\n2.4,2,,US,mobile,10,no,88.5,1,1\n3.0,0,40,US,mobile,5,no,74.6,2,1\n1.5,2,40,EG,tablet,5,yes,48.4,11,1\n5.2,5,18,KE,laptop,9,yes,60.5,4,1\n4.2,3,24,NG,mobile,11,yes,80.1,2,1\n3.3,3,27,KR,mobile,7,no,61.8,2,1\n1.8,2,46,BR,mobile,12,no,95.1,0,1\n11.9,2,37,DE,mobile,4,no,73.5,2,1\n4.7,1,23,GB,mobile,1,no,51.2,3,1\n6.0,1,33,NG,laptop,6,no,81.9,4,1\n1.6,0,38,IT,mobile,2,no,55.1,1,1\n4.5,4,35,PH,laptop,2,yes,48.5,1,1\n5.0,2,37,BR,tablet,2,yes,83.3,3,1\n10.3,0,34,IN,mobile,1,no,86.7,1,1\n5.2,2,35,NG,mobile,10,no,,0,0\n7.0,3,,VN,laptop,9,yes,64.7,3,1\n1.4,1,39,VN,mobile,7,no,,6,0\n3.2,0,34,MX,laptop,1,no,54.2,0,1\n3.9,1,36,BD,laptop,8,no,76.6,2,1\n3.5,1,37,VN,mobile,7,yes,41.9,1,1\n3.1,3,40,GB,mobile,5,yes,64.1,3,1\n3.0,0,42,PK,laptop,8,no,,6,0\n8.0,2,17,PH,mobile,5,no,76.1,3,1\n2.8,2,49,FR,mobile,4,no,45.5,5,0\n5.7,1,17,KR,mobile,10,no,78.6,1,1\n5.6,3,24,NG,mobile,9,no,69.2,0,0\n3.0,0,,BD,laptop,9,no,50.4,0,1\n4.0,2,36,IN,mobile,7,no,54.9,5,0\n0.9,1,42,GB,mobile,6,yes,68.5,0,0\n2.5,1,44,GH,laptop,8,yes,90.7,0,0\n7.1,3,28,VN,mobile,8,no,73.6,2,1\n2.5,2,46,GB,mobile,12,yes,,1,0\n1.1,2,28,IT,laptop,12,yes,46.5,3,1\n6.6,3,27,CO,mobile,4,yes,83.8,0,1\n1.7,2,29,VN,mobile,6,no,75.6,8,1\n8.2,3,24,BD,laptop,12,no,66.0,2,1\n3.6,0,27,PK,laptop,10,no,47.4,1,1\n1.7,1,,VN,laptop,6,yes,62.4,4,1\n2.4,1,,KR,mobile,11,yes,64.3,3,1\n9.4,3,23,VN,laptop,3,yes,72.3,1,1\n4.1,2,22,VN,laptop,4,yes,,2,0\n3.5,0,39,BD,mobile,12,no,87.2,9,1\n4.0,1,34,VN,laptop,9,no,93.1,4,0\n3.3,4,22,NG,laptop,8,yes,67.1,0,1\n2.5,1,53,VN,mobile,11,yes,90.3,0,1\n5.3,3,28,ZA,laptop,1,no,60.7,0,1\n8.9,1,36,ES,mobile,3,yes,57.2,14,1\n3.9,2,46,VN,laptop,1,no,77.5,0,1\n9.5,3,27,VN,laptop,6,yes,72.6,1,1\n7.1,0,17,ZA,tablet,3,yes,77.3,1,1\n1.5,0,45,US,mobile,9,yes,23.3,3,0\n5.6,3,58,IN,tablet,4,no,76.8,6,1\n8.2,2,39,VN,laptop,10,no,76.1,13,1\n1.1,2,18,TR,mobile,7,no,72.4,2,1\n2.6,0,42,US,mobile,8,no,53.0,2,1\n4.8,4,,US,laptop,12,yes,81.1,0,1\n2.1,2,37,IN,laptop,10,yes,69.6,6,1\n3.6,0,25,JP,laptop,1,no,84.3,1,1\n3.0,1,18,NG,laptop,11,no,66.9,3,1\n2.0,2,25,MX,laptop,10,no,58.4,5,1\n3.2,1,28,VN,laptop,12,yes,62.3,0,1\n2.7,3,35,MX,laptop,5,no,,0,0\n3.4,4,18,VN,mobile,7,yes,80.3,1,1\n3.4,1,19,VN,mobile,7,no,54.6,4,1\n2.3,2,30,IN,mobile,10,no,67.8,0,1\n2.1,4,36,ES,mobile,8,no,58.1,0,0\n2.4,1,36,ID,mobile,9,yes,68.5,3,1\n4.6,0,26,VN,laptop,3,no,62.2,2,1\n1.8,1,31,PH,laptop,6,yes,48.1,2,1\n7.6,2,,IN,mobile,10,no,,1,1\n2.0,2,29,NG,mobile,1,no,55.3,0,1\n10.6,1,17,VN,laptop,6,yes,,3,0\n2.9,0,,VN,mobile,12,no,,2,0\n2.6,1,32,IT,mobile,1,yes,50.2,1,1\n2.5,3,,VN,mobile,7,yes,85.8,0,1\n4.5,0,35,ES,mobile,9,yes,66.5,1,1\n3.8,1,34,KR,mobile,8,no,66.5,1,0\n2.0,3,33,NG,laptop,12,yes,43.9,1,1\n3.8,1,43,JP,laptop,5,no,83.6,6,0\n4.6,2,24,NG,laptop,6,yes,81.1,2,1\n3.9,3,35,GB,mobile,4,yes,68.0,2,1\n7.6,3,26,JP,mobile,5,yes,,5,1\n0.8,1,21,VN,laptop,6,no,69.7,11,0\n3.1,2,41,JP,laptop,3,no,55.8,1,1\n2.4,0,35,VN,laptop,7,no,66.8,3,1\n4.6,2,36,VN,laptop,8,yes,66.9,6,1\n11.2,1,42,GB,mobile,5,no,77.6,2,0\n1.5,0,42,GH,mobile,7,no,68.9,3,0\n2.1,3,26,GH,laptop,1,yes,57.8,0,1\n3.1,0,17,VN,mobile,5,yes,66.1,2,1\n6.3,0,31,IN,tablet,7,no,49.1,1,0\n6.7,3,25,FR,mobile,1,no,52.1,0,1\n2.3,2,26,ES,mobile,2,no,47.6,1,1\n6.0,0,47,VN,mobile,12,no,71.6,5,1\n3.5,2,28,DE,laptop,10,yes,64.0,6,1\n6.7,1,29,GB,laptop,9,yes,53.3,6,1\n3.8,1,39,JP,mobile,2,yes,,2,0\n5.1,5,32,FR,tablet,6,no,70.6,0,1\n3.7,1,,NG,mobile,4,no,72.9,0,1\n2.2,1,50,NG,mobile,4,yes,,1,1\n2.1,1,22,VN,mobile,11,no,72.7,1,1\n4.9,2,,ID,laptop,4,yes,44.4,1,1\n2.4,0,,PL,laptop,6,no,,0,0\n2.0,0,45,VN,mobile,7,yes,,3,0\n3.2,0,23,IN,laptop,7,yes,100.0,0,1\n4.9,1,33,IN,mobile,3,no,97.2,2,1\n5.4,0,30,VN,mobile,6,yes,73.3,0,1\n2.4,2,19,GH,mobile,11,yes,75.3,5,1\n3.4,1,31,GB,laptop,4,no,56.5,6,1\n5.2,0,29,ZA,laptop,4,yes,59.6,6,0\n2.5,1,35,US,laptop,9,no,,1,0\n6.6,2,28,DE,laptop,12,yes,81.4,1,1\n4.0,1,29,TR,mobile,3,no,,2,0\n2.0,1,43,IN,mobile,2,no,63.2,1,1\n5.4,1,49,VN,laptop,10,no,97.9,0,1\n3.1,2,40,NG,laptop,2,no,52.1,3,0\n9.5,2,36,KR,laptop,12,no,,2,0\n3.4,0,20,GB,tablet,11,yes,76.3,0,1\n9.2,2,25,VN,mobile,5,yes,65.0,6,0\n14.5,0,40,EG,laptop,7,no,79.1,1,0\n5.3,1,39,IN,mobile,7,no,47.2,3,0\n5.1,4,31,ZA,laptop,3,no,58.8,3,1\n3.0,0,42,PK,mobile,3,no,64.3,0,0\n4.0,0,23,NG,mobile,5,no,58.7,0,0\n6.1,2,22,EG,mobile,9,no,83.3,2,1\n12.5,1,21,NG,mobile,4,no,48.0,1,0\n7.9,1,37,KR,mobile,9,no,49.5,1,1\n2.3,1,,KE,mobile,11,no,63.1,1,0\n8.1,3,32,FR,mobile,1,yes,81.0,1,1\n2.5,0,37,GB,mobile,10,yes,53.4,3,0\n11.2,2,37,FR,mobile,8,no,60.0,0,0\n7.8,1,17,VN,laptop,8,yes,59.0,2,1\n5.1,1,,IN,laptop,6,no,73.4,1,1\n1.8,2,43,DE,mobile,11,no,52.3,0,1\n5.5,2,33,EG,laptop,4,no,75.5,5,1\n2.5,3,33,VN,mobile,12,yes,96.0,0,1\n2.4,4,53,NG,laptop,1,no,74.6,2,1\n3.5,0,,US,mobile,7,yes,66.3,1,1\n1.4,1,31,ID,laptop,11,yes,52.3,3,1\n3.9,0,29,US,laptop,5,yes,89.3,6,1\n4.6,0,35,PK,laptop,7,no,76.8,1,1\n6.3,1,26,KE,laptop,11,yes,76.0,3,1\n2.6,2,32,NG,laptop,8,yes,64.2,5,1\n2.7,1,28,VN,laptop,11,yes,54.7,9,1\n8.2,2,41,US,mobile,12,no,63.3,2,1\n7.8,2,38,NG,laptop,7,no,77.1,2,1\n1.3,1,45,BR,laptop,10,no,82.1,4,1\n5.1,3,37,GB,tablet,8,no,39.5,1,0\n6.7,4,26,PH,laptop,4,no,46.2,0,1\n2.4,1,32,JP,laptop,12,no,,4,1\n6.6,2,32,IN,laptop,12,yes,55.1,3,1\n3.2,0,27,GB,laptop,11,no,62.4,0,0\n2.9,3,43,GB,mobile,8,no,63.1,6,0\n1.8,0,25,DE,laptop,7,yes,74.7,7,0\n8.2,2,30,US,laptop,7,yes,,5,0\n2.0,3,31,BR,laptop,1,yes,74.0,4,1\n0.5,2,17,VN,mobile,3,no,65.9,3,1\n1.5,2,32,VN,laptop,1,yes,62.8,4,1\n2.2,1,48,VN,laptop,1,no,,2,0\n"
+      }
+    ]
+  }
+}
