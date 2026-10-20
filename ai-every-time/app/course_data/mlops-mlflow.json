@@ -1,0 +1,1084 @@
+{
+  "slug": "mlops-mlflow",
+  "title": "MLOps Foundations: Experiments, Models and Reproducibility with MLflow",
+  "subtitle": "Track every experiment, package models with signatures, promote them with registry aliases and rebuild any training run, using MLflow on your own laptop.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "chukwuemeka-obieche",
+    "ismaile-rahimovi"
+  ],
+  "skills": [
+    "MLOps",
+    "Experiment tracking",
+    "MLflow",
+    "Model packaging",
+    "Model registry",
+    "Reproducible training",
+    "Model versioning",
+    "Python"
+  ],
+  "tools": [
+    "MLflow",
+    "scikit-learn",
+    "pandas",
+    "SQLite",
+    "Git",
+    "curl"
+  ],
+  "outcomes": [
+    "Run an MLflow tracking server with a SQLite backend and log parameters, metrics, tags and artifacts to it",
+    "Organise sweeps as nested runs and choose models with search_runs on validation metrics",
+    "Package models with signatures, input examples and custom pyfunc logic, and serve them over REST",
+    "Release and roll back models by moving registry aliases through a promotion gate written in code",
+    "Make training reproducible with seeds, dataset digests, pinned environments and MLflow Projects"
+  ],
+  "prerequisites": "Machine Learning Foundations with Python, or equivalent experience training and evaluating scikit-learn models, and comfort in a terminal (Linux Command Line Essentials covers it). You need Python 3.10 or later, Git and a browser; the course installs MLflow 3, scikit-learn and pandas with pip. No cloud account is needed.",
+  "description": "Most models that fail in production fail for operational reasons: nobody knows which data or code produced them, the package that ran in a notebook won't load in a service, or a change can't be rolled back. This course teaches the habits and tooling that prevent those failures, using MLflow, the open-source platform for the ML lifecycle, entirely on your own machine with a local tracking server and a SQLite backend.\n\nYou'll log experiments that a reviewer can trust, organise sweeps and choose winners with queries rather than by eye, package models with signatures and custom pyfunc logic, and serve them over REST. You'll then run a registry the way production teams do, promoting through a gate in code and releasing or rolling back by moving aliases, and finish by making training reproducible with seeds, dataset digests, pinned environments and MLflow Projects. Every module has a lab whose code was run with MLflow 3, and the capstone takes a churn model through the whole lifecycle. It prepares you for Deploying and Serving Machine Learning Models and Monitoring Models in Production: Drift, Data Quality and Alerts.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "The ML lifecycle and a tracking server",
+      "summary": "What MLOps adds to model building, how MLflow's parts fit together, and a local tracking server with a SQLite backend that every later lab logs to.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "What MLOps adds to machine learning",
+          "minutes": 10,
+          "objectives": [
+            "Describe the stages of the ML lifecycle and what each one produces",
+            "Explain which questions about a production model MLOps practices let a team answer"
+          ],
+          "key_points": [
+            "The ML lifecycle runs from framing the problem and preparing data through experiments, packaging, deployment and monitoring, then loops back when monitoring shows the model needs retraining.",
+            "A model's behaviour depends on its code, data, configuration and training environment together; change any one and predictions can change, so all four have to be recorded, not just the code.",
+            "MLOps is the set of practices that makes the loop repeatable and auditable: tracked experiments, packaged and versioned models, controlled promotion, reproducible training and monitoring.",
+            "A practical test: for the model in production, can the team name the commit, data version, parameters and library versions that produced it, and retrain it to the same result? If not, the lifecycle has a gap.",
+            "Tools don't replace habits: a tracking server is only as useful as the parameters, metrics, data references and tags that every run actually logs."
+          ]
+        },
+        {
+          "title": "MLflow's building blocks",
+          "minutes": 12,
+          "objectives": [
+            "Name MLflow's main components and what each one stores",
+            "Distinguish the backend store from the artifact store"
+          ],
+          "key_points": [
+            "MLflow Tracking records runs, grouped into experiments; each run holds parameters, metrics (with a history by step), tags and artifacts, which are files such as plots, reports and models.",
+            "MLflow Models is a standard directory format described by an MLmodel file, with one or more flavours, such as sklearn and the generic python_function, so different tools can load one model.",
+            "The Model Registry keeps named models with numbered versions, each linked to the run and model that produced it, plus aliases such as champion that point at one version.",
+            "MLflow Projects package training code with an MLproject file that declares its environment and entry points, so mlflow run launches it the same way on any machine.",
+            "The backend store holds run metadata and the registry (a SQLite file, or a database such as PostgreSQL); the artifact store holds the files (a local folder, or object storage such as S3).",
+            "MLflow 3 also has GenAI features such as tracing and LLM evaluation; this course uses the classic ML features, which work the same way in MLflow 2 and 3 apart from the differences it points out."
+          ]
+        },
+        {
+          "title": "Running MLflow locally: tracking URIs and the server",
+          "minutes": 12,
+          "objectives": [
+            "Point MLflow at a SQLite backend with a tracking URI",
+            "Start a local tracking server and log to it from another terminal"
+          ],
+          "key_points": [
+            "The tracking URI tells the client where to log: set it in code with mlflow.set_tracking_uri, or with the MLFLOW_TRACKING_URI environment variable, which the mlflow command line reads too.",
+            "sqlite:///mlflow.db logs straight into a SQLite file in the current folder. Current MLflow 3 releases default to it; MLflow 2 defaulted to a ./mlruns folder, which MLflow 3 treats as a legacy store. Set the URI explicitly so behaviour doesn't depend on the version.",
+            "mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000 starts the UI and REST API; clients log to http://127.0.0.1:5000 and the server stores their artifacts, by default in ./mlartifacts.",
+            "With a server, every client (a laptop, a CI job, a teammate) talks to one store over HTTP; without one, each process writes to the database file directly, which suits a single machine.",
+            "The server listens only on localhost unless told otherwise and has no login by default; don't expose it on a network without authentication and the --allowed-hosts protection set up."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Start a tracking server and create an experiment",
+            "steps": [
+              {
+                "do": "Create a project folder with a virtual environment, and install MLflow and scikit-learn.",
+                "code": "python -m venv .venv\nsource .venv/bin/activate          # Windows: .venv\\Scripts\\activate\npip install \"mlflow>=3,<4\" scikit-learn pandas",
+                "lang": "bash"
+              },
+              {
+                "do": "Check the version. The commands in this course are for MLflow 3.",
+                "code": "mlflow --version",
+                "lang": "bash",
+                "see": "mlflow, version 3. followed by the minor version"
+              },
+              {
+                "do": "Start the server in this terminal and leave it running.",
+                "code": "mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000",
+                "lang": "bash",
+                "see": "Uvicorn running on http://127.0.0.1:5000 (Press CTRL+C to quit)"
+              },
+              {
+                "do": "Open a second terminal, activate the same environment and point the client at the server. In PowerShell, use $env:MLFLOW_TRACKING_URI = \"http://127.0.0.1:5000\" instead.",
+                "code": "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000",
+                "lang": "bash"
+              },
+              {
+                "do": "Create an experiment from the command line.",
+                "code": "mlflow experiments create -n first-steps",
+                "lang": "bash",
+                "see": "Created experiment 'first-steps' with id 1"
+              },
+              {
+                "do": "Open http://127.0.0.1:5000 in a browser.",
+                "see": "The MLflow UI, with the first-steps experiment in the list."
+              },
+              {
+                "do": "When you've finished for the day, stop the server with Ctrl+C in its terminal. The runs stay in mlflow.db and mlartifacts for next time."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Start a tracking server and log your first runs",
+        "tool": "MLflow",
+        "minutes": 35,
+        "goal": "Run a local MLflow tracking server backed by SQLite, log two training runs to it with parameters, metrics, tags and a text artifact, and find them from the command line and the UI.",
+        "setup": [
+          "Python 3.10 or later, with a virtual environment holding MLflow 3, scikit-learn and pandas (pip install \"mlflow>=3,<4\" scikit-learn pandas)",
+          "Two terminals open in the lab folder, both with the environment activated",
+          "The starter file first_run.py"
+        ],
+        "steps": [
+          {
+            "do": "In the first terminal, start the server and leave it running.",
+            "code": "mlflow server --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000",
+            "lang": "bash",
+            "see": "Uvicorn running on http://127.0.0.1:5000"
+          },
+          {
+            "do": "In the second terminal, point MLflow at the server and create the experiment. Keep this variable set (or add it to your shell profile) for every lab in the course.",
+            "code": "export MLFLOW_TRACKING_URI=http://127.0.0.1:5000\nmlflow experiments create -n first-steps",
+            "lang": "bash",
+            "see": "Created experiment 'first-steps' with id 1"
+          },
+          {
+            "do": "Read first_run.py. It never calls set_tracking_uri: the client picks the server up from the environment variable. Run it with the default regularisation.",
+            "code": "python first_run.py",
+            "lang": "bash",
+            "see": "tracking URI: http://127.0.0.1:5000, then run logreg-C1.0: val_accuracy=0.9860 val_auc=0.9977"
+          },
+          {
+            "do": "Run it again with stronger regularisation, so there are two runs to compare.",
+            "code": "python first_run.py --C 0.1",
+            "lang": "bash",
+            "see": "run logreg-C0.1: val_accuracy=0.9790 val_auc=0.9971"
+          },
+          {
+            "do": "List the experiment's runs from the command line. Use the experiment ID that step 2 printed.",
+            "code": "mlflow runs list --experiment-id 1",
+            "lang": "bash",
+            "see": "A table with both runs: logreg-C0.1 and logreg-C1.0, with their run IDs."
+          },
+          {
+            "do": "Open http://127.0.0.1:5000, choose first-steps and open the run logreg-C1.0. Find its parameters, its metrics, the tags team and purpose, and classification_report.txt under Artifacts."
+          },
+          {
+            "do": "Select both runs in the experiment's run list and compare them: which parameter differs, and how much did each metric change?"
+          },
+          {
+            "do": "Look at what the server created in its folder: mlflow.db holds the runs, and mlartifacts holds the report files.",
+            "code": "ls\nls mlartifacts",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The first_steps experiment was created on the server.",
+            "look_for": [
+              "Created experiment 'first-steps'"
+            ]
+          },
+          {
+            "text": "The script logged to the server, not to a local file.",
+            "look_for": [
+              "tracking URI: http://127.0.0.1:5000"
+            ]
+          },
+          {
+            "text": "The first run logged its validation metrics.",
+            "look_for": [
+              "run logreg-C1.0",
+              "val_accuracy=0.9860",
+              "val_auc=0.9977"
+            ]
+          },
+          {
+            "text": "The second run used C=0.1 and logged its own metrics.",
+            "look_for": [
+              "run logreg-C0.1",
+              "val_accuracy=0.9790"
+            ]
+          },
+          {
+            "text": "mlflow runs list shows both runs.",
+            "look_for": [
+              "logreg-C0.1",
+              "logreg-C1.0"
+            ]
+          }
+        ],
+        "submit": "Paste the output of steps 2 to 5 (creating the experiment, both runs and mlflow runs list), and two sentences on what differs between the runs in the UI's comparison.",
+        "files": [
+          {
+            "path": "first_run.py",
+            "content": "\"\"\"Log a first MLflow run: parameters, metrics, tags and a text artifact.\"\"\"\nimport argparse\n\nimport mlflow\nfrom sklearn.datasets import load_breast_cancer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, classification_report, roc_auc_score\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--C\", type=float, default=1.0, help=\"inverse regularisation strength\")\nargs = parser.parse_args()\n\n# No set_tracking_uri here: MLflow reads MLFLOW_TRACKING_URI from the environment.\nmlflow.set_experiment(\"first-steps\")\n\nX, y = load_breast_cancer(return_X_y=True, as_frame=True)\nX_train, X_val, y_train, y_val = train_test_split(\n    X, y, test_size=0.25, random_state=42, stratify=y)\n\nwith mlflow.start_run(run_name=f\"logreg-C{args.C}\") as run:\n    mlflow.set_tags({\"team\": \"screening\", \"purpose\": \"first-run\"})\n    mlflow.log_params({\"model\": \"logreg\", \"C\": args.C, \"test_size\": 0.25, \"seed\": 42})\n\n    model = make_pipeline(StandardScaler(), LogisticRegression(C=args.C, max_iter=2000))\n    model.fit(X_train, y_train)\n    pred = model.predict(X_val)\n    proba = model.predict_proba(X_val)[:, 1]\n\n    metrics = {\"val_accuracy\": accuracy_score(y_val, pred),\n               \"val_auc\": roc_auc_score(y_val, proba)}\n    mlflow.log_metrics(metrics)\n    report = classification_report(y_val, pred, target_names=[\"malignant\", \"benign\"])\n    mlflow.log_text(report, \"classification_report.txt\")\n\n    print(f\"tracking URI: {mlflow.get_tracking_uri()}\")\n    print(f\"run {run.info.run_name}: val_accuracy={metrics['val_accuracy']:.4f} \"\n          f\"val_auc={metrics['val_auc']:.4f}\")\n"
+          }
+        ],
+        "hints": [
+          "If the script prints a tracking URI that starts with sqlite:, the environment variable isn't set in that terminal: export it again (in PowerShell, use $env:MLFLOW_TRACKING_URI).",
+          "Address already in use means another program has port 5000 (on macOS it's often AirPlay Receiver): start the server with --port 5001 and use that port in the tracking URI too.",
+          "The experiment ID may not be 1 if you've created experiments before: use the ID that mlflow experiments create printed, or run mlflow experiments search to see them all."
+        ]
+      }
+    },
+    {
+      "title": "Experiment tracking: parameters, metrics and artifacts",
+      "summary": "Log what a reviewer needs to trust a result, organise a sweep as nested runs, see what autologging does and doesn't capture, and choose a winner with search_runs instead of by eye.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Logging parameters, metrics and tags",
+          "minutes": 12,
+          "objectives": [
+            "Log parameters, metrics with steps, and tags in a run",
+            "Explain why a parameter can't change within a run while tags can"
+          ],
+          "key_points": [
+            "A run is one execution of training code. log_param and log_params record its inputs, such as hyperparameters, as strings; logging a different value for a key already logged in the run raises an MlflowException, so parameters stay a faithful record.",
+            "log_metric records a number, optionally with a step, so the same key builds a history such as a loss per epoch; run summaries and search use the latest value.",
+            "Tags are mutable labels for organising and searching, such as team=screening or selected=true. MLflow adds system tags such as mlflow.runName and mlflow.source.name, and mlflow.source.git.commit when the code runs inside a Git repository.",
+            "Use with mlflow.start_run(): so the run always ends: it's marked FINISHED when the block completes and FAILED if an exception escapes it.",
+            "Log validation metrics with explicit names such as val_auc, and log the configuration the code actually used (after defaults and overrides), not the one someone intended to use."
+          ]
+        },
+        {
+          "title": "Artifacts: evidence a reviewer can check",
+          "minutes": 10,
+          "objectives": [
+            "Log files and in-memory objects as artifacts",
+            "Decide what belongs in the artifact store and what should only be referenced"
+          ],
+          "key_points": [
+            "Artifacts are files attached to a run: log_artifact copies a file and log_artifacts a folder, while log_text, log_dict and log_figure write a string, a dictionary (JSON or YAML) or a Matplotlib figure without a temporary file.",
+            "Log what a reviewer needs to judge the run: a confusion matrix, a classification report, feature importances, the resolved configuration and a small sample of mistakes.",
+            "Keep artifacts small and purposeful; for large training data, log a reference such as a path or URI with a content hash, not a copy of the data.",
+            "Artifacts can be read back in code: mlflow.artifacts.load_text, load_dict and download_artifacts take an artifact URI such as runs:/<run_id>/report.txt, so later scripts reuse evidence without the UI.",
+            "If a number in a report can't be traced back to a logged metric or artifact, it can't be checked later, so log the evidence at the moment it's produced."
+          ]
+        },
+        {
+          "title": "Nested runs, autologging and search",
+          "minutes": 13,
+          "objectives": [
+            "Organise a hyperparameter sweep as a parent run with nested child runs",
+            "Describe what mlflow.sklearn.autolog records and where it misleads",
+            "Query runs with search_runs filters and ordering"
+          ],
+          "key_points": [
+            "A sweep fits well as one parent run with a nested child run per configuration (mlflow.start_run(nested=True)); each child gets the tag mlflow.parentRunId, so the sweep's runs can be found and compared together.",
+            "mlflow.sklearn.autolog() logs an estimator's parameters from get_params, training metrics such as training_accuracy_score and training_roc_auc, plots such as a training confusion matrix and, unless log_models=False, the model itself.",
+            "Autologged metrics are measured on the training data, so they flatter the model: always log validation metrics yourself, and inspect which keys autologging actually wrote.",
+            "mlflow.search_runs returns a pandas DataFrame with columns such as params.C and metrics.val_auc; filter_string takes expressions like params.model = 'rf' and metrics.val_auc > 0.99, and order_by takes a list such as ['metrics.val_auc DESC'].",
+            "Pick the winner on validation metrics, keep the test set for one final check, and record the decision as a tag on the chosen run so it's visible to everyone later."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Track a sweep with nested runs and choose a winner",
+        "tool": "MLflow",
+        "minutes": 45,
+        "goal": "Run an eight-configuration sweep as nested runs with a confusion-matrix artifact each, choose and tag the winner with search_runs, query the runs the way a reviewer would, and compare autologging with your own validation metric.",
+        "setup": [
+          "The tracking server from the module 1 lab running, and MLFLOW_TRACKING_URI set in your terminal",
+          "The starter files sweep.py, find_runs.py and autolog_demo.py"
+        ],
+        "steps": [
+          {
+            "do": "Read sweep.py: four logistic regressions and four random forests, each in a nested run under a parent called sweep. Run it.",
+            "code": "python sweep.py",
+            "lang": "bash",
+            "see": "8 child runs under sweep, the top three by val_auc, and selected: logreg-C1.0"
+          },
+          {
+            "do": "In the UI, open the cancer-sweep experiment. Expand the sweep run to see its children, and open one child's confusion_matrix.json artifact."
+          },
+          {
+            "do": "Query the runs from code: how many forests passed 0.99 AUC, which run carries the selected tag, and what its confusion matrix says.",
+            "code": "python find_runs.py",
+            "lang": "bash",
+            "see": "random forests with val_auc > 0.99: 4, then tagged selected: logreg-C1.0 (val_auc=0.9977)"
+          },
+          {
+            "do": "Try a filter of your own in a Python shell, such as the logistic regressions ordered by F1.",
+            "code": "import mlflow\nruns = mlflow.search_runs(experiment_names=[\"cancer-sweep\"],\n                          filter_string=\"params.model = 'logreg'\",\n                          order_by=[\"metrics.val_f1 DESC\"])\nprint(runs[[\"tags.mlflow.runName\", \"metrics.val_f1\"]])",
+            "lang": "python"
+          },
+          {
+            "do": "Run the autologging demo. It trains one forest with mlflow.sklearn.autolog(log_models=False) and logs val_auc itself.",
+            "code": "python autolog_demo.py",
+            "lang": "bash",
+            "see": "19 parameters, seven training_ metrics and val_auc = 0.9922"
+          },
+          {
+            "do": "Compare training_roc_auc with val_auc in that output, and open the run's artifacts in the UI to see the plots autologging made."
+          },
+          {
+            "do": "Write down, in two or three sentences, why the sweep chose a logistic regression even though the forests' training scores are higher."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The sweep ran all eight configurations as nested runs.",
+            "look_for": [
+              "8 child runs under sweep"
+            ]
+          },
+          {
+            "text": "The top configuration is the logistic regression with C=1.0.",
+            "look_for": [
+              "logreg-C1.0",
+              "0.9977",
+              "0.9889"
+            ]
+          },
+          {
+            "text": "The winner was tagged and found again by its tag.",
+            "look_for": [
+              "selected: logreg-C1.0",
+              "tagged selected: logreg-C1.0 (val_auc=0.9977)"
+            ]
+          },
+          {
+            "text": "The confusion matrix was read back from the artifact store.",
+            "look_for": [
+              "{'tn': 52, 'fp': 1, 'fn': 1, 'tp': 89}"
+            ]
+          },
+          {
+            "text": "Autologging's training metrics and the separate validation metric are both shown.",
+            "look_for": [
+              "training_roc_auc = 0.9985",
+              "val_auc = 0.9922"
+            ]
+          },
+          {
+            "text": "The explanation says training metrics flatter the model and the choice used validation data.",
+            "look_for": [
+              "training",
+              "validation"
+            ]
+          }
+        ],
+        "submit": "Paste the output of sweep.py, find_runs.py and autolog_demo.py, your own search_runs query and its output, and your explanation from step 7.",
+        "files": [
+          {
+            "path": "sweep.py",
+            "content": "\"\"\"A hyperparameter sweep: one parent run, one nested run per configuration.\"\"\"\nimport mlflow\nfrom sklearn.datasets import load_breast_cancer\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import confusion_matrix, f1_score, roc_auc_score\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nmlflow.set_experiment(\"cancer-sweep\")\nX, y = load_breast_cancer(return_X_y=True, as_frame=True)\nX_train, X_val, y_train, y_val = train_test_split(\n    X, y, test_size=0.25, random_state=42, stratify=y)\n\nCANDIDATES = [(f\"logreg-C{c}\", \"logreg\", {\"C\": c}) for c in (0.01, 0.1, 1.0, 10.0)]\nCANDIDATES += [(f\"rf-{n}-depth{d}\", \"rf\", {\"n_estimators\": n, \"max_depth\": d})\n               for n in (100, 300) for d in (4, 8)]\n\n\ndef build(kind, params):\n    if kind == \"logreg\":\n        return make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000, **params))\n    return RandomForestClassifier(random_state=0, **params)\n\n\nwith mlflow.start_run(run_name=\"sweep\") as parent:\n    mlflow.log_param(\"candidates\", len(CANDIDATES))\n    for name, kind, params in CANDIDATES:\n        with mlflow.start_run(run_name=name, nested=True):\n            mlflow.log_param(\"model\", kind)\n            mlflow.log_params(params)\n            model = build(kind, params).fit(X_train, y_train)\n            proba = model.predict_proba(X_val)[:, 1]\n            pred = (proba >= 0.5).astype(int)\n            mlflow.log_metrics({\"val_auc\": roc_auc_score(y_val, proba),\n                                \"val_f1\": f1_score(y_val, pred)})\n            tn, fp, fn, tp = confusion_matrix(y_val, pred).ravel()\n            mlflow.log_dict({\"tn\": int(tn), \"fp\": int(fp), \"fn\": int(fn), \"tp\": int(tp)},\n                            \"confusion_matrix.json\")\n\nchildren = mlflow.search_runs(\n    experiment_names=[\"cancer-sweep\"],\n    filter_string=f\"tags.mlflow.parentRunId = '{parent.info.run_id}'\",\n    order_by=[\"metrics.val_auc DESC\", \"metrics.val_f1 DESC\"])\nprint(f\"{len(children)} child runs under sweep {parent.info.run_id[:8]}\")\ntop = children[[\"tags.mlflow.runName\", \"metrics.val_auc\", \"metrics.val_f1\"]].head(3)\nprint(top.round(4).to_string(index=False))\n\nbest = children.iloc[0]\nmlflow.MlflowClient().set_tag(best.run_id, \"selected\", \"true\")\nprint(\"selected:\", best[\"tags.mlflow.runName\"])\n"
+          },
+          {
+            "path": "find_runs.py",
+            "content": "\"\"\"Search the sweep's runs with filters, the way you would in a review.\"\"\"\nimport mlflow\n\nforests = mlflow.search_runs(\n    experiment_names=[\"cancer-sweep\"],\n    filter_string=\"params.model = 'rf' and metrics.val_auc > 0.99\",\n    order_by=[\"metrics.val_auc DESC\"])\nprint(f\"random forests with val_auc > 0.99: {len(forests)}\")\n\nchosen = mlflow.search_runs(experiment_names=[\"cancer-sweep\"],\n                            filter_string=\"tags.selected = 'true'\")\nfor _, row in chosen.iterrows():\n    print(f\"tagged selected: {row['tags.mlflow.runName']} \"\n          f\"(val_auc={row['metrics.val_auc']:.4f})\")\n    matrix = mlflow.artifacts.load_dict(f\"{row['artifact_uri']}/confusion_matrix.json\")\n    print(\"confusion matrix:\", matrix)\n"
+          },
+          {
+            "path": "autolog_demo.py",
+            "content": "\"\"\"What does autologging record? Run one model with it switched on and look.\"\"\"\nimport mlflow\nfrom sklearn.datasets import load_breast_cancer\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.metrics import roc_auc_score\nfrom sklearn.model_selection import train_test_split\n\nmlflow.set_experiment(\"cancer-sweep\")\nX, y = load_breast_cancer(return_X_y=True, as_frame=True)\nX_train, X_val, y_train, y_val = train_test_split(\n    X, y, test_size=0.25, random_state=42, stratify=y)\n\nmlflow.sklearn.autolog(log_models=False)\nwith mlflow.start_run(run_name=\"rf-autolog\") as run:\n    model = RandomForestClassifier(n_estimators=100, max_depth=4, random_state=0)\n    model.fit(X_train, y_train)\n    # Autologging measures the training data; log the validation metric yourself.\n    mlflow.log_metric(\"val_auc\", roc_auc_score(y_val, model.predict_proba(X_val)[:, 1]))\nmlflow.sklearn.autolog(disable=True)\n\nlogged = mlflow.MlflowClient().get_run(run.info.run_id)\nprint(f\"parameters logged: {len(logged.data.params)}\")\nfor key in sorted(logged.data.metrics):\n    print(f\"{key} = {logged.data.metrics[key]:.4f}\")\n"
+          }
+        ],
+        "hints": [
+          "If find_runs.py finds no selected run, run sweep.py first: it sets the tag after the sweep finishes.",
+          "Running sweep.py twice creates a second sweep; find_runs.py then lists two selected runs. That's expected: each sweep tagged its own winner.",
+          "Values in filter strings are quoted with single quotes, and names with spaces or dots need backticks, as in metrics.`val auc`."
+        ]
+      }
+    },
+    {
+      "title": "Packaging models: flavours, signatures and pyfunc",
+      "summary": "What a logged model contains, how a signature guards its inputs, how to wrap preprocessing and business rules in a custom pyfunc model, and how to score a packaged model locally.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "Inside an MLflow model",
+          "minutes": 11,
+          "objectives": [
+            "Describe the files in a logged model and what each one is for",
+            "Explain the difference between a native flavour and the python_function flavour"
+          ],
+          "key_points": [
+            "mlflow.sklearn.log_model(model, name=\"model\") saves a model directory: the MLmodel file, the serialised model, conda.yaml, python_env.yaml and requirements.txt, plus input_example.json and serving_input_example.json when an input example is given.",
+            "The MLmodel file lists the flavours: the native one (sklearn) loads the original object, while python_function (pyfunc) gives every model the same mlflow.pyfunc.load_model(uri).predict(data) interface that serving tools rely on.",
+            "MLflow 3 stores each logged model as its own entity with an ID, addressed as models:/m-<id> and linked to its run; MLflow 2 stored models inside the run's artifacts, addressed as runs:/<run_id>/model.",
+            "The requirements are inferred from what the model imports when it's logged. Check them: they can be too broad or miss something, and pip_requirements= sets them explicitly.",
+            "Loading a model runs code from its files. Depending on the version, the sklearn flavour writes a pickle or a skops file (model.skops); skops refuses types it can't vouch for, such as tree internals, unless listed in skops_trusted_types. Load only models you trust."
+          ]
+        },
+        {
+          "title": "Signatures and input examples",
+          "minutes": 12,
+          "objectives": [
+            "Infer and attach a model signature and an input example",
+            "Predict how schema enforcement treats reordered, extra and missing columns"
+          ],
+          "key_points": [
+            "A signature declares a model's inputs and outputs. infer_signature(X_train, predictions) builds one from data: named, typed columns for a DataFrame, or tensor types and shapes for arrays.",
+            "When a pyfunc model predicts, MLflow enforces the input schema: columns are matched by name, so a different order works; extra columns are ignored with a warning; a missing required column raises an MlflowException that starts \"Failed to enforce schema\".",
+            "The scoring server returns the same failure as an error response with error_code INVALID_PARAMETER_VALUE, so a client sending the wrong fields gets a clear error, not a wrong prediction.",
+            "Integer columns can't hold missing values: if a column inferred as integer later arrives with a NaN, enforcement fails. Infer from realistic data, or declare such columns as floats.",
+            "An input example is stored with the model, checked against the signature when the model is logged, and gives every user a ready-made, valid request."
+          ]
+        },
+        {
+          "title": "Custom models with pyfunc",
+          "minutes": 12,
+          "objectives": [
+            "Write a PythonModel with load_context and predict",
+            "Log a custom model from code with artifacts and model_config"
+          ],
+          "key_points": [
+            "Subclass mlflow.pyfunc.PythonModel when serving needs more than the estimator: load_context(self, context) runs once when the model loads, and predict(self, context, model_input, params=None) runs for every request.",
+            "Files the model needs travel with it: artifacts={\"pipeline\": \"pipe.joblib\"} copies the file into the model, and context.artifacts[\"pipeline\"] gives its local path at load time. Settings such as a threshold go in model_config and come back as context.model_config.",
+            "Models from code: python_model=\"threshold_model.py\" points at a file that ends with mlflow.models.set_model(ThresholdModel()). MLflow stores the source instead of pickling an object, and recent versions warn when an object is passed instead.",
+            "A custom model is the place for rules every consumer must share: the decision threshold, label names, input clean-up, or returning a probability with each label.",
+            "Give custom models explicit pip_requirements, because MLflow can't always tell what the code imports, and test the logged model by loading it back, not just the Python class."
+          ]
+        },
+        {
+          "title": "Scoring a packaged model locally",
+          "minutes": 10,
+          "objectives": [
+            "Serve any registered or logged model as a local REST endpoint",
+            "Score a request file from the command line"
+          ],
+          "key_points": [
+            "mlflow models serve -m models:/cancer-screen/1 -p 5001 --env-manager local starts a REST server for any pyfunc model in the current environment; virtualenv, uv or conda instead build the environment from the model's own files first.",
+            "The server answers GET /ping and /health, and POST /invocations with JSON holding exactly one of dataframe_split, dataframe_records, instances or inputs; it replies with {\"predictions\": ...}.",
+            "mlflow models predict -m <uri> -i payload.json --content-type json scores a file in one command, which makes a quick test in CI that the packaged model loads and predicts.",
+            "mlflow models build-docker -m <uri> -n <image> builds a Docker image that serves the model on port 8080, for platforms that run containers.",
+            "This server is a convenient default, not a full service: the course Deploying and Serving Machine Learning Models covers validation, batching, ONNX, scaling and safe releases."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Serve a registered model and call it",
+            "steps": [
+              {
+                "do": "With MLFLOW_TRACKING_URI pointing at your tracking server, serve version 1 of the model from the current environment.",
+                "code": "mlflow models serve -m \"models:/cancer-screen/1\" -p 5001 --env-manager local",
+                "lang": "bash",
+                "see": "The model's files download, then Uvicorn running on http://127.0.0.1:5001"
+              },
+              {
+                "do": "In another terminal, check the server is alive.",
+                "code": "curl -s -o /dev/null -w \"%{http_code}\\n\" http://127.0.0.1:5001/ping",
+                "lang": "bash",
+                "see": "200"
+              },
+              {
+                "do": "Send two rows in the dataframe_split format.",
+                "code": "curl -s -X POST http://127.0.0.1:5001/invocations \\\n  -H \"Content-Type: application/json\" -d @payload.json",
+                "lang": "bash",
+                "see": "{\"predictions\": [{\"probability\": 0.969, \"label\": \"benign\"}, ...]}"
+              },
+              {
+                "do": "Send a request with a column missing and read the error.",
+                "code": "curl -s -X POST http://127.0.0.1:5001/invocations \\\n  -H \"Content-Type: application/json\" -d @bad_payload.json",
+                "lang": "bash",
+                "see": "\"error_code\": \"INVALID_PARAMETER_VALUE\" and a message about enforcing the schema"
+              },
+              {
+                "do": "Stop the server with Ctrl+C."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Package a model with a signature and a threshold, then serve it",
+        "tool": "MLflow",
+        "minutes": 50,
+        "goal": "Wrap a scikit-learn pipeline in a custom pyfunc model logged from code, with the pipeline as an artifact, a decision threshold in model_config, a signature and an input example; register it, test its schema enforcement, and serve it over REST.",
+        "setup": [
+          "The tracking server running and MLFLOW_TRACKING_URI set",
+          "curl (built into macOS, Linux and Windows 10 and later; in PowerShell type curl.exe)",
+          "The starter files train_pipeline.py, threshold_model.py, log_model.py, make_payloads.py and check_schema.py"
+        ],
+        "steps": [
+          {
+            "do": "Fit and save the pipeline, and keep the validation features for testing.",
+            "code": "python train_pipeline.py",
+            "lang": "bash",
+            "see": "saved pipe.joblib; validation accuracy 0.9860"
+          },
+          {
+            "do": "Read threshold_model.py: load_context loads the pipeline and the threshold once; predict returns a probability and a label, benign at 0.7 or above and refer below it. It ends with set_model.",
+            "see": "A class ThresholdModel and the line set_model(ThresholdModel())."
+          },
+          {
+            "do": "Log and register the model from code, then load it back from the registry and predict.",
+            "code": "python log_model.py",
+            "lang": "bash",
+            "see": "registered cancer-screen version 1, four predictions, flavours: ['python_function'] and inputs in signature: 30"
+          },
+          {
+            "do": "Download version 1's files and look inside. In MLmodel, find the threshold under config and the pipeline under artifacts; the model also holds threshold_model.py itself and requirements.txt.",
+            "code": "mlflow artifacts download --artifact-uri \"models:/cancer-screen/1\" --dst-path model_v1\nls model_v1 model_v1/artifacts\ncat model_v1/MLmodel",
+            "lang": "bash",
+            "see": "MLmodel, threshold_model.py, requirements.txt and artifacts/pipe.joblib; MLmodel shows config: threshold: 0.7 and loader_module: mlflow.pyfunc.loaders.code_model"
+          },
+          {
+            "do": "See schema enforcement at work: reversed column order, an extra column, and a missing one.",
+            "code": "python check_schema.py",
+            "lang": "bash",
+            "see": "reordered columns and extra column both give ['benign', 'refer']; missing column: Failed to enforce schema"
+          },
+          {
+            "do": "Write the request bodies, then serve the model and call it, as in the lesson's walkthrough.",
+            "code": "python make_payloads.py\nmlflow models serve -m \"models:/cancer-screen/1\" -p 5001 --env-manager local",
+            "lang": "bash"
+          },
+          {
+            "do": "In another terminal, send the good and the bad request.",
+            "code": "curl -s -X POST http://127.0.0.1:5001/invocations -H \"Content-Type: application/json\" -d @payload.json\ncurl -s -X POST http://127.0.0.1:5001/invocations -H \"Content-Type: application/json\" -d @bad_payload.json",
+            "lang": "bash"
+          },
+          {
+            "do": "Stop the server and score the same file without a server, the way a CI job would.",
+            "code": "mlflow models predict -m \"models:/cancer-screen/1\" -i payload.json --content-type json --env-manager local",
+            "lang": "bash",
+            "see": "{\"predictions\": [{\"probability\": 0.969, \"label\": \"benign\"}, {\"probability\": 0.0004, \"label\": \"refer\"}]}"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The model was logged from code and registered as version 1.",
+            "look_for": [
+              "registered cancer-screen version 1",
+              "flavours: ['python_function']"
+            ]
+          },
+          {
+            "text": "The loaded model applies the 0.7 threshold.",
+            "look_for": [
+              "0.9690",
+              "0.5594",
+              "refer"
+            ]
+          },
+          {
+            "text": "Schema enforcement handled reordered, extra and missing columns as expected.",
+            "look_for": [
+              "reordered columns: ['benign', 'refer']",
+              "extra column: ['benign', 'refer']",
+              "missing column: Failed to enforce schema"
+            ]
+          },
+          {
+            "text": "The REST endpoint returned predictions for the good request.",
+            "look_for": [
+              "{\"predictions\": [{\"probability\": 0.969, \"label\": \"benign\"}"
+            ]
+          },
+          {
+            "text": "The bad request was rejected with a schema error.",
+            "look_for": [
+              "INVALID_PARAMETER_VALUE"
+            ]
+          },
+          {
+            "text": "The downloaded model holds its code, its pipeline artifact and the threshold.",
+            "look_for": [
+              "threshold_model.py",
+              "pipe.joblib",
+              "threshold: 0.7"
+            ]
+          }
+        ],
+        "submit": "Paste the output of log_model.py, the file listing and MLmodel from step 4, the output of check_schema.py, both curl responses, and the output of mlflow models predict.",
+        "files": [
+          {
+            "path": "train_pipeline.py",
+            "content": "\"\"\"Fit the screening pipeline and save it for the pyfunc wrapper to load.\"\"\"\nimport joblib\nfrom sklearn.datasets import load_breast_cancer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nX, y = load_breast_cancer(return_X_y=True, as_frame=True)\nX_train, X_val, y_train, y_val = train_test_split(\n    X, y, test_size=0.25, random_state=42, stratify=y)\npipe = make_pipeline(StandardScaler(), LogisticRegression(C=1.0, max_iter=2000))\npipe.fit(X_train, y_train)\njoblib.dump(pipe, \"pipe.joblib\")\nX_val.to_csv(\"val_features.csv\", index=False)\nprint(f\"saved pipe.joblib; validation accuracy {pipe.score(X_val, y_val):.4f}\")\n"
+          },
+          {
+            "path": "threshold_model.py",
+            "content": "\"\"\"A custom pyfunc model, logged 'from code': MLflow stores this file, not a pickle.\"\"\"\nimport joblib\nimport numpy as np\nimport pandas as pd\nimport mlflow\nfrom mlflow.models import set_model\n\n\nclass ThresholdModel(mlflow.pyfunc.PythonModel):\n    def load_context(self, context):\n        # Runs once, when the model is loaded.\n        self.pipe = joblib.load(context.artifacts[\"pipeline\"])\n        self.threshold = float(context.model_config[\"threshold\"])\n\n    def predict(self, context, model_input, params=None):\n        # Runs for every request: probability of \"benign\", then the business rule.\n        p = self.pipe.predict_proba(model_input)[:, 1]\n        return pd.DataFrame({\n            \"probability\": p.round(4),\n            \"label\": np.where(p >= self.threshold, \"benign\", \"refer\"),\n        })\n\n\nset_model(ThresholdModel())\n"
+          },
+          {
+            "path": "log_model.py",
+            "content": "\"\"\"Log the wrapper with its artifact, threshold, signature and input example; register it.\"\"\"\nimport mlflow\nimport pandas as pd\nfrom mlflow.models import infer_signature\n\nmlflow.set_experiment(\"cancer-packaging\")\nX_val = pd.read_csv(\"val_features.csv\")\noutput_example = pd.DataFrame({\"probability\": [0.5], \"label\": [\"benign\"]})\nsignature = infer_signature(X_val, output_example)\n\nwith mlflow.start_run(run_name=\"threshold-0.7\"):\n    info = mlflow.pyfunc.log_model(\n        name=\"model\",\n        python_model=\"threshold_model.py\",          # models from code\n        artifacts={\"pipeline\": \"pipe.joblib\"},\n        model_config={\"threshold\": 0.7},\n        signature=signature,\n        input_example=X_val.head(2),\n        pip_requirements=[\"scikit-learn\", \"pandas\", \"joblib\"],\n        registered_model_name=\"cancer-screen\",\n    )\nprint(f\"registered cancer-screen version {info.registered_model_version}\")\n\nmodel = mlflow.pyfunc.load_model(f\"models:/cancer-screen/{info.registered_model_version}\")\nprint(model.predict(X_val.head(4)))\n\ninfo = mlflow.models.get_model_info(info.model_uri)\nprint(\"flavours:\", list(info.flavors))\nprint(\"inputs in signature:\", len(info.signature.inputs.inputs))\n"
+          },
+          {
+            "path": "make_payloads.py",
+            "content": "\"\"\"Write two request bodies: a good one, and one with a column missing.\"\"\"\nimport json\n\nimport pandas as pd\n\nrows = pd.read_csv(\"val_features.csv\").head(2)\ngood = {\"dataframe_split\": json.loads(rows.to_json(orient=\"split\", index=False))}\nwith open(\"payload.json\", \"w\") as f:\n    json.dump(good, f)\n\nbad = {\"dataframe_records\": rows.drop(columns=[\"mean radius\"]).to_dict(orient=\"records\")}\nwith open(\"bad_payload.json\", \"w\") as f:\n    json.dump(bad, f)\nprint(\"wrote payload.json and bad_payload.json\")\n"
+          },
+          {
+            "path": "check_schema.py",
+            "content": "\"\"\"See the signature at work: column order, extra columns and a missing column.\"\"\"\nimport mlflow\nimport pandas as pd\n\nmodel = mlflow.pyfunc.load_model(\"models:/cancer-screen/1\")\nrows = pd.read_csv(\"val_features.csv\").head(2)\n\nreordered = rows[list(reversed(rows.columns))]\nprint(\"reordered columns:\", model.predict(reordered)[\"label\"].tolist())\n\nextra = rows.assign(customer_id=[101, 102])\nprint(\"extra column:\", model.predict(extra)[\"label\"].tolist())\n\ntry:\n    model.predict(rows.drop(columns=[\"mean radius\"]))\nexcept mlflow.exceptions.MlflowException as err:\n    print(\"missing column:\", str(err).split(\" of data\")[0])\n"
+          }
+        ],
+        "hints": [
+          "A UserWarning suggesting type hints on predict is expected: it's advice, not an error. Signatures from infer_signature work without type hints.",
+          "If mlflow models serve says uvicorn isn't found, activate the virtual environment in that terminal: the server runs uvicorn from your PATH.",
+          "Running log_model.py again registers version 2. check_schema.py loads version 1 on purpose, so its output doesn't change.",
+          "In PowerShell, call curl.exe rather than curl, which is an alias for Invoke-WebRequest there."
+        ]
+      }
+    },
+    {
+      "title": "The Model Registry: versions, aliases and promotion",
+      "summary": "Register models as numbered versions, release and roll back by moving aliases, and promote only through a gate in code that records why each version was accepted or refused.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Registered models and versions",
+          "minutes": 10,
+          "objectives": [
+            "Register logged models as versions of a registered model",
+            "Annotate versions with descriptions and tags, and search them"
+          ],
+          "key_points": [
+            "Registering a logged model creates a new version of a named registered model, with mlflow.register_model(model_uri, \"screening-model\") or registered_model_name= in log_model; each new version gets the next number, counting up from 1.",
+            "Each version records its source model and run, so from a version you can reach the parameters, metrics and dataset inputs that produced it: the lineage auditors ask for.",
+            "Registered models and versions take descriptions and tags, set with update_model_version and set_model_version_tag, for facts such as gate=passed, an owner or the ticket that approved a change.",
+            "MlflowClient().search_model_versions(\"name='screening-model'\") lists the versions with their tags and aliases; the UI's Models page shows the same.",
+            "Agree what registering means: some teams register every candidate and use tags and aliases to show status, others register only candidates that passed validation. Either works if it's consistent."
+          ]
+        },
+        {
+          "title": "Aliases: champion, challenger and rollback",
+          "minutes": 12,
+          "objectives": [
+            "Load models by alias and by version number",
+            "Promote and roll back a model by moving an alias"
+          ],
+          "key_points": [
+            "An alias is a named, movable pointer to one version of a registered model, such as champion or challenger; an alias points at exactly one version, while a version can carry several aliases.",
+            "Load by alias with models:/screening-model@champion, or by number with models:/screening-model/3. Serving code that loads by alias needs no change when a new version is promoted.",
+            "Promote with set_registered_model_alias(name, \"champion\", version); roll back by pointing the alias at the previous version; remove one with delete_registered_model_alias.",
+            "Stages (Staging, Production, Archived) and transition_model_version_stage have been deprecated since MLflow 2.9 in favour of aliases and tags, and calling them prints a deprecation warning.",
+            "Moving an alias changes what the next load returns, not what running services already hold in memory: a service sees the new champion when it reloads or restarts, so plan that step too."
+          ]
+        },
+        {
+          "title": "A promotion gate in code",
+          "minutes": 12,
+          "objectives": [
+            "Design promotion rules that compare a challenger with the champion fairly",
+            "Record the gate's decision in the registry and keep rollback one step away"
+          ],
+          "key_points": [
+            "Promotion should follow explicit rules run by a script, not a click: score the challenger and the champion on the same holdout data, which neither was trained or tuned on, with the same metrics.",
+            "A typical gate needs a minimum gain on the main metric (such as +0.002 AUC) and no loss on the error that matters most, such as recall on the class that's costly to miss.",
+            "Record every decision on the version: tags such as gate=refused with gate_reason, and the metric values, so the registry explains every promotion and every refusal.",
+            "Before moving champion, point an alias such as previous-champion at the current version, so rollback is a single alias move; practise the rollback before you need it.",
+            "copy_model_version(\"models:/screening-model@champion\", \"prod.screening-model\") copies an approved version into another registered model, a common way to keep development and production apart."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Register, gate and promote with aliases",
+        "tool": "MLflow",
+        "minutes": 50,
+        "goal": "Register three candidate models, run a promotion gate that refuses one challenger and promotes another with its reasons recorded as tags, then roll the champion back.",
+        "setup": [
+          "The tracking server running and MLFLOW_TRACKING_URI set",
+          "The starter files common.py, register.py, gate.py and rollback.py"
+        ],
+        "steps": [
+          {
+            "do": "Read common.py: the holdout set (random_state=7) that the gate scores on, and evaluate(), which returns the AUC and the recall on malignant tumours."
+          },
+          {
+            "do": "Register the first candidate. With no champion yet, it becomes the champion.",
+            "code": "python register.py baseline",
+            "lang": "bash",
+            "see": "screening-model version 1 (baseline) -> champion"
+          },
+          {
+            "do": "Register a naive Bayes candidate. A champion exists, so it becomes the challenger.",
+            "code": "python register.py naive-bayes",
+            "lang": "bash",
+            "see": "screening-model version 2 (naive-bayes) -> challenger"
+          },
+          {
+            "do": "Run the gate. Read both lines of metrics before the verdict.",
+            "code": "python gate.py",
+            "lang": "bash",
+            "see": "REFUSED: AUC gain -0.0073 is below 0.002"
+          },
+          {
+            "do": "In the UI, open screening-model version 2 and read the tags the gate wrote: gate, gate_reason, gate_auc and gate_malignant_recall."
+          },
+          {
+            "do": "Register a stronger logistic regression and run the gate again.",
+            "code": "python register.py logreg-c1\npython gate.py",
+            "lang": "bash",
+            "see": "PASSED (AUC +0.0073): champion -> version 3"
+          },
+          {
+            "do": "Load the new champion by alias in a Python shell, as a serving process would.",
+            "code": "import mlflow\nmodel = mlflow.sklearn.load_model(\"models:/screening-model@champion\")\nprint(model)",
+            "lang": "python",
+            "see": "A Pipeline with StandardScaler and LogisticRegression(C=1.0, ...)"
+          },
+          {
+            "do": "Suppose the new champion misbehaves in production: roll back.",
+            "code": "python rollback.py",
+            "lang": "bash",
+            "see": "rolled back: champion -> version 1 (was 3)"
+          },
+          {
+            "do": "Write one paragraph: why did the naive Bayes candidate fail even though its malignant recall was better than the champion's, and should the rules have let it through?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The first version became champion and the second the challenger.",
+            "look_for": [
+              "screening-model version 1 (baseline) -> champion",
+              "screening-model version 2 (naive-bayes) -> challenger"
+            ]
+          },
+          {
+            "text": "The gate refused the naive Bayes challenger on AUC.",
+            "look_for": [
+              "REFUSED: AUC gain -0.0073 is below 0.002"
+            ]
+          },
+          {
+            "text": "The gate promoted version 3 and kept the old champion as previous-champion.",
+            "look_for": [
+              "PASSED (AUC +0.0073): champion -> version 3",
+              "aliases: champion=v3, previous-champion=v1"
+            ]
+          },
+          {
+            "text": "The rollback restored version 1 as champion.",
+            "look_for": [
+              "rolled back: champion -> version 1 (was 3)",
+              "aliases: champion=v1"
+            ]
+          },
+          {
+            "text": "The version list shows each gate decision.",
+            "look_for": [
+              "gate=refused",
+              "gate=passed"
+            ]
+          }
+        ],
+        "submit": "Paste the output of every command from steps 2 to 8, and your paragraph from step 9.",
+        "files": [
+          {
+            "path": "common.py",
+            "content": "\"\"\"Shared data and helpers for the registry lab.\"\"\"\nfrom sklearn.datasets import load_breast_cancer\nfrom sklearn.metrics import recall_score, roc_auc_score\nfrom sklearn.model_selection import train_test_split\n\nMODEL_NAME = \"screening-model\"\n\nX, y = load_breast_cancer(return_X_y=True, as_frame=True)\n# The holdout is never used for training or tuning: the gate scores both models on it.\nX_train, X_holdout, y_train, y_holdout = train_test_split(\n    X, y, test_size=0.25, random_state=7, stratify=y)\n\n\ndef aliases(client):\n    \"\"\"The registered model's aliases as text, such as 'champion=v2, previous-champion=v1'.\"\"\"\n    found = client.get_registered_model(MODEL_NAME).aliases\n    return \", \".join(f\"{alias}=v{version}\" for alias, version in sorted(found.items()))\n\n\ndef evaluate(model):\n    \"\"\"AUC, and recall on the malignant class (label 0): missing one is the costly error.\"\"\"\n    proba = model.predict_proba(X_holdout)[:, 1]\n    pred = (proba >= 0.5).astype(int)\n    return {\"auc\": roc_auc_score(y_holdout, proba),\n            \"malignant_recall\": recall_score(y_holdout, pred, pos_label=0)}\n"
+          },
+          {
+            "path": "register.py",
+            "content": "\"\"\"Train a candidate, log it, register it and give it an alias.\"\"\"\nimport sys\n\nimport mlflow\nfrom mlflow import MlflowClient\nfrom mlflow.exceptions import MlflowException\nfrom mlflow.models import infer_signature\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.naive_bayes import GaussianNB\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nfrom common import MODEL_NAME, X_train, y_train\n\nCANDIDATES = {\n    \"baseline\": lambda: make_pipeline(StandardScaler(), LogisticRegression(C=0.01, max_iter=2000)),\n    \"naive-bayes\": lambda: GaussianNB(),\n    \"logreg-c1\": lambda: make_pipeline(StandardScaler(), LogisticRegression(C=1.0, max_iter=2000)),\n}\n\nname = sys.argv[1]\nmlflow.set_experiment(\"screening-registry\")\nclient = MlflowClient()\n\nwith mlflow.start_run(run_name=name):\n    model = CANDIDATES[name]().fit(X_train, y_train)\n    mlflow.log_param(\"candidate\", name)\n    info = mlflow.sklearn.log_model(\n        model, name=\"model\", registered_model_name=MODEL_NAME,\n        signature=infer_signature(X_train, model.predict(X_train)),\n        input_example=X_train.head(2))\n\nversion = info.registered_model_version\nclient.update_model_version(MODEL_NAME, version, description=f\"Candidate '{name}'\")\ntry:\n    client.get_model_version_by_alias(MODEL_NAME, \"champion\")\n    alias = \"challenger\"            # a champion exists, so this one has to earn it\nexcept MlflowException:\n    alias = \"champion\"              # the very first version becomes the champion\nclient.set_registered_model_alias(MODEL_NAME, alias, version)\nprint(f\"{MODEL_NAME} version {version} ({name}) -> {alias}\")\n"
+          },
+          {
+            "path": "gate.py",
+            "content": "\"\"\"Promotion gate: the challenger replaces the champion only if it wins by the rules.\"\"\"\nimport mlflow\nfrom mlflow import MlflowClient\n\nfrom common import MODEL_NAME, aliases, evaluate\n\nMIN_AUC_GAIN = 0.002          # must beat the champion's AUC by at least this much\nclient = MlflowClient()\n\nchamp = client.get_model_version_by_alias(MODEL_NAME, \"champion\")\nchall = client.get_model_version_by_alias(MODEL_NAME, \"challenger\")\nchamp_m = evaluate(mlflow.sklearn.load_model(f\"models:/{MODEL_NAME}@champion\"))\nchall_m = evaluate(mlflow.sklearn.load_model(f\"models:/{MODEL_NAME}@challenger\"))\nfor label, v, m in ((\"champion\", champ, champ_m), (\"challenger\", chall, chall_m)):\n    print(f\"{label:10} v{v.version}: auc={m['auc']:.4f} malignant_recall={m['malignant_recall']:.4f}\")\n\ngain = chall_m[\"auc\"] - champ_m[\"auc\"]\nreasons = []\nif gain < MIN_AUC_GAIN:\n    reasons.append(f\"AUC gain {gain:+.4f} is below {MIN_AUC_GAIN}\")\nif chall_m[\"malignant_recall\"] < champ_m[\"malignant_recall\"]:\n    reasons.append(\"malignant recall is worse than the champion's\")\n\nfor key, value in chall_m.items():\n    client.set_model_version_tag(MODEL_NAME, chall.version, f\"gate_{key}\", f\"{value:.4f}\")\nif reasons:\n    client.set_model_version_tag(MODEL_NAME, chall.version, \"gate\", \"refused\")\n    client.set_model_version_tag(MODEL_NAME, chall.version, \"gate_reason\", \"; \".join(reasons))\n    client.delete_registered_model_alias(MODEL_NAME, \"challenger\")\n    print(\"REFUSED:\", \"; \".join(reasons))\nelse:\n    client.set_model_version_tag(MODEL_NAME, chall.version, \"gate\", \"passed\")\n    client.set_registered_model_alias(MODEL_NAME, \"previous-champion\", champ.version)\n    client.set_registered_model_alias(MODEL_NAME, \"champion\", chall.version)\n    client.delete_registered_model_alias(MODEL_NAME, \"challenger\")\n    print(f\"PASSED (AUC {gain:+.4f}): champion -> version {chall.version}\")\nprint(\"aliases:\", aliases(client))\n"
+          },
+          {
+            "path": "rollback.py",
+            "content": "\"\"\"Roll back: point the champion alias at the previous champion again.\"\"\"\nfrom mlflow import MlflowClient\n\nfrom common import MODEL_NAME, aliases\n\nclient = MlflowClient()\ncurrent = client.get_model_version_by_alias(MODEL_NAME, \"champion\")\nprevious = client.get_model_version_by_alias(MODEL_NAME, \"previous-champion\")\nclient.set_registered_model_alias(MODEL_NAME, \"champion\", previous.version)\nclient.delete_registered_model_alias(MODEL_NAME, \"previous-champion\")\nclient.set_model_version_tag(MODEL_NAME, current.version, \"rolled_back\", \"true\")\nprint(f\"rolled back: champion -> version {previous.version} (was {current.version})\")\nprint(\"aliases:\", aliases(client))\nfor v in client.search_model_versions(f\"name='{MODEL_NAME}'\", order_by=[\"version_number ASC\"]):\n    print(f\"v{v.version} {v.description!r} gate={v.tags.get('gate', '-')}\")\n"
+          }
+        ],
+        "hints": [
+          "If the version numbers don't match the expected output, you've run the lab before: delete the registered model with python -c \"from mlflow import MlflowClient; MlflowClient().delete_registered_model('screening-model')\" and start again from step 2.",
+          "The gate always removes the challenger alias, so a refused model can't be loaded as a challenger by mistake later; its version and tags stay in the registry.",
+          "Recall here is for label 0 (malignant): pos_label=0 in recall_score says which class counts."
+        ]
+      }
+    },
+    {
+      "title": "Reproducibility and MLflow Projects",
+      "summary": "Why the same code can give a different model, how to record data and environments with each run, how MLflow Projects give training a reproducible entry point, and how to prove a run can be rebuilt.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "Why the same code gives a different model",
+          "minutes": 10,
+          "objectives": [
+            "Identify the sources of non-reproducibility in a training run",
+            "Set and record seeds for Python, NumPy and scikit-learn"
+          ],
+          "key_points": [
+            "Randomness enters through data splits, initialisation, shuffling and sampling: pass random_state to scikit-learn objects, seed Python's random and NumPy explicitly, and log every seed as a parameter.",
+            "Data changes under unchanged code: a table that's appended to or a file that's overwritten silently changes the training set, so every run must record which version of the data it read.",
+            "Environment drift changes results too: a new library version can change defaults or numerical details, so record exact package versions with the run and the model.",
+            "Some sources can't be removed: multithreaded and GPU operations can be non-deterministic, so define reproducible as identical where possible and within a stated tolerance otherwise.",
+            "Python randomises string hashing per process unless PYTHONHASHSEED is set, which changes the iteration order of sets of strings; code that depends on that order isn't reproducible."
+          ]
+        },
+        {
+          "title": "Versioning data and environments",
+          "minutes": 12,
+          "objectives": [
+            "Log a dataset with its digest and a file hash in a run",
+            "Pin and record the environment a model was trained in"
+          ],
+          "key_points": [
+            "mlflow.data.from_pandas(df, source=\"data/train.csv\", name=\"screening-data\", targets=\"target\") describes a dataset, and mlflow.log_input(dataset, context=\"training\") links it to the run with its name, digest and schema.",
+            "The digest is a short fingerprint MLflow computes from the data, so runs with the same digest saw the same rows; also log a SHA-256 of the file as a tag for a check that doesn't depend on MLflow.",
+            "Every logged model carries an environment (requirements.txt, python_env.yaml and conda.yaml); pin exact versions, such as scikit-learn==1.5.2, of anything that affects predictions.",
+            "For large or shared data, use a data versioning tool such as DVC or lakeFS, or immutable dated snapshots in object storage, and log the version identifier with the run.",
+            "Container images give the strongest environment guarantee when referenced by digest (image@sha256:...) rather than by a tag such as latest, which can be moved to another image."
+          ]
+        },
+        {
+          "title": "MLflow Projects",
+          "minutes": 12,
+          "objectives": [
+            "Write an MLproject file with an environment and parameterised entry points",
+            "Run a project locally and from a Git repository"
+          ],
+          "key_points": [
+            "An MLproject file names the project, its environment (python_env, conda_env or docker_env) and its entry points, each with typed parameters, defaults and a command such as python train.py --seed {seed}.",
+            "mlflow run . -P seed=42 --experiment-name reproducible-training runs the main entry point; -e picks another, and --env-manager chooses local (the current environment), virtualenv, uv or conda.",
+            "Parameters passed with -P are logged to the run, and the run is tagged with its entry point; when the project folder is a Git repository, MLflow records the commit as mlflow.source.git.commit.",
+            "mlflow run also accepts a Git URL with --version (a branch, tag or commit), so anyone can rerun exactly the code that produced a model.",
+            "Projects suit simple, parameterised entry points; multi-step pipelines usually move to an orchestrator such as Airflow, with each step still logging to MLflow."
+          ]
+        },
+        {
+          "title": "Reproduce a run from its record",
+          "minutes": 10,
+          "objectives": [
+            "Rebuild a run from what it recorded and compare the result",
+            "Set a tolerance for runs that can't be identical"
+          ],
+          "key_points": [
+            "A reproducible run records five things: the code version, the data version, the parameters including seeds, the environment, and the command or entry point that ran it.",
+            "To reproduce, read them back from the run (parameters, tags, dataset inputs and the model's requirements), check out the commit, rebuild the environment and run the same entry point.",
+            "Compare the rerun with the original on its metrics and on predictions for a fixed sample: identical results confirm the record, and a difference points at whatever wasn't recorded.",
+            "Record the check itself, such as a tag reproduced_from=<run id> with the metric differences, so an audit can see that the model can be rebuilt, not just that it was once trained.",
+            "When identical results are impossible, agree the tolerance in advance (such as AUC within 0.002) and treat a larger gap as a defect to investigate, not as noise."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Make training reproducible, and prove it",
+        "tool": "MLflow",
+        "minutes": 60,
+        "goal": "Turn a training script into an MLflow Project in a Git repository, record its seed, dataset digest and file hash, and show that a rerun reproduces it exactly, while a new seed or changed data is detected.",
+        "setup": [
+          "The tracking server running and MLFLOW_TRACKING_URI set",
+          "Git installed",
+          "The starter files MLproject, python_env.yaml, .gitignore, prepare_data.py, train.py and compare_runs.py in a new folder"
+        ],
+        "steps": [
+          {
+            "do": "Read MLproject: two entry points, main with three typed parameters and prepare with none. Then make the folder a Git repository so runs can record the commit.",
+            "code": "git init\ngit add .\ngit commit -m \"Reproducible training project\"",
+            "lang": "bash"
+          },
+          {
+            "do": "Run the prepare entry point to write the data file. --env-manager local uses your current environment; python_env.yaml is used with virtualenv or uv.",
+            "code": "mlflow run . -e prepare --env-manager local --experiment-name reproducible-training",
+            "lang": "bash",
+            "see": "wrote data/train.csv: 569 rows, 31 columns"
+          },
+          {
+            "do": "Train twice with the same seed.",
+            "code": "mlflow run . -P seed=42 --env-manager local --experiment-name reproducible-training\nmlflow run . -P seed=42 --env-manager local --experiment-name reproducible-training",
+            "lang": "bash",
+            "see": "Two runs, each printing seed=42 val_auc=0.9956"
+          },
+          {
+            "do": "Compare the two most recent runs: inputs, commit, metric and a 20-row prediction sample.",
+            "code": "python compare_runs.py",
+            "lang": "bash",
+            "see": "Every line says same, and identical predictions: True"
+          },
+          {
+            "do": "Train with another seed and compare again.",
+            "code": "mlflow run . -P seed=7 --env-manager local --experiment-name reproducible-training\npython compare_runs.py",
+            "lang": "bash",
+            "see": "seed and val_auc are DIFFERENT, and identical predictions: False"
+          },
+          {
+            "do": "Change the data behind the code's back: drop the last ten rows, train with seed 7 again and compare.",
+            "code": "python -c \"import pandas as pd; df = pd.read_csv('data/train.csv'); df.iloc[:-10].to_csv('data/train.csv', index=False)\"\nmlflow run . -P seed=7 --env-manager local --experiment-name reproducible-training\npython compare_runs.py",
+            "lang": "bash",
+            "see": "The seed matches, but the dataset digest and data sha256 are DIFFERENT"
+          },
+          {
+            "do": "In the UI, open the latest run in reproducible-training: find the dataset it used, its tags (data_sha256, the Git commit and the project entry point) and the model it logged."
+          },
+          {
+            "do": "Write a short reproducibility note: what this project records, what it still doesn't (think about the Python version and the operating system), and the tolerance you'd accept for val_auc."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The data was prepared through the project's prepare entry point.",
+            "look_for": [
+              "wrote data/train.csv: 569 rows, 31 columns"
+            ]
+          },
+          {
+            "text": "Two runs with seed 42 matched on every recorded input and output.",
+            "look_for": [
+              "0.9956 | 0.9956",
+              "identical predictions: True"
+            ]
+          },
+          {
+            "text": "A different seed was detected in the comparison.",
+            "look_for": [
+              "seed",
+              "DIFFERENT",
+              "identical predictions: False"
+            ]
+          },
+          {
+            "text": "Changed data was detected through the digest and the hash.",
+            "look_for": [
+              "dataset digest",
+              "data sha256",
+              "DIFFERENT"
+            ]
+          },
+          {
+            "text": "The runs recorded the Git commit.",
+            "look_for": [
+              "git commit"
+            ]
+          },
+          {
+            "text": "The note names what's recorded, what isn't, and a tolerance.",
+            "look_for": [
+              "tolerance"
+            ]
+          }
+        ],
+        "submit": "Paste the output of each compare_runs.py run, the line each mlflow run printed, and your reproducibility note.",
+        "files": [
+          {
+            "path": "MLproject",
+            "content": "name: reproducible-screening\n\npython_env: python_env.yaml\n\nentry_points:\n  main:\n    parameters:\n      data: {type: string, default: data/train.csv}\n      seed: {type: int, default: 42}\n      epochs: {type: int, default: 20}\n    command: \"python train.py --data {data} --seed {seed} --epochs {epochs}\"\n  prepare:\n    command: \"python prepare_data.py\"\n"
+          },
+          {
+            "path": "python_env.yaml",
+            "content": "# Used by mlflow run --env-manager virtualenv or uv. Pin what you tested with.\npython: \"3.12\"\nbuild_dependencies:\n  - pip\ndependencies:\n  - mlflow>=3,<4\n  - scikit-learn>=1.5\n  - pandas>=2.2\n"
+          },
+          {
+            "path": "gitignore.txt",
+            "content": "mlflow.db\nmlruns/\nmlartifacts/\n.venv/\n__pycache__/\n"
+          },
+          {
+            "path": "prepare_data.py",
+            "content": "\"\"\"Write the training data to a file, so it can be hashed and versioned.\"\"\"\nfrom pathlib import Path\n\nfrom sklearn.datasets import load_breast_cancer\n\nframe = load_breast_cancer(as_frame=True).frame        # 30 features and 'target'\nPath(\"data\").mkdir(exist_ok=True)\nframe.to_csv(\"data/train.csv\", index=False)\nprint(f\"wrote data/train.csv: {len(frame)} rows, {frame.shape[1]} columns\")\n"
+          },
+          {
+            "path": "train.py",
+            "content": "\"\"\"Reproducible training: fixed seeds, a logged dataset, a file hash and a prediction sample.\"\"\"\nimport argparse\nimport hashlib\nimport random\n\nimport mlflow\nimport numpy as np\nimport pandas as pd\nfrom mlflow.models import infer_signature\nfrom sklearn.linear_model import SGDClassifier\nfrom sklearn.metrics import roc_auc_score\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--data\", default=\"data/train.csv\")\nparser.add_argument(\"--seed\", type=int, default=42)\nparser.add_argument(\"--epochs\", type=int, default=20)\nargs = parser.parse_args()\n\nrandom.seed(args.seed)                     # Python's own generator\nnp.random.seed(args.seed)                  # NumPy's global generator\nwith open(args.data, \"rb\") as f:\n    sha256 = hashlib.sha256(f.read()).hexdigest()\n\ndf = pd.read_csv(args.data)\nX, y = df.drop(columns=\"target\"), df[\"target\"]\nX_train, X_val, y_train, y_val = train_test_split(\n    X, y, test_size=0.25, random_state=args.seed, stratify=y)\ndataset = mlflow.data.from_pandas(df, source=args.data, name=\"screening-data\", targets=\"target\")\n\nmlflow.set_experiment(\"reproducible-training\")    # ignored when mlflow run sets the experiment\nwith mlflow.start_run() as run:\n    mlflow.log_params({\"data\": args.data, \"seed\": args.seed, \"epochs\": args.epochs})\n    mlflow.log_input(dataset, context=\"training\")\n    mlflow.set_tag(\"data_sha256\", sha256)\n\n    # SGD shuffles the rows every epoch, so random_state changes the weights it learns.\n    model = make_pipeline(StandardScaler(), SGDClassifier(\n        loss=\"log_loss\", max_iter=args.epochs, tol=None, random_state=args.seed))\n    model.fit(X_train, y_train)\n    proba = model.predict_proba(X_val)[:, 1]\n    auc = roc_auc_score(y_val, proba)\n    mlflow.log_metric(\"val_auc\", auc)\n\n    sample = pd.DataFrame({\"row\": X_val.index[:20], \"proba\": proba[:20]})\n    mlflow.log_text(sample.to_csv(index=False), \"predictions_sample.csv\")\n    mlflow.sklearn.log_model(model, name=\"model\", input_example=X_train.head(2),\n                             signature=infer_signature(X_train, proba))\n    print(f\"run {run.info.run_id[:8]}: seed={args.seed} val_auc={auc:.4f} \"\n          f\"data_sha256={sha256[:12]} rows={len(df)}\")\n"
+          },
+          {
+            "path": "compare_runs.py",
+            "content": "\"\"\"Compare the two most recent runs: what went in, and what came out.\"\"\"\nimport io\n\nimport mlflow\nimport pandas as pd\nfrom mlflow import MlflowClient\n\nclient = MlflowClient()\nexperiment = client.get_experiment_by_name(\"reproducible-training\")\nnewer, older = client.search_runs([experiment.experiment_id],\n                                  order_by=[\"attributes.start_time DESC\"], max_results=2)\n\n\ndef record(run):\n    dataset = run.inputs.dataset_inputs[0].dataset\n    return {\"seed\": run.data.params[\"seed\"],\n            \"epochs\": run.data.params[\"epochs\"],\n            \"dataset digest\": dataset.digest,\n            \"data sha256\": run.data.tags[\"data_sha256\"][:12],\n            \"git commit\": run.data.tags.get(\"mlflow.source.git.commit\", \"not recorded\")[:7],\n            \"val_auc\": f\"{run.data.metrics['val_auc']:.4f}\"}\n\n\ndef predictions(run):\n    text = mlflow.artifacts.load_text(f\"runs:/{run.info.run_id}/predictions_sample.csv\")\n    return pd.read_csv(io.StringIO(text))\n\n\na, b = record(older), record(newer)\nfor key in a:\n    status = \"same\" if a[key] == b[key] else \"DIFFERENT\"\n    print(f\"{key:15} {a[key]:>14} | {b[key]:<14} {status}\")\nprint(\"identical predictions:\", predictions(older).equals(predictions(newer)))\n"
+          }
+        ],
+        "hints": [
+          "Rename gitignore.txt to .gitignore before step 1, so the database and artifact folders stay out of Git.",
+          "If git commit shows not recorded, the folder isn't a Git repository, or MLflow can't find Git on your PATH.",
+          "Changing train.py without committing gives runs the old commit hash with uncommitted changes: commit every change you want a run to be traceable to.",
+          "Your val_auc can differ slightly from 0.9956 with other library versions; what matters is that runs with the same seed match each other exactly."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn the lifecycle and MLflow's parts, start a tracking server and log your first runs in the module 1 lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Track a sweep with nested runs, artifacts and autologging, and choose a winner with search_runs.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Package a model with a signature and a custom pyfunc wrapper, and serve it over REST.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Register candidates, write a promotion gate, and practise promotion and rollback with aliases.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Make training reproducible with an MLflow Project, dataset digests and a rerun comparison.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the churn capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Take a churn model through the MLflow lifecycle",
+    "minutes": 480,
+    "brief": "A subscription business wants to predict which customers will cancel next month, so its retention team can call the riskiest ones first. A previous model was trained in a notebook nobody can rerun. Build the replacement the MLOps way, on the synthetic data from make_churn_data.py (2,000 customers with tenure, charges, support calls, late payments, contract and payment method). Make it an MLflow Project in a Git repository with entry points to prepare data, train one model and run a sweep; track every run with parameters, validation metrics, the dataset input and its hash, and evidence artifacts; package the chosen model as a custom pyfunc model that one-hot encodes the categories, applies a threshold the team can afford to call (about the riskiest 20% of customers), and has a signature and an input example; register candidates, promote one through a gate script that records its decisions, and show a rollback; and finally prove the champion can be rebuilt from its record.",
+    "deliverables": [
+      "The Git repository: MLproject, python_env.yaml, the training, sweep, gate and rollback scripts, and a README",
+      "Output of the sweep, showing nested runs and the selected configuration with its validation metrics",
+      "The registered model's versions with their aliases and gate tags (output of a short listing script)",
+      "Output of serving the champion with mlflow models serve, and of one good and one rejected request",
+      "A reproducibility report: the original and rebuilt run IDs, the comparison output and your tolerance",
+      "A one-page model note: data, metric choices, threshold, known limitations and how to roll back"
+    ],
+    "rubric": [
+      {
+        "name": "Experiment tracking",
+        "points": 20,
+        "description": "Runs log parameters, seeds, validation metrics, the dataset with its digest and hash, and useful artifacts; the sweep uses nested runs and the winner is chosen by search_runs."
+      },
+      {
+        "name": "Packaging",
+        "points": 20,
+        "description": "The pyfunc model applies preprocessing and the threshold, is logged from code with explicit requirements, a signature and an input example, and serves correct predictions over REST."
+      },
+      {
+        "name": "Registry and promotion",
+        "points": 20,
+        "description": "Promotion happens only through a gate that compares challenger and champion on the same holdout, records its decisions as tags, keeps a previous champion and demonstrates rollback."
+      },
+      {
+        "name": "Reproducibility",
+        "points": 25,
+        "description": "The project runs from a clean clone with mlflow run; the champion is rebuilt from its recorded commit, data and parameters, and the comparison matches within the stated tolerance."
+      },
+      {
+        "name": "Documentation",
+        "points": 15,
+        "description": "The README explains how to run every entry point; the model note is clear about the threshold, the limitations and the rollback procedure."
+      }
+    ],
+    "submit": "Paste a link to the repository (or the key files), the outputs listed in the deliverables, the reproducibility report and the model note.",
+    "files": [
+      {
+        "path": "make_churn_data.py",
+        "content": "\"\"\"Generate the capstone's synthetic churn data: 2,000 customers, a fixed seed, a CSV.\"\"\"\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\n\nrng = np.random.default_rng(2024)\nn = 2000\ncontract = rng.choice([\"monthly\", \"annual\", \"two_year\"], size=n, p=[0.55, 0.30, 0.15])\npayment = rng.choice([\"card\", \"debit\", \"transfer\"], size=n, p=[0.5, 0.3, 0.2])\ntenure = rng.integers(1, 73, size=n)\ncharges = np.round(rng.normal(55, 18, size=n).clip(15, 120), 2)\ncalls = rng.poisson(1.2, size=n)\nlate = rng.poisson(0.4, size=n)\n\nlogit = (-1.2 + 0.9 * (contract == \"monthly\") - 0.8 * (contract == \"two_year\")\n         - 0.035 * tenure + 0.015 * (charges - 55) + 0.45 * calls + 0.6 * late\n         + 0.3 * (payment == \"transfer\"))\nchurned = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\n\ndf = pd.DataFrame({\"customer_id\": np.arange(10001, 10001 + n), \"tenure_months\": tenure,\n                   \"monthly_charges\": charges, \"support_calls\": calls, \"late_payments\": late,\n                   \"contract\": contract, \"payment_method\": payment, \"churned\": churned})\nPath(\"data\").mkdir(exist_ok=True)\ndf.to_csv(\"data/churn.csv\", index=False)\nprint(f\"wrote data/churn.csv: {len(df)} rows, churn rate {df.churned.mean():.3f}\")\n"
+      }
+    ]
+  }
+}
