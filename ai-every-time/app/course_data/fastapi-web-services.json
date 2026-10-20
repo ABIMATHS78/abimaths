@@ -1,0 +1,1046 @@
+{
+ "slug": "fastapi-web-services",
+ "title": "Introduction to FastAPI and Modern Web Services",
+ "subtitle": "Build typed, validated, self-documenting web APIs in Python with FastAPI and Pydantic, from your first endpoint to a tested CRUD service with dependencies and interactive docs.",
+ "category": "Software Development",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "chaiyapon-srisomboon",
+  "mouhamadouu-ba"
+ ],
+ "skills": [
+  "FastAPI",
+  "REST API design",
+  "Pydantic data validation",
+  "HTTP methods and status codes",
+  "Dependency injection",
+  "OpenAPI documentation",
+  "Async Python (ASGI)",
+  "API testing with TestClient"
+ ],
+ "tools": [
+  "FastAPI",
+  "Pydantic",
+  "Uvicorn",
+  "Swagger UI",
+  "ReDoc",
+  "pytest",
+  "curl"
+ ],
+ "outcomes": [
+  "Explain how ASGI servers such as Uvicorn run async Python web apps, and when to write async def or def endpoints",
+  "Create FastAPI applications with routers, path and query parameters, and the right HTTP methods and status codes",
+  "Validate requests and shape responses with Pydantic models, field constraints, validators and nested schemas",
+  "Share logic with dependencies for sessions, paging, lookups and API-key checks, and override them in tests",
+  "Document an API through its OpenAPI schema, and explore and test it in Swagger UI and ReDoc"
+ ],
+ "prerequisites": "Comfortable Python: functions, classes, dictionaries, modules, virtual environments and pip, as in Python Programming with PyCharm; type hints help but are explained here. A basic idea of HTTP requests, responses and status codes helps; Networking Fundamentals: How Networks and the Internet Work covers it. You need Python 3.10 or later, a terminal with curl, and a web browser.",
+ "description": "FastAPI has become a popular way to build web APIs in Python because it turns ordinary type hints into request parsing, validation and documentation. This course takes you from the ideas underneath, HTTP, ASGI and the event loop behind async and await, to a complete, tested CRUD service. You'll define routes with path and query parameters, return the right status codes and organise endpoints with routers; describe your data with Pydantic models, constraints, custom validators and nested schemas; share logic through FastAPI's dependency injection, from database sessions opened and closed for each request to API-key checks that tell 401 from 403; and make the generated OpenAPI documentation genuinely useful in Swagger UI and ReDoc.\n\nEvery module has a lab on one task API that grows from lab to lab, with starter files, TODOs to complete, and the exact output of each curl command and test run, all checked against current FastAPI. You'll even measure what blocking the event loop does. The capstone is a projects-and-tasks API you can use entirely from Swagger UI, with its own test suite.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "The Modern Web & ASGI",
+   "summary": "How Python web services work today: HTTP requests and responses, the move from WSGI to ASGI, the event loop behind async and await, and the type hints FastAPI is built on, ending with your first running API.",
+   "instructor": "mouhamadouu-ba",
+   "lessons": [
+    {
+     "title": "HTTP APIs, WSGI and ASGI",
+     "minutes": 11,
+     "objectives": [
+      "Describe what a web API receives and returns",
+      "Explain the difference between WSGI and ASGI, and what an ASGI server does"
+     ],
+     "key_points": [
+      "A web API receives HTTP requests, each with a method (GET, POST, PUT, PATCH or DELETE), a path, headers and sometimes a body, and returns a response with a status code, headers and usually a JSON body.",
+      "WSGI, the long-standing Python standard behind classic Flask and Django deployments, hands each request to the application as one synchronous call; ASGI (Asynchronous Server Gateway Interface) is its asynchronous successor and also supports long-lived connections such as WebSockets.",
+      "In ASGI, the server handles the network and HTTP parsing, then calls the application, an async callable, with the request's details (the scope) and functions to receive and send messages.",
+      "FastAPI is built on Starlette, the ASGI toolkit that does the routing and responses, and on Pydantic, which does the data validation; an ASGI server such as Uvicorn runs it.",
+      "uvicorn main:app imports the object app from main.py and serves it, by default on http://127.0.0.1:8000; --reload restarts it whenever the code changes, which is for development only."
+     ]
+    },
+    {
+     "title": "async and await in a web server",
+     "minutes": 12,
+     "objectives": [
+      "Explain how an event loop serves many requests at once",
+      "Choose between async def and def for a path operation"
+     ],
+     "key_points": [
+      "async def defines a coroutine function. Inside it, await pauses the coroutine until what it waits for, such as a network reply, is ready, and the event loop runs other coroutines in the meantime.",
+      "One process with an event loop can keep many requests in progress at once while they wait for I/O, such as a database, a file or another API; work that keeps the CPU busy doesn't benefit.",
+      "FastAPI runs a plain def path operation in a thread pool, so blocking code is safe there; an async def path operation runs on the event loop itself, so it must only await, never block.",
+      "A blocking call such as time.sleep() or requests.get() inside async def freezes the event loop and every other request with it; use await asyncio.sleep() and async clients such as httpx.AsyncClient instead.",
+      "asyncio.gather(first(), second()) runs awaitables concurrently, so two independent calls take about as long as the slower one rather than the sum of both."
+     ]
+    },
+    {
+     "title": "Type hints and your first FastAPI app",
+     "minutes": 12,
+     "objectives": [
+      "Read the type hints FastAPI uses to parse and validate requests",
+      "Install FastAPI, run an app with the development server and find its documentation"
+     ],
+     "key_points": [
+      "Type hints such as def read_item(item_id: int, q: str | None = None) -> dict annotate parameters and return values. Python doesn't enforce them, but FastAPI reads them to parse, convert, validate and document each request.",
+      "Install with pip install \"fastapi[standard]\" in a virtual environment: it brings Uvicorn, the fastapi command and common extras. Current FastAPI needs Python 3.10 or later.",
+      "fastapi dev main.py starts a development server with auto-reload on http://127.0.0.1:8000; fastapi run main.py starts it for production, listening on 0.0.0.0 without reload.",
+      "app = FastAPI() creates the application, and a decorated function such as @app.get(\"/\") def root(): return {\"message\": \"Hello\"} is a path operation; FastAPI turns the returned dict into a JSON response.",
+      "Interactive documentation appears by itself at /docs (Swagger UI) and /redoc (ReDoc), both generated from the OpenAPI schema served at /openapi.json."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Create and run your first API",
+      "steps": [
+       {
+        "do": "Make a folder and a virtual environment, then install FastAPI with its standard extras.",
+        "code": "mkdir -p ~/fastapi-lab/hello && cd ~/fastapi-lab/hello\npython3 -m venv .venv\nsource .venv/bin/activate\npip install \"fastapi[standard]\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Create main.py.",
+        "code": "from fastapi import FastAPI\n\napp = FastAPI()\n\n\n@app.get(\"/\")\ndef root() -> dict:\n    return {\"message\": \"Hello from FastAPI\"}\n\n\n@app.get(\"/items/{item_id}\")\ndef read_item(item_id: int, q: str | None = None) -> dict:\n    return {\"item_id\": item_id, \"q\": q}\n",
+        "lang": "python"
+       },
+       {
+        "do": "Start the development server.",
+        "code": "fastapi dev main.py",
+        "lang": "bash",
+        "see": "Server started at http://127.0.0.1:8000 and Documentation at http://127.0.0.1:8000/docs, then Uvicorn's Application startup complete."
+       },
+       {
+        "do": "In a second terminal, call it, including once with a path parameter that isn't a number.",
+        "code": "curl http://127.0.0.1:8000/\ncurl \"http://127.0.0.1:8000/items/42?q=tea\"\ncurl http://127.0.0.1:8000/items/abc",
+        "lang": "bash",
+        "see": "{\"message\":\"Hello from FastAPI\"}, then {\"item_id\":42,\"q\":\"tea\"}, then a 422 error: Input should be a valid integer, unable to parse string as an integer"
+       },
+       {
+        "do": "Open http://127.0.0.1:8000/docs in a browser, then http://127.0.0.1:8000/openapi.json.",
+        "see": "Swagger UI listing both operations, then the raw OpenAPI schema they're drawn from."
+       },
+       {
+        "do": "Change the message in main.py and save: the development server reloads by itself. Stop it with Ctrl+C."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Your first API, and async in action",
+    "tool": "FastAPI and Uvicorn",
+    "minutes": 40,
+    "goal": "Create a FastAPI app, run it with the development server, call it with curl and from the interactive docs, and measure for yourself what blocking the event loop does.",
+    "setup": [
+     "Python 3.10 or later, and a terminal with curl",
+     "A folder ~/fastapi-lab/first with the starter files main.py, timing.py and test_main.py"
+    ],
+    "steps": [
+     {
+      "do": "Create a virtual environment and install FastAPI and pytest.",
+      "code": "cd ~/fastapi-lab/first\npython3 -m venv .venv\nsource .venv/bin/activate\npip install \"fastapi[standard]\" pytest",
+      "lang": "bash"
+     },
+     {
+      "do": "Complete the TODO in main.py: a GET /version endpoint."
+     },
+     {
+      "do": "Start the development server in this terminal.",
+      "code": "fastapi dev main.py",
+      "lang": "bash",
+      "see": "Server started at http://127.0.0.1:8000, then Application startup complete."
+     },
+     {
+      "do": "In a second terminal, activate the environment and call the API.",
+      "code": "cd ~/fastapi-lab/first && source .venv/bin/activate\ncurl http://127.0.0.1:8000/\ncurl -i http://127.0.0.1:8000/version",
+      "lang": "bash",
+      "see": "{\"message\":\"Hello from FastAPI\"}, then HTTP/1.1 200 OK, content-type: application/json and {\"version\":\"0.1.0\"}"
+     },
+     {
+      "do": "Open http://127.0.0.1:8000/docs. Expand GET /version, choose Try it out, then Execute.",
+      "see": "Swagger UI titled First API; the response has code 200 and the body {\"version\": \"0.1.0\"}."
+     },
+     {
+      "do": "Run the timing experiment: five requests at once to each of the three /wait endpoints.",
+      "code": "python timing.py",
+      "lang": "bash",
+      "see": "/wait/sync 5 requests in 1.0 s, /wait/async 5 requests in 1.0 s, /wait/blocking 5 requests in 5.0 s"
+     },
+     {
+      "do": "Complete the TODO in test_main.py, then run the tests. TestClient calls the app directly, so the server doesn't need to be running.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "3 passed"
+     },
+     {
+      "do": "In two or three sentences, explain why /wait/blocking took five times as long as the others."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The API answers on / and on the new /version endpoint.",
+      "look_for": [
+       "Hello from FastAPI",
+       "\"version\":\"0.1.0\""
+      ]
+     },
+     {
+      "text": "The timings show the blocking endpoint handling requests one at a time.",
+      "look_for": [
+       "/wait/async",
+       "1.0 s",
+       "5.0 s"
+      ]
+     },
+     {
+      "text": "The tests pass.",
+      "look_for": [
+       "3 passed"
+      ]
+     },
+     {
+      "text": "The explanation names the event loop.",
+      "look_for": [
+       "event loop"
+      ]
+     }
+    ],
+    "submit": "Paste your /version endpoint and its test, the output of steps 4, 6 and 7, and your explanation of the timings.",
+    "files": [
+     {
+      "path": "main.py",
+      "content": "import asyncio\nimport time\n\nfrom fastapi import FastAPI\n\napp = FastAPI(title=\"First API\")\n\n\n@app.get(\"/\")\ndef root() -> dict:\n    return {\"message\": \"Hello from FastAPI\"}\n\n\n@app.get(\"/health\")\ndef health() -> dict:\n    return {\"status\": \"ok\"}\n\n\n# TODO: add a GET /version endpoint that returns {\"version\": \"0.1.0\"}\n\n\n@app.get(\"/wait/sync\")\ndef wait_sync() -> dict:\n    \"\"\"A plain def endpoint: FastAPI runs it in a thread pool, so blocking here is safe.\"\"\"\n    time.sleep(1)\n    return {\"waited\": 1}\n\n\n@app.get(\"/wait/async\")\nasync def wait_async() -> dict:\n    \"\"\"An async endpoint that awaits: the event loop serves other requests meanwhile.\"\"\"\n    await asyncio.sleep(1)\n    return {\"waited\": 1}\n\n\n@app.get(\"/wait/blocking\")\nasync def wait_blocking() -> dict:\n    \"\"\"The classic mistake: a blocking call inside async def stops the whole event loop.\"\"\"\n    time.sleep(1)\n    return {\"waited\": 1}\n"
+     },
+     {
+      "path": "timing.py",
+      "content": "\"\"\"Send five requests at once to each /wait endpoint and time them: python timing.py\"\"\"\nimport asyncio\nimport time\n\nimport httpx\n\nBASE_URL = \"http://127.0.0.1:8000\"\n\n\nasync def burst(client: httpx.AsyncClient, path: str, count: int = 5) -> float:\n    start = time.perf_counter()\n    await asyncio.gather(*(client.get(path) for _ in range(count)))\n    return time.perf_counter() - start\n\n\nasync def main() -> None:\n    async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:\n        for path in [\"/wait/sync\", \"/wait/async\", \"/wait/blocking\"]:\n            print(f\"{path:<15} 5 requests in {await burst(client, path):.1f} s\")\n\n\nasyncio.run(main())\n"
+     },
+     {
+      "path": "test_main.py",
+      "content": "from fastapi.testclient import TestClient\n\nfrom main import app\n\nclient = TestClient(app)\n\n\ndef test_root_says_hello():\n    response = client.get(\"/\")\n    assert response.status_code == 200\n    assert response.json() == {\"message\": \"Hello from FastAPI\"}\n\n\ndef test_health():\n    assert client.get(\"/health\").json() == {\"status\": \"ok\"}\n\n\n# TODO: add a test that GET /version returns status 200 and {\"version\": \"0.1.0\"}\n"
+     }
+    ],
+    "hints": [
+     "If fastapi isn't found, activate the virtual environment in that terminal.",
+     "Port 8000 in use? Start with fastapi dev main.py --port 8001 and change BASE_URL in timing.py to match.",
+     "Timings vary by a tenth of a second or so; the pattern is what matters.",
+     "/wait/sync is a plain def, so FastAPI runs each request in its thread pool."
+    ]
+   }
+  },
+  {
+   "title": "FastAPI Fundamentals & Routing",
+   "summary": "Set up a FastAPI project and define its routes: path operations for each HTTP method, path and query parameters with validation, status codes and errors, and APIRouter to keep a growing API organised.",
+   "instructor": "chaiyapon-srisomboon",
+   "lessons": [
+    {
+     "title": "Path operations and HTTP methods",
+     "minutes": 12,
+     "objectives": [
+      "Map HTTP methods and paths to Python functions",
+      "Choose the right method and status code for each operation"
+     ],
+     "key_points": [
+      "A path operation joins an HTTP method and a path to a function: @app.get reads, @app.post creates, @app.put replaces, @app.patch changes part of a resource and @app.delete removes it.",
+      "REST APIs name resources with nouns and let the method say what happens: GET /tasks lists tasks, POST /tasks creates one, GET /tasks/{task_id} reads one and DELETE /tasks/{task_id} deletes it.",
+      "Status codes tell the client what happened: 200 OK, 201 Created (status_code=201 on the decorator), 204 No Content, 400 for a bad request, 401 and 403 for authentication and permission, 404 Not Found, 422 for invalid input and 500 for a server error.",
+      "raise HTTPException(status_code=404, detail=\"Task not found\") stops the request and sends a JSON error body: {\"detail\": \"Task not found\"}.",
+      "Routes are matched in the order they're declared, so a fixed path such as /tasks/summary must come before /tasks/{task_id}, or summary is taken for an ID and rejected with a 422."
+     ]
+    },
+    {
+     "title": "Path and query parameters",
+     "minutes": 12,
+     "objectives": [
+      "Declare path and query parameters with types and defaults",
+      "Validate parameters with Query and Path"
+     ],
+     "key_points": [
+      "A path parameter is part of the URL, named in both the path and the function: @app.get(\"/tasks/{task_id}\") def read(task_id: int). FastAPI converts \"42\" to 42 and answers 422 for a value that isn't a number.",
+      "Function parameters that aren't in the path are query parameters: def list_tasks(limit: int = 10, offset: int = 0) reads /tasks?limit=10&offset=20, and a parameter without a default is required.",
+      "None as a default makes a query parameter optional, as in done: bool | None = None; for booleans FastAPI accepts true and false, 1 and 0, yes and no, and on and off.",
+      "Annotated[int, Query(ge=1, le=100)] adds validation and documentation to a query parameter, and Annotated[int, Path(ge=1)] to a path parameter; a value out of range gets a 422 that names the parameter.",
+      "An Enum or a Literal type limits a parameter to a list of values, which the docs offer as a choice."
+     ]
+    },
+    {
+     "title": "Responses, status codes and routers",
+     "minutes": 12,
+     "objectives": [
+      "Control what a path operation returns and with which status",
+      "Organise routes into modules with APIRouter"
+     ],
+     "key_points": [
+      "FastAPI converts what you return, such as dicts, lists, Pydantic models and dates, to JSON and sends it with Content-Type: application/json.",
+      "A return type annotation or response_model makes FastAPI check and filter the response against that type; when it's a Pydantic model, recent versions also serialise it with Pydantic's fast core.",
+      "status_code=204 on the decorator sends an empty body; returning a Response (or JSONResponse) directly gives full control of the status, headers and body.",
+      "APIRouter groups related routes in their own module: router = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"]) in app/routers/tasks.py, then app.include_router(router) in app/main.py.",
+      "When only /tasks exists, a request for /tasks/ is redirected with a 307 to /tasks, so clients should use paths exactly as documented."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Route a task list",
+    "tool": "FastAPI",
+    "minutes": 50,
+    "goal": "Build the read and delete routes of a task API with an APIRouter: validated query filters and paging, a path parameter, a 404, a 204, and a fixed route that has to come before the path parameter, all tested with TestClient.",
+    "setup": [
+     "The virtual environment from the module 1 lab",
+     "A folder ~/fastapi-lab/tasks with the starter files: pyproject.toml, the app folder and tests/test_tasks.py"
+    ],
+    "steps": [
+     {
+      "do": "Look at the structure: app/main.py includes the router from app/routers/tasks.py, and app/data.py keeps four tasks in memory. Start the server.",
+      "code": "cd ~/fastapi-lab/tasks\nfastapi dev app/main.py",
+      "lang": "bash",
+      "see": "Uvicorn running on http://127.0.0.1:8000"
+     },
+     {
+      "do": "Complete TODO 1 in list_tasks: the done and priority filters, then offset and limit. Try them from the second terminal.",
+      "code": "curl -s \"http://127.0.0.1:8000/tasks?done=false&priority=1\"\ncurl -s \"http://127.0.0.1:8000/tasks?limit=2&offset=1\"",
+      "lang": "bash",
+      "see": "[{\"id\":3,\"title\":\"Fix the login bug\",\"done\":false,\"priority\":1}], then tasks 2 and 3."
+     },
+     {
+      "do": "See the validation you got for free.",
+      "code": "curl -s \"http://127.0.0.1:8000/tasks?priority=7\"\ncurl -s http://127.0.0.1:8000/tasks/abc",
+      "lang": "bash",
+      "see": "A 422 with less_than_equal and Input should be less than or equal to 3; then int_parsing, Input should be a valid integer, unable to parse string as an integer."
+     },
+     {
+      "do": "Complete TODO 2, the summary route. Then move it below read_task, save, and call it again; put it back afterwards.",
+      "code": "curl -s http://127.0.0.1:8000/tasks/summary",
+      "lang": "bash",
+      "see": "{\"total\":4,\"done\":1}; with the route moved, a 422 whose input is \"summary\", because /{task_id} matched first."
+     },
+     {
+      "do": "Complete TODO 3, the delete route, and try it.",
+      "code": "curl -s -i -X DELETE http://127.0.0.1:8000/tasks/1 | head -n 1\ncurl -s -o /dev/null -w \"%{http_code}\\n\" http://127.0.0.1:8000/tasks/1",
+      "lang": "bash",
+      "see": "HTTP/1.1 204 No Content, then 404: the task is gone."
+     },
+     {
+      "do": "Ask for the list with a trailing slash.",
+      "code": "curl -s -i http://127.0.0.1:8000/tasks/ | head -n 1",
+      "lang": "bash",
+      "see": "HTTP/1.1 307 Temporary Redirect, with a location header pointing at /tasks."
+     },
+     {
+      "do": "Complete TODO 4 in tests/test_tasks.py, then run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "8 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The filters and paging work.",
+      "look_for": [
+       "\"id\":3,\"title\":\"Fix the login bug\""
+      ]
+     },
+     {
+      "text": "Invalid parameters are rejected with 422 and a reason.",
+      "look_for": [
+       "Input should be less than or equal to 3",
+       "unable to parse string as an integer"
+      ]
+     },
+     {
+      "text": "The summary route works, and the route-order mistake was seen.",
+      "look_for": [
+       "{\"total\":4,\"done\":1}",
+       "\"input\":\"summary\""
+      ]
+     },
+     {
+      "text": "Delete answers 204 and the task is then gone.",
+      "look_for": [
+       "204 No Content",
+       "404"
+      ]
+     },
+     {
+      "text": "All eight tests pass.",
+      "look_for": [
+       "8 passed"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed routes, your two new tests, and the output of steps 2 to 7.",
+    "files": [
+     {
+      "path": "pyproject.toml",
+      "content": "[project]\nname = \"task-api\"\nversion = \"0.1.0\"\nrequires-python = \">=3.10\"\ndependencies = [\"fastapi[standard]\"]\n\n[tool.pytest.ini_options]\npythonpath = [\".\"]\ntestpaths = [\"tests\"]\n"
+     },
+     {
+      "path": "app/__init__.py",
+      "content": "\"\"\"The task API.\"\"\"\n"
+     },
+     {
+      "path": "app/main.py",
+      "content": "from fastapi import FastAPI\n\nfrom app.routers import tasks\n\napp = FastAPI(title=\"Task API\")\napp.include_router(tasks.router)\n\n\n@app.get(\"/health\")\ndef health() -> dict:\n    return {\"status\": \"ok\"}\n"
+     },
+     {
+      "path": "app/data.py",
+      "content": "\"\"\"The tasks the API serves, kept in memory for now.\"\"\"\n\nSEED = [\n    {\"id\": 1, \"title\": \"Write the release notes\", \"done\": False, \"priority\": 2},\n    {\"id\": 2, \"title\": \"Review the API design\", \"done\": True, \"priority\": 1},\n    {\"id\": 3, \"title\": \"Fix the login bug\", \"done\": False, \"priority\": 1},\n    {\"id\": 4, \"title\": \"Update the dependencies\", \"done\": False, \"priority\": 3},\n]\n\nTASKS: dict[int, dict] = {}\n\n\ndef reset() -> None:\n    \"\"\"Put the tasks back to the seed data. The tests call this before each test.\"\"\"\n    TASKS.clear()\n    TASKS.update({task[\"id\"]: dict(task) for task in SEED})\n\n\nreset()\n"
+     },
+     {
+      "path": "app/routers/__init__.py",
+      "content": "\"\"\"One module per group of endpoints.\"\"\"\n"
+     },
+     {
+      "path": "app/routers/tasks.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, HTTPException, Path, Query\n\nfrom app.data import TASKS\n\nrouter = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"])\n\n\n@router.get(\"\")\ndef list_tasks(\n    done: bool | None = None,\n    priority: Annotated[int | None, Query(ge=1, le=3)] = None,\n    limit: Annotated[int, Query(ge=1, le=100)] = 10,\n    offset: Annotated[int, Query(ge=0)] = 0,\n) -> list[dict]:\n    \"\"\"List tasks, optionally only done or open ones, or only one priority.\"\"\"\n    # TODO 1: keep the tasks in TASKS.values() that match done and priority (a filter that is None\n    #        matches everything), then return the slice that offset and limit describe\n    return list(TASKS.values())\n\n\n# TODO 2: add GET /tasks/summary, returning {\"total\": number of tasks, \"done\": number done}.\n#        Declare it here, before /{task_id}, or \"summary\" would be taken for a task ID.\n\n\n@router.get(\"/{task_id}\")\ndef read_task(task_id: Annotated[int, Path(ge=1)]) -> dict:\n    \"\"\"One task, by its ID.\"\"\"\n    if task_id not in TASKS:\n        raise HTTPException(status_code=404, detail=\"Task not found\")\n    return TASKS[task_id]\n\n\n# TODO 3: add DELETE /tasks/{task_id}: remove the task and answer 204 No Content, or raise a 404\n#        with the detail \"Task not found\" if there's no such task\n"
+     },
+     {
+      "path": "tests/test_tasks.py",
+      "content": "import pytest\nfrom fastapi.testclient import TestClient\n\nfrom app import data\nfrom app.main import app\n\nclient = TestClient(app)\n\n\n@pytest.fixture(autouse=True)\ndef fresh_data():\n    data.reset()\n\n\ndef test_list_tasks_returns_all_four():\n    response = client.get(\"/tasks\")\n    assert response.status_code == 200\n    assert [task[\"id\"] for task in response.json()] == [1, 2, 3, 4]\n\n\ndef test_filter_by_done_and_priority():\n    response = client.get(\"/tasks\", params={\"done\": False, \"priority\": 1})\n    assert [task[\"id\"] for task in response.json()] == [3]\n\n\ndef test_limit_and_offset():\n    assert [task[\"id\"] for task in client.get(\"/tasks?limit=2&offset=1\").json()] == [2, 3]\n\n\ndef test_a_priority_out_of_range_is_rejected():\n    assert client.get(\"/tasks?priority=7\").status_code == 422\n\n\ndef test_read_one_task_and_a_missing_one():\n    assert client.get(\"/tasks/3\").json()[\"title\"] == \"Fix the login bug\"\n    response = client.get(\"/tasks/99\")\n    assert response.status_code == 404\n    assert response.json() == {\"detail\": \"Task not found\"}\n\n\ndef test_summary_is_not_taken_for_an_id():\n    assert client.get(\"/tasks/summary\").json() == {\"total\": 4, \"done\": 1}\n\n\n# TODO 4: test that DELETE /tasks/1 answers 204 with an empty body and that the task is then gone,\n#        and that deleting a task that doesn't exist answers 404\n"
+     }
+    ],
+    "hints": [
+     "A task matches when each filter is None or equal to the task's value.",
+     "fastapi dev reloads when you save, so there's no need to restart it.",
+     "The autouse fixture calls data.reset() before each test, so a deletion in one test doesn't affect the next.",
+     "status_code=204 on the decorator, with a function that returns None, gives an empty response."
+    ]
+   }
+  },
+  {
+   "title": "Data Validation with Pydantic",
+   "summary": "Define the shape of the data your API accepts and returns with Pydantic: request bodies validated automatically, constraints and custom validators, clear 422 errors, nested models, and response models that never leak internal fields.",
+   "instructor": "mouhamadouu-ba",
+   "lessons": [
+    {
+     "title": "Pydantic models and request bodies",
+     "minutes": 12,
+     "objectives": [
+      "Declare request bodies with Pydantic models",
+      "Separate what clients send from what the API returns"
+     ],
+     "key_points": [
+      "A Pydantic model is a class of typed fields, as in class TaskCreate(BaseModel): title: str; priority: int = 2. A path operation parameter typed with a model is read from the JSON request body.",
+      "FastAPI parses the body, validates it against the model and passes your function a model instance; model_dump() turns it back into a dict.",
+      "In its default lax mode Pydantic converts compatible values, such as \"3\" to 3 for an int field, and rejects values it can't convert; strict=True on a field or in model_config turns conversion off.",
+      "Send JSON bodies with a JSON Content-Type such as application/json: recent FastAPI versions don't read the body as JSON otherwise. With curl, add -H \"Content-Type: application/json\" (curl 7.82 and later also have --json).",
+      "Use separate models for what clients send and what they get back: TaskCreate to create, TaskUpdate with optional fields for PATCH, and Task, with the server-owned id and done, for responses."
+     ]
+    },
+    {
+     "title": "Field constraints and validation errors",
+     "minutes": 12,
+     "objectives": [
+      "Constrain fields with Field and standard types",
+      "Read and produce clear validation errors, including your own"
+     ],
+     "key_points": [
+      "Field() adds constraints: min_length and max_length for strings and lists, ge, gt, le and lt for numbers, and pattern for a regular expression; Annotated[str, Field(min_length=1)] makes a constrained type you can reuse.",
+      "Standard types validate formats: date and datetime (ISO 8601 strings), UUID, HttpUrl, Literal[\"low\", \"high\"] for fixed values, and EmailStr, which needs the email-validator package.",
+      "A failed validation returns 422 with a detail list, one entry per problem, each with a type (such as string_too_short), a loc (such as [\"body\", \"title\"]), a msg and the input, so a client can fix everything at once.",
+      "@field_validator(\"title\") on a classmethod checks or cleans one field, such as stripping spaces and rejecting blanks; @model_validator(mode=\"after\") checks rules across fields. Raising ValueError gives a value_error entry.",
+      "model_config = ConfigDict(extra=\"forbid\") rejects unknown fields, so a misspelt \"titel\" is an error instead of being silently ignored."
+     ]
+    },
+    {
+     "title": "Nested models and response models",
+     "minutes": 12,
+     "objectives": [
+      "Validate nested data with models inside models",
+      "Shape responses and partial updates with response models and exclude_unset"
+     ],
+     "key_points": [
+      "Models can contain models and lists of them, as in checklist: list[ChecklistItem] = []. Nested data is validated all the way down, and an error's loc points at the item, such as [\"body\", \"checklist\", 0, \"text\"].",
+      "A response model filters what goes out: return a TaskInDB with an internal created_by field from a path operation declared to return Task, and created_by is never sent.",
+      "For partial updates, model_dump(exclude_unset=True) gives only the fields the client actually sent, and model_copy(update=...) applies them to the stored object.",
+      "Mutable defaults such as [] are safe for Pydantic fields, because each instance gets its own copy, unlike default values in Python functions.",
+      "Field(examples=[...]) and model_config's json_schema_extra add examples that appear in the generated documentation."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Validate tasks with Pydantic",
+    "tool": "FastAPI and Pydantic",
+    "minutes": 55,
+    "goal": "Give the task API typed request and response models: create, replace and partly update tasks with strict validation, nested checklists and a response model that keeps an internal field private.",
+    "setup": [
+     "The virtual environment from the module 1 lab",
+     "A folder ~/fastapi-lab/tasks-v2 with the starter files"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 to 3 in app/models.py: forbid unknown fields, add the remaining fields, and validate the title. Then start the server.",
+      "code": "cd ~/fastapi-lab/tasks-v2\nfastapi dev app/main.py",
+      "lang": "bash"
+     },
+     {
+      "do": "Complete TODO 4, create_task, then create a task. The spaces round the title are stripped and the defaults filled in.",
+      "code": "curl -s -i -X POST http://127.0.0.1:8000/tasks -H \"Content-Type: application/json\" -d '{\"title\": \"  Plan the sprint  \", \"due\": \"2025-07-15\"}'",
+      "lang": "bash",
+      "see": "HTTP/1.1 201 Created and {\"title\":\"Plan the sprint\",\"priority\":2,\"due\":\"2025-07-15\",\"checklist\":[],\"id\":5,\"done\":false}"
+     },
+     {
+      "do": "Leave out the Content-Type header and see what happens.",
+      "code": "curl -s -X POST http://127.0.0.1:8000/tasks -d '{\"title\": \"No content type\"}'",
+      "lang": "bash",
+      "see": "A 422 of type model_attributes_type: without a JSON Content-Type the body isn't read as JSON."
+     },
+     {
+      "do": "Send three mistakes at once.",
+      "code": "curl -s -X POST http://127.0.0.1:8000/tasks -H \"Content-Type: application/json\" -d '{\"title\": \"\", \"priority\": 7, \"titel\": \"typo\"}'",
+      "lang": "bash",
+      "see": "Three entries in detail: string_too_short for title, less_than_equal for priority and extra_forbidden for titel."
+     },
+     {
+      "do": "Try a nested error, your own validator, and a value Pydantic converts.",
+      "code": "curl -s -X POST http://127.0.0.1:8000/tasks -H \"Content-Type: application/json\" -d '{\"title\": \"Ship it\", \"checklist\": [{\"text\": \"\"}]}'\ncurl -s -X POST http://127.0.0.1:8000/tasks -H \"Content-Type: application/json\" -d '{\"title\": \"   \"}'\ncurl -s -X POST http://127.0.0.1:8000/tasks -H \"Content-Type: application/json\" -d '{\"title\": \"Pay\", \"priority\": \"3\"}'",
+      "lang": "bash",
+      "see": "loc [\"body\",\"checklist\",0,\"text\"]; then Value error, title can't be blank; then a new task with priority 3, converted from the string \"3\"."
+     },
+     {
+      "do": "Complete TODO 5, update_task, then change one field with PATCH and replace the task with PUT.",
+      "code": "curl -s -X PATCH http://127.0.0.1:8000/tasks/1 -H \"Content-Type: application/json\" -d '{\"done\": true}'\ncurl -s -X PUT http://127.0.0.1:8000/tasks/1 -H \"Content-Type: application/json\" -d '{\"title\": \"Write and publish the release notes\", \"priority\": 1}'",
+      "lang": "bash",
+      "see": "Task 1 with \"done\":true and its title unchanged; then the replaced task, still done, with the new title and priority 1."
+     },
+     {
+      "do": "Read a task with a nested checklist. created_by is stored but never returned.",
+      "code": "curl -s http://127.0.0.1:8000/tasks/3",
+      "lang": "bash",
+      "see": "\"checklist\":[{\"text\":\"Reproduce it\",\"done\":true},{\"text\":\"Write a test\",\"done\":false}] and no created_by."
+     },
+     {
+      "do": "Complete TODO 6 in tests/test_tasks.py, then run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "7 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "A task is created with 201, its title cleaned and its defaults filled in.",
+      "look_for": [
+       "201 Created",
+       "\"title\":\"Plan the sprint\""
+      ]
+     },
+     {
+      "text": "A body without a JSON Content-Type is rejected.",
+      "look_for": [
+       "model_attributes_type"
+      ]
+     },
+     {
+      "text": "Every mistake is reported at once.",
+      "look_for": [
+       "string_too_short",
+       "less_than_equal",
+       "extra_forbidden"
+      ]
+     },
+     {
+      "text": "Nested errors and the custom validator work.",
+      "look_for": [
+       "\"checklist\",0,\"text\"",
+       "title can't be blank"
+      ]
+     },
+     {
+      "text": "PATCH changes only what was sent.",
+      "look_for": [
+       "\"done\":true"
+      ]
+     },
+     {
+      "text": "All seven tests pass, including the one that checks created_by is never returned.",
+      "look_for": [
+       "7 passed"
+      ]
+     }
+    ],
+    "submit": "Paste your completed models.py, create_task and update_task, your two new tests, and the output of steps 2 to 8.",
+    "files": [
+     {
+      "path": "pyproject.toml",
+      "content": "[project]\nname = \"task-api\"\nversion = \"0.1.0\"\nrequires-python = \">=3.10\"\ndependencies = [\"fastapi[standard]\"]\n\n[tool.pytest.ini_options]\npythonpath = [\".\"]\ntestpaths = [\"tests\"]\n"
+     },
+     {
+      "path": "app/__init__.py",
+      "content": "\"\"\"The task API.\"\"\"\n"
+     },
+     {
+      "path": "app/main.py",
+      "content": "from fastapi import FastAPI\n\nfrom app.routers import tasks\n\napp = FastAPI(title=\"Task API\")\napp.include_router(tasks.router)\n\n\n@app.get(\"/health\")\ndef health() -> dict:\n    return {\"status\": \"ok\"}\n"
+     },
+     {
+      "path": "app/models.py",
+      "content": "from datetime import date\nfrom typing import Annotated\n\nfrom pydantic import BaseModel, ConfigDict, Field, field_validator\n\nTitle = Annotated[str, Field(min_length=1, max_length=200, examples=[\"Write the release notes\"])]\nPriority = Annotated[int, Field(ge=1, le=3, description=\"1 is the most urgent, 3 the least\")]\n\n\ndef clean_title(value: str | None) -> str | None:\n    if value is not None:\n        value = value.strip()\n        if not value:\n            raise ValueError(\"title can't be blank\")\n    return value\n\n\nclass ChecklistItem(BaseModel):\n    text: Annotated[str, Field(min_length=1, max_length=100)]\n    done: bool = False\n\n\nclass TaskCreate(BaseModel):\n    \"\"\"What a client sends to create or replace a task.\"\"\"\n\n    # TODO 1: reject unknown fields, such as a misspelt \"titel\", with model_config = ConfigDict(...)\n\n    title: Title\n    # TODO 2: add priority (a Priority, default 2), due (a date or None, default None) and\n    #        checklist (a list of ChecklistItem, default an empty list)\n\n    # TODO 3: add a field validator for title that strips spaces and rejects a blank title\n    #        (call clean_title)\n\n\nclass TaskUpdate(BaseModel):\n    \"\"\"A partial update: send only the fields to change.\"\"\"\n\n    model_config = ConfigDict(extra=\"forbid\")\n\n    title: Title | None = None\n    priority: Priority | None = None\n    due: date | None = None\n    done: bool | None = None\n\n    @field_validator(\"title\")\n    @classmethod\n    def title_is_not_blank(cls, value: str | None) -> str | None:\n        return clean_title(value)\n\n\nclass Task(TaskCreate):\n    \"\"\"A task as the API returns it.\"\"\"\n\n    model_config = ConfigDict(extra=\"ignore\")\n\n    id: int\n    done: bool = False\n\n\nclass TaskInDB(Task):\n    \"\"\"What the server stores: also who created the task, which the API never returns.\"\"\"\n\n    created_by: str = \"seed\"\n"
+     },
+     {
+      "path": "app/data.py",
+      "content": "\"\"\"The tasks the API serves, kept in memory for now, as TaskInDB models.\"\"\"\n\nfrom app.models import TaskInDB\n\nSEED = [\n    {\"id\": 1, \"title\": \"Write the release notes\", \"priority\": 2, \"due\": \"2025-07-01\"},\n    {\"id\": 2, \"title\": \"Review the API design\", \"priority\": 1, \"done\": True},\n    {\"id\": 3, \"title\": \"Fix the login bug\", \"priority\": 1,\n     \"checklist\": [{\"text\": \"Reproduce it\", \"done\": True}, {\"text\": \"Write a test\"}]},\n    {\"id\": 4, \"title\": \"Update the dependencies\", \"priority\": 3},\n]\n\nTASKS: dict[int, TaskInDB] = {}\n_next_id = 1\n\n\ndef reset() -> None:\n    \"\"\"Put the tasks back to the seed data. The tests call this before each test.\"\"\"\n    global _next_id\n    TASKS.clear()\n    for item in SEED:\n        TASKS[item[\"id\"]] = TaskInDB(**item)\n    _next_id = max(TASKS) + 1\n\n\ndef new_id() -> int:\n    global _next_id\n    _next_id += 1\n    return _next_id - 1\n\n\nreset()\n"
+     },
+     {
+      "path": "app/routers/__init__.py",
+      "content": "\"\"\"One module per group of endpoints.\"\"\"\n"
+     },
+     {
+      "path": "app/routers/tasks.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, HTTPException, Path, Query\n\nfrom app import data\nfrom app.models import Task, TaskCreate, TaskInDB, TaskUpdate\n\nrouter = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"])\nTaskId = Annotated[int, Path(ge=1)]\n\n\ndef get_or_404(task_id: int) -> TaskInDB:\n    if task_id not in data.TASKS:\n        raise HTTPException(status_code=404, detail=\"Task not found\")\n    return data.TASKS[task_id]\n\n\n@router.get(\"\")\ndef list_tasks(\n    done: bool | None = None,\n    priority: Annotated[int | None, Query(ge=1, le=3)] = None,\n    limit: Annotated[int, Query(ge=1, le=100)] = 10,\n    offset: Annotated[int, Query(ge=0)] = 0,\n) -> list[Task]:\n    \"\"\"List tasks, optionally only done or open ones, or only one priority.\"\"\"\n    found = [\n        task\n        for task in data.TASKS.values()\n        if (done is None or task.done == done) and (priority is None or task.priority == priority)\n    ]\n    return found[offset : offset + limit]\n\n\n@router.get(\"/{task_id}\")\ndef read_task(task_id: TaskId) -> Task:\n    \"\"\"One task, by its ID.\"\"\"\n    return get_or_404(task_id)\n\n\n@router.post(\"\", status_code=201)\ndef create_task(task: TaskCreate) -> Task:\n    \"\"\"Create a task. The server chooses its ID.\"\"\"\n    # TODO 4: make a TaskInDB from the validated task, with a new ID (data.new_id()) and\n    #        created_by=\"api\", store it in data.TASKS and return it\n    raise NotImplementedError\n\n\n@router.put(\"/{task_id}\")\ndef replace_task(task_id: TaskId, task: TaskCreate) -> Task:\n    \"\"\"Replace a task completely; done and created_by are kept.\"\"\"\n    current = get_or_404(task_id)\n    stored = TaskInDB(id=task_id, done=current.done, created_by=current.created_by, **task.model_dump())\n    data.TASKS[task_id] = stored\n    return stored\n\n\n@router.patch(\"/{task_id}\")\ndef update_task(task_id: TaskId, changes: TaskUpdate) -> Task:\n    \"\"\"Change only the fields that are sent.\"\"\"\n    current = get_or_404(task_id)\n    # TODO 5: apply only the fields the client actually sent: changes.model_dump(exclude_unset=True)\n    #        passed to current.model_copy(update=...). Store the result and return it.\n    raise NotImplementedError\n\n\n@router.delete(\"/{task_id}\", status_code=204)\ndef delete_task(task_id: TaskId) -> None:\n    \"\"\"Delete a task.\"\"\"\n    get_or_404(task_id)\n    del data.TASKS[task_id]\n"
+     },
+     {
+      "path": "tests/test_tasks.py",
+      "content": "import pytest\nfrom fastapi.testclient import TestClient\n\nfrom app import data\nfrom app.main import app\n\nclient = TestClient(app)\n\n\n@pytest.fixture(autouse=True)\ndef fresh_data():\n    data.reset()\n\n\ndef test_create_a_task_with_defaults():\n    response = client.post(\"/tasks\", json={\"title\": \"  Plan the sprint  \"})\n    assert response.status_code == 201\n    assert response.json() == {\"title\": \"Plan the sprint\", \"priority\": 2, \"due\": None, \"checklist\": [],\n                               \"id\": 5, \"done\": False}\n\n\ndef test_the_response_never_shows_created_by():\n    assert \"created_by\" not in client.get(\"/tasks/1\").json()\n\n\ndef test_a_bad_body_lists_every_problem():\n    response = client.post(\"/tasks\", json={\"title\": \"\", \"priority\": 7, \"titel\": \"typo\"})\n    assert response.status_code == 422\n    assert [(e[\"loc\"], e[\"type\"]) for e in response.json()[\"detail\"]] == [\n        ([\"body\", \"title\"], \"string_too_short\"),\n        ([\"body\", \"priority\"], \"less_than_equal\"),\n        ([\"body\", \"titel\"], \"extra_forbidden\"),\n    ]\n\n\ndef test_nested_errors_point_at_the_item():\n    response = client.post(\"/tasks\", json={\"title\": \"Ship it\", \"checklist\": [{\"text\": \"\"}]})\n    assert response.json()[\"detail\"][0][\"loc\"] == [\"body\", \"checklist\", 0, \"text\"]\n\n\ndef test_dates_are_parsed_and_returned_as_iso_strings():\n    response = client.post(\"/tasks\", json={\"title\": \"Pay the invoice\", \"due\": \"2025-07-15\"})\n    assert response.json()[\"due\"] == \"2025-07-15\"\n\n\n# TODO 6: test PATCH /tasks/1 with {\"done\": true}: the answer has done true and the title unchanged;\n#        and that PATCH with {\"title\": \"   \"} is rejected with 422\n"
+     }
+    ],
+    "hints": [
+     "Field constraints run before your field_validator, so an empty title fails min_length and \"   \" reaches clean_title.",
+     "task.model_dump() gives the validated fields as a dict, ready to pass to TaskInDB(...) with ** .",
+     "exclude_unset=True leaves out fields the client didn't send, even ones with defaults.",
+     "If curl answers with model_attributes_type, the Content-Type header is missing."
+    ]
+   }
+  },
+  {
+   "title": "Dependency Injection System",
+   "summary": "FastAPI's dependency injection: reusable functions and classes the framework calls for you, chains of dependencies, set-up and clean-up with yield for database sessions, and dependencies that enforce security and can be swapped in tests.",
+   "instructor": "chaiyapon-srisomboon",
+   "lessons": [
+    {
+     "title": "Dependencies with Depends()",
+     "minutes": 12,
+     "objectives": [
+      "Declare and reuse dependencies with Depends and Annotated",
+      "Explain how FastAPI calls dependencies and caches their results"
+     ],
+     "key_points": [
+      "A dependency is a function, or another callable, that a path operation declares as a parameter with Depends(), as in page: Annotated[Page, Depends(pagination)]; FastAPI calls it first and passes in the result.",
+      "Dependencies take the same kinds of parameters as path operations, query, path, header and body, with the same validation, and those parameters appear in the docs.",
+      "Dependencies remove repetition: paging, filters, the current user, settings or a database session are written once and reused by every endpoint that needs them.",
+      "An Annotated alias such as PageDep = Annotated[Page, Depends(pagination)] makes reuse tidy: def list_tasks(page: PageDep).",
+      "Within one request, a dependency used in several places is called once and its result shared; Depends(dependency, use_cache=False) asks for a fresh call each time."
+     ]
+    },
+    {
+     "title": "Sub-dependencies, classes and yield",
+     "minutes": 13,
+     "objectives": [
+      "Build chains of dependencies, including classes",
+      "Manage resources such as database sessions with yield dependencies"
+     ],
+     "key_points": [
+      "Dependencies can depend on other dependencies, forming a graph FastAPI resolves for you, such as writer depending on current_user, which depends on the API-key header.",
+      "A class works as a dependency too: Depends(Paginator) calls the class with the request's parameters and passes in the instance.",
+      "A dependency that yields does set-up before the request and clean-up after: session = Session(); try: yield session; finally: session.close(). The clean-up runs after the response is sent, or as soon as the endpoint returns with Depends(get_session, scope=\"function\").",
+      "An exception raised in the endpoint reaches the dependency at its yield, so it can roll back; a dependency that catches an exception should raise it again, or the error is hidden.",
+      "FastAPI solves dependencies in order, those in the decorator's dependencies= first. An HTTPException in one stops the request, so check authentication before dependencies that open resources."
+     ]
+    },
+    {
+     "title": "Dependencies for security and shared resources",
+     "minutes": 12,
+     "objectives": [
+      "Protect operations with security dependencies that tell 401 from 403",
+      "Swap dependencies in tests with dependency_overrides"
+     ],
+     "key_points": [
+      "dependencies=[Depends(writer)] on a decorator runs a check without passing its result to the function; the same list on APIRouter(...) or FastAPI(...) applies it to every route there.",
+      "A security dependency stops the request by raising HTTPException: 401 when credentials are missing or wrong (with a WWW-Authenticate header), and 403 when they're valid but not allowed.",
+      "APIKeyHeader(name=\"X-API-Key\", auto_error=False) from fastapi.security reads the key and declares the scheme in the OpenAPI schema, which adds the Authorize button to Swagger UI.",
+      "A session or repository dependency keeps endpoints unaware of storage, so the same code can run against an in-memory store, SQLite or a database server.",
+      "app.dependency_overrides[get_session] = fake_session replaces a dependency for tests without touching the endpoints; clear the overrides after each test."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Refactor the task API with dependencies",
+    "tool": "FastAPI",
+    "minutes": 55,
+    "goal": "Move shared logic into dependencies: a database session opened and closed for each request, shared paging, a dependency that finds a task or answers 404, and API-key checks that tell 401 from 403; then swap dependencies in tests.",
+    "setup": [
+     "The virtual environment from the module 1 lab",
+     "A folder ~/fastapi-lab/tasks-v3 with the starter files (the models from the module 3 lab are included, complete)"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 in app/db.py, get_session. Start the server and list a page of tasks, then look at the server's log.",
+      "code": "cd ~/fastapi-lab/tasks-v3\nfastapi dev app/main.py\n# in the second terminal:\ncurl -s \"http://127.0.0.1:8000/tasks?limit=2&offset=1\"",
+      "lang": "bash",
+      "see": "Tasks 2 and 3. The log shows INFO app.db: session 1 opened, then the request's access line, then INFO app.db: session 1 closed: the code after yield ran after the response was sent."
+     },
+     {
+      "do": "Complete TODO 3 in the router, the paging slice. The pagination dependency validates its own parameters.",
+      "code": "curl -s \"http://127.0.0.1:8000/tasks?limit=0\"",
+      "lang": "bash",
+      "see": "A 422 with Input should be greater than or equal to 1."
+     },
+     {
+      "do": "Try to create a task without a key.",
+      "code": "curl -s -i -X POST http://127.0.0.1:8000/tasks -H \"Content-Type: application/json\" -d '{\"title\": \"Plan the sprint\"}'",
+      "lang": "bash",
+      "see": "HTTP/1.1 401 Unauthorized, www-authenticate: ApiKey and {\"detail\":\"A valid X-API-Key header is required\"}; the log shows no session opened, because the key is checked first."
+     },
+     {
+      "do": "Complete TODO 2 in app/dependencies.py, writer. Then try a read-only key and the writer key.",
+      "code": "curl -s -i -X POST http://127.0.0.1:8000/tasks -H \"X-API-Key: dev-reader-key\" -H \"Content-Type: application/json\" -d '{\"title\": \"Plan the sprint\"}'\ncurl -s -i -X POST http://127.0.0.1:8000/tasks -H \"X-API-Key: dev-writer-key\" -H \"Content-Type: application/json\" -d '{\"title\": \"Plan the sprint\"}'",
+      "lang": "bash",
+      "see": "HTTP/1.1 403 Forbidden and This API key can't change tasks; then HTTP/1.1 201 Created and the new task."
+     },
+     {
+      "do": "Change a task that doesn't exist: the task_or_404 dependency answers before the endpoint runs.",
+      "code": "curl -s -X PATCH http://127.0.0.1:8000/tasks/99 -H \"X-API-Key: dev-writer-key\" -H \"Content-Type: application/json\" -d '{\"done\": true}'",
+      "lang": "bash",
+      "see": "{\"detail\":\"Task not found\"}"
+     },
+     {
+      "do": "Complete TODO 4 in tests/test_tasks.py, which overrides the writer dependency, then run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "8 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "Each request's session is opened and then closed.",
+      "look_for": [
+       "session 1 opened",
+       "session 1 closed"
+      ]
+     },
+     {
+      "text": "The paging dependency validates its parameters.",
+      "look_for": [
+       "Input should be greater than or equal to 1"
+      ]
+     },
+     {
+      "text": "Writing without a key is a 401.",
+      "look_for": [
+       "401 Unauthorized",
+       "A valid X-API-Key header is required"
+      ]
+     },
+     {
+      "text": "A read-only key gets 403, and the writer key can create.",
+      "look_for": [
+       "403 Forbidden",
+       "This API key can't change tasks",
+       "201 Created"
+      ]
+     },
+     {
+      "text": "The tests override a dependency and all pass.",
+      "look_for": [
+       "dependency_overrides",
+       "8 passed"
+      ]
+     }
+    ],
+    "submit": "Paste get_session, writer, your list_tasks and your override test, the output of steps 1 to 6, and the server log lines for one request.",
+    "files": [
+     {
+      "path": "pyproject.toml",
+      "content": "[project]\nname = \"task-api\"\nversion = \"0.1.0\"\nrequires-python = \">=3.10\"\ndependencies = [\"fastapi[standard]\"]\n\n[tool.pytest.ini_options]\npythonpath = [\".\"]\ntestpaths = [\"tests\"]\n"
+     },
+     {
+      "path": "app/main.py",
+      "content": "import logging\n\nfrom fastapi import FastAPI\n\nfrom app.routers import tasks\n\nlogging.basicConfig(level=logging.INFO, format=\"%(levelname)s %(name)s: %(message)s\")\n\napp = FastAPI(title=\"Task API\")\napp.include_router(tasks.router)\n\n\n@app.get(\"/health\")\ndef health() -> dict:\n    return {\"status\": \"ok\"}\n"
+     },
+     {
+      "path": "app/db.py",
+      "content": "\"\"\"A pretend database. An in-memory store sits behind sessions that each request opens and closes,\nthe way a real database layer such as SQLAlchemy works, so the endpoints never touch storage directly.\"\"\"\n\nimport logging\nfrom collections.abc import Iterator\n\nfrom app.models import TaskCreate, TaskInDB, TaskUpdate\n\nlog = logging.getLogger(\"app.db\")\n\nSEED = [\n    {\"id\": 1, \"title\": \"Write the release notes\", \"priority\": 2, \"due\": \"2025-07-01\"},\n    {\"id\": 2, \"title\": \"Review the API design\", \"priority\": 1, \"done\": True},\n    {\"id\": 3, \"title\": \"Fix the login bug\", \"priority\": 1,\n     \"checklist\": [{\"text\": \"Reproduce it\", \"done\": True}, {\"text\": \"Write a test\"}]},\n    {\"id\": 4, \"title\": \"Update the dependencies\", \"priority\": 3},\n]\n\n\nclass Store:\n    \"\"\"The data itself; in a real application, the database server.\"\"\"\n\n    def __init__(self) -> None:\n        self.tasks: dict[int, TaskInDB] = {}\n        self.next_id = 1\n        self.reset()\n\n    def reset(self) -> None:\n        self.tasks = {item[\"id\"]: TaskInDB(**item) for item in SEED}\n        self.next_id = max(self.tasks) + 1\n\n\nSTORE = Store()\n\n\nclass Session:\n    \"\"\"One unit of work against a store. It must be closed when the request is done.\"\"\"\n\n    opened = 0  # how many sessions have been opened in this process\n    open_now = 0  # how many are open at this moment\n\n    def __init__(self, store: Store) -> None:\n        self.store = store\n        Session.opened += 1\n        Session.open_now += 1\n        self.number = Session.opened\n        log.info(\"session %d opened\", self.number)\n\n    def close(self) -> None:\n        Session.open_now -= 1\n        log.info(\"session %d closed\", self.number)\n\n    def list(self, done: bool | None = None, priority: int | None = None) -> list[TaskInDB]:\n        return [\n            task\n            for task in self.store.tasks.values()\n            if (done is None or task.done == done) and (priority is None or task.priority == priority)\n        ]\n\n    def get(self, task_id: int) -> TaskInDB | None:\n        return self.store.tasks.get(task_id)\n\n    def add(self, task: TaskCreate, created_by: str) -> TaskInDB:\n        stored = TaskInDB(id=self.store.next_id, created_by=created_by, **task.model_dump())\n        self.store.tasks[stored.id] = stored\n        self.store.next_id += 1\n        return stored\n\n    def replace(self, current: TaskInDB, task: TaskCreate) -> TaskInDB:\n        stored = TaskInDB(\n            id=current.id, done=current.done, created_by=current.created_by, **task.model_dump()\n        )\n        self.store.tasks[current.id] = stored\n        return stored\n\n    def update(self, current: TaskInDB, changes: TaskUpdate) -> TaskInDB:\n        stored = current.model_copy(update=changes.model_dump(exclude_unset=True))\n        self.store.tasks[current.id] = stored\n        return stored\n\n    def delete(self, current: TaskInDB) -> None:\n        del self.store.tasks[current.id]\n\n\ndef get_session() -> Iterator[Session]:\n    \"\"\"A dependency: open a session for the request, and always close it afterwards.\"\"\"\n    # TODO 1: open a Session on STORE, yield it, and close it in a finally block, so it's closed\n    #        even when the endpoint raises an error\n    raise NotImplementedError\n"
+     },
+     {
+      "path": "app/dependencies.py",
+      "content": "from dataclasses import dataclass\nfrom typing import Annotated\n\nfrom fastapi import Depends, HTTPException, Query\nfrom fastapi.security import APIKeyHeader\n\nfrom app.db import Session, get_session\n\nDbSession = Annotated[Session, Depends(get_session)]\n\n\n@dataclass\nclass Page:\n    limit: int\n    offset: int\n\n\ndef pagination(\n    limit: Annotated[int, Query(ge=1, le=100, description=\"How many tasks to return\")] = 10,\n    offset: Annotated[int, Query(ge=0, description=\"How many tasks to skip\")] = 0,\n) -> Page:\n    \"\"\"Shared paging parameters for any endpoint that returns a list.\"\"\"\n    return Page(limit, offset)\n\n\nPageDep = Annotated[Page, Depends(pagination)]\n\n\n@dataclass\nclass ApiUser:\n    email: str\n    can_write: bool\n\n\n# Demo keys only. A real service keeps keys out of the code, in configuration or a secrets store.\nAPI_KEYS = {\n    \"dev-writer-key\": ApiUser(\"ana@example.com\", can_write=True),\n    \"dev-reader-key\": ApiUser(\"bilal@example.com\", can_write=False),\n}\n\napi_key_header = APIKeyHeader(name=\"X-API-Key\", auto_error=False)\n\n\ndef current_user(api_key: Annotated[str | None, Depends(api_key_header)]) -> ApiUser:\n    \"\"\"Who is calling: 401 if the X-API-Key header is missing or unknown.\"\"\"\n    user = API_KEYS.get(api_key) if api_key else None\n    if user is None:\n        raise HTTPException(\n            status_code=401,\n            detail=\"A valid X-API-Key header is required\",\n            headers={\"WWW-Authenticate\": \"ApiKey\"},\n        )\n    return user\n\n\ndef writer(user: Annotated[ApiUser, Depends(current_user)]) -> ApiUser:\n    \"\"\"A caller who may change tasks: 403 for a valid key without write access.\"\"\"\n    # TODO 2: raise HTTPException 403 with the detail \"This API key can't change tasks\" when\n    #        user.can_write is False; otherwise return the user\n    return user\n\n\nWriter = Annotated[ApiUser, Depends(writer)]\n"
+     },
+     {
+      "path": "app/routers/tasks.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, Depends, HTTPException, Path\n\nfrom app.dependencies import DbSession, PageDep, Writer, writer\nfrom app.models import Task, TaskCreate, TaskInDB, TaskUpdate\n\nrouter = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"])\nTaskId = Annotated[int, Path(ge=1)]\n\n\ndef task_or_404(task_id: TaskId, session: DbSession) -> TaskInDB:\n    \"\"\"A dependency that finds the task in the path, or answers 404.\"\"\"\n    task = session.get(task_id)\n    if task is None:\n        raise HTTPException(status_code=404, detail=\"Task not found\")\n    return task\n\n\nFoundTask = Annotated[TaskInDB, Depends(task_or_404)]\n\n\n@router.get(\"\")\ndef list_tasks(session: DbSession, page: PageDep, done: bool | None = None) -> list[Task]:\n    \"\"\"List tasks, optionally only done or open ones.\"\"\"\n    # TODO 3: return the page of tasks: session.list(done=done), sliced with page.offset and page.limit\n    return session.list(done=done)\n\n\n@router.get(\"/{task_id}\")\ndef read_task(task: FoundTask) -> Task:\n    \"\"\"One task, by its ID.\"\"\"\n    return task\n\n\n@router.post(\"\", status_code=201)\ndef create_task(task: TaskCreate, user: Writer, session: DbSession) -> Task:\n    \"\"\"Create a task, recording who created it. The key is checked before a session opens.\"\"\"\n    return session.add(task, created_by=user.email)\n\n\n@router.put(\"/{task_id}\", dependencies=[Depends(writer)])\ndef replace_task(current: FoundTask, task: TaskCreate, session: DbSession) -> Task:\n    \"\"\"Replace a task completely; done and created_by are kept.\"\"\"\n    return session.replace(current, task)\n\n\n@router.patch(\"/{task_id}\", dependencies=[Depends(writer)])\ndef update_task(current: FoundTask, changes: TaskUpdate, session: DbSession) -> Task:\n    \"\"\"Change only the fields that are sent.\"\"\"\n    return session.update(current, changes)\n\n\n@router.delete(\"/{task_id}\", status_code=204, dependencies=[Depends(writer)])\ndef delete_task(current: FoundTask, session: DbSession) -> None:\n    \"\"\"Delete a task.\"\"\"\n    session.delete(current)\n\n"
+     },
+     {
+      "path": "tests/conftest.py",
+      "content": "import pytest\nfrom fastapi.testclient import TestClient\n\nfrom app.db import STORE\nfrom app.main import app\n\nWRITER = {\"X-API-Key\": \"dev-writer-key\"}\nREADER = {\"X-API-Key\": \"dev-reader-key\"}\n\n\n@pytest.fixture(autouse=True)\ndef fresh_store():\n    STORE.reset()\n    yield\n    app.dependency_overrides.clear()\n\n\n@pytest.fixture\ndef client():\n    with TestClient(app) as test_client:\n        yield test_client\n"
+     },
+     {
+      "path": "tests/test_tasks.py",
+      "content": "from app.db import Session, Store\nfrom app.dependencies import ApiUser, writer\nfrom app.main import app\nfrom tests.conftest import READER, WRITER\n\n\ndef test_pagination_is_shared_and_validated(client):\n    assert [t[\"id\"] for t in client.get(\"/tasks?limit=2&offset=1\").json()] == [2, 3]\n    assert client.get(\"/tasks?limit=0\").status_code == 422\n\n\ndef test_reading_needs_no_key_but_writing_does(client):\n    assert client.get(\"/tasks/1\").status_code == 200\n    response = client.post(\"/tasks\", json={\"title\": \"Plan the sprint\"})\n    assert response.status_code == 401\n    assert response.headers[\"www-authenticate\"] == \"ApiKey\"\n\n\ndef test_a_read_only_key_is_forbidden_to_write(client):\n    response = client.delete(\"/tasks/1\", headers=READER)\n    assert response.status_code == 403\n    assert response.json() == {\"detail\": \"This API key can't change tasks\"}\n\n\ndef test_a_writer_can_create_and_delete(client):\n    created = client.post(\"/tasks\", json={\"title\": \"Plan the sprint\"}, headers=WRITER)\n    assert created.status_code == 201\n    assert client.delete(f\"/tasks/{created.json()['id']}\", headers=WRITER).status_code == 204\n\n\ndef test_missing_tasks_are_404_before_any_change(client):\n    assert client.patch(\"/tasks/99\", json={\"done\": True}, headers=WRITER).status_code == 404\n\n\ndef test_every_session_is_closed_even_after_an_error(client):\n    before = Session.opened\n    client.get(\"/tasks\")\n    client.get(\"/tasks/99\")\n    assert Session.opened == before + 2\n    assert Session.open_now == 0\n\n\n# TODO 4: use app.dependency_overrides to replace writer with a function returning\n#        ApiUser(\"test@example.com\", can_write=True), then check POST /tasks works without any key\n\n\ndef test_overriding_the_session_gives_a_private_store(client):\n    from app.db import get_session\n\n    private = Store()\n    private.tasks.clear()\n\n    def private_session():\n        session = Session(private)\n        yield session\n        session.close()\n\n    app.dependency_overrides[get_session] = private_session\n    assert client.get(\"/tasks\").json() == []\n"
+     },
+     {
+      "path": "app/models.py",
+      "content": "from datetime import date\nfrom typing import Annotated\n\nfrom pydantic import BaseModel, ConfigDict, Field, field_validator\n\nTitle = Annotated[str, Field(min_length=1, max_length=200, examples=[\"Write the release notes\"])]\nPriority = Annotated[int, Field(ge=1, le=3, description=\"1 is the most urgent, 3 the least\")]\n\n\ndef clean_title(value: str | None) -> str | None:\n    if value is not None:\n        value = value.strip()\n        if not value:\n            raise ValueError(\"title can't be blank\")\n    return value\n\n\nclass ChecklistItem(BaseModel):\n    text: Annotated[str, Field(min_length=1, max_length=100)]\n    done: bool = False\n\n\nclass TaskCreate(BaseModel):\n    \"\"\"What a client sends to create or replace a task.\"\"\"\n\n    model_config = ConfigDict(extra=\"forbid\")\n\n    title: Title\n    priority: Priority = 2\n    due: date | None = None\n    checklist: list[ChecklistItem] = []\n\n    @field_validator(\"title\")\n    @classmethod\n    def title_is_not_blank(cls, value: str) -> str:\n        return clean_title(value)\n\n\nclass TaskUpdate(BaseModel):\n    \"\"\"A partial update: send only the fields to change.\"\"\"\n\n    model_config = ConfigDict(extra=\"forbid\")\n\n    title: Title | None = None\n    priority: Priority | None = None\n    due: date | None = None\n    done: bool | None = None\n\n    @field_validator(\"title\")\n    @classmethod\n    def title_is_not_blank(cls, value: str | None) -> str | None:\n        return clean_title(value)\n\n\nclass Task(TaskCreate):\n    \"\"\"A task as the API returns it.\"\"\"\n\n    model_config = ConfigDict(extra=\"ignore\")\n\n    id: int\n    done: bool = False\n\n\nclass TaskInDB(Task):\n    \"\"\"What the server stores: also who created the task, which the API never returns.\"\"\"\n\n    created_by: str = \"seed\"\n"
+     },
+     {
+      "path": "app/__init__.py",
+      "content": "\"\"\"The task API.\"\"\"\n"
+     },
+     {
+      "path": "app/routers/__init__.py",
+      "content": "\"\"\"One module per group of endpoints.\"\"\"\n"
+     }
+    ],
+    "hints": [
+     "Put session.close() in a finally block, so it runs even when the endpoint raises.",
+     "Dependencies are solved in parameter order: create_task asks for the writer before the session.",
+     "app.dependency_overrides is keyed by the original function, so import writer from app.dependencies.",
+     "The conftest fixture clears the overrides after every test."
+    ]
+   }
+  },
+  {
+   "title": "Interactive API Documentation",
+   "summary": "The documentation FastAPI generates from your code: the OpenAPI schema, Swagger UI for trying requests and ReDoc for reading, and the metadata, tags, error responses and examples that make them useful to the people who call your API.",
+   "instructor": "chaiyapon-srisomboon",
+   "lessons": [
+    {
+     "title": "OpenAPI: the schema behind the docs",
+     "minutes": 11,
+     "objectives": [
+      "Explain what the OpenAPI schema contains and how FastAPI builds it",
+      "Set an API's metadata and export its schema"
+     ],
+     "key_points": [
+      "OpenAPI is a standard, language-independent description of an HTTP API: its paths, operations, parameters, request and response bodies and security schemes. FastAPI generates it from your code and serves it at /openapi.json.",
+      "Pydantic models become JSON Schemas under components/schemas, and every operation refers to them, so the documentation can't drift away from the code.",
+      "Tools read the schema: client generators produce typed clients in many languages, API gateways and testing tools import it, and Swagger UI and ReDoc render it.",
+      "FastAPI(title=..., version=..., summary=..., description=...) sets the API's metadata, with the description in Markdown; summary= and the function's docstring describe each operation.",
+      "app.openapi() returns the schema as a dict, so a short script can save it as openapi.json for review and versioning."
+     ]
+    },
+    {
+     "title": "Swagger UI and ReDoc",
+     "minutes": 11,
+     "objectives": [
+      "Try an API's operations in Swagger UI, with credentials",
+      "Choose between Swagger UI and ReDoc, and turn them off when needed"
+     ],
+     "key_points": [
+      "/docs serves Swagger UI: expand an operation, choose Try it out, fill in its parameters or body and choose Execute to send a real request and see the curl command, the response code, headers and body.",
+      "When the API declares security schemes, Swagger UI shows an Authorize button and a lock on each protected operation; the credentials you enter go with every request you try.",
+      "/redoc serves ReDoc, a three-panel, read-only reference that suits the people who use your API; both read the same /openapi.json.",
+      "docs_url=None, redoc_url=None or openapi_url=None turns them off, for example for a private production service, and include_in_schema=False hides one route.",
+      "Swagger UI sends real requests, so point it at a development or test server, never at production data you can't afford to change."
+     ],
+     "walkthrough": {
+      "tool": "Browser",
+      "title": "Explore the task API in Swagger UI and ReDoc",
+      "steps": [
+       {
+        "do": "Start the task API from the module 4 lab (fastapi dev app/main.py) and open http://127.0.0.1:8000/docs.",
+        "see": "Task API, with its operations under the tasks tag, and a lock on each one that changes data."
+       },
+       {
+        "do": "Expand GET /tasks, choose Try it out, set limit to 2 and choose Execute.",
+        "see": "The curl command Swagger UI sent, the request URL, code 200 and the first two tasks."
+       },
+       {
+        "do": "Expand POST /tasks, choose Try it out, keep the example body and choose Execute.",
+        "see": "401 and A valid X-API-Key header is required."
+       },
+       {
+        "do": "Choose Authorize at the top, enter dev-writer-key, choose Authorize, then Close. Execute the POST again.",
+        "see": "201 and the new task; the curl command now includes -H 'X-API-Key: dev-writer-key'."
+       },
+       {
+        "do": "Open http://127.0.0.1:8000/redoc.",
+        "see": "Three panels: the operations, their details, and sample requests and responses."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Making the docs useful",
+     "minutes": 12,
+     "objectives": [
+      "Organise and describe operations with tags, summaries and documented errors",
+      "Keep the schema stable as a contract with your API's users"
+     ],
+     "key_points": [
+      "Tags group operations, and openapi_tags= on FastAPI() gives each tag a description and sets their order.",
+      "responses={404: {\"model\": Message, \"description\": \"No task has this ID\"}} documents an error an operation can return, beyond the success response and the 422 FastAPI adds itself.",
+      "deprecated=True marks an operation as deprecated, shown struck through in Swagger UI, so clients can move away from it before it's removed.",
+      "Examples on fields, such as Field(examples=[\"Write the release notes\"]), fill in Try it out's request body and show readers what valid data looks like.",
+      "Version the API with a prefix such as /v1 and the version in FastAPI(), and treat openapi.json as a contract: commit it and review its diff, so a breaking change is noticed before clients find it."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Document and explore the task API",
+    "tool": "FastAPI, Swagger UI and ReDoc",
+    "minutes": 45,
+    "goal": "Turn the generated documentation into documentation people can use: metadata, tag descriptions, summaries, documented errors and a deprecated route; explore and test the API in Swagger UI and ReDoc; and export the schema as a contract.",
+    "setup": [
+     "Your project from the module 4 lab: models.py, db.py and dependencies.py stay as they are",
+     "The starter files app/main.py and app/routers/tasks.py (they replace yours), export_openapi.py and tests/test_docs.py"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 in app/main.py (the tag descriptions) and TODOs 2 and 3 in app/routers/tasks.py (a documented 404 and a deprecated route). Start the server."
+     },
+     {
+      "do": "Export the schema and print its summary.",
+      "code": "python export_openapi.py",
+      "lang": "bash",
+      "see": "Task API 1.0.0 (OpenAPI 3.1.0); a line per operation, such as GET /tasks/{task_id} Read a task and GET /tasks/open/all List open tasks (deprecated); 7 schemas: ChecklistItem, HTTPValidationError, Message, Task, TaskCreate, TaskUpdate, ValidationError; security schemes: APIKeyHeader"
+     },
+     {
+      "do": "Open http://127.0.0.1:8000/docs: the description at the top, the two tags with their descriptions, the deprecated route struck through, and locks on the operations that need a key."
+     },
+     {
+      "do": "In Swagger UI, try POST /tasks without authorising, then choose Authorize, enter dev-writer-key and try it again.",
+      "see": "401, then 201, with -H 'X-API-Key: dev-writer-key' in the curl command shown."
+     },
+     {
+      "do": "Open http://127.0.0.1:8000/redoc and find Read a task: its responses include the documented 404.",
+      "see": "404: No task has this ID, with the Message schema."
+     },
+     {
+      "do": "Copy your tests from the module 4 lab into tests/ beside test_docs.py, and run them all.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "11 passed"
+     },
+     {
+      "do": "Commit openapi.json. Then change something visible, such as a summary, export again and look at the difference as a reviewer would.",
+      "code": "python export_openapi.py > /dev/null\ngit diff openapi.json",
+      "lang": "bash",
+      "see": "The changed lines of the schema, ready to review."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The exported schema has the metadata, summaries and the deprecated route.",
+      "look_for": [
+       "Task API 1.0.0 (OpenAPI 3.1.0)",
+       "List open tasks  (deprecated)",
+       "security schemes: APIKeyHeader"
+      ]
+     },
+     {
+      "text": "The schema lists the models.",
+      "look_for": [
+       "7 schemas"
+      ]
+     },
+     {
+      "text": "Swagger UI was used with and without the key.",
+      "look_for": [
+       "401",
+       "201",
+       "dev-writer-key"
+      ]
+     },
+     {
+      "text": "The 404 is documented.",
+      "look_for": [
+       "No task has this ID"
+      ]
+     },
+     {
+      "text": "All the tests pass.",
+      "look_for": [
+       "11 passed"
+      ]
+     }
+    ],
+    "submit": "Paste your openapi_tags, your read_task decorator and deprecated route, the output of steps 2 and 6, and what you saw in steps 3 to 5.",
+    "files": [
+     {
+      "path": "app/main.py",
+      "content": "import logging\n\nfrom fastapi import FastAPI\n\nfrom app.routers import tasks\n\nlogging.basicConfig(level=logging.INFO, format=\"%(levelname)s %(name)s: %(message)s\")\n\nDESCRIPTION = \"\"\"\nKeep track of tasks: create them, list and filter them, update them and tick them off.\n\nReading is open to everyone. Changing tasks needs an **X-API-Key** header: in Swagger UI,\nchoose **Authorize** and enter `dev-writer-key`.\n\"\"\"\n\napp = FastAPI(\n    title=\"Task API\",\n    version=\"1.0.0\",\n    summary=\"A small task management service.\",\n    description=DESCRIPTION,\n    # TODO 1: describe the two tags with openapi_tags: \"tasks\" (Create, read, update and delete\n    #        tasks.) and \"service\" (Health checks.)\n)\napp.include_router(tasks.router)\n\n\n@app.get(\"/health\", tags=[\"service\"], summary=\"Check that the service is up\")\ndef health() -> dict[str, str]:\n    return {\"status\": \"ok\"}\n"
+     },
+     {
+      "path": "app/routers/tasks.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, Depends, HTTPException, Path\nfrom pydantic import BaseModel\n\nfrom app.dependencies import DbSession, PageDep, Writer, writer\nfrom app.models import Task, TaskCreate, TaskInDB, TaskUpdate\n\n\nclass Message(BaseModel):\n    detail: str\n\n\nNOT_FOUND = {404: {\"model\": Message, \"description\": \"No task has this ID\"}}\nNEEDS_KEY = {\n    401: {\"model\": Message, \"description\": \"The X-API-Key header is missing or unknown\"},\n    403: {\"model\": Message, \"description\": \"This API key can only read\"},\n}\n\nrouter = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"])\nTaskId = Annotated[int, Path(ge=1)]\n\n\ndef task_or_404(task_id: TaskId, session: DbSession) -> TaskInDB:\n    \"\"\"A dependency that finds the task in the path, or answers 404.\"\"\"\n    task = session.get(task_id)\n    if task is None:\n        raise HTTPException(status_code=404, detail=\"Task not found\")\n    return task\n\n\nFoundTask = Annotated[TaskInDB, Depends(task_or_404)]\n\n\n@router.get(\"\", summary=\"List tasks\")\ndef list_tasks(session: DbSession, page: PageDep, done: bool | None = None) -> list[Task]:\n    \"\"\"List tasks, optionally only done or open ones.\"\"\"\n    return session.list(done=done)[page.offset : page.offset + page.limit]\n\n\n# TODO 2: document the 404 this route can return: add responses=NOT_FOUND and summary=\"Read a task\"\n@router.get(\"/{task_id}\")\ndef read_task(task: FoundTask) -> Task:\n    \"\"\"One task, by its ID.\"\"\"\n    return task\n\n\n@router.post(\"\", status_code=201, summary=\"Create a task\", responses=NEEDS_KEY)\ndef create_task(task: TaskCreate, user: Writer, session: DbSession) -> Task:\n    \"\"\"Create a task, recording who created it. The key is checked before a session opens.\"\"\"\n    return session.add(task, created_by=user.email)\n\n\n@router.put(\"/{task_id}\", dependencies=[Depends(writer)], summary=\"Replace a task\",\n            responses={**NOT_FOUND, **NEEDS_KEY})\ndef replace_task(current: FoundTask, task: TaskCreate, session: DbSession) -> Task:\n    \"\"\"Replace a task completely; done and created_by are kept.\"\"\"\n    return session.replace(current, task)\n\n\n@router.patch(\"/{task_id}\", dependencies=[Depends(writer)], summary=\"Update part of a task\",\n              responses={**NOT_FOUND, **NEEDS_KEY})\ndef update_task(current: FoundTask, changes: TaskUpdate, session: DbSession) -> Task:\n    \"\"\"Change only the fields that are sent.\"\"\"\n    return session.update(current, changes)\n\n\n@router.delete(\"/{task_id}\", status_code=204, dependencies=[Depends(writer)], summary=\"Delete a task\",\n               responses={**NOT_FOUND, **NEEDS_KEY})\ndef delete_task(current: FoundTask, session: DbSession) -> None:\n    \"\"\"Delete a task.\"\"\"\n    session.delete(current)\n\n\n\n# TODO 3: mark this old route as deprecated (deprecated=True), so the docs show it struck through\n@router.get(\"/open/all\", summary=\"List open tasks\")\ndef list_open_tasks(session: DbSession, page: PageDep) -> list[Task]:\n    \"\"\"Use GET /tasks?done=false instead.\"\"\"\n    return session.list(done=False)[page.offset : page.offset + page.limit]\n"
+     },
+     {
+      "path": "export_openapi.py",
+      "content": "\"\"\"Write the API's OpenAPI schema to openapi.json and summarise it: python export_openapi.py\"\"\"\nimport json\nfrom pathlib import Path\n\nfrom app.main import app\n\nschema = app.openapi()\nPath(\"openapi.json\").write_text(json.dumps(schema, indent=2) + \"\\n\", encoding=\"utf-8\")\n\nprint(f\"{schema['info']['title']} {schema['info']['version']} (OpenAPI {schema['openapi']})\")\nfor path, operations in schema[\"paths\"].items():\n    for method, operation in operations.items():\n        note = \"  (deprecated)\" if operation.get(\"deprecated\") else \"\"\n        print(f\"{method.upper():<7}{path:<18}{operation.get('summary', '')}{note}\")\nschemas = schema[\"components\"][\"schemas\"]\nprint(f\"{len(schemas)} schemas: {', '.join(sorted(schemas))}\")\nprint(\"security schemes:\", \", \".join(schema[\"components\"].get(\"securitySchemes\", {})))\n"
+     },
+     {
+      "path": "tests/test_docs.py",
+      "content": "def test_the_schema_describes_the_api(client):\n    schema = client.get(\"/openapi.json\").json()\n    assert schema[\"info\"][\"title\"] == \"Task API\"\n    assert [tag[\"name\"] for tag in schema[\"tags\"]] == [\"tasks\", \"service\"]\n    assert \"404\" in schema[\"paths\"][\"/tasks/{task_id}\"][\"get\"][\"responses\"]\n    assert schema[\"paths\"][\"/tasks/open/all\"][\"get\"][\"deprecated\"] is True\n\n\ndef test_the_docs_pages_are_served(client):\n    assert \"swagger-ui\" in client.get(\"/docs\").text\n    assert \"redoc\" in client.get(\"/redoc\").text\n\n\ndef test_the_example_title_appears_in_the_schema(client):\n    schema = client.get(\"/openapi.json\").json()\n    title = schema[\"components\"][\"schemas\"][\"TaskCreate\"][\"properties\"][\"title\"]\n    assert title[\"examples\"] == [\"Write the release notes\"]\n"
+     }
+    ],
+    "hints": [
+     "openapi_tags is a list of dicts with name and description keys, in the order the docs should show them.",
+     "FastAPI caches the schema after the first call; restart the server to see changes in /docs.",
+     "If Authorize doesn't appear, check that the routes still use the writer dependency built on APIKeyHeader."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "HTTP, ASGI and async, your first FastAPI app, then routes with path and query parameters; finish both labs.",
+   "modules": [
+    1,
+    2
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Validate requests and shape responses with Pydantic models; finish the validation lab.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Dependency injection for sessions, paging and security, then the interactive documentation.",
+   "modules": [
+    4,
+    5
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Build and test the task management capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "A task management API",
+  "minutes": 420,
+  "brief": "Build a complete RESTful API for a small team's task manager with FastAPI, building on the labs. It has projects and tasks: every task belongs to a project, so tasks live under /projects/{project_id}/tasks. Provide CRUD operations for both, with the right methods and status codes (201 with the new resource, 204 for deletions, 404 for anything that doesn't exist, 409 for a project name that's taken). Validate everything with Pydantic: separate create, update and response models, constraints, a custom validator, a nested checklist, unknown fields rejected, and an internal field that's never returned. Use dependency injection for a simulated database session opened and closed for each request, for paging and filters, for finding a project or task or answering 404, and for API keys with read and write access. Document the API so that someone else could use it entirely from Swagger UI: metadata, tags, summaries, examples and documented errors. Test it with TestClient, including dependency overrides, and export openapi.json.",
+  "deliverables": [
+   "The source code, organised in modules (main, models, db, dependencies and one router per resource)",
+   "At least fifteen pytest tests using TestClient, covering success and error cases and at least one dependency override, all passing",
+   "openapi.json, exported from the app",
+   "A README with how to install and run the API, the demo keys, and a short tour of the endpoints",
+   "A transcript or screenshots of a full session in Swagger UI: create a project, add tasks, update one, list with filters, delete, and the errors for a missing key and a missing task"
+  ],
+  "rubric": [
+   {
+    "name": "REST design and CRUD",
+    "points": 25,
+    "description": "Projects and tasks are complete and consistent: nested paths, the right methods, 201, 204, 404 and 409 where they belong, and errors in one shape."
+   },
+   {
+    "name": "Validation and models",
+    "points": 20,
+    "description": "Separate create, update and response models; constraints, a custom validator and a nested model; unknown fields rejected; the internal field never returned; partial updates with exclude_unset."
+   },
+   {
+    "name": "Dependency injection",
+    "points": 20,
+    "description": "Sessions opened and closed with yield; shared paging and filters; lookup dependencies for 404s; API keys that distinguish 401 from 403; nothing duplicated across routes."
+   },
+   {
+    "name": "Documentation",
+    "points": 15,
+    "description": "The whole API can be used from Swagger UI: metadata, tag descriptions, summaries, examples, documented errors and working Authorize."
+   },
+   {
+    "name": "Tests",
+    "points": 15,
+    "description": "At least fifteen meaningful tests, independent of each other, including error paths and a dependency override."
+   },
+   {
+    "name": "Code organisation and README",
+    "points": 5,
+    "description": "Clear modules and names, and a README another developer could follow."
+   }
+  ],
+  "submit": "Paste your code (each file with its name) or a repository link, your tests with the pytest summary, the first lines of openapi.json and the output of a script like export_openapi.py, your README, and the Swagger UI transcript or screenshots."
+ }
+}
