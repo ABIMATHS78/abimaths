@@ -1,0 +1,981 @@
+{
+  "slug": "observability-prometheus-grafana",
+  "title": "Observability with Prometheus, Grafana and OpenTelemetry",
+  "subtitle": "Instrument services with metrics, logs and traces, query them with PromQL, alert on SLO burn rates you can test, and investigate problems with Grafana dashboards and distributed traces.",
+  "category": "Cloud & DevOps",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "katarina-novakova",
+    "chukwuemeka-obieche"
+  ],
+  "skills": [
+    "Observability",
+    "Prometheus",
+    "PromQL",
+    "Grafana dashboards",
+    "OpenTelemetry",
+    "Distributed tracing",
+    "Alerting",
+    "SLO-based alerting",
+    "Structured logging"
+  ],
+  "tools": [
+    "Prometheus",
+    "Grafana",
+    "OpenTelemetry Collector",
+    "Jaeger",
+    "Alertmanager",
+    "Docker Compose",
+    "Python 3"
+  ],
+  "outcomes": [
+    "Instrument a Python service with Prometheus metrics, structured JSON logs and OpenTelemetry traces",
+    "Query metrics with PromQL: rates, aggregations, error ratios, percentiles and joins",
+    "Write recording and alerting rules, including SLO burn-rate alerts, and unit-test them with promtool",
+    "Route, group and inhibit notifications with Alertmanager",
+    "Build Grafana dashboards as code, and follow a problem from an alert to a trace and its logs"
+  ],
+  "prerequisites": "Basic Python (Python Programming with PyCharm covers it) and the command line (Linux Command Line Essentials). Some Docker Compose helps; Containerisation and Orchestration with Docker and Kubernetes covers it. You need Docker with Compose v2, Python 3.10 or later with pip, and 8 GB of memory. Everything runs locally.",
+  "description": "When a service slows down at two in the morning, you need answers fast: what's broken, for whom, since when and why. Observability gives you them, from three signals working together: metrics that show trends and trigger alerts, traces that follow a request through every service, and logs that explain each event. This course builds all three into a pair of Python services, orders and payments, running beside a complete open-source stack on your laptop: Prometheus, Alertmanager, Grafana, the OpenTelemetry Collector and Jaeger, all in Docker Compose.\n\nYou'll instrument FastAPI code with prometheus_client and OpenTelemetry, write structured logs that carry trace IDs, and query metrics with PromQL, practising against unit tests with known answers. You'll turn queries into recording rules and alerts, including multiwindow burn-rate alerts for an SLO, prove them with promtool before they reach production, and route them with Alertmanager. Finally you'll provision Grafana dashboards as code, derive metrics from spans, follow exemplars from a latency graph to the slow request's trace, and track down faults injected into the services. Every lab has expected output you can check, and the capstone makes a new service observable end to end. Choosing SLOs and running incidents are left to the Site Reliability Engineering course; here SLOs are for alerting.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Observability Foundations: Metrics, Logs and Traces",
+      "summary": "What observability adds to monitoring, what metrics, logs and traces each tell you, how Prometheus collects metrics, and how OpenTelemetry and the course's local stack fit together.",
+      "instructor": "katarina-novakova",
+      "lessons": [
+        {
+          "title": "Monitoring, observability and the three signals",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish monitoring from observability",
+            "Describe what metrics, logs and traces each answer"
+          ],
+          "key_points": [
+            "Monitoring watches for problems you can predict, with known checks and alerts; observability is being able to ask new questions of a running system from its outputs, including about failures nobody predicted.",
+            "Metrics are numbers measured over time, such as requests per second or memory in use: cheap to store and quick to query, so they suit dashboards and alerts, but they summarise and lose individual events.",
+            "Logs are timestamped records of individual events, such as one failed payment with its order ID: rich in detail but costly at volume, and most useful when structured, as JSON, and searchable.",
+            "Traces follow one request through every service it touches, as a tree of timed spans, showing where the time went and where an error began; they're usually sampled to control cost.",
+            "Two checklists keep metrics focused: RED for services (Rate, Errors, Duration) and USE for resources (Utilisation, Saturation, Errors); Google's four golden signals are latency, traffic, errors and saturation.",
+            "The signals work best linked: an alert on a metric leads to a dashboard, an exemplar or a trace ID leads to a trace, and the trace ID finds the matching log lines."
+          ]
+        },
+        {
+          "title": "How Prometheus collects and stores metrics",
+          "minutes": 13,
+          "objectives": [
+            "Explain Prometheus's pull model, targets and time series",
+            "Read the text exposition format and name the four metric types"
+          ],
+          "key_points": [
+            "Prometheus pulls: every scrape_interval it requests each target's /metrics endpoint over HTTP and records an up series, 1 or 0, for each target, so a target that stops answering is visible too.",
+            "Targets come from scrape_configs: static lists, or service discovery for Kubernetes, cloud instances, Consul and more; Prometheus adds job and instance labels to everything it scrapes.",
+            "A time series is a metric name plus a set of labels, such as http_requests_total{route=\"/orders\", code=\"200\"}. Each distinct combination is a separate series, so labels with unbounded values, such as user IDs, multiply storage and slow queries.",
+            "There are four types: a counter only goes up (resetting to zero on restart), a gauge goes up and down, a histogram counts observations in cumulative buckets (le) with a _sum and _count, and a summary computes quantiles that can't be aggregated.",
+            "Prometheus keeps samples in its local time-series database (TSDB) for a retention period, 15 days by default, and evaluates rules on a schedule; remote write sends data on for long-term or global storage.",
+            "Short-lived batch jobs can push to a Pushgateway for Prometheus to scrape, but services should be scraped directly, so their up series still says whether they're running."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Read a /metrics endpoint",
+            "steps": [
+              {
+                "do": "With the module 1 stack running, look at Prometheus's own metrics in the text exposition format.",
+                "code": "curl -s localhost:9090/metrics | grep -A 3 '^# HELP prometheus_http_requests_total'",
+                "lang": "bash",
+                "see": "A # HELP line, # TYPE prometheus_http_requests_total counter, then one line per label combination."
+              },
+              {
+                "do": "Count the lines of each type to see what the exposition format holds.",
+                "code": "curl -s localhost:9090/metrics | grep '^# TYPE' | awk '{print $4}' | sort | uniq -c",
+                "lang": "bash",
+                "see": "Counts of counter, gauge, histogram and summary metrics."
+              },
+              {
+                "do": "Ask Prometheus how many series it holds right now, through its HTTP API.",
+                "code": "curl -s --get localhost:9090/api/v1/query --data-urlencode 'query=prometheus_tsdb_head_series'",
+                "lang": "bash",
+                "see": "{\"status\":\"success\",...} with the number of series as the value."
+              },
+              {
+                "do": "List each target and whether its last scrape worked.",
+                "code": "curl -s localhost:9090/api/v1/targets | python3 -c \"import json, sys; [print(t['labels']['job'], t['health']) for t in json.load(sys.stdin)['data']['activeTargets']]\"",
+                "lang": "bash",
+                "see": "One line per target, such as prometheus up."
+              }
+            ]
+          }
+        },
+        {
+          "title": "OpenTelemetry and the local stack",
+          "minutes": 12,
+          "objectives": [
+            "Describe OpenTelemetry's parts: API, SDK, OTLP and the Collector",
+            "Explain how the course's local stack fits together"
+          ],
+          "key_points": [
+            "OpenTelemetry (OTel) is a vendor-neutral CNCF project for producing telemetry: an API to instrument code, SDKs that process and export it, semantic conventions for names, and OTLP, the protocol that carries traces, metrics and logs.",
+            "The OpenTelemetry Collector receives, processes and exports telemetry: receivers such as otlp (port 4317 for gRPC, 4318 for HTTP), processors such as memory_limiter and batch, exporters to back ends, and connectors that turn one signal into another.",
+            "Pipelines in the Collector's service section wire the components together per signal, such as traces: receivers [otlp], processors [memory_limiter, batch], exporters [otlp/jaeger]; a component that no pipeline uses doesn't run.",
+            "Sending telemetry to a Collector instead of straight to a back end keeps credentials, sampling and routing in one place, and lets you change back ends without touching the application.",
+            "The course's stack runs in Docker Compose: Prometheus for metrics and rules, Alertmanager for notifications, the Collector for traces, Jaeger to store and show traces, and Grafana to view it all, with data sources provisioned from files."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Start the observability stack",
+        "tool": "Docker Compose",
+        "minutes": 60,
+        "goal": "Run Prometheus, Alertmanager, Grafana, the OpenTelemetry Collector and Jaeger with Docker Compose, check what Prometheus scrapes, run your first queries, and send a trace by hand to see it travel through the Collector to Jaeger.",
+        "setup": [
+          "Docker with Compose v2 (docker compose version), and about 4 GB of free memory",
+          "curl and Python 3 in your terminal",
+          "Download the starter files into a folder called obs-stack, keeping their subfolders"
+        ],
+        "steps": [
+          {
+            "do": "Start the stack's infrastructure (the two shop services come in module 2), and check it.",
+            "code": "docker compose up -d prometheus alertmanager alert-sink grafana otel-collector jaeger\ndocker compose ps",
+            "lang": "bash",
+            "see": "Six services with STATUS Up."
+          },
+          {
+            "do": "List Prometheus's targets and their health.",
+            "code": "curl -s localhost:9090/api/v1/targets | python3 -c \"import json, sys; [print(t['labels']['job'], t['health']) for t in json.load(sys.stdin)['data']['activeTargets']]\"",
+            "lang": "bash",
+            "see": "prometheus, otel-collector and spanmetrics up; orders and payments down, because they aren't running yet."
+          },
+          {
+            "do": "Read a metric in the exposition format.",
+            "code": "curl -s localhost:9090/metrics | grep -A 3 '^# HELP prometheus_http_requests_total'",
+            "lang": "bash",
+            "see": "# TYPE prometheus_http_requests_total counter and lines with code and handler labels."
+          },
+          {
+            "do": "Open http://localhost:9090 and run these queries in the Query page, in Table and then Graph view: up, up == 0, rate(prometheus_http_requests_total[1m]) and prometheus_tsdb_head_series. Then ask the API which targets are down.",
+            "code": "curl -s --get localhost:9090/api/v1/query --data-urlencode 'query=up == 0'",
+            "lang": "bash",
+            "see": "{\"status\":\"success\",...} with the orders and payments series."
+          },
+          {
+            "do": "Send a trace by hand: put the current time into test-span.json and post it to the Collector's OTLP/HTTP port.",
+            "code": "sed \"s/START/$(date +%s)000000000/; s/END/$(( $(date +%s) + 1 ))000000000/\" test-span.json > span-now.json\ncurl -s -X POST localhost:4318/v1/traces -H 'Content-Type: application/json' -d @span-now.json",
+            "lang": "bash",
+            "see": "{\"partialSuccess\":{}}: the Collector accepted it."
+          },
+          {
+            "do": "Find the trace in Jaeger: open http://localhost:16686/trace/5b8efff798038103d269b633813fc60c, or ask its API.",
+            "code": "curl -s localhost:16686/api/traces/5b8efff798038103d269b633813fc60c | python3 -c \"import json, sys; t = json.load(sys.stdin)['data'][0]; print([s['operationName'] for s in t['spans']], [p['serviceName'] for p in t['processes'].values()])\"",
+            "lang": "bash",
+            "see": "['hello from curl'] ['lab-test']"
+          },
+          {
+            "do": "See the Collector count it: in Prometheus, query the Collector's own metric for accepted spans.",
+            "code": "curl -s --get localhost:9090/api/v1/query --data-urlencode 'query={__name__=~\"otelcol_receiver_accepted_spans.*\"}'",
+            "lang": "bash",
+            "see": "A series with receiver=\"otlp\" and transport=\"http\" and a value of at least 1."
+          },
+          {
+            "do": "Open Grafana at http://localhost:3000 (admin, admin; skip the password change), and check the provisioned data sources. In Explore, query up with Prometheus, then search Jaeger for service lab-test.",
+            "code": "curl -s -u admin:admin localhost:3000/api/datasources | python3 -c \"import json, sys; print(sorted(d['name'] for d in json.load(sys.stdin)))\"",
+            "lang": "bash",
+            "see": "['Jaeger', 'Prometheus']"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The stack runs and Prometheus scrapes its targets.",
+            "look_for": [
+              "prometheus up",
+              "otel-collector up"
+            ]
+          },
+          {
+            "text": "The missing services show up as down, both as targets and in the up metric.",
+            "look_for": [
+              "orders down",
+              "\"up\""
+            ]
+          },
+          {
+            "text": "A metric is read in the exposition format.",
+            "look_for": [
+              "# TYPE prometheus_http_requests_total counter"
+            ]
+          },
+          {
+            "text": "The hand-made trace passes through the Collector into Jaeger.",
+            "look_for": [
+              "partialSuccess",
+              "hello from curl",
+              "lab-test"
+            ]
+          },
+          {
+            "text": "Grafana has both data sources provisioned.",
+            "look_for": [
+              "Jaeger",
+              "Prometheus"
+            ]
+          }
+        ],
+        "submit": "Paste the commands and output from steps 1 to 8.",
+        "files": [
+          {
+            "path": "compose.yaml",
+            "content": "name: observability\n\nservices:\n  prometheus:\n    image: prom/prometheus:v3.15.0\n    command:\n      - --config.file=/etc/prometheus/prometheus.yml\n      - --storage.tsdb.retention.time=7d\n      - --web.enable-lifecycle             # lets you reload the configuration with POST /-/reload\n      - --enable-feature=exemplar-storage  # keeps the trace IDs attached to histogram samples\n    volumes:\n      - ./prometheus:/etc/prometheus:ro\n      - prometheus-data:/prometheus\n    ports:\n      - \"9090:9090\"\n\n  alertmanager:\n    image: prom/alertmanager:v0.34.1\n    command: [\"--config.file=/etc/alertmanager/alertmanager.yml\"]\n    volumes:\n      - ./alertmanager:/etc/alertmanager:ro\n    ports:\n      - \"9093:9093\"\n\n  alert-sink:   # stands in for a pager and a ticket system: prints what Alertmanager sends\n    image: python:3.13-slim-trixie\n    command: [\"python\", \"-u\", \"/app/alert_sink.py\"]\n    volumes:\n      - ./alert_sink.py:/app/alert_sink.py:ro\n\n  grafana:\n    image: grafana/grafana:12.4.13\n    environment:\n      GF_SECURITY_ADMIN_PASSWORD: admin   # a lab password: change it anywhere else\n    volumes:\n      - ./grafana/provisioning:/etc/grafana/provisioning:ro\n      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro\n    ports:\n      - \"3000:3000\"\n\n  otel-collector:\n    image: otel/opentelemetry-collector-contrib:0.163.1\n    volumes:\n      - ./otel/collector.yaml:/etc/otelcol-contrib/config.yaml:ro\n    ports:\n      - \"4317:4317\"   # OTLP over gRPC\n      - \"4318:4318\"   # OTLP over HTTP\n\n  jaeger:\n    image: jaegertracing/jaeger:2.22.0\n    ports:\n      - \"16686:16686\"   # the Jaeger UI\n\n  # The course's two services, from module 2 on: docker compose up -d --build orders payments\n  orders:\n    build: ./shop\n    environment:\n      SERVICE: orders\n      PAYMENTS_URL: http://payments:8000\n      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318\n    ports:\n      - \"8001:8000\"\n\n  payments:\n    build: ./shop\n    environment:\n      SERVICE: payments\n      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318\n    ports:\n      - \"8002:8000\"\n\nvolumes:\n  prometheus-data:\n"
+          },
+          {
+            "path": "prometheus/prometheus.yml",
+            "content": "global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\n\nrule_files:\n  - /etc/prometheus/rules/*.rules.yaml\n\nalerting:\n  alertmanagers:\n    - static_configs:\n        - targets: [\"alertmanager:9093\"]\n\nscrape_configs:\n  - job_name: prometheus\n    static_configs:\n      - targets: [\"localhost:9090\"]\n\n  - job_name: otel-collector        # the Collector's own health metrics\n    static_configs:\n      - targets: [\"otel-collector:8888\"]\n\n  - job_name: spanmetrics           # request metrics the Collector derives from spans\n    static_configs:\n      - targets: [\"otel-collector:8889\"]\n\n  - job_name: orders\n    static_configs:\n      - targets: [\"orders:8000\"]\n\n  - job_name: payments\n    static_configs:\n      - targets: [\"payments:8000\"]\n"
+          },
+          {
+            "path": "otel/collector.yaml",
+            "content": "receivers:\n  otlp:\n    protocols:\n      grpc:\n        endpoint: 0.0.0.0:4317\n      http:\n        endpoint: 0.0.0.0:4318\n\nprocessors:\n  memory_limiter:\n    check_interval: 1s\n    limit_percentage: 80\n    spike_limit_percentage: 25\n  batch: {}\n\nconnectors:\n  # Turns spans into request, error and duration metrics, labelled by service and span name.\n  span_metrics:\n    aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE\n    metrics_flush_interval: 15s\n    histogram:\n      explicit:\n        buckets: [10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s]\n\nexporters:\n  otlp/jaeger:\n    endpoint: jaeger:4317\n    tls:\n      insecure: true\n  prometheus:\n    endpoint: 0.0.0.0:8889\n  debug:\n    verbosity: basic\n\nservice:\n  pipelines:\n    traces:\n      receivers: [otlp]\n      processors: [memory_limiter, batch]\n      exporters: [otlp/jaeger, span_metrics, debug]\n    metrics/spanmetrics:\n      receivers: [span_metrics]\n      exporters: [prometheus]\n  telemetry:\n    metrics:\n      readers:\n        - pull:\n            exporter:\n              prometheus:\n                host: 0.0.0.0\n                port: 8888\n"
+          },
+          {
+            "path": "grafana/provisioning/datasources/datasources.yaml",
+            "content": "apiVersion: 1\n\ndatasources:\n  - name: Prometheus\n    type: prometheus\n    uid: prometheus\n    access: proxy\n    url: http://prometheus:9090\n    isDefault: true\n    jsonData:\n      # Turns each exemplar's trace_id into a link to the trace in Jaeger.\n      exemplarTraceIdDestinations:\n        - name: trace_id\n          datasourceUid: jaeger\n\n  - name: Jaeger\n    type: jaeger\n    uid: jaeger\n    access: proxy\n    url: http://jaeger:16686\n"
+          },
+          {
+            "path": "grafana/provisioning/dashboards/dashboards.yaml",
+            "content": "apiVersion: 1\n\nproviders:\n  - name: course-dashboards\n    folder: Course\n    type: file\n    allowUiUpdates: false\n    options:\n      path: /var/lib/grafana/dashboards\n"
+          },
+          {
+            "path": "alertmanager/alertmanager.yml",
+            "content": "route:\n  receiver: team-tickets          # anything not matched below becomes a ticket\n  group_by: [alertname, service]\n  group_wait: 30s\n  group_interval: 5m\n  repeat_interval: 4h\n  routes:\n    - matchers: ['severity=\"page\"']\n      receiver: on-call-pager\n      repeat_interval: 1h\n\nreceivers:\n  - name: on-call-pager\n    webhook_configs:\n      - url: http://alert-sink:8080/pager\n  - name: team-tickets\n    webhook_configs:\n      - url: http://alert-sink:8080/tickets\n\ninhibit_rules:\n  # While a page is firing for a service, hold back its tickets: one problem, one notification.\n  - source_matchers: ['severity=\"page\"']\n    target_matchers: ['severity=\"ticket\"']\n    equal: [service]\n"
+          },
+          {
+            "path": "alert_sink.py",
+            "content": "\"\"\"alert-sink: prints every notification Alertmanager sends, one line per alert, so you can watch routing work.\"\"\"\n\nimport json\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_POST(self):\n        body = json.loads(self.rfile.read(int(self.headers[\"Content-Length\"])))\n        for alert in body.get(\"alerts\", []):\n            labels, notes = alert[\"labels\"], alert.get(\"annotations\", {})\n            print(f\"{self.path} {alert['status']} {labels.get('alertname')} severity={labels.get('severity')} \"\n                  f\"service={labels.get('service', '-')}: {notes.get('summary', '')}\", flush=True)\n        self.send_response(200)\n        self.end_headers()\n\n    def log_message(self, *args):\n        pass  # quiet: only the alerts are printed\n\n\nHTTPServer((\"0.0.0.0\", 8080), Handler).serve_forever()\n"
+          },
+          {
+            "path": "test-span.json",
+            "content": "{\"resourceSpans\": [{\n  \"resource\": {\"attributes\": [{\"key\": \"service.name\", \"value\": {\"stringValue\": \"lab-test\"}}]},\n  \"scopeSpans\": [{\n    \"scope\": {\"name\": \"curl\"},\n    \"spans\": [{\n      \"traceId\": \"5b8efff798038103d269b633813fc60c\",\n      \"spanId\": \"eee19b7ec3c1b174\",\n      \"name\": \"hello from curl\",\n      \"kind\": 1,\n      \"startTimeUnixNano\": \"START\",\n      \"endTimeUnixNano\": \"END\",\n      \"attributes\": [{\"key\": \"lab.module\", \"value\": {\"intValue\": \"1\"}}]\n    }]\n  }]\n}]}\n"
+          },
+          {
+            "path": "grafana/dashboards/README.txt",
+            "content": "Grafana loads every .json dashboard in this folder (see grafana/provisioning/dashboards/dashboards.yaml).\nModule 5 adds orders-red.json here.\n"
+          },
+          {
+            "path": "prometheus/rules/README.txt",
+            "content": "Prometheus loads every file here whose name ends in .rules.yaml (see rule_files in prometheus.yml).\nModule 4 adds the SLO rules and their tests here.\n"
+          }
+        ],
+        "hints": [
+          "If a port is already in use, stop whatever holds it, or change the left-hand side of that port mapping in compose.yaml (for example \"19090:9090\") and use the new port.",
+          "docker compose logs otel-collector shows the Collector's start-up and any configuration error; docker compose logs SERVICE works for every service.",
+          "If Jaeger finds nothing, check the span's timestamps: the sed command must run in the same minute as the curl, and your clock must be right."
+        ]
+      }
+    },
+    {
+      "title": "Instrumenting a Python Service",
+      "summary": "Add the three signals to a FastAPI service: Prometheus metrics with prometheus_client, structured JSON logs that carry trace IDs, and OpenTelemetry traces that follow requests from one service to the next.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Metrics with prometheus_client",
+          "minutes": 13,
+          "objectives": [
+            "Instrument a Python service with counters, gauges and histograms",
+            "Name metrics, and choose their labels and buckets well"
+          ],
+          "key_points": [
+            "prometheus_client defines metrics in code: Counter for things that happen (requests, errors), Gauge for current values (queue length, open connections), Histogram for distributions (latency, sizes), each with a name, help text and label names.",
+            "Follow the naming conventions: snake_case, base units in the name (_seconds, _bytes), and _total on counters, which prometheus_client adds itself, so Counter(\"http_requests\", ...) is exported as http_requests_total.",
+            "Labels need a small, fixed set of values: use the route template (/orders/{order_id}), the method and the status code, never raw paths, user IDs or error messages.",
+            "Choose histogram buckets around the latencies that matter, such as your latency target: percentiles are estimated within buckets, so a target that falls between two widely spaced buckets is measured coarsely.",
+            "Serve the metrics over HTTP, such as a /metrics route returning generate_latest(); servers that run several worker processes, such as gunicorn, need prometheus_client's multiprocess mode, since each process counts separately."
+          ]
+        },
+        {
+          "title": "Structured logs that correlate",
+          "minutes": 11,
+          "objectives": [
+            "Write structured JSON logs with useful context",
+            "Correlate log lines with traces through their trace IDs"
+          ],
+          "key_points": [
+            "Write logs as one JSON object per line on standard output: the container runtime collects them, and log stores can filter on fields such as level, service, order_id or status_code without fragile text parsing.",
+            "Give each line the context the next question needs: what happened (the message), to what (an order or request ID), how it ended (status, duration) and where (service, version); keep messages fixed and put values in fields.",
+            "Add the current trace_id and span_id from the OpenTelemetry context to every line, so you can go from a trace to its logs and back; in Python a logging Formatter can do it, or OpenTelemetry's logging instrumentation.",
+            "Use levels deliberately: error for failures that need attention, warning for handled problems, info for important events such as an order created, and debug off in production.",
+            "Never log secrets, tokens, card numbers or personal data you don't need: logs are often kept longer, and seen by more people, than the systems they describe."
+          ]
+        },
+        {
+          "title": "Tracing with OpenTelemetry in Python",
+          "minutes": 13,
+          "objectives": [
+            "Set up the OpenTelemetry SDK to export traces over OTLP",
+            "Add spans, attributes and events, and propagate context between services"
+          ],
+          "key_points": [
+            "Set up a TracerProvider with a Resource naming the service (service.name), add a BatchSpanProcessor with an OTLP exporter and register it; the exporter reads OTEL_EXPORTER_OTLP_ENDPOINT, such as http://otel-collector:4318.",
+            "Instrumentation libraries create spans for you: FastAPIInstrumentor makes a server span per request, and HTTPXClientInstrumentor makes a client span per outgoing call and adds a traceparent header to it.",
+            "The W3C traceparent header carries the trace ID and the parent span's ID to the next service, whose instrumentation continues the same trace: that's how one trace covers both orders and payments.",
+            "Add your own spans with tracer.start_as_current_span(\"price order\"), attributes (span.set_attribute) for facts you'll search on, events (span.add_event) for moments inside a span, and an error status when something fails.",
+            "opentelemetry-instrument can instrument an app without code changes, configured by environment variables such as OTEL_SERVICE_NAME, OTEL_TRACES_EXPORTER and OTEL_EXPORTER_OTLP_ENDPOINT.",
+            "Sampling controls cost: OTEL_TRACES_SAMPLER=parentbased_traceidratio with OTEL_TRACES_SAMPLER_ARG=0.1 keeps one trace in ten, decided when the trace starts (head sampling) and followed by every service in it."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Instrument the orders service",
+        "tool": "Python",
+        "minutes": 90,
+        "goal": "Run two instrumented FastAPI services, orders and payments, in the stack; add a business metric, a custom span with attributes and an event, and structured logs to orders; then follow a failed order from its metrics to its log line to its trace.",
+        "setup": [
+          "The obs-stack folder from the module 1 lab, with the stack running",
+          "Download the starter files: the shop folder and traffic.py, into obs-stack",
+          "Python 3.10 or later with httpx for traffic.py (pip install httpx)"
+        ],
+        "steps": [
+          {
+            "do": "Read shop/telemetry.py: find the RED metrics, the JSON log formatter and the tracing set-up. Then build and start the two services, and place an order.",
+            "code": "docker compose up -d --build orders payments\nsleep 5\ncurl -s -X POST localhost:8001/orders -H 'Content-Type: application/json' -d '{\"sku\": \"sku-1001\", \"quantity\": 2, \"unit_price\": 9.99}'",
+            "lang": "bash",
+            "see": "{\"order_id\":\"ord-...\",\"status\":\"created\",\"amount\":19.98}"
+          },
+          {
+            "do": "Read the metrics the shared code records.",
+            "code": "curl -s localhost:8001/metrics | grep -E '^http_request'",
+            "lang": "bash",
+            "see": "http_requests_total{code=\"200\",method=\"POST\",route=\"/orders\",service=\"orders\"} 1.0 and the duration histogram."
+          },
+          {
+            "do": "Add a business metric and a tracer to shop/orders.py: these imports at the top, and the two names below PAYMENTS_URL.",
+            "code": "from opentelemetry import trace\nfrom prometheus_client import Counter\n\n# after PAYMENTS_URL = ...\nORDERS = Counter(\"orders\", \"Orders, by result.\", [\"result\"])\ntracer = trace.get_tracer(\"orders\")",
+            "lang": "python"
+          },
+          {
+            "do": "Replace create_order with this version: a span around pricing, with attributes; and for each outcome, a count, a log line with fields and, on failure, a span event.",
+            "code": "@app.post(\"/orders\")\nasync def create_order(order: Order):\n    order_id = f\"ord-{uuid.uuid4().hex[:8]}\"\n    with tracer.start_as_current_span(\"price order\") as span:\n        span.set_attribute(\"order.sku\", order.sku)\n        span.set_attribute(\"order.quantity\", order.quantity)\n        amount = round(order.quantity * order.unit_price, 2)\n    async with httpx.AsyncClient(timeout=3.0) as client:\n        resp = await client.post(f\"{PAYMENTS_URL}/charge\", json={\"order_id\": order_id, \"amount\": amount})\n    if resp.status_code != 200:\n        ORDERS.labels(\"payment_failed\").inc()\n        trace.get_current_span().add_event(\"payment failed\", {\"payments.status_code\": resp.status_code})\n        log.warning(\"payment failed\", extra={\"fields\": {\"order_id\": order_id, \"status_code\": resp.status_code}})\n        raise HTTPException(status_code=502, detail=\"payment failed\")\n    ORDERS.labels(\"created\").inc()\n    log.info(\"order created\", extra={\"fields\": {\"order_id\": order_id, \"amount\": amount}})\n    return {\"order_id\": order_id, \"status\": \"created\", \"amount\": amount}",
+            "lang": "python"
+          },
+          {
+            "do": "Rebuild orders, send traffic for 30 seconds, and check the new metric.",
+            "code": "docker compose up -d --build orders\nsleep 5\npython traffic.py --rate 5 --seconds 30\ncurl -s localhost:8001/metrics | grep '^orders_total'",
+            "lang": "bash",
+            "see": "sent ... orders: ... created, 0 failed, then orders_total{result=\"created\"}."
+          },
+          {
+            "do": "Make payments fail 30% of the time, send traffic again, and look at the counts.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0.3}'\npython traffic.py --rate 5 --seconds 30\ncurl -s localhost:8001/metrics | grep -E '^(orders_total|http_requests_total)'",
+            "lang": "bash",
+            "see": "Some orders failed, http_requests_total with code=\"502\", and orders_total{result=\"payment_failed\"}."
+          },
+          {
+            "do": "Find a failed order in the logs, and copy its trace_id.",
+            "code": "docker compose logs orders --no-log-prefix | grep '\"payment failed\"' | tail -n 1",
+            "lang": "bash",
+            "see": "{\"ts\": ..., \"level\": \"warning\", \"service\": \"orders\", \"message\": \"payment failed\", \"trace_id\": \"...\", ...}"
+          },
+          {
+            "do": "Open that trace in Jaeger (http://localhost:16686/trace/TRACE_ID), or list its spans from the API.",
+            "code": "curl -s localhost:16686/api/traces/TRACE_ID | python3 -c \"import json, sys; t = json.load(sys.stdin)['data'][0]; print(sorted((t['processes'][s['processID']]['serviceName'], s['operationName']) for s in t['spans']))\"",
+            "lang": "bash",
+            "see": "Spans from both services: orders' POST /orders, price order and POST, and payments' POST /charge, with the error marked."
+          },
+          {
+            "do": "Turn the fault off again.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0}'",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "Both services run and an order is created.",
+            "look_for": [
+              "\"status\":\"created\""
+            ]
+          },
+          {
+            "text": "The shared middleware records RED metrics with low-cardinality labels.",
+            "look_for": [
+              "http_requests_total{code=\"200\",method=\"POST\",route=\"/orders\",service=\"orders\"}"
+            ]
+          },
+          {
+            "text": "The business metric counts both outcomes, and failures show as 502s.",
+            "look_for": [
+              "orders_total{result=\"payment_failed\"}",
+              "code=\"502\""
+            ]
+          },
+          {
+            "text": "A failed order's log line is structured and carries its trace ID.",
+            "look_for": [
+              "\"message\": \"payment failed\"",
+              "\"trace_id\""
+            ]
+          },
+          {
+            "text": "The trace covers both services, including the custom span.",
+            "look_for": [
+              "price order",
+              "POST /charge"
+            ]
+          }
+        ],
+        "submit": "Paste your changed orders.py, then the commands and output from steps 1, 2 and 5 to 8.",
+        "files": [
+          {
+            "path": "shop/telemetry.py",
+            "content": "\"\"\"Observability set-up shared by the course's two services: Prometheus metrics, JSON logs and OpenTelemetry traces.\"\"\"\n\nimport json\nimport logging\nimport os\nimport sys\nimport time\n\nfrom fastapi import FastAPI, Request, Response\nfrom opentelemetry import trace\nfrom opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter\nfrom opentelemetry.instrumentation.fastapi import FastAPIInstrumentor\nfrom opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor\nfrom opentelemetry.sdk.resources import Resource\nfrom opentelemetry.sdk.trace import TracerProvider\nfrom opentelemetry.sdk.trace.export import BatchSpanProcessor\nfrom prometheus_client import REGISTRY, Counter, Histogram\nfrom prometheus_client.exposition import choose_encoder\n\n# RED metrics: Rate and Errors from the counter, Duration from the histogram. Routes are templates such as\n# /orders/{order_id}, never raw paths, so the number of series stays small.\nREQUESTS = Counter(\"http_requests\", \"HTTP requests handled.\", [\"service\", \"route\", \"method\", \"code\"])\nLATENCY = Histogram(\"http_request_duration_seconds\", \"Time taken to handle HTTP requests.\",\n                    [\"service\", \"route\", \"method\"],\n                    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0))\n\n\nclass JsonFormatter(logging.Formatter):\n    \"\"\"One JSON object per line, with the current trace and span IDs, so logs can be joined to traces.\"\"\"\n\n    def __init__(self, service):\n        super().__init__()\n        self.service = service\n\n    def format(self, record):\n        entry = {\"ts\": round(record.created, 3), \"level\": record.levelname.lower(), \"service\": self.service,\n                 \"message\": record.getMessage()}\n        ctx = trace.get_current_span().get_span_context()\n        if ctx.is_valid:\n            entry[\"trace_id\"] = format(ctx.trace_id, \"032x\")\n            entry[\"span_id\"] = format(ctx.span_id, \"016x\")\n        entry.update(getattr(record, \"fields\", {}))\n        return json.dumps(entry)\n\n\ndef setup(app: FastAPI, service: str) -> logging.Logger:\n    # Traces: sent over OTLP when OTEL_EXPORTER_OTLP_ENDPOINT is set, for example http://otel-collector:4318.\n    provider = TracerProvider(resource=Resource.create({\"service.name\": service}))\n    if os.environ.get(\"OTEL_EXPORTER_OTLP_ENDPOINT\"):\n        provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))\n    trace.set_tracer_provider(provider)\n    FastAPIInstrumentor.instrument_app(app, excluded_urls=\"metrics,healthz\", exclude_spans=[\"receive\", \"send\"])\n    HTTPXClientInstrumentor().instrument()  # adds the traceparent header to outgoing requests\n\n    # Logs: JSON lines on standard output, where the container runtime collects them.\n    handler = logging.StreamHandler(sys.stdout)\n    handler.setFormatter(JsonFormatter(service))\n    logger = logging.getLogger(service)\n    logger.handlers = [handler]\n    logger.setLevel(os.environ.get(\"LOG_LEVEL\", \"INFO\"))\n    logger.propagate = False\n\n    # Metrics: count and time every request, then serve them at /metrics for Prometheus to scrape.\n    @app.middleware(\"http\")\n    async def record_metrics(request: Request, call_next):\n        start = time.perf_counter()\n        code = \"500\"\n        try:\n            response = await call_next(request)\n            code = str(response.status_code)\n            return response\n        finally:\n            route = request.scope.get(\"route\")\n            path = route.path if route else \"unmatched\"\n            if path not in (\"/metrics\", \"/healthz\"):\n                elapsed = time.perf_counter() - start\n                REQUESTS.labels(service, path, request.method, code).inc()\n                ctx = trace.get_current_span().get_span_context()\n                exemplar = {\"trace_id\": format(ctx.trace_id, \"032x\")} if ctx.is_valid else None\n                LATENCY.labels(service, path, request.method).observe(elapsed, exemplar=exemplar)\n\n    @app.get(\"/metrics\", include_in_schema=False)\n    def metrics(request: Request):\n        # OpenMetrics when the scraper asks for it (Prometheus does), which is the format that carries exemplars.\n        encoder, content_type = choose_encoder(request.headers.get(\"accept\", \"\"))\n        return Response(encoder(REGISTRY), media_type=content_type)\n\n    return logger\n"
+          },
+          {
+            "path": "shop/orders.py",
+            "content": "\"\"\"orders: accepts orders and asks the payments service to charge them.\"\"\"\n\nimport os\nimport uuid\n\nimport httpx\nfrom fastapi import FastAPI, HTTPException\nfrom pydantic import BaseModel\n\nfrom telemetry import setup\n\napp = FastAPI(title=\"orders\")\nlog = setup(app, \"orders\")\nPAYMENTS_URL = os.environ.get(\"PAYMENTS_URL\", \"http://localhost:8002\")\n\n\nclass Order(BaseModel):\n    sku: str\n    quantity: int\n    unit_price: float\n\n\n@app.get(\"/healthz\")\ndef healthz():\n    return {\"status\": \"ok\"}\n\n\n@app.post(\"/orders\")\nasync def create_order(order: Order):\n    order_id = f\"ord-{uuid.uuid4().hex[:8]}\"\n    amount = round(order.quantity * order.unit_price, 2)\n    async with httpx.AsyncClient(timeout=3.0) as client:\n        resp = await client.post(f\"{PAYMENTS_URL}/charge\", json={\"order_id\": order_id, \"amount\": amount})\n    if resp.status_code != 200:\n        raise HTTPException(status_code=502, detail=\"payment failed\")\n    return {\"order_id\": order_id, \"status\": \"created\", \"amount\": amount}\n"
+          },
+          {
+            "path": "shop/payments.py",
+            "content": "\"\"\"payments: charges orders. POST /admin/faults injects errors and latency for the labs.\"\"\"\n\nimport asyncio\nimport random\nimport uuid\n\nfrom fastapi import FastAPI, HTTPException\nfrom pydantic import BaseModel\n\nfrom telemetry import setup\n\napp = FastAPI(title=\"payments\")\nlog = setup(app, \"payments\")\nfaults = {\"failure_rate\": 0.0, \"extra_latency_seconds\": 0.0}\n\n\nclass Charge(BaseModel):\n    order_id: str\n    amount: float\n\n\nclass Faults(BaseModel):\n    failure_rate: float = 0.0\n    extra_latency_seconds: float = 0.0\n\n\n@app.get(\"/healthz\")\ndef healthz():\n    return {\"status\": \"ok\"}\n\n\n@app.post(\"/charge\")\nasync def charge(req: Charge):\n    await asyncio.sleep(0.02 + random.uniform(0, 0.03) + faults[\"extra_latency_seconds\"])\n    if random.random() < faults[\"failure_rate\"]:\n        log.warning(\"payment provider unavailable\", extra={\"fields\": {\"order_id\": req.order_id}})\n        raise HTTPException(status_code=503, detail=\"payment provider unavailable\")\n    payment_id = f\"pay-{uuid.uuid4().hex[:8]}\"\n    log.info(\"payment charged\", extra={\"fields\": {\"order_id\": req.order_id, \"amount\": req.amount}})\n    return {\"payment_id\": payment_id, \"status\": \"charged\"}\n\n\n@app.post(\"/admin/faults\")\ndef set_faults(new: Faults):\n    faults.update(new.model_dump())\n    log.warning(\"faults changed\", extra={\"fields\": dict(faults)})\n    return faults\n"
+          },
+          {
+            "path": "shop/requirements.txt",
+            "content": "fastapi==0.146.0\nuvicorn==0.54.0\nhttpx==0.28.1\nprometheus-client==0.26.0\nopentelemetry-sdk==1.45.1\nopentelemetry-exporter-otlp-proto-http==1.45.1\nopentelemetry-instrumentation-fastapi==0.66b1\nopentelemetry-instrumentation-httpx==0.66b1\n"
+          },
+          {
+            "path": "shop/Dockerfile",
+            "content": "FROM python:3.13-slim-trixie\nENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1\nRUN useradd --uid 10001 --no-create-home app\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY *.py ./\nUSER 10001\n# SERVICE is orders or payments; compose.yaml sets it.\nENV SERVICE=orders\nCMD [\"sh\", \"-c\", \"exec uvicorn ${SERVICE}:app --host 0.0.0.0 --port 8000\"]\n"
+          },
+          {
+            "path": "traffic.py",
+            "content": "\"\"\"Send orders to the orders service at a steady rate: python traffic.py --rate 5 --seconds 60\"\"\"\n\nimport argparse\nimport collections\nimport random\nimport time\n\nimport httpx\n\np = argparse.ArgumentParser()\np.add_argument(\"--url\", default=\"http://localhost:8001\")\np.add_argument(\"--rate\", type=float, default=5, help=\"orders per second\")\np.add_argument(\"--seconds\", type=int, default=60)\na = p.parse_args()\n\nresults = collections.Counter()\nskus = [\"sku-1001\", \"sku-1002\", \"sku-1003\"]\nwith httpx.Client(timeout=5) as client:\n    end = time.monotonic() + a.seconds\n    while time.monotonic() < end:\n        order = {\"sku\": random.choice(skus), \"quantity\": random.randint(1, 3), \"unit_price\": 9.99}\n        try:\n            results[client.post(f\"{a.url}/orders\", json=order).status_code] += 1\n        except httpx.HTTPError as e:\n            results[type(e).__name__] += 1\n        time.sleep(1 / a.rate)\ntotal = sum(results.values())\nprint(f\"sent {total} orders: {results.get(200, 0)} created, {total - results.get(200, 0)} failed {dict(results)}\")\n"
+          }
+        ],
+        "hints": [
+          "If the services exit, docker compose logs orders shows the Python error; a mistake in the code you added is the usual cause.",
+          "No spans in Jaeger? Check OTEL_EXPORTER_OTLP_ENDPOINT in compose.yaml and docker compose logs otel-collector; spans are sent in batches, so give them a few seconds.",
+          "If traffic.py can't connect, the services are still starting: wait a few seconds after docker compose up."
+        ]
+      }
+    },
+    {
+      "title": "Querying with PromQL",
+      "summary": "Select and filter series, turn counters into rates, aggregate across instances, and compute error ratios, percentiles and joins with PromQL, practising against unit tests with known answers.",
+      "instructor": "katarina-novakova",
+      "lessons": [
+        {
+          "title": "Selectors, instant vectors and range vectors",
+          "minutes": 12,
+          "objectives": [
+            "Select series with label matchers",
+            "Tell instant vectors, range vectors and scalars apart"
+          ],
+          "key_points": [
+            "A selector picks series by name and labels: http_requests_total{service=\"orders\", code=~\"5..\"} uses = (equal), != (not equal), =~ (matches a regular expression) and !~ (doesn't match); regular expressions must match the whole value.",
+            "An instant vector has one sample per series at the evaluation time; a range vector, such as http_requests_total[5m], has every sample in the window, and only functions such as rate() accept one.",
+            "offset 1h moves a selector back in time, to compare with an hour ago, and @ followed by a timestamp, or @ end(), pins it to a fixed time.",
+            "When a target stops exposing a series, Prometheus marks it stale and it drops out of instant queries; a query for series that don't exist returns nothing rather than zero, which is why absent(up{job=\"orders\"}) exists.",
+            "Prometheus's Query page and Grafana's Explore view run queries: the table shows the instant result, and the graph evaluates the query at each step across the time range."
+          ]
+        },
+        {
+          "title": "Rates, counters and aggregation",
+          "minutes": 13,
+          "objectives": [
+            "Turn counters into rates correctly",
+            "Aggregate across series with sum, avg, max, topk and the by and without clauses"
+          ],
+          "key_points": [
+            "A counter's raw value is rarely useful: rate(counter[5m]) gives its average per-second increase over the window and copes with resets when a process restarts. irate uses only the last two samples, so it's jumpy.",
+            "increase(counter[1h]) gives the total increase over the window, which is the rate times the window's length; both extrapolate to the window's edges, so they can return fractions of a request.",
+            "Make the range at least four times the scrape interval, so each window holds several samples; in Grafana, $__rate_interval works this out for you.",
+            "Aggregation operators combine series: sum, avg, min, max, count, topk and bottomk, with by (labels) to keep only those labels or without (labels) to drop them, as in sum by (route) (rate(http_requests_total[5m])).",
+            "Rate first, then sum: sum(rate(x[5m])) is right, whereas taking the rate of a sum breaks reset handling, because one instance restarting looks like the total going down."
+          ]
+        },
+        {
+          "title": "Histograms, ratios and joins",
+          "minutes": 13,
+          "objectives": [
+            "Calculate latency percentiles and averages from histograms",
+            "Combine series with binary operators and vector matching"
+          ],
+          "key_points": [
+            "Percentiles come from buckets: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))). Keep le in the by clause, and add labels such as route for a percentile per route.",
+            "The estimate assumes values are spread evenly within each bucket, so it's only as precise as the buckets; above the highest finite bucket it can only return that bucket's upper bound.",
+            "The average is rate(..._sum[5m]) / rate(..._count[5m]). Never average percentiles across instances, which means nothing: sum the buckets first, then take the quantile.",
+            "Arithmetic between two vectors pairs series with identical labels, such as errors divided by all requests for an error ratio; on (labels) or ignoring (labels) changes which labels must match.",
+            "group_left and group_right allow many-to-one matching and copy labels across, such as a team label from an info metric: sum by (job) (rate(x[5m])) * on (job) group_left (team) service_info.",
+            "Comparison operators filter by default, so up == 0 returns only the series that are 0; add bool, as in up == bool 0, to get 1 or 0 for every series instead."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Practise PromQL against known answers",
+        "tool": "Prometheus",
+        "minutes": 75,
+        "goal": "Write eight PromQL queries, from rates to percentiles and joins, and prove each one right with promtool's unit tests on made-up data; then run the same kinds of query on your live shop services.",
+        "setup": [
+          "Docker, for running promtool from the Prometheus image",
+          "The stack and shop services from the earlier labs, for the live queries",
+          "Download the starter file promql-practice.yaml"
+        ],
+        "steps": [
+          {
+            "do": "Read promql-practice.yaml: the input series, then eight exercises, each with a placeholder query (vector(0)) and the result it should give. Run the tests: all eight fail for now.",
+            "code": "docker run --rm -v \"$PWD\":/work -w /work --entrypoint promtool prom/prometheus:v3.15.0 test rules promql-practice.yaml",
+            "lang": "bash",
+            "see": "FAILED, with the expected and the actual result for each exercise."
+          },
+          {
+            "do": "Exercises 1 and 2: replace the placeholders with rates summed over everything and by route, and run the tests again. Keep going one exercise at a time.",
+            "code": "docker run --rm -v \"$PWD\":/work -w /work --entrypoint promtool prom/prometheus:v3.15.0 test rules promql-practice.yaml",
+            "lang": "bash",
+            "see": "Fewer failures each time."
+          },
+          {
+            "do": "Exercises 3 to 5: an error ratio, the 90th percentile and the average latency from the histogram."
+          },
+          {
+            "do": "Exercises 6 to 8: the targets that are down, the instance using the most memory, and a join that adds the team label from service_info.",
+            "code": "docker run --rm -v \"$PWD\":/work -w /work --entrypoint promtool prom/prometheus:v3.15.0 test rules promql-practice.yaml",
+            "lang": "bash",
+            "see": "SUCCESS, once all eight are right."
+          },
+          {
+            "do": "Now the live data: send traffic with some failures, then run these in Prometheus's Query page: requests per second by route for orders, its 5xx error ratio, its p95 latency, and the three busiest series.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0.1}'\npython traffic.py --rate 5 --seconds 120",
+            "lang": "bash",
+            "see": "Graphs that change as the traffic runs."
+          },
+          {
+            "do": "Try the difference between a range vector and a rate: run http_requests_total{service=\"orders\"}[1m] in the Table view, then rate(http_requests_total{service=\"orders\"}[1m]). Turn the fault off afterwards.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0}'",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "All eight exercises pass their unit tests.",
+            "look_for": [
+              "SUCCESS"
+            ]
+          },
+          {
+            "text": "The queries include an aggregation by route and an error ratio.",
+            "look_for": [
+              "sum by (route)",
+              "5.."
+            ]
+          },
+          {
+            "text": "Percentiles are computed from summed bucket rates, keeping le.",
+            "look_for": [
+              "histogram_quantile(0.9",
+              "by (le)"
+            ]
+          },
+          {
+            "text": "The join copies the team label with group_left.",
+            "look_for": [
+              "group_left"
+            ]
+          }
+        ],
+        "submit": "Paste your completed promql-practice.yaml, promtool's SUCCESS output, and your four live queries with a sentence on what each showed.",
+        "files": [
+          {
+            "path": "promql-practice.yaml",
+            "content": "# PromQL practice: replace each `vector(0)` with a query that gives the expected result, then run\n#   promtool test rules promql-practice.yaml\n# The made-up data: a checkout service on two instances, sampled every minute for 10 minutes.\nevaluation_interval: 1m\n\ntests:\n  - interval: 1m\n    input_series:\n      - series: 'http_requests_total{job=\"checkout\", instance=\"a\", route=\"/pay\", code=\"200\"}'\n        values: '0+45x10'\n      - series: 'http_requests_total{job=\"checkout\", instance=\"a\", route=\"/pay\", code=\"500\"}'\n        values: '0+30x10'\n      - series: 'http_requests_total{job=\"checkout\", instance=\"a\", route=\"/cart\", code=\"200\"}'\n        values: '0+120x10'\n      - series: 'http_requests_total{job=\"checkout\", instance=\"b\", route=\"/pay\", code=\"200\"}'\n        values: '0+45x10'\n      - series: 'http_requests_total{job=\"checkout\", instance=\"b\", route=\"/cart\", code=\"200\"}'\n        values: '0+120x10'\n      - series: 'http_request_duration_seconds_bucket{job=\"checkout\", route=\"/pay\", le=\"0.1\"}'\n        values: '0+30x10'\n      - series: 'http_request_duration_seconds_bucket{job=\"checkout\", route=\"/pay\", le=\"0.25\"}'\n        values: '0+45x10'\n      - series: 'http_request_duration_seconds_bucket{job=\"checkout\", route=\"/pay\", le=\"0.5\"}'\n        values: '0+54x10'\n      - series: 'http_request_duration_seconds_bucket{job=\"checkout\", route=\"/pay\", le=\"1\"}'\n        values: '0+60x10'\n      - series: 'http_request_duration_seconds_bucket{job=\"checkout\", route=\"/pay\", le=\"+Inf\"}'\n        values: '0+60x10'\n      - series: 'http_request_duration_seconds_sum{job=\"checkout\", route=\"/pay\"}'\n        values: '0+15x10'\n      - series: 'http_request_duration_seconds_count{job=\"checkout\", route=\"/pay\"}'\n        values: '0+60x10'\n      - series: 'up{job=\"checkout\", instance=\"a\"}'\n        values: '1x10'\n      - series: 'up{job=\"checkout\", instance=\"b\"}'\n        values: '1x5 0x5'\n      - series: 'process_resident_memory_bytes{job=\"checkout\", instance=\"a\"}'\n        values: '200000000x10'\n      - series: 'process_resident_memory_bytes{job=\"checkout\", instance=\"b\"}'\n        values: '300000000x10'\n      - series: 'service_info{job=\"checkout\", team=\"payments\"}'\n        values: '1x10'\n\n    promql_expr_test:\n      # 1. Requests per second across the whole service, averaged over the last 5 minutes.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{}'\n            value: 6\n      # 2. Requests per second by route.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{route=\"/cart\"}'\n            value: 4\n          - labels: '{route=\"/pay\"}'\n            value: 2\n      # 3. The share of /pay requests that failed with a 5xx code, as a ratio from 0 to 1.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{}'\n            value: 0.25\n      # 4. The 90th percentile of /pay latency, in seconds.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{}'\n            value: 0.5\n      # 5. The average /pay latency, in seconds, from the histogram's _sum and _count.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{job=\"checkout\", route=\"/pay\"}'\n            value: 0.25\n      # 6. The targets that are down right now.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: 'up{job=\"checkout\", instance=\"b\"}'\n            value: 0\n      # 7. The instance using the most memory.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: 'process_resident_memory_bytes{job=\"checkout\", instance=\"b\"}'\n            value: 300000000\n      # 8. Requests per second by job, with the owning team's name joined on from service_info.\n      - expr: vector(0)\n        eval_time: 10m\n        exp_samples:\n          - labels: '{job=\"checkout\", team=\"payments\"}'\n            value: 6\n"
+          }
+        ],
+        "hints": [
+          "An aggregation drops the metric name, so its expected labels show no name; filters such as up == 0 and topk keep it.",
+          "For exercise 5, divide the _sum's rate by the _count's rate; both keep the job and route labels.",
+          "For exercise 8, sum the rates by job first, then multiply by service_info on (job) with group_left (team)."
+        ]
+      }
+    },
+    {
+      "title": "Recording Rules, Alerts and SLO-Based Alerting",
+      "summary": "Precompute queries with recording rules, write alerting rules that page on symptoms, route and quieten notifications with Alertmanager, and alert on SLO error-budget burn rates, all tested before deployment.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Recording rules",
+          "minutes": 12,
+          "objectives": [
+            "Precompute expensive or common queries with recording rules",
+            "Name, organise, check and reload rules"
+          ],
+          "key_points": [
+            "A recording rule evaluates a PromQL expression on a schedule and stores the result as a new series, so dashboards and alerts read one cheap series instead of recomputing an expensive query.",
+            "Rules live in files listed under rule_files in prometheus.yml, in groups whose rules run in order at the group's interval (evaluation_interval by default).",
+            "Name recorded series level:metric:operations, such as service:http_request_errors:ratio_rate5m: the labels kept, the metric, and what was done to it.",
+            "Record the building blocks of SLOs, such as error ratios over 5 minutes, 30 minutes, 1 hour and 6 hours, so alert rules stay short and dashboards show the same numbers the alerts use.",
+            "Check rule files with promtool check rules, unit-test them with promtool test rules, and reload Prometheus (POST /-/reload, with --web.enable-lifecycle, or a SIGHUP) to apply changes."
+          ]
+        },
+        {
+          "title": "Alerting rules and Alertmanager",
+          "minutes": 13,
+          "objectives": [
+            "Write alerting rules that page on symptoms, not noise",
+            "Route, group, inhibit and silence notifications with Alertmanager"
+          ],
+          "key_points": [
+            "An alerting rule has an expr returning the series to alert on, a for duration the condition must hold before it fires (until then it's pending), labels such as severity, and annotations such as summary, description and runbook_url.",
+            "Annotations are templates: {{ $labels.instance }} inserts a label, {{ $value }} the expression's value, and functions such as humanizePercentage and humanizeDuration format it.",
+            "Alert on symptoms users feel, such as errors and latency, rather than on every possible cause, such as high CPU: page only for what needs action now, and send the rest to tickets or dashboards.",
+            "Prometheus sends firing alerts to Alertmanager, whose routing tree matches labels to receivers (email, chat, paging services or webhooks), groups related alerts (group_by) and repeats unresolved ones (repeat_interval).",
+            "Inhibition rules hold back some alerts while another fires, such as a service's tickets while it's paging; silences mute matching alerts for a set time, such as during maintenance.",
+            "keep_firing_for keeps an alert firing for a while after its condition clears, which stops a flapping alert from resolving and firing again and again."
+          ]
+        },
+        {
+          "title": "SLO-based alerts with burn rates",
+          "minutes": 13,
+          "objectives": [
+            "Turn an SLO into error-budget burn-rate alerts",
+            "Explain why multiwindow alerts fire fast and reset quickly"
+          ],
+          "key_points": [
+            "A service level indicator (SLI) is the share of good events, such as successful requests; an objective (SLO) sets its target over a period, such as 99.5% over 30 days, leaving an error budget of 0.5%. Site Reliability Engineering: SLOs, Error Budgets and Incidents covers choosing them.",
+            "The burn rate is the error ratio divided by the error budget: a burn rate of 1 spends exactly the budget over the SLO period, and 14.4 would spend a 30-day budget in about two days.",
+            "Alerting on burn rate ties alerts to user impact: a burn rate of 14.4 over an hour, 2% of a 30-day budget, is worth a page; 6 over 6 hours, 5% of the budget, can open a ticket or a slower page.",
+            "Each alert checks two windows: a long one to show the problem matters, and a short one, a twelfth as long, to show it's still happening, as in ratio_rate1h > 14.4 * 0.005 and ratio_rate5m > 14.4 * 0.005.",
+            "The short window also resets the alert quickly: once errors stop, the 5-minute ratio drops within minutes while the 1-hour ratio is still high.",
+            "Ratios need care: while there have been no errors, the 5xx series doesn't exist and the ratio has no data; an or ... * 0 fallback makes it read 0 instead."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Burn-rate alerts you can test",
+        "tool": "Prometheus",
+        "minutes": 90,
+        "goal": "Load recording and burn-rate alerting rules for an orders SLO, prove them with unit tests, check Alertmanager's routing, then break the payments service and watch a page reach the alert sink and resolve; finally write and test an alert of your own.",
+        "setup": [
+          "The obs-stack folder and running stack from the earlier labs, with orders and payments",
+          "Download the starter files rules/orders-slo.rules.yaml and rules/orders-slo.test.yaml into obs-stack/prometheus/rules"
+        ],
+        "steps": [
+          {
+            "do": "Read the rules: the SLO, the four recorded error ratios, the two burn-rate alerts and TargetDown. Run the unit tests with the promtool inside the Prometheus container.",
+            "code": "docker compose exec prometheus promtool test rules /etc/prometheus/rules/orders-slo.test.yaml",
+            "lang": "bash",
+            "see": "SUCCESS. The tests feed in an hour of 10% errors and check what fires when."
+          },
+          {
+            "do": "Load the rules into the running Prometheus and list the rule groups.",
+            "code": "curl -s -X POST localhost:9090/-/reload\ncurl -s localhost:9090/api/v1/rules | python3 -c \"import json, sys; print([g['name'] for g in json.load(sys.stdin)['data']['groups']])\"",
+            "lang": "bash",
+            "see": "['orders-slo.recording', 'orders-slo.alerts']"
+          },
+          {
+            "do": "Check Alertmanager's configuration and which receiver each severity reaches.",
+            "code": "docker compose exec alertmanager amtool check-config /etc/alertmanager/alertmanager.yml\ndocker compose exec alertmanager amtool config routes test --config.file=/etc/alertmanager/alertmanager.yml severity=page\ndocker compose exec alertmanager amtool config routes test --config.file=/etc/alertmanager/alertmanager.yml severity=ticket",
+            "lang": "bash",
+            "see": "SUCCESS with 2 receivers and 1 inhibit rule, then on-call-pager, then team-tickets."
+          },
+          {
+            "do": "Break payments (30% failures) and send traffic for 5 minutes. Watch the Alerts page at http://localhost:9090/alerts: OrdersErrorBudgetFastBurn goes pending, then firing after 2 minutes.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0.3}'\npython traffic.py --rate 5 --seconds 300",
+            "lang": "bash"
+          },
+          {
+            "do": "See the page arrive at the pager receiver, about 30 seconds after it fires (Alertmanager's group_wait).",
+            "code": "docker compose logs alert-sink --no-log-prefix",
+            "lang": "bash",
+            "see": "/pager firing OrdersErrorBudgetFastBurn severity=page service=orders: orders is spending its error budget 14.4 times too fast"
+          },
+          {
+            "do": "Repair payments and keep the traffic going: the 5-minute window clears, the alert resolves, and up to 5 minutes later (Alertmanager's group_interval) the sink receives a resolved notification.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0}'\npython traffic.py --rate 5 --seconds 420\ndocker compose logs alert-sink --no-log-prefix | tail -n 2",
+            "lang": "bash",
+            "see": "/pager resolved OrdersErrorBudgetFastBurn ..."
+          },
+          {
+            "do": "Your turn: add a group with an alert PaymentsLatencyHigh, for a p95 of payments' POST /charge above 0.5 seconds for 5 minutes, with severity ticket, to a new file prometheus/rules/payments.rules.yaml; write a test for it (fires at high latency, not at normal latency) and run it."
+          },
+          {
+            "do": "Reload, inject 0.6 seconds of latency, send traffic, and check that your alert fires; then remove the latency.",
+            "code": "curl -s -X POST localhost:9090/-/reload\ncurl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"extra_latency_seconds\": 0.6}'\npython traffic.py --rate 2 --seconds 480",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The SLO rules pass their unit tests and are loaded.",
+            "look_for": [
+              "SUCCESS",
+              "orders-slo.alerts"
+            ]
+          },
+          {
+            "text": "Alertmanager routes pages and tickets to different receivers.",
+            "look_for": [
+              "on-call-pager",
+              "team-tickets"
+            ]
+          },
+          {
+            "text": "Breaking payments fires the fast-burn alert and pages through Alertmanager.",
+            "look_for": [
+              "/pager firing OrdersErrorBudgetFastBurn"
+            ]
+          },
+          {
+            "text": "The page resolves once the errors stop.",
+            "look_for": [
+              "resolved OrdersErrorBudgetFastBurn"
+            ]
+          },
+          {
+            "text": "Your latency alert has a passing unit test and fires under injected latency.",
+            "look_for": [
+              "PaymentsLatencyHigh"
+            ]
+          }
+        ],
+        "submit": "Paste the output from steps 1 to 3, 5 and 6, your payments.rules.yaml with its test file and the test result, and the Alerts page state from step 8.",
+        "files": [
+          {
+            "path": "rules/orders-slo.rules.yaml",
+            "content": "# SLO: 99.5% of POST /orders requests succeed over 30 days, an error budget of 0.5% (0.005).\ngroups:\n  - name: orders-slo.recording\n    rules:\n      # Error ratio of POST /orders over several windows. \"or ... * 0\" gives 0 rather than no data\n      # while there have been no errors, since the 5xx series only exists after the first error.\n      - record: service:http_request_errors:ratio_rate5m\n        expr: |\n          (sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\", code=~\"5..\"}[5m]))\n            or sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[5m])) * 0)\n          / sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[5m]))\n      - record: service:http_request_errors:ratio_rate30m\n        expr: |\n          (sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\", code=~\"5..\"}[30m]))\n            or sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[30m])) * 0)\n          / sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[30m]))\n      - record: service:http_request_errors:ratio_rate1h\n        expr: |\n          (sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\", code=~\"5..\"}[1h]))\n            or sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[1h])) * 0)\n          / sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[1h]))\n      - record: service:http_request_errors:ratio_rate6h\n        expr: |\n          (sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\", code=~\"5..\"}[6h]))\n            or sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[6h])) * 0)\n          / sum by (service) (rate(http_requests_total{service=\"orders\", route=\"/orders\"}[6h]))\n\n  - name: orders-slo.alerts\n    rules:\n      # Fast burn: 14.4 times the sustainable rate, which would spend 2% of a 30-day budget in an hour.\n      - alert: OrdersErrorBudgetFastBurn\n        expr: |\n          service:http_request_errors:ratio_rate1h{service=\"orders\"} > (14.4 * 0.005)\n          and service:http_request_errors:ratio_rate5m{service=\"orders\"} > (14.4 * 0.005)\n        for: 2m\n        labels:\n          severity: page\n        annotations:\n          summary: orders is spending its error budget 14.4 times too fast\n          description: \"{{ $value | humanizePercentage }} of orders failed in the last hour.\"\n          runbook_url: https://example.com/runbooks/orders-errors\n      # Slow burn: 6 times the sustainable rate, which would spend 5% of the budget in 6 hours.\n      - alert: OrdersErrorBudgetSlowBurn\n        expr: |\n          service:http_request_errors:ratio_rate6h{service=\"orders\"} > (6 * 0.005)\n          and service:http_request_errors:ratio_rate30m{service=\"orders\"} > (6 * 0.005)\n        for: 15m\n        labels:\n          severity: ticket\n        annotations:\n          summary: orders is spending its error budget 6 times too fast\n          description: \"{{ $value | humanizePercentage }} of orders failed in the last 6 hours.\"\n      - alert: TargetDown\n        expr: up{job=~\"orders|payments\"} == 0\n        for: 1m\n        labels:\n          severity: ticket\n        annotations:\n          summary: \"{{ $labels.job }} on {{ $labels.instance }} can't be scraped\"\n          description: Prometheus has failed to scrape this target for a minute.\n"
+          },
+          {
+            "path": "rules/orders-slo.test.yaml",
+            "content": "rule_files:\n  - orders-slo.rules.yaml\n\nevaluation_interval: 1m\n\ntests:\n  # For an hour, 10 orders a second with 1 in 10 failing (a 10% error ratio); then the errors stop.\n  - interval: 1m\n    input_series:\n      - series: 'http_requests_total{service=\"orders\", route=\"/orders\", code=\"200\"}'\n        values: '0+540x60 32400+600x60'\n      - series: 'http_requests_total{service=\"orders\", route=\"/orders\", code=\"502\"}'\n        values: '0+60x60 3600+0x60'\n    promql_expr_test:\n      - expr: service:http_request_errors:ratio_rate5m\n        eval_time: 30m\n        exp_samples:\n          - labels: 'service:http_request_errors:ratio_rate5m{service=\"orders\"}'\n            value: 0.1\n      - expr: service:http_request_errors:ratio_rate5m\n        eval_time: 70m\n        exp_samples:\n          - labels: 'service:http_request_errors:ratio_rate5m{service=\"orders\"}'\n            value: 0\n    alert_rule_test:\n      - eval_time: 10m        # the fast burn pages; the slow burn is still pending its 15 minutes\n        alertname: OrdersErrorBudgetFastBurn\n        exp_alerts:\n          - exp_labels:\n              severity: page\n              service: orders\n            exp_annotations:\n              summary: orders is spending its error budget 14.4 times too fast\n              description: \"10% of orders failed in the last hour.\"\n              runbook_url: https://example.com/runbooks/orders-errors\n      - eval_time: 10m\n        alertname: OrdersErrorBudgetSlowBurn\n        exp_alerts: []\n      - eval_time: 20m\n        alertname: OrdersErrorBudgetSlowBurn\n        exp_alerts:\n          - exp_labels:\n              severity: ticket\n              service: orders\n            exp_annotations:\n              summary: orders is spending its error budget 6 times too fast\n              description: \"10% of orders failed in the last 6 hours.\"\n      - eval_time: 70m        # errors stopped at 60m: the 5-minute window clears the page quickly...\n        alertname: OrdersErrorBudgetFastBurn\n        exp_alerts: []\n      - eval_time: 70m        # ...while the slow burn's 30-minute window still sees them\n        alertname: OrdersErrorBudgetSlowBurn\n        exp_alerts:\n          - exp_labels:\n              severity: ticket\n              service: orders\n            exp_annotations:\n              summary: orders is spending its error budget 6 times too fast\n              description: \"8.696% of orders failed in the last 6 hours.\"\n\n  - interval: 1m\n    input_series:\n      - series: 'up{job=\"payments\", instance=\"payments:8000\"}'\n        values: '1 1 1 0 0 0 0 0'\n    alert_rule_test:\n      - eval_time: 5m\n        alertname: TargetDown\n        exp_alerts:\n          - exp_labels:\n              severity: ticket\n              job: payments\n              instance: payments:8000\n            exp_annotations:\n              summary: \"payments on payments:8000 can't be scraped\"\n              description: Prometheus has failed to scrape this target for a minute.\n"
+          }
+        ],
+        "hints": [
+          "Prometheus only loads files ending .rules.yaml (see rule_files in prometheus.yml), which keeps test files out of its rules.",
+          "If the reload fails, curl prints the error; docker compose logs prometheus has more. promtool check rules finds most mistakes first.",
+          "promtool's alert tests compare every label and annotation, so list your alert's annotations in exp_annotations exactly."
+        ]
+      }
+    },
+    {
+      "title": "Dashboards and Tracing in Practice",
+      "summary": "Build Grafana dashboards as code, use traces and span-derived metrics from the Collector, choose a sampling strategy, and connect metrics, traces and logs to find the cause of a problem.",
+      "instructor": "katarina-novakova",
+      "lessons": [
+        {
+          "title": "Building Grafana dashboards",
+          "minutes": 13,
+          "objectives": [
+            "Design dashboards that answer questions quickly",
+            "Provision data sources and dashboards as code"
+          ],
+          "key_points": [
+            "Grafana queries data sources such as Prometheus, Jaeger and Loki and draws panels: time series for trends, stat for one current number, bar gauges and tables to compare, and heatmaps for histogram buckets.",
+            "Start each service's dashboard with RED (requests, errors, duration) and its SLO, put what people check first at the top left, and link to deeper dashboards rather than crowding one.",
+            "Give every panel a unit (seconds, percent, requests per second) and thresholds, and use $__rate_interval in rate() so the window suits both the scrape interval and the zoom level.",
+            "Template variables, such as service filled by label_values(http_requests_total, service), turn one dashboard into one per service, picked from a menu at the top.",
+            "Provision data sources and dashboards from files under /etc/grafana/provisioning, with the dashboard JSON in Git, so changes are reviewed and versioned; a provisioned dashboard can be saved as a copy but not edited in place unless its provider allows it."
+          ]
+        },
+        {
+          "title": "Traces in practice: the Collector, sampling and Jaeger",
+          "minutes": 12,
+          "objectives": [
+            "Configure the Collector's trace pipeline, including metrics derived from spans",
+            "Choose a sampling approach, and read a trace to find a problem"
+          ],
+          "key_points": [
+            "In a trace view each span is a bar on a timeline under its parent: look for the longest bars, gaps between them, spans marked as errors, and the attributes and events that explain them.",
+            "Jaeger stores traces and searches them by service, operation, tags such as http.response.status_code, duration and time; Grafana Tempo and many vendors accept the same data over OTLP.",
+            "The Collector's span metrics connector (span_metrics, formerly spanmetrics) turns spans into request counts and duration histograms per service and span name, giving RED metrics even for services that only export traces.",
+            "Head sampling decides when a trace starts, cheaply but blind to how it ends; tail sampling in the Collector (the tail_sampling processor) decides after the trace completes, so it can keep every error and slow trace, at the cost of buffering whole traces.",
+            "Protect the Collector itself: memory_limiter refuses data before memory runs out, batch sends efficiently, and its own metrics (port 8888 here) show what it accepted, refused and dropped."
+          ]
+        },
+        {
+          "title": "Connecting the signals",
+          "minutes": 11,
+          "objectives": [
+            "Link metrics, traces and logs with exemplars and trace IDs",
+            "Follow an investigation from an alert to its cause"
+          ],
+          "key_points": [
+            "An exemplar is a trace ID stored with a metric observation, such as the trace of one slow request in a latency bucket; prometheus_client attaches exemplars in the OpenMetrics format, and Prometheus keeps them with --enable-feature=exemplar-storage.",
+            "Grafana shows exemplars as dots on time series panels, and the Prometheus data source's exemplarTraceIdDestinations setting turns each trace_id into a link to the trace in Jaeger or Tempo.",
+            "Logs that carry trace_id link to traces, and traces link back to logs by their trace ID; in Grafana, derived fields and trace-to-logs settings make both directions one click.",
+            "A good investigation narrows down: the alert says which SLO is burning, the dashboard shows which route and since when, an exemplar or a trace search finds an affected request, the trace shows which span failed, and its logs say why.",
+            "After an incident, add whatever was missing, such as a metric, a span attribute, a log field or a runbook step, so the next investigation is faster."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Dashboards, exemplars and a fault to find",
+        "tool": "Grafana",
+        "minutes": 75,
+        "goal": "Provision a RED and SLO dashboard for the shop services, follow an exemplar from a latency graph to its trace, compare span-derived metrics with the application's own, and track down an injected fault from the dashboard to a span and a log line.",
+        "setup": [
+          "The obs-stack folder and running stack from the earlier labs, with the SLO rules loaded",
+          "Download the starter file grafana/dashboards/orders-red.json into obs-stack/grafana/dashboards"
+        ],
+        "steps": [
+          {
+            "do": "Read orders-red.json: the service variable, the six panels and their queries. Grafana's provisioning picks up the file within seconds; check that it's there.",
+            "code": "curl -s -u admin:admin 'localhost:3000/api/search?query=Shop' | python3 -c \"import json, sys; print([d['title'] for d in json.load(sys.stdin)])\"",
+            "lang": "bash",
+            "see": "['Shop services: RED and SLO']"
+          },
+          {
+            "do": "Open the dashboard (Dashboards, Course folder), choose orders, and send steady traffic with a small fault.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0.05, \"extra_latency_seconds\": 0.1}'\npython traffic.py --rate 5 --seconds 300",
+            "lang": "bash",
+            "see": "Requests by route, a few per cent of errors, latency, span metrics, burn rate and orders by result."
+          },
+          {
+            "do": "On the duration panel, hover over an exemplar dot and follow its trace_id link to the trace. Note the trace ID and which span took the longest."
+          },
+          {
+            "do": "Compare panel 4 (span metrics from the Collector) with panel 1 (the app's own counters): query both in Explore and explain any difference in names, labels or values.",
+            "code": "sum by (status_code) (rate(traces_span_metrics_calls_total{service_name=\"orders\", span_kind=\"SPAN_KIND_SERVER\"}[1m]))",
+            "lang": "promql"
+          },
+          {
+            "do": "Find a fault you didn't make: ask a colleague (or flip a coin) to set either failure_rate or extra_latency_seconds high on payments without telling you which; then use only the dashboard, a trace and the logs to say what's wrong and where.",
+            "code": "docker compose logs payments --no-log-prefix | grep TRACE_ID",
+            "lang": "bash"
+          },
+          {
+            "do": "Change the dashboard as code: add a panel to orders-red.json for payments' p95 latency on POST /charge, with the unit set to seconds; Grafana reloads the file. Then turn the faults off.",
+            "code": "curl -s -X POST localhost:8002/admin/faults -H 'Content-Type: application/json' -d '{\"failure_rate\": 0, \"extra_latency_seconds\": 0}'",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The dashboard is provisioned from the JSON file.",
+            "look_for": [
+              "Shop services: RED and SLO"
+            ]
+          },
+          {
+            "text": "An exemplar leads to a specific trace, whose slowest span is named.",
+            "look_for": [
+              "trace"
+            ]
+          },
+          {
+            "text": "Span metrics are compared with the application's metrics.",
+            "look_for": [
+              "traces_span_metrics_calls_total"
+            ]
+          },
+          {
+            "text": "The unknown fault is diagnosed from the dashboard, a trace and the logs.",
+            "look_for": [
+              "POST /charge"
+            ]
+          },
+          {
+            "text": "A new panel is added through the JSON file.",
+            "look_for": [
+              "payments"
+            ]
+          }
+        ],
+        "submit": "Paste the output of step 1, your notes from steps 3 to 5 (with the trace IDs you used), and the JSON of the panel you added.",
+        "files": [
+          {
+            "path": "grafana/dashboards/orders-red.json",
+            "content": "{\n \"uid\": \"orders-red\",\n \"title\": \"Shop services: RED and SLO\",\n \"schemaVersion\": 39,\n \"version\": 1,\n \"editable\": false,\n \"time\": {\n  \"from\": \"now-30m\",\n  \"to\": \"now\"\n },\n \"refresh\": \"10s\",\n \"tags\": [\n  \"course\"\n ],\n \"templating\": {\n  \"list\": [\n   {\n    \"name\": \"service\",\n    \"label\": \"Service\",\n    \"type\": \"query\",\n    \"datasource\": {\n     \"type\": \"prometheus\",\n     \"uid\": \"prometheus\"\n    },\n    \"query\": {\n     \"query\": \"label_values(http_requests_total, service)\",\n     \"refId\": \"service\"\n    },\n    \"definition\": \"label_values(http_requests_total, service)\",\n    \"refresh\": 2,\n    \"includeAll\": false,\n    \"multi\": false\n   }\n  ]\n },\n \"panels\": [\n  {\n   \"id\": 1,\n   \"type\": \"timeseries\",\n   \"title\": \"Requests per second, by route\",\n   \"datasource\": {\n    \"type\": \"prometheus\",\n    \"uid\": \"prometheus\"\n   },\n   \"gridPos\": {\n    \"x\": 0,\n    \"y\": 0,\n    \"w\": 12,\n    \"h\": 8\n   },\n   \"fieldConfig\": {\n    \"defaults\": {\n     \"unit\": \"reqps\"\n    },\n    \"overrides\": []\n   },\n   \"targets\": [\n    {\n     \"refId\": \"A\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"sum by (route) (rate(http_requests_total{service=\\\"$service\\\"}[$__rate_interval]))\",\n     \"legendFormat\": \"{{route}}\"\n    }\n   ]\n  },\n  {\n   \"id\": 2,\n   \"type\": \"timeseries\",\n   \"title\": \"Errors: share of requests failing with 5xx\",\n   \"datasource\": {\n    \"type\": \"prometheus\",\n    \"uid\": \"prometheus\"\n   },\n   \"gridPos\": {\n    \"x\": 12,\n    \"y\": 0,\n    \"w\": 12,\n    \"h\": 8\n   },\n   \"fieldConfig\": {\n    \"defaults\": {\n     \"unit\": \"percentunit\"\n    },\n    \"overrides\": []\n   },\n   \"targets\": [\n    {\n     \"refId\": \"A\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"sum(rate(http_requests_total{service=\\\"$service\\\", code=~\\\"5..\\\"}[$__rate_interval])) / sum(rate(http_requests_total{service=\\\"$service\\\"}[$__rate_interval]))\",\n     \"legendFormat\": \"error ratio\"\n    }\n   ]\n  },\n  {\n   \"id\": 3,\n   \"type\": \"timeseries\",\n   \"title\": \"Duration: p50 and p95 (dots are exemplars: click one for its trace)\",\n   \"datasource\": {\n    \"type\": \"prometheus\",\n    \"uid\": \"prometheus\"\n   },\n   \"gridPos\": {\n    \"x\": 0,\n    \"y\": 8,\n    \"w\": 12,\n    \"h\": 8\n   },\n   \"fieldConfig\": {\n    \"defaults\": {\n     \"unit\": \"s\"\n    },\n    \"overrides\": []\n   },\n   \"targets\": [\n    {\n     \"refId\": \"A\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket{service=\\\"$service\\\"}[$__rate_interval])))\",\n     \"legendFormat\": \"p50\",\n     \"exemplar\": true\n    },\n    {\n     \"refId\": \"B\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=\\\"$service\\\"}[$__rate_interval])))\",\n     \"legendFormat\": \"p95\",\n     \"exemplar\": true\n    }\n   ]\n  },\n  {\n   \"id\": 4,\n   \"type\": \"timeseries\",\n   \"title\": \"Spans per second from traces, by status\",\n   \"datasource\": {\n    \"type\": \"prometheus\",\n    \"uid\": \"prometheus\"\n   },\n   \"gridPos\": {\n    \"x\": 12,\n    \"y\": 8,\n    \"w\": 12,\n    \"h\": 8\n   },\n   \"fieldConfig\": {\n    \"defaults\": {\n     \"unit\": \"reqps\"\n    },\n    \"overrides\": []\n   },\n   \"targets\": [\n    {\n     \"refId\": \"A\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"sum by (status_code) (rate(traces_span_metrics_calls_total{service_name=\\\"$service\\\", span_kind=\\\"SPAN_KIND_SERVER\\\"}[$__rate_interval]))\",\n     \"legendFormat\": \"{{status_code}}\"\n    }\n   ]\n  },\n  {\n   \"id\": 5,\n   \"type\": \"timeseries\",\n   \"title\": \"orders: error-budget burn rate (1 = spending exactly the budget)\",\n   \"datasource\": {\n    \"type\": \"prometheus\",\n    \"uid\": \"prometheus\"\n   },\n   \"gridPos\": {\n    \"x\": 0,\n    \"y\": 16,\n    \"w\": 12,\n    \"h\": 8\n   },\n   \"fieldConfig\": {\n    \"defaults\": {\n     \"unit\": \"short\"\n    },\n    \"overrides\": []\n   },\n   \"targets\": [\n    {\n     \"refId\": \"A\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"service:http_request_errors:ratio_rate5m{service=\\\"orders\\\"} / 0.005\",\n     \"legendFormat\": \"5m\"\n    },\n    {\n     \"refId\": \"B\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"service:http_request_errors:ratio_rate1h{service=\\\"orders\\\"} / 0.005\",\n     \"legendFormat\": \"1h\"\n    }\n   ]\n  },\n  {\n   \"id\": 6,\n   \"type\": \"timeseries\",\n   \"title\": \"orders: orders by result\",\n   \"datasource\": {\n    \"type\": \"prometheus\",\n    \"uid\": \"prometheus\"\n   },\n   \"gridPos\": {\n    \"x\": 12,\n    \"y\": 16,\n    \"w\": 12,\n    \"h\": 8\n   },\n   \"fieldConfig\": {\n    \"defaults\": {\n     \"unit\": \"reqps\"\n    },\n    \"overrides\": []\n   },\n   \"targets\": [\n    {\n     \"refId\": \"A\",\n     \"datasource\": {\n      \"type\": \"prometheus\",\n      \"uid\": \"prometheus\"\n     },\n     \"expr\": \"sum by (result) (rate(orders_total[$__rate_interval]))\",\n     \"legendFormat\": \"{{result}}\"\n    }\n   ]\n  }\n ]\n}\n"
+          }
+        ],
+        "hints": [
+          "No exemplar dots? They need traffic in the last few minutes, Prometheus started with exemplar storage (it is in compose.yaml), and the panel's query with Exemplars switched on.",
+          "If the dashboard isn't found, check docker compose logs grafana for provisioning errors, such as invalid JSON.",
+          "Span metrics count every span, including client spans, so filter on span_kind=\"SPAN_KIND_SERVER\" to compare with the server's own request counter."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn the three signals and how Prometheus and OpenTelemetry work, and start the local stack.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Instrument the orders service with metrics, structured logs and traces.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Learn PromQL, and pass all eight practice tests.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Write recording rules and burn-rate alerts, test them, and route them with Alertmanager.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Build dashboards as code, follow exemplars to traces, and find an injected fault.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the capstone, and review with the mock exam and flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Make a new service observable end to end",
+    "minutes": 480,
+    "brief": "The shop is adding an inventory service: orders will call it to reserve stock before charging the payment. Write the service in FastAPI and add it to the stack, then make it as observable as orders and payments: RED metrics with low-cardinality labels and a business metric, structured logs with trace IDs, and OpenTelemetry spans that continue the orders trace, with attributes and events where they help. Define an availability SLO and a latency SLO for placing an order, and implement them as recording rules and multiwindow burn-rate alerts with promtool unit tests; route pages and tickets with Alertmanager. Provision a Grafana dashboard covering all three services, with exemplars linking to traces. Finally, inject a fault into inventory, let the alerts find it, and write up the investigation as a short runbook entry.",
+    "deliverables": [
+      "The inventory service's code and Dockerfile, the changes to orders, and the updated compose.yaml and prometheus.yml",
+      "Rules files with recording rules and burn-rate alerts for both SLOs, and their promtool tests passing",
+      "Alertmanager routing for the new alerts, checked with amtool config routes test",
+      "The dashboard JSON, provisioned from a file, with panels for all three services and the SLOs",
+      "Evidence: a trace that crosses all three services, a log line with its trace ID, and the alert-sink output for your injected fault",
+      "A runbook entry: what the alert means, how to confirm it, likely causes, and what you found"
+    ],
+    "rubric": [
+      {
+        "name": "Instrumentation",
+        "points": 25,
+        "description": "Metrics follow the naming and label conventions, logs are structured with trace IDs, and traces cross all three services with useful custom spans."
+      },
+      {
+        "name": "SLOs, rules and tests",
+        "points": 25,
+        "description": "Both SLOs are expressed as sound recording rules and multiwindow burn-rate alerts, with unit tests that show when they fire and resolve."
+      },
+      {
+        "name": "Alert routing",
+        "points": 10,
+        "description": "Pages and tickets reach the right receivers, with sensible grouping and an inhibition rule, verified with amtool."
+      },
+      {
+        "name": "Dashboard",
+        "points": 15,
+        "description": "Provisioned as code, organised around RED and the SLOs, with units, a service variable and working exemplar links."
+      },
+      {
+        "name": "Investigation",
+        "points": 15,
+        "description": "The injected fault is found from the alert through the dashboard and a trace to the logs, with the evidence shown."
+      },
+      {
+        "name": "Runbook and clarity",
+        "points": 10,
+        "description": "The runbook entry is actionable, and the work is easy for a colleague to run and understand."
+      }
+    ],
+    "submit": "Paste your service code and the changed files, rules and tests with promtool's output, the Alertmanager configuration with amtool's output, the dashboard JSON, your evidence and the runbook entry."
+  }
+}
