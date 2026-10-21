@@ -1,0 +1,995 @@
+{
+ "slug": "streamlit-data-apps",
+ "title": "Interactive Data Apps with Streamlit",
+ "subtitle": "Turn Python analysis into interactive web apps: widgets, layouts, charts, caching, session state, forms and multipage navigation, tested with AppTest and ready to deploy.",
+ "category": "Data Science",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "sebastian-vargas",
+  "camila-torrese"
+ ],
+ "skills": [
+  "Streamlit",
+  "Interactive data apps",
+  "Caching",
+  "Session state",
+  "Forms and callbacks",
+  "Multipage apps",
+  "App testing",
+  "Deployment",
+  "Data visualisation"
+ ],
+ "tools": [
+  "Python 3",
+  "Streamlit",
+  "pandas",
+  "Altair",
+  "pytest",
+  "SQLite",
+  "Docker",
+  "Streamlit Community Cloud"
+ ],
+ "outcomes": [
+  "Explain Streamlit's rerun model, and build apps from text and data elements and widgets",
+  "Lay out apps with the sidebar, columns and tabs, and show data with charts, configured tables, metrics and downloads",
+  "Speed apps up with st.cache_data, st.cache_resource and fragments, choosing the right one for each job",
+  "Keep state across reruns with session state, callbacks and forms, and store shared data in a database",
+  "Build multipage apps with st.navigation, test them with AppTest and pytest, and prepare them for deployment"
+ ],
+ "prerequisites": "Python and pandas: functions, modules, DataFrames, filtering and grouping, as in Data Analysis with Python and pandas. Data Visualisation with Matplotlib, Seaborn and Plotly helps with the charts. You need Python 3.10 or later; the course installs streamlit and pytest in a virtual environment and makes its data with a script. Docker and a GitHub account are optional, for deployment.",
+ "description": "Streamlit turns a Python script into a web app: add a slider and a chart, and anyone with a browser can explore your analysis. This course takes you from a first script to a tested, multipage app ready to deploy, building one app all the way through: an explorer of daily air-quality readings from four (made-up) monitoring stations. You'll start with how Streamlit works, rerunning the whole script on every interaction, and build the first version from text, widgets, metrics and a chart. Then you'll lay it out with a sidebar, columns and tabs, draw Altair charts with threshold lines, format tables with column_config and offer the filtered data as a download.\n\nNext come the parts that make real apps work: caching data with st.cache_data and sharing a database connection with st.cache_resource, rerunning only part of a page with fragments, keeping values in session state, changing them safely with callbacks, and collecting community reports with a validated form stored in SQLite. Finally you'll split the app into pages with st.navigation, test every page with Streamlit's AppTest and pytest, smoke-test the server's health endpoint, and prepare deployment with a theme, secrets, requirements and a Dockerfile, or Streamlit Community Cloud. Every lab is checked by tests that run without a browser, and the capstone is a deployed data app of your own. It builds on Data Analysis with Python and pandas; AI-Powered Business Intelligence Fundamentals and Data Storytelling and Dashboard Design are good companions.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Streamlit basics: scripts, elements and widgets",
+   "summary": "See how Streamlit turns a Python script into a web app that reruns on every interaction, then build a first data app from text, data elements and widgets, and test it with AppTest.",
+   "instructor": "sebastian-vargas",
+   "lessons": [
+    {
+     "title": "How a Streamlit app runs",
+     "minutes": 12,
+     "objectives": [
+      "Run a Streamlit app and explain the rerun model",
+      "Display text and data with st.write, magic and the text elements",
+      "Run an app without a browser, for servers and tests"
+     ],
+     "key_points": [
+      "streamlit run app.py starts a local web server, by default at http://localhost:8501, and opens the app in a browser; the app is an ordinary Python script, and Ctrl+C in the terminal stops the server.",
+      "Streamlit reruns the whole script from top to bottom every time a user changes a widget, with the widget's new value; this rerun model is why slow steps need caching and why values that must survive need session state.",
+      "st.write displays almost anything (text, numbers, DataFrames, charts), and 'magic' shows a variable or expression written alone on a line as if it were passed to st.write; st.title, st.header, st.markdown and st.caption format text.",
+      "When you save the script, the app offers Rerun and Always rerun; pressing R in the app reruns it, and errors appear in the page with their traceback, so the edit, save and look loop is quick.",
+      "streamlit run app.py --server.headless true starts the server without opening a browser, for servers and smoke tests; --server.port changes the port, and the same settings can live in .streamlit/config.toml."
+     ],
+     "walkthrough": {
+      "tool": "Terminal and browser",
+      "title": "Install Streamlit and run your first app",
+      "steps": [
+       {
+        "do": "Make a folder for the course with its own virtual environment and activate it. On Windows, create it with py -m venv .venv and activate it with .venv\\Scripts\\activate.",
+        "code": "mkdir streamlit-course\ncd streamlit-course\npython3 -m venv .venv\nsource .venv/bin/activate",
+        "lang": "bash",
+        "see": "The prompt starts with (.venv)."
+       },
+       {
+        "do": "Install Streamlit and pytest, and check the version.",
+        "code": "python -m pip install streamlit pytest\nstreamlit version",
+        "lang": "bash",
+        "see": "Streamlit, version 1.x; this course needs 1.40 or later."
+       },
+       {
+        "do": "Run Streamlit's built-in demo app.",
+        "code": "streamlit hello",
+        "lang": "bash",
+        "see": "A browser tab opens at http://localhost:8501 with demos to explore."
+       },
+       {
+        "do": "Stop the server in the terminal.",
+        "keys": {
+         "mac": "Ctrl+C",
+         "win": "Ctrl+C"
+        }
+       },
+       {
+        "do": "Save this as hello_app.py: a title, some Markdown, a widget and magic.",
+        "code": "import streamlit as st\n\nst.title(\"Hello, Streamlit\")\nname = st.text_input(\"Your name\", \"world\")\nst.markdown(f\"Hello, **{name}**!\")\nlen(name)  # magic: shown as if passed to st.write",
+        "lang": "python"
+       },
+       {
+        "do": "Run it, type a name and press Enter: the whole script reruns and the greeting and the number change.",
+        "code": "streamlit run hello_app.py",
+        "lang": "bash"
+       },
+       {
+        "do": "Change the title in your editor and save. Choose Always rerun at the top right of the app, so every later save reruns it."
+       },
+       {
+        "do": "Stop it, then run it headless and check the health endpoint from a second terminal.",
+        "code": "streamlit run hello_app.py --server.headless true\n# in a second terminal:\ncurl -s -w \" HTTP %{http_code}\\n\" http://localhost:8501/_stcore/health",
+        "lang": "bash",
+        "see": "ok HTTP 200"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Widgets: input that reruns the app",
+     "minutes": 12,
+     "objectives": [
+      "Add sliders, select boxes, multiselects, dates, numbers and text inputs, and use the values they return",
+      "Explain why st.button is True for one run only",
+      "Handle a date range that is still being chosen"
+     ],
+     "key_points": [
+      "Each widget call draws the widget and returns its current value: st.slider returns a number (or a tuple for a range), st.selectbox one option, st.multiselect a list, st.checkbox and st.toggle True or False, and st.text_input a string.",
+      "Give widgets sensible defaults (value=, default=, index=) and help= text, and limit choices (min_value, max_value, options) so users can't enter values the app can't handle.",
+      "st.date_input with a tuple of two dates lets users pick a range, and returns a tuple; while only the first date has been picked, the tuple has one date, so check len(dates) == 2 before using it.",
+      "st.button returns True only on the rerun its click causes, and False on every later run, so anything that must be remembered after a click has to be stored in session state.",
+      "st.number_input returns an int or a float to match its arguments: value=0 gives whole numbers and value=0.0 decimals, so mixing the two raises an error."
+     ]
+    },
+    {
+     "title": "Widget identity, keys and showing results",
+     "minutes": 12,
+     "objectives": [
+      "Give widgets keys and avoid duplicate-widget errors",
+      "Show results with metrics, tables, charts and status messages",
+      "Stop a run early with st.stop when input is missing"
+     ],
+     "key_points": [
+      "Streamlit tells widgets apart by their parameters, so two identical widgets without key= raise a duplicate element error; key= gives a widget a unique name, which is also its key in st.session_state.",
+      "st.metric(label, value, delta) shows a headline number with an optional change; delta_color='inverse' colours a fall green, for measures where lower is better, such as pollution.",
+      "st.dataframe shows an interactive table that users can sort, resize and search, st.table a static one, and st.line_chart(df, x='date', y='pm25', color='station') a quick chart straight from long data.",
+      "st.success, st.info, st.warning and st.error show status messages, and st.stop() ends the run at that point, which is the clean way to wait for missing input, such as no stations chosen.",
+      "Keep calculations in plain functions in a separate module, such as aq.py, and keep the app script for layout and widgets: the functions can then be tested, and reused, without Streamlit."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build and test a first data app",
+    "tool": "Streamlit and pytest",
+    "minutes": 50,
+    "goal": "Build the first version of an air-quality explorer: widgets to choose stations, a threshold and a date range, validation that stops the run when input is missing, and metrics, a chart and a table that update on every change, checked by four tests.",
+    "setup": [
+     "The virtual environment from lesson 1's walkthrough, with streamlit and pytest installed",
+     "The starter files in one folder for the whole course: make_data.py (writes air_quality.csv, 480 daily readings from four made-up stations), aq.py (the data functions), app.py (with TODOs) and test_app.py"
+    ],
+    "steps": [
+     {
+      "do": "Make the data and look at the helper functions in aq.py.",
+      "code": "python make_data.py",
+      "lang": "bash",
+      "see": "Wrote air_quality.csv: 480 rows, 4 stations, 2026-01-01 to 2026-04-30"
+     },
+     {
+      "do": "Check the helpers on their own, without Streamlit.",
+      "code": "python -c \"import aq; print(aq.summarise(aq.load_readings()))\"",
+      "lang": "bash",
+      "see": "Harbour first: mean 15.4, highest 38.3, 48 readings above 15, mean NO2 31.3."
+     },
+     {
+      "do": "Replace the widgets TODO in app.py: stations, a threshold slider whose default is the WHO guideline, and a date range limited to the data's dates.",
+      "code": "stations = st.multiselect(\"Stations\", aq.STATIONS, default=aq.STATIONS)\nthreshold = st.slider(\"PM2.5 threshold (µg/m³)\", min_value=5, max_value=50, value=aq.GUIDELINE_PM25,\n                      help=\"The WHO's 2021 guideline for a 24-hour mean is 15 µg/m³.\")\ndates = st.date_input(\"Dates\", value=(first, last), min_value=first, max_value=last)",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the validate TODO: stop the run with a message while input is missing.",
+      "code": "if not stations:\n    st.warning(\"Choose at least one station.\")\n    st.stop()\nif len(dates) != 2:\n    st.info(\"Choose an end date as well.\")\n    st.stop()",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the results TODO: filter the data and show two metrics, a chart and the summary table.",
+      "code": "view = aq.filter_readings(df, stations, *dates)\nst.metric(\"Mean PM2.5\", f\"{view['pm25'].mean():.1f} µg/m³\")\nst.metric(\"Readings above the threshold\", aq.days_above(view, threshold))\nst.line_chart(view, x=\"date\", y=\"pm25\", color=\"station\")\nst.dataframe(aq.summarise(view, threshold))",
+      "lang": "python"
+     },
+     {
+      "do": "Run the app. Change the threshold, remove every station, then pick only a start date.",
+      "code": "streamlit run app.py",
+      "lang": "bash",
+      "see": "Mean PM2.5 11.5 µg/m³ and 77 readings above the threshold by default; a warning with no stations; a message until the end date is picked."
+     },
+     {
+      "do": "Stop the app and run the tests: they open the app without a browser through AppTest.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "4 passed"
+     },
+     {
+      "do": "Run the app headless and check its health endpoint from a second terminal, then stop it.",
+      "code": "streamlit run app.py --server.headless true\n# in a second terminal:\ncurl -s -w \" HTTP %{http_code}\\n\" http://localhost:8501/_stcore/health",
+      "lang": "bash",
+      "see": "ok HTTP 200"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The data file is made.",
+      "look_for": [
+       "Wrote air_quality.csv: 480 rows"
+      ]
+     },
+     {
+      "text": "The helper summary is right for Harbour.",
+      "look_for": [
+       "15.4",
+       "38.3"
+      ]
+     },
+     {
+      "text": "All four tests pass.",
+      "look_for": [
+       "4 passed"
+      ]
+     },
+     {
+      "text": "The headless app answers its health check.",
+      "look_for": [
+       "ok HTTP 200"
+      ]
+     }
+    ],
+    "submit": "Paste the output of the helper check, python -m pytest -q and the curl command, plus your app.py.",
+    "files": [
+     {
+      "path": "make_data.py",
+      "content": "\"\"\"Write air_quality.csv: daily readings from four made-up monitoring stations, January to April 2026.\n\nUses only the standard library, and random.random() with a fixed seed, so every computer makes the same file.\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\n\nrandom.seed(2026)\nSTATIONS = [(\"Harbour\", 14.0, 31.0), (\"Old Town\", 12.5, 38.0), (\"Riverside\", 9.0, 22.0), (\"Hillcrest\", 6.5, 14.0)]\nstart, days = date(2026, 1, 1), 120\n\n\ndef noise():\n    \"\"\"A number between -1 and 1, most often near 0.\"\"\"\n    return (random.random() + random.random() + random.random() - 1.5) / 1.5\n\n\nrows = []\nfor i in range(days):\n    day = start + timedelta(days=i)\n    season = 1.25 - 0.4 * i / (days - 1)                     # winter air is dirtier\n    episode = 2.2 if date(2026, 2, 10) <= day <= date(2026, 2, 14) else 1.0   # a five-day smog episode\n    traffic = {5: 0.85, 6: 0.75}.get(day.weekday(), 1.1)      # less traffic at weekends\n    for name, pm25, no2 in STATIONS:\n        rows.append([day.isoformat(), name, round(pm25 * season * episode * (1 + 0.25 * noise()), 1),\n                     round(no2 * traffic * (1 + 0.2 * noise()), 1)])\n\nwith open(\"air_quality.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"date\", \"station\", \"pm25\", \"no2\"])\n    writer.writerows(rows)\nprint(f\"Wrote air_quality.csv: {len(rows)} rows, {len(STATIONS)} stations, {rows[0][0]} to {rows[-1][0]}\")\n"
+     },
+     {
+      "path": "app.py",
+      "content": "\"\"\"Air quality explorer: a first Streamlit app.\"\"\"\nimport streamlit as st\n\nimport aq\n\nst.title(\"Air quality explorer\")\nst.write(\"Daily PM2.5 and NO₂ readings from four monitoring stations, January to April 2026 \"\n         \"(made-up data for the course).\")\n\ndf = aq.load_readings()\nfirst, last = df[\"date\"].min().date(), df[\"date\"].max().date()\n\n# TODO (widgets): add this part in the lab's steps\n\n# TODO (validate): add this part in the lab's steps\n\n# TODO (results): add this part in the lab's steps\n"
+     },
+     {
+      "path": "aq.py",
+      "content": "\"\"\"Air quality helpers: plain functions, so they can be tested without Streamlit.\"\"\"\nimport pandas as pd\n\nSTATIONS = [\"Harbour\", \"Old Town\", \"Riverside\", \"Hillcrest\"]\nGUIDELINE_PM25 = 15  # µg/m³ as a 24-hour mean: the WHO's 2021 air quality guideline\n\n\ndef load_readings(path=\"air_quality.csv\"):\n    \"\"\"Read the daily readings, with dates as datetimes.\"\"\"\n    return pd.read_csv(path, parse_dates=[\"date\"])\n\n\ndef filter_readings(df, stations, start, end):\n    \"\"\"Readings for the chosen stations between two dates, both included.\"\"\"\n    keep = df[\"station\"].isin(stations) & df[\"date\"].between(pd.Timestamp(start), pd.Timestamp(end))\n    return df.loc[keep]\n\n\ndef days_above(df, threshold):\n    \"\"\"How many daily readings are above the threshold.\"\"\"\n    return int((df[\"pm25\"] > threshold).sum())\n\n\ndef summarise(df, threshold=GUIDELINE_PM25):\n    \"\"\"One row per station: mean and highest PM2.5, readings above the threshold, and mean NO2.\"\"\"\n    out = df.groupby(\"station\").agg(mean_pm25=(\"pm25\", \"mean\"), max_pm25=(\"pm25\", \"max\"),\n                                    above=(\"pm25\", lambda s: int((s > threshold).sum())),\n                                    mean_no2=(\"no2\", \"mean\"))\n    return out.round(1).sort_values(\"mean_pm25\", ascending=False)\n"
+     },
+     {
+      "path": "test_app.py",
+      "content": "\"\"\"Tests for the air quality app. Run them with:  python -m pytest -q\"\"\"\nfrom streamlit.testing.v1 import AppTest\n\nimport aq\n\n\ndef test_helpers():\n    df = aq.load_readings()\n    assert len(df) == 480\n    march = aq.filter_readings(df, [\"Harbour\"], \"2026-03-01\", \"2026-03-31\")\n    assert len(march) == 31\n    assert aq.days_above(march, 15) == 5\n\n\ndef test_app_defaults():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    assert not at.exception\n    assert at.title[0].value == \"Air quality explorer\"\n    assert at.metric[0].value == \"11.5 µg/m³\"\n    assert at.metric[1].value == \"77\"\n\n\ndef test_threshold_slider():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    at.slider[0].set_value(30).run()\n    assert at.metric[1].value == \"6\"\n\n\ndef test_no_stations_warns():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    at.multiselect[0].set_value([]).run()\n    assert at.warning[0].value == \"Choose at least one station.\"\n"
+     }
+    ],
+    "hints": [
+     "ValueError: not enough values to unpack means dates had one date: the validate block's len(dates) check must come before filter_readings(df, stations, *dates).",
+     "FileNotFoundError: air_quality.csv means make_data.py hasn't been run in this folder, or the app was started from another folder.",
+     "If a test fails on a metric, run the app and compare its value with the test's: the tests expect the data that make_data.py writes, unchanged.",
+     "Port 8501 already in use? Stop the other Streamlit app, or add --server.port 8502 (and use 8502 in the curl command).",
+     "RuntimeError: AppTest script run timed out means a run took longer than its timeout, which can happen on a busy or slow computer: raise it, as in run(timeout=20)."
+    ]
+   }
+  },
+  {
+   "title": "Layout, charts and data display",
+   "summary": "Arrange an app with the sidebar, columns, tabs and containers, choose between Streamlit's built-in charts and Altair, Plotly or Matplotlib, and present data with configured tables, metrics and downloads.",
+   "instructor": "camila-torrese",
+   "lessons": [
+    {
+     "title": "Layout: sidebar, columns, tabs and containers",
+     "minutes": 12,
+     "objectives": [
+      "Configure the page and move controls into the sidebar",
+      "Arrange content with columns, tabs, expanders and containers",
+      "Update a placeholder in place with st.empty"
+     ],
+     "key_points": [
+      "st.set_page_config(page_title=..., page_icon=..., layout='wide') sets the browser tab's title and icon and lets content use the full width; recent versions allow calling it more than once, while older ones required it to be the first Streamlit command.",
+      "Anything written inside with st.sidebar: (or with st.sidebar.slider and similar) goes in the collapsible sidebar, the usual place for filters, so the main area is left for results.",
+      "st.columns(3) or st.columns([2, 1]) returns columns to write into side by side, with gap= and vertical_alignment= to adjust them; st.tabs(['Trend', 'Data']) returns tabs, and every tab's code runs on every rerun, whichever tab is showing.",
+      "st.expander hides detail until it's opened, st.container(border=True) groups elements (height= makes it scroll), and st.popover opens a small panel from a button.",
+      "st.empty() reserves a slot that later calls replace, such as a status line updated in a loop; each write to the placeholder overwrites what was there."
+     ]
+    },
+    {
+     "title": "Charts: built-in, Altair, Plotly and Matplotlib",
+     "minutes": 12,
+     "objectives": [
+      "Use Streamlit's built-in charts for quick views of long or wide data",
+      "Show Altair, Plotly and Matplotlib figures in an app",
+      "Size charts and react to selections"
+     ],
+     "key_points": [
+      "st.line_chart, st.bar_chart, st.area_chart and st.scatter_chart draw straight from a DataFrame: x= and y= name the columns and color= splits long data into series; they're quick, but offer few options.",
+      "st.altair_chart shows an Altair (Vega-Lite) chart, which can layer marks, such as a line plus a dashed threshold rule, and add tooltips; Streamlit applies its own theme unless theme=None is passed.",
+      "st.plotly_chart shows an interactive Plotly figure, and st.pyplot(fig) a Matplotlib one: pass the figure object you created rather than relying on pyplot's current figure.",
+      "Charts fill the width of their container by default; in recent versions width= and height= set their size, and use_container_width is deprecated.",
+      "Altair and Plotly charts, and st.dataframe, can return what the user selects: on_select='rerun' reruns the app with the selection, so one chart can filter another."
+     ]
+    },
+    {
+     "title": "Tables, metrics and downloads",
+     "minutes": 12,
+     "objectives": [
+      "Format tables with column_config",
+      "Let users edit data with st.data_editor",
+      "Offer filtered data as a download"
+     ],
+     "key_points": [
+      "column_config tells st.dataframe how to show each column: st.column_config.NumberColumn('PM2.5', format='%.1f'), DateColumn(format='D MMM YYYY'), ProgressColumn for values in a range and LineChartColumn for a small chart in each cell; hide_index=True hides the index.",
+      "st.data_editor shows an editable table and returns the edited DataFrame; num_rows='dynamic' lets users add and delete rows, and disabled= locks columns that shouldn't change.",
+      "st.metric(label, value, delta) puts a headline figure over its change; three metrics in st.columns(3) make a row of KPI tiles, and border=True draws a box round each.",
+      "st.download_button('Download CSV', df.to_csv(index=False), file_name='readings.csv', mime='text/csv') lets users save exactly what they're looking at; clicking it reruns the app unless on_click='ignore' is set, in recent versions.",
+      "Show units in the column names or formats, round to a sensible precision and put the most useful columns first (column_order=), so a table reads as clearly as a chart."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Lay out the explorer with tabs, charts and a download",
+    "tool": "Streamlit and pytest",
+    "minutes": 50,
+    "goal": "Turn the first version into a wide, organised app: filters in the sidebar, a row of three metrics with a delta, and tabs holding an Altair chart with a threshold line, a station summary with a bar chart and formatted table, and the filtered data with a download button.",
+    "setup": [
+     "The course folder and virtual environment from the module 1 lab",
+     "The starter files: app.py (with TODOs), aq.py, test_app.py and make_data.py; run python make_data.py first if air_quality.csv isn't in the folder"
+    ],
+    "steps": [
+     {
+      "do": "Replace the page-config TODO at the top of app.py, so the app uses the full width.",
+      "code": "st.set_page_config(page_title=\"Air quality explorer\", page_icon=\"🌫️\", layout=\"wide\")",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the sidebar TODO: the three filters, under a header, in the sidebar.",
+      "code": "with st.sidebar:\n    st.header(\"Filters\")\n    stations = st.multiselect(\"Stations\", aq.STATIONS, default=aq.STATIONS)\n    threshold = st.slider(\"PM2.5 threshold (µg/m³)\", 5, 50, aq.GUIDELINE_PM25)\n    dates = st.date_input(\"Dates\", value=(first, last), min_value=first, max_value=last)",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the metrics TODO: three metrics in columns, the first with its change on the whole period (inverse colours, because lower is better).",
+      "code": "whole = aq.filter_readings(df, stations, first, last)\nchange = view[\"pm25\"].mean() - whole[\"pm25\"].mean()\ncol1, col2, col3 = st.columns(3)\ncol1.metric(\"Mean PM2.5\", f\"{view['pm25'].mean():.1f} µg/m³\", delta=f\"{change:+.1f} on the whole period\",\n            delta_color=\"inverse\")\ncol2.metric(\"Highest daily PM2.5\", f\"{view['pm25'].max():.1f} µg/m³\")\ncol3.metric(\"Readings above the threshold\", aq.days_above(view, threshold))",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the tabs TODO: a layered Altair chart, a station summary with a horizontal bar chart and a configured table, and the data with a download button.",
+      "code": "trend, by_station, data = st.tabs([\"Trend\", \"Stations\", \"Data\"])\nwith trend:\n    line = alt.Chart(view).mark_line().encode(\n        x=alt.X(\"date:T\", title=None), y=alt.Y(\"pm25:Q\", title=\"PM2.5 (µg/m³)\"),\n        color=alt.Color(\"station:N\", title=\"Station\"), tooltip=[\"date:T\", \"station:N\", \"pm25:Q\", \"no2:Q\"])\n    rule = alt.Chart(pd.DataFrame({\"threshold\": [threshold]})).mark_rule(strokeDash=[4, 4]).encode(y=\"threshold:Q\")\n    st.altair_chart(line + rule)\nwith by_station:\n    summary = aq.summarise(view, threshold)\n    st.bar_chart(summary[\"above\"], horizontal=True, x_label=\"Readings above the threshold\", y_label=\"\")\n    st.dataframe(summary, column_config={\n        \"mean_pm25\": st.column_config.NumberColumn(\"Mean PM2.5\", format=\"%.1f µg/m³\"),\n        \"max_pm25\": st.column_config.NumberColumn(\"Highest PM2.5\", format=\"%.1f µg/m³\"),\n        \"above\": st.column_config.ProgressColumn(\"Above threshold\", min_value=0, max_value=len(view[\"date\"].unique()),\n                                                  format=\"%d\"),\n        \"mean_no2\": st.column_config.NumberColumn(\"Mean NO₂\", format=\"%.1f µg/m³\")})\nwith data:\n    st.dataframe(view, hide_index=True, column_config={\n        \"date\": st.column_config.DateColumn(\"Date\", format=\"D MMM YYYY\"),\n        \"pm25\": st.column_config.NumberColumn(\"PM2.5 (µg/m³)\", format=\"%.1f\"),\n        \"no2\": st.column_config.NumberColumn(\"NO₂ (µg/m³)\", format=\"%.1f\")})\n    st.download_button(\"Download these readings (CSV)\", view.to_csv(index=False),\n                       file_name=\"air_quality_filtered.csv\", mime=\"text/csv\")",
+      "lang": "python"
+     },
+     {
+      "do": "Run the app and set the dates to 1 to 28 February 2026, the month with the smog episode.",
+      "code": "streamlit run app.py",
+      "lang": "bash",
+      "see": "Mean PM2.5 13.9 µg/m³, with +2.4 on the whole period shown in red because lower is better."
+     },
+     {
+      "do": "Open each tab. Hover over the Trend chart for tooltips, sort the Data table by PM2.5 and download the filtered readings.",
+      "see": "A file called air_quality_filtered.csv in your downloads."
+     },
+     {
+      "do": "Run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "4 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "All four tests pass.",
+      "look_for": [
+       "4 passed"
+      ]
+     },
+     {
+      "text": "February's metric and its change on the whole period are right.",
+      "look_for": [
+       "13.9",
+       "+2.4"
+      ]
+     },
+     {
+      "text": "The download gives the filtered readings.",
+      "look_for": [
+       "air_quality_filtered.csv"
+      ]
+     }
+    ],
+    "submit": "Paste the output of python -m pytest -q, the February metric and its delta as the app shows them, the first three lines of the downloaded CSV, and your app.py.",
+    "files": [
+     {
+      "path": "make_data.py",
+      "content": "\"\"\"Write air_quality.csv: daily readings from four made-up monitoring stations, January to April 2026.\n\nUses only the standard library, and random.random() with a fixed seed, so every computer makes the same file.\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\n\nrandom.seed(2026)\nSTATIONS = [(\"Harbour\", 14.0, 31.0), (\"Old Town\", 12.5, 38.0), (\"Riverside\", 9.0, 22.0), (\"Hillcrest\", 6.5, 14.0)]\nstart, days = date(2026, 1, 1), 120\n\n\ndef noise():\n    \"\"\"A number between -1 and 1, most often near 0.\"\"\"\n    return (random.random() + random.random() + random.random() - 1.5) / 1.5\n\n\nrows = []\nfor i in range(days):\n    day = start + timedelta(days=i)\n    season = 1.25 - 0.4 * i / (days - 1)                     # winter air is dirtier\n    episode = 2.2 if date(2026, 2, 10) <= day <= date(2026, 2, 14) else 1.0   # a five-day smog episode\n    traffic = {5: 0.85, 6: 0.75}.get(day.weekday(), 1.1)      # less traffic at weekends\n    for name, pm25, no2 in STATIONS:\n        rows.append([day.isoformat(), name, round(pm25 * season * episode * (1 + 0.25 * noise()), 1),\n                     round(no2 * traffic * (1 + 0.2 * noise()), 1)])\n\nwith open(\"air_quality.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"date\", \"station\", \"pm25\", \"no2\"])\n    writer.writerows(rows)\nprint(f\"Wrote air_quality.csv: {len(rows)} rows, {len(STATIONS)} stations, {rows[0][0]} to {rows[-1][0]}\")\n"
+     },
+     {
+      "path": "app.py",
+      "content": "\"\"\"Air quality explorer: layout, charts and data display.\"\"\"\nimport altair as alt\nimport pandas as pd\nimport streamlit as st\n\nimport aq\n\n# TODO (page-config): add this part in the lab's steps\nst.title(\"Air quality explorer\")\nst.caption(\"Daily PM2.5 and NO₂ readings from four monitoring stations, January to April 2026 (made-up data).\")\n\ndf = aq.load_readings()\nfirst, last = df[\"date\"].min().date(), df[\"date\"].max().date()\n\n# TODO (sidebar): add this part in the lab's steps\n\nif not stations:\n    st.warning(\"Choose at least one station.\")\n    st.stop()\nif len(dates) != 2:\n    st.info(\"Choose an end date as well.\")\n    st.stop()\nview = aq.filter_readings(df, stations, *dates)\n\n# TODO (metrics): add this part in the lab's steps\n\n# TODO (tabs): add this part in the lab's steps\n"
+     },
+     {
+      "path": "aq.py",
+      "content": "\"\"\"Air quality helpers: plain functions, so they can be tested without Streamlit.\"\"\"\nimport pandas as pd\n\nSTATIONS = [\"Harbour\", \"Old Town\", \"Riverside\", \"Hillcrest\"]\nGUIDELINE_PM25 = 15  # µg/m³ as a 24-hour mean: the WHO's 2021 air quality guideline\n\n\ndef load_readings(path=\"air_quality.csv\"):\n    \"\"\"Read the daily readings, with dates as datetimes.\"\"\"\n    return pd.read_csv(path, parse_dates=[\"date\"])\n\n\ndef filter_readings(df, stations, start, end):\n    \"\"\"Readings for the chosen stations between two dates, both included.\"\"\"\n    keep = df[\"station\"].isin(stations) & df[\"date\"].between(pd.Timestamp(start), pd.Timestamp(end))\n    return df.loc[keep]\n\n\ndef days_above(df, threshold):\n    \"\"\"How many daily readings are above the threshold.\"\"\"\n    return int((df[\"pm25\"] > threshold).sum())\n\n\ndef summarise(df, threshold=GUIDELINE_PM25):\n    \"\"\"One row per station: mean and highest PM2.5, readings above the threshold, and mean NO2.\"\"\"\n    out = df.groupby(\"station\").agg(mean_pm25=(\"pm25\", \"mean\"), max_pm25=(\"pm25\", \"max\"),\n                                    above=(\"pm25\", lambda s: int((s > threshold).sum())),\n                                    mean_no2=(\"no2\", \"mean\"))\n    return out.round(1).sort_values(\"mean_pm25\", ascending=False)\n"
+     },
+     {
+      "path": "test_app.py",
+      "content": "\"\"\"Tests for the air quality app. Run them with:  python -m pytest -q\"\"\"\nfrom streamlit.testing.v1 import AppTest\n\n\ndef test_filters_are_in_the_sidebar():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    assert not at.exception\n    assert len(at.sidebar.multiselect) == 1 and len(at.sidebar.slider) == 1 and len(at.sidebar.date_input) == 1\n\n\ndef test_three_metrics_and_three_tabs():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    assert [m.label for m in at.metric] == [\"Mean PM2.5\", \"Highest daily PM2.5\", \"Readings above the threshold\"]\n    assert [t.label for t in at.tabs] == [\"Trend\", \"Stations\", \"Data\"]\n\n\ndef test_metric_delta_for_february():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    at.sidebar.date_input[0].set_value((\"2026-02-01\", \"2026-02-28\")).run()\n    assert at.metric[0].value == \"13.9 µg/m³\"\n    assert at.metric[0].delta == \"+2.4 on the whole period\"\n\n\ndef test_download_button():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    assert at.get(\"download_button\")[0].proto.label == \"Download these readings (CSV)\"\n"
+     }
+    ],
+    "hints": [
+     "If the metrics show the same value for every date range, check that they're computed from view, the filtered data, and the delta from whole.",
+     "Altair needs each field's type in the encoding (date:T, pm25:Q, station:N), or it may guess wrongly.",
+     "A threshold rule that doesn't move with the slider is built from a constant: it must use the slider's value, threshold."
+    ]
+   }
+  },
+  {
+   "title": "Caching and performance",
+   "summary": "Stop the rerun model from repeating slow work: cache data with st.cache_data, share connections and models with st.cache_resource, and rerun only part of an app with fragments.",
+   "instructor": "camila-torrese",
+   "lessons": [
+    {
+     "title": "Caching data with st.cache_data",
+     "minutes": 12,
+     "objectives": [
+      "Cache the results of slow functions with st.cache_data",
+      "Control a cache's lifetime and size",
+      "Explain how arguments are hashed and why callers get copies"
+     ],
+     "key_points": [
+      "@st.cache_data stores a function's return value, keyed by its arguments and its code: the first call runs the function, and later calls with the same arguments, in any session, return the stored result without running it.",
+      "Each call returns a copy of the cached value (it's stored pickled), so changing the returned DataFrame can't corrupt the cache; the value must therefore be picklable, such as a DataFrame, a list or a string.",
+      "ttl='1h' (or seconds, or a timedelta) makes entries expire so fresh data is fetched, max_entries= caps how many argument combinations are kept, and show_spinner= sets the message shown while it runs.",
+      "Arguments must be hashable for the cache key; a parameter whose name starts with an underscore, such as _conn, is left out of the key, for objects like connections that can't be hashed.",
+      "load.clear() empties one function's cache and st.cache_data.clear() every data cache; the app's menu and the C key also clear caches while you develop.",
+      "st.cache was removed: use st.cache_data for data and st.cache_resource for shared objects."
+     ]
+    },
+    {
+     "title": "Sharing resources with st.cache_resource",
+     "minutes": 12,
+     "objectives": [
+      "Share one database connection or model across every session with st.cache_resource",
+      "Choose between st.cache_data and st.cache_resource",
+      "Avoid the thread-safety and mutation traps of shared objects"
+     ],
+     "key_points": [
+      "@st.cache_resource runs a function once and returns the same object to every later call, from every session, without copying it: the right tool for database connections, HTTP clients and machine learning models.",
+      "Use cache_data for data you compute or download, which should be copied for each caller, and cache_resource for objects that can't be pickled or that should exist only once, such as a model too large to load per user.",
+      "A shared object is used from several sessions' threads at once, so it must be thread-safe and must not be changed for one user: sqlite3.connect needs check_same_thread=False to be shared, and per-user values belong in session state.",
+      "cache_resource also takes ttl= and max_entries=, and validate= can check that a cached object is still usable, such as a connection that may have dropped, before it's returned.",
+      "Clearing a resource cache (get_db.clear() or st.cache_resource.clear()) makes the next call create a new object, which tests use to start from a clean state."
+     ]
+    },
+    {
+     "title": "Fragments and other speed-ups",
+     "minutes": 12,
+     "objectives": [
+      "Rerun part of an app with st.fragment",
+      "Refresh part of an app on a timer",
+      "Find slow steps and give users feedback while they run"
+     ],
+     "key_points": [
+      "@st.fragment turns a function into a fragment: when a widget inside it changes, only the fragment reruns, not the whole script, which keeps a busy page responsive.",
+      "run_every='10s' reruns a fragment on a timer, for a live panel such as the latest readings, and st.rerun(scope='fragment') reruns just the fragment from inside it.",
+      "Fragments can't be used to skip work that the rest of the script needs; values that other parts of the app use must still be stored in session state or recomputed there.",
+      "Measure before optimising: time.perf_counter() around a step, or the time shown in a status message, shows which step is slow; filter data early and draw fewer points rather than plotting every row.",
+      "st.spinner('Loading...') shows a message while a block runs, and st.status shows a collapsible box of progress steps, so users know the app is working."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Cache the data, share a connection and add a fragment",
+    "tool": "Streamlit and pytest",
+    "minutes": 45,
+    "goal": "Make the explorer fast and shareable: cache the CSV with st.cache_data, open one SQLite connection for every session with st.cache_resource, rerun only the chart when its pollutant changes, and prove each with a test.",
+    "setup": [
+     "The course folder and virtual environment",
+     "The starter files: app.py and aq.py (with TODOs), test_app.py and make_data.py; run python make_data.py if air_quality.csv isn't in the folder"
+    ],
+    "steps": [
+     {
+      "do": "Replace the counters TODO at the end of aq.py: functions that count how often the CSV is read and how many connections are opened, and the SQLite helpers the app will use.",
+      "code": "import os\nimport sqlite3\n\nLOADS = 0          # how many times the CSV has been read, so tests can check the cache\nCONNECTIONS = 0    # how many database connections have been opened\n\n\ndef load_readings_counted(path=\"air_quality.csv\"):\n    \"\"\"load_readings, counting each call.\"\"\"\n    global LOADS\n    LOADS += 1\n    return load_readings(path)\n\n\ndef connect(path=None):\n    \"\"\"Open the reports database, creating its table if needed. The AQ_DB variable overrides the file name.\"\"\"\n    global CONNECTIONS\n    CONNECTIONS += 1\n    conn = sqlite3.connect(path or os.environ.get(\"AQ_DB\", \"reports.db\"), check_same_thread=False)\n    conn.execute(\"CREATE TABLE IF NOT EXISTS reports (station TEXT, day TEXT, pm25 REAL, note TEXT)\")\n    return conn\n\n\ndef count_reports(conn):\n    return conn.execute(\"SELECT COUNT(*) FROM reports\").fetchone()[0]",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the cache-data TODO in app.py. The one-second sleep stands in for a slow source, such as a database or an API.",
+      "code": "@st.cache_data(ttl=\"1h\", show_spinner=\"Loading readings...\")\ndef load(path=\"air_quality.csv\"):\n    \"\"\"Read the CSV once an hour at most; every rerun and every user shares the result.\"\"\"\n    time.sleep(1)  # pretend the data comes from somewhere slow\n    return aq.load_readings_counted(path)",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the cache-resource TODO: one connection for the whole app.",
+      "code": "@st.cache_resource\ndef get_db():\n    \"\"\"One database connection for the whole app, shared by every session.\"\"\"\n    return aq.connect()",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the fragment TODO: a chart whose pollutant can change without rerunning the rest of the app.",
+      "code": "@st.fragment\ndef trend_chart(view, threshold):\n    \"\"\"Changing the pollutant reruns only this function, not the whole script.\"\"\"\n    pollutant = st.radio(\"Pollutant\", [\"PM2.5\", \"NO₂\"], horizontal=True)\n    column = \"pm25\" if pollutant == \"PM2.5\" else \"no2\"\n    st.caption(f\"Showing {pollutant}. Switching reruns only this chart.\")\n    chart = alt.Chart(view).mark_line().encode(\n        x=alt.X(\"date:T\", title=None), y=alt.Y(f\"{column}:Q\", title=f\"{pollutant} (µg/m³)\"),\n        color=alt.Color(\"station:N\", title=\"Station\"))\n    if column == \"pm25\":\n        chart += alt.Chart(pd.DataFrame({\"t\": [threshold]})).mark_rule(strokeDash=[4, 4]).encode(y=\"t:Q\")\n    st.altair_chart(chart)",
+      "lang": "python"
+     },
+     {
+      "do": "Run the app. Watch the sidebar's timing line on the first load, then move the threshold slider.",
+      "code": "streamlit run app.py",
+      "lang": "bash",
+      "see": "About 1 second on the first run, then close to 0.00 s, because the data comes from the cache; Community reports stored: 0."
+     },
+     {
+      "do": "Switch the chart to NO₂: only the chart reruns, so the timing line in the sidebar doesn't change. Then press C, clear the cache and watch the next run take a second again."
+     },
+     {
+      "do": "Run the tests: the first counts reads of the CSV, the second counts connections, the third switches the fragment's pollutant.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "3 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "All three tests pass: one read of the CSV, one shared connection and a working fragment.",
+      "look_for": [
+       "3 passed"
+      ]
+     },
+     {
+      "text": "The sidebar shows the database's report count.",
+      "look_for": [
+       "Community reports stored: 0"
+      ]
+     }
+    ],
+    "submit": "Paste the output of python -m pytest -q, the sidebar's timing line before and after the first run, and a sentence explaining why the connection uses st.cache_resource and the data st.cache_data.",
+    "files": [
+     {
+      "path": "make_data.py",
+      "content": "\"\"\"Write air_quality.csv: daily readings from four made-up monitoring stations, January to April 2026.\n\nUses only the standard library, and random.random() with a fixed seed, so every computer makes the same file.\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\n\nrandom.seed(2026)\nSTATIONS = [(\"Harbour\", 14.0, 31.0), (\"Old Town\", 12.5, 38.0), (\"Riverside\", 9.0, 22.0), (\"Hillcrest\", 6.5, 14.0)]\nstart, days = date(2026, 1, 1), 120\n\n\ndef noise():\n    \"\"\"A number between -1 and 1, most often near 0.\"\"\"\n    return (random.random() + random.random() + random.random() - 1.5) / 1.5\n\n\nrows = []\nfor i in range(days):\n    day = start + timedelta(days=i)\n    season = 1.25 - 0.4 * i / (days - 1)                     # winter air is dirtier\n    episode = 2.2 if date(2026, 2, 10) <= day <= date(2026, 2, 14) else 1.0   # a five-day smog episode\n    traffic = {5: 0.85, 6: 0.75}.get(day.weekday(), 1.1)      # less traffic at weekends\n    for name, pm25, no2 in STATIONS:\n        rows.append([day.isoformat(), name, round(pm25 * season * episode * (1 + 0.25 * noise()), 1),\n                     round(no2 * traffic * (1 + 0.2 * noise()), 1)])\n\nwith open(\"air_quality.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"date\", \"station\", \"pm25\", \"no2\"])\n    writer.writerows(rows)\nprint(f\"Wrote air_quality.csv: {len(rows)} rows, {len(STATIONS)} stations, {rows[0][0]} to {rows[-1][0]}\")\n"
+     },
+     {
+      "path": "app.py",
+      "content": "\"\"\"Air quality explorer: cached data, a shared database connection and a fragment.\"\"\"\nimport time\n\nimport altair as alt\nimport pandas as pd\nimport streamlit as st\n\nimport aq\n\nst.set_page_config(page_title=\"Air quality explorer\", page_icon=\"🌫️\", layout=\"wide\")\n\n\n# TODO (cache-data): add this part in the lab's steps\n\n\n# TODO (cache-resource): add this part in the lab's steps\n\n\n# TODO (fragment): add this part in the lab's steps\n\n\nst.title(\"Air quality explorer\")\nstarted = time.perf_counter()\ndf = load()\ndb = get_db()\nfirst, last = df[\"date\"].min().date(), df[\"date\"].max().date()\n\nwith st.sidebar:\n    st.header(\"Filters\")\n    stations = st.multiselect(\"Stations\", aq.STATIONS, default=aq.STATIONS)\n    threshold = st.slider(\"PM2.5 threshold (µg/m³)\", 5, 50, aq.GUIDELINE_PM25)\n    dates = st.date_input(\"Dates\", value=(first, last), min_value=first, max_value=last)\n    st.caption(f\"Community reports stored: {aq.count_reports(db)}\")\n    st.caption(f\"Data loaded in {time.perf_counter() - started:.2f} s\")\n\nif not stations:\n    st.warning(\"Choose at least one station.\")\n    st.stop()\nif len(dates) != 2:\n    st.info(\"Choose an end date as well.\")\n    st.stop()\nview = aq.filter_readings(df, stations, *dates)\n\ncol1, col2, col3 = st.columns(3)\ncol1.metric(\"Mean PM2.5\", f\"{view['pm25'].mean():.1f} µg/m³\")\ncol2.metric(\"Highest daily PM2.5\", f\"{view['pm25'].max():.1f} µg/m³\")\ncol3.metric(\"Readings above the threshold\", aq.days_above(view, threshold))\n\ntrend, by_station = st.tabs([\"Trend\", \"Stations\"])\nwith trend:\n    trend_chart(view, threshold)\nwith by_station:\n    st.dataframe(aq.summarise(view, threshold))\n"
+     },
+     {
+      "path": "aq.py",
+      "content": "\"\"\"Air quality helpers: plain functions, so they can be tested without Streamlit.\"\"\"\nimport pandas as pd\n\nSTATIONS = [\"Harbour\", \"Old Town\", \"Riverside\", \"Hillcrest\"]\nGUIDELINE_PM25 = 15  # µg/m³ as a 24-hour mean: the WHO's 2021 air quality guideline\n\n\ndef load_readings(path=\"air_quality.csv\"):\n    \"\"\"Read the daily readings, with dates as datetimes.\"\"\"\n    return pd.read_csv(path, parse_dates=[\"date\"])\n\n\ndef filter_readings(df, stations, start, end):\n    \"\"\"Readings for the chosen stations between two dates, both included.\"\"\"\n    keep = df[\"station\"].isin(stations) & df[\"date\"].between(pd.Timestamp(start), pd.Timestamp(end))\n    return df.loc[keep]\n\n\ndef days_above(df, threshold):\n    \"\"\"How many daily readings are above the threshold.\"\"\"\n    return int((df[\"pm25\"] > threshold).sum())\n\n\ndef summarise(df, threshold=GUIDELINE_PM25):\n    \"\"\"One row per station: mean and highest PM2.5, readings above the threshold, and mean NO2.\"\"\"\n    out = df.groupby(\"station\").agg(mean_pm25=(\"pm25\", \"mean\"), max_pm25=(\"pm25\", \"max\"),\n                                    above=(\"pm25\", lambda s: int((s > threshold).sum())),\n                                    mean_no2=(\"no2\", \"mean\"))\n    return out.round(1).sort_values(\"mean_pm25\", ascending=False)\n\n\n# TODO (counters): add this part in the lab's steps\n"
+     },
+     {
+      "path": "test_app.py",
+      "content": "\"\"\"Tests for the air quality app. Run them with:  python -m pytest -q\"\"\"\nimport streamlit as st\nfrom streamlit.testing.v1 import AppTest\n\nimport aq\n\n\ndef test_csv_is_read_once():\n    st.cache_data.clear()\n    before = aq.LOADS\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    at.run()\n    at.sidebar.slider[0].set_value(25).run()\n    assert aq.LOADS == before + 1\n\n\ndef test_one_shared_connection(tmp_path, monkeypatch):\n    monkeypatch.setenv(\"AQ_DB\", str(tmp_path / \"test.db\"))\n    st.cache_resource.clear()\n    before = aq.CONNECTIONS\n    for _ in range(3):\n        AppTest.from_file(\"app.py\").run(timeout=10)\n    assert aq.CONNECTIONS == before + 1\n\n\ndef test_fragment_switches_pollutant():\n    at = AppTest.from_file(\"app.py\").run(timeout=10)\n    assert any(c.value.startswith(\"Showing PM2.5\") for c in at.main.caption)\n    at.radio[0].set_value(\"NO₂\").run()\n    assert any(c.value.startswith(\"Showing NO₂\") for c in at.main.caption)\n"
+     }
+    ],
+    "hints": [
+     "If test_csv_is_read_once fails with two reads, check that load() is decorated with @st.cache_data and that app.py calls load(), not aq.load_readings() directly.",
+     "ProgrammingError: SQLite objects created in a thread can only be used in that same thread means check_same_thread=False is missing from sqlite3.connect.",
+     "The tests set AQ_DB to a temporary file, so they never touch your reports.db."
+    ]
+   }
+  },
+  {
+   "title": "Session state, callbacks and forms",
+   "summary": "Keep values across reruns with session state, change state safely with callbacks, and collect input with forms that submit in one go and store their results in a database.",
+   "instructor": "sebastian-vargas",
+   "lessons": [
+    {
+     "title": "Session state",
+     "minutes": 12,
+     "objectives": [
+      "Store values across reruns with st.session_state",
+      "Initialise state safely and link widgets to it with keys",
+      "Explain what a session is and when state is lost"
+     ],
+     "key_points": [
+      "st.session_state is a dictionary-like store that survives reruns for one session: st.session_state.count and st.session_state['count'] both work, and values can be any Python object.",
+      "Initialise each value once, before it's used: if 'count' not in st.session_state: st.session_state.count = 0, or st.session_state.setdefault('count', 0).",
+      "A session is one browser tab connected to the app: each user, and each tab, has its own state, and reloading the page starts a new session with empty state.",
+      "A widget with key='threshold' keeps its value in st.session_state.threshold, so other code can read it, and setting that key before the widget is drawn sets the widget's value.",
+      "Set a widget's starting value either with its value or default argument or through session state, not both: Streamlit warns when a widget has a default and its key was also set through the Session State API."
+     ]
+    },
+    {
+     "title": "Callbacks and changing state safely",
+     "minutes": 12,
+     "objectives": [
+      "Use on_change and on_click callbacks to update state",
+      "Reset widgets from a callback",
+      "Avoid changing a widget's state after it's drawn"
+     ],
+     "key_points": [
+      "on_click= (buttons) and on_change= (other widgets) name a function that runs before the script reruns; args= and kwargs= pass it arguments, as in st.button('Add', on_click=add, args=(5,)).",
+      "Because a callback runs before any widget is drawn, it may set widgets' values: a 'Reset filters' button whose callback sets st.session_state.threshold = 15 moves the slider back on the next run.",
+      "Assigning to a widget's key after the widget has been drawn in the same run raises an error (StreamlitWidgetAlreadyInstantiatedError in recent versions): do it in a callback, or before the widget.",
+      "Without callbacks, a button's effect appears one run late, because the code that reads the state runs before the button's own block; callbacks avoid that ordering problem.",
+      "st.rerun() reruns the script immediately, for example after changing state that earlier parts of the page have already used; use it sparingly, because it can loop."
+     ]
+    },
+    {
+     "title": "Forms and dialogs",
+     "minutes": 12,
+     "objectives": [
+      "Batch inputs into a form that submits in one go",
+      "Validate a form's input and give feedback",
+      "Know the rules forms impose, and when a dialog fits better"
+     ],
+     "key_points": [
+      "with st.form('report'): groups widgets so that changing them doesn't rerun the app; everything is sent together when st.form_submit_button is clicked, which returns True on that run.",
+      "clear_on_submit=True resets the form's widgets after submission, and each form needs a unique key; forms can't be nested, and an ordinary st.button can't be placed inside one.",
+      "Only the submit button may have a callback, and the other widgets' values are only up to date after submission, so validate after the submit: check the values, then show st.error or save and show st.success.",
+      "Store each submission where it needs to live: st.session_state for this user's session only, or a database (through a connection cached with st.cache_resource) for data every user should see.",
+      "@st.dialog('Title') turns a function into a modal dialog that opens when it's called, for a short focused task such as confirming a deletion; st.toast shows a brief notification in the corner."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Remember filters and collect reports with a form",
+    "tool": "Streamlit and pytest",
+    "minutes": 50,
+    "goal": "Add state to the explorer: filters held in session state with a Reset button that works through a callback, and a validated form that stores community reports in SQLite while counting each session's own reports.",
+    "setup": [
+     "The course folder and virtual environment",
+     "The starter files: app.py and aq.py (with TODOs), test_app.py and make_data.py"
+    ],
+    "steps": [
+     {
+      "do": "Replace the reports TODO at the end of aq.py: saving a report and reading them all back.",
+      "code": "def add_report(conn, station, day, pm25, note=\"\"):\n    \"\"\"Store one community report.\"\"\"\n    conn.execute(\"INSERT INTO reports VALUES (?, ?, ?, ?)\", (station, str(day), float(pm25), note))\n    conn.commit()\n\n\ndef reports(conn):\n    \"\"\"Every stored report, newest first.\"\"\"\n    return pd.read_sql_query(\"SELECT * FROM reports ORDER BY rowid DESC\", conn)",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the state TODO in app.py: starting values in session state, and the reset callback.",
+      "code": "# Starting values live in Session State, so the reset callback can change them\nst.session_state.setdefault(\"stations\", aq.STATIONS)\nst.session_state.setdefault(\"threshold\", aq.GUIDELINE_PM25)\nst.session_state.setdefault(\"my_reports\", [])\n\n\ndef reset_filters():\n    \"\"\"A callback runs before the rerun, so it may set the widgets' values.\"\"\"\n    st.session_state.stations = aq.STATIONS\n    st.session_state.threshold = aq.GUIDELINE_PM25",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the keyed-widgets TODO in the sidebar: widgets linked to session state through their keys, with no default arguments, and the Reset button.",
+      "code": "stations = st.multiselect(\"Stations\", aq.STATIONS, key=\"stations\")\nthreshold = st.slider(\"PM2.5 threshold (µg/m³)\", 5, 50, key=\"threshold\")\nst.button(\"Reset filters\", on_click=reset_filters)",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the form TODO in the Report tab: the form, its validation, and the session and database counts.",
+      "code": "with st.form(\"report\", clear_on_submit=True):\n    station = st.selectbox(\"Station\", aq.STATIONS)\n    day = st.date_input(\"Day\", value=last, min_value=first, max_value=last)\n    pm25 = st.number_input(\"PM2.5 (µg/m³)\", min_value=0.0, max_value=500.0, value=0.0, step=0.5)\n    note = st.text_input(\"Note (optional)\")\n    sent = st.form_submit_button(\"Send report\")\nif sent:\n    if pm25 <= 0:\n        st.error(\"Enter the PM2.5 reading: it must be above zero.\")\n    else:\n        aq.add_report(db, station, day, pm25, note)\n        st.session_state.my_reports.append(station)\n        st.success(f\"Report saved for {station} on {day:%d %b %Y}.\")\nst.write(f\"You've sent {len(st.session_state.my_reports)} report(s) this session; \"\n         f\"{aq.count_reports(db)} are stored in total.\")\nst.dataframe(aq.reports(db), hide_index=True)",
+      "lang": "python"
+     },
+     {
+      "do": "Run the app. Send a report for Old Town of 18.5 µg/m³ for 30 April, then try sending one with no reading.",
+      "code": "streamlit run app.py",
+      "lang": "bash",
+      "see": "Report saved for Old Town on 30 Apr 2026. and You've sent 1 report(s) this session; then the error asking for the reading."
+     },
+     {
+      "do": "Open the app in a second browser tab: the database count includes the first tab's report, but this session's count starts at 0. Move the filters, then click Reset filters."
+     },
+     {
+      "do": "Run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "3 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "All three tests pass: a saved report, a rejected empty one and a working reset.",
+      "look_for": [
+       "3 passed"
+      ]
+     },
+     {
+      "text": "The form saves a report and confirms it.",
+      "look_for": [
+       "Report saved for Old Town on 30 Apr 2026."
+      ]
+     },
+     {
+      "text": "The session's own count is shown.",
+      "look_for": [
+       "You've sent 1 report(s) this session"
+      ]
+     }
+    ],
+    "submit": "Paste the output of python -m pytest -q and the messages the app showed, and explain in two sentences why the second tab sees the report in the database but not in its session count.",
+    "files": [
+     {
+      "path": "make_data.py",
+      "content": "\"\"\"Write air_quality.csv: daily readings from four made-up monitoring stations, January to April 2026.\n\nUses only the standard library, and random.random() with a fixed seed, so every computer makes the same file.\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\n\nrandom.seed(2026)\nSTATIONS = [(\"Harbour\", 14.0, 31.0), (\"Old Town\", 12.5, 38.0), (\"Riverside\", 9.0, 22.0), (\"Hillcrest\", 6.5, 14.0)]\nstart, days = date(2026, 1, 1), 120\n\n\ndef noise():\n    \"\"\"A number between -1 and 1, most often near 0.\"\"\"\n    return (random.random() + random.random() + random.random() - 1.5) / 1.5\n\n\nrows = []\nfor i in range(days):\n    day = start + timedelta(days=i)\n    season = 1.25 - 0.4 * i / (days - 1)                     # winter air is dirtier\n    episode = 2.2 if date(2026, 2, 10) <= day <= date(2026, 2, 14) else 1.0   # a five-day smog episode\n    traffic = {5: 0.85, 6: 0.75}.get(day.weekday(), 1.1)      # less traffic at weekends\n    for name, pm25, no2 in STATIONS:\n        rows.append([day.isoformat(), name, round(pm25 * season * episode * (1 + 0.25 * noise()), 1),\n                     round(no2 * traffic * (1 + 0.2 * noise()), 1)])\n\nwith open(\"air_quality.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"date\", \"station\", \"pm25\", \"no2\"])\n    writer.writerows(rows)\nprint(f\"Wrote air_quality.csv: {len(rows)} rows, {len(STATIONS)} stations, {rows[0][0]} to {rows[-1][0]}\")\n"
+     },
+     {
+      "path": "app.py",
+      "content": "\"\"\"Air quality explorer: session state, callbacks and a form.\"\"\"\nimport streamlit as st\n\nimport aq\n\nst.set_page_config(page_title=\"Air quality explorer\", page_icon=\"🌫️\", layout=\"wide\")\n\n\n@st.cache_data(ttl=\"1h\", show_spinner=\"Loading readings...\")\ndef load(path=\"air_quality.csv\"):\n    return aq.load_readings_counted(path)\n\n\n@st.cache_resource\ndef get_db():\n    return aq.connect()\n\n\ndf = load()\ndb = get_db()\nfirst, last = df[\"date\"].min().date(), df[\"date\"].max().date()\n\n# TODO (state): add this part in the lab's steps\n\n\nst.title(\"Air quality explorer\")\nwith st.sidebar:\n    st.header(\"Filters\")\n    # TODO (keyed-widgets): add this part in the lab's steps\n    dates = st.date_input(\"Dates\", value=(first, last), min_value=first, max_value=last)\n\nif not stations:\n    st.warning(\"Choose at least one station.\")\n    st.stop()\nif len(dates) != 2:\n    st.info(\"Choose an end date as well.\")\n    st.stop()\nview = aq.filter_readings(df, stations, *dates)\n\ncol1, col2 = st.columns(2)\ncol1.metric(\"Mean PM2.5\", f\"{view['pm25'].mean():.1f} µg/m³\")\ncol2.metric(\"Readings above the threshold\", aq.days_above(view, threshold))\n\nsummary_tab, report_tab = st.tabs([\"Stations\", \"Report a reading\"])\nwith summary_tab:\n    st.dataframe(aq.summarise(view, threshold))\nwith report_tab:\n    # TODO (form): add this part in the lab's steps\n"
+     },
+     {
+      "path": "aq.py",
+      "content": "\"\"\"Air quality helpers: plain functions, so they can be tested without Streamlit.\"\"\"\nimport pandas as pd\n\nSTATIONS = [\"Harbour\", \"Old Town\", \"Riverside\", \"Hillcrest\"]\nGUIDELINE_PM25 = 15  # µg/m³ as a 24-hour mean: the WHO's 2021 air quality guideline\n\n\ndef load_readings(path=\"air_quality.csv\"):\n    \"\"\"Read the daily readings, with dates as datetimes.\"\"\"\n    return pd.read_csv(path, parse_dates=[\"date\"])\n\n\ndef filter_readings(df, stations, start, end):\n    \"\"\"Readings for the chosen stations between two dates, both included.\"\"\"\n    keep = df[\"station\"].isin(stations) & df[\"date\"].between(pd.Timestamp(start), pd.Timestamp(end))\n    return df.loc[keep]\n\n\ndef days_above(df, threshold):\n    \"\"\"How many daily readings are above the threshold.\"\"\"\n    return int((df[\"pm25\"] > threshold).sum())\n\n\ndef summarise(df, threshold=GUIDELINE_PM25):\n    \"\"\"One row per station: mean and highest PM2.5, readings above the threshold, and mean NO2.\"\"\"\n    out = df.groupby(\"station\").agg(mean_pm25=(\"pm25\", \"mean\"), max_pm25=(\"pm25\", \"max\"),\n                                    above=(\"pm25\", lambda s: int((s > threshold).sum())),\n                                    mean_no2=(\"no2\", \"mean\"))\n    return out.round(1).sort_values(\"mean_pm25\", ascending=False)\n\n\nimport os\nimport sqlite3\n\nLOADS = 0          # how many times the CSV has been read, so tests can check the cache\nCONNECTIONS = 0    # how many database connections have been opened\n\n\ndef load_readings_counted(path=\"air_quality.csv\"):\n    \"\"\"load_readings, counting each call.\"\"\"\n    global LOADS\n    LOADS += 1\n    return load_readings(path)\n\n\ndef connect(path=None):\n    \"\"\"Open the reports database, creating its table if needed. The AQ_DB variable overrides the file name.\"\"\"\n    global CONNECTIONS\n    CONNECTIONS += 1\n    conn = sqlite3.connect(path or os.environ.get(\"AQ_DB\", \"reports.db\"), check_same_thread=False)\n    conn.execute(\"CREATE TABLE IF NOT EXISTS reports (station TEXT, day TEXT, pm25 REAL, note TEXT)\")\n    return conn\n\n\ndef count_reports(conn):\n    return conn.execute(\"SELECT COUNT(*) FROM reports\").fetchone()[0]\n\n\n# TODO (reports): add this part in the lab's steps\n"
+     },
+     {
+      "path": "test_app.py",
+      "content": "\"\"\"Tests for the air quality app. Run them with:  python -m pytest -q\"\"\"\nimport pytest\nimport streamlit as st\nfrom streamlit.testing.v1 import AppTest\n\n\n@pytest.fixture\ndef at(tmp_path, monkeypatch):\n    \"\"\"A fresh app with its own empty reports database.\"\"\"\n    monkeypatch.setenv(\"AQ_DB\", str(tmp_path / \"reports.db\"))\n    st.cache_resource.clear()\n    return AppTest.from_file(\"app.py\").run(timeout=10)\n\n\ndef send(at, station, pm25):\n    at.selectbox[0].set_value(station)\n    at.number_input[0].set_value(pm25)\n    [b for b in at.button if b.label == \"Send report\"][0].click().run()\n\n\ndef test_report_is_saved(at):\n    send(at, \"Old Town\", 18.5)\n    assert at.success[0].value == \"Report saved for Old Town on 30 Apr 2026.\"\n    assert at.session_state.my_reports == [\"Old Town\"]\n    assert \"1 are stored in total\" in at.markdown[-1].value\n\n\ndef test_report_needs_a_reading(at):\n    send(at, \"Harbour\", 0.0)\n    assert at.error[0].value.startswith(\"Enter the PM2.5 reading\")\n    assert at.session_state.my_reports == []\n\n\ndef test_reset_filters(at):\n    at.sidebar.slider[0].set_value(40).run()\n    at.sidebar.multiselect[0].set_value([\"Harbour\"]).run()\n    [b for b in at.sidebar.button if b.label == \"Reset filters\"][0].click().run()\n    assert at.sidebar.slider[0].value == 15\n    assert at.sidebar.multiselect[0].value == [\"Harbour\", \"Old Town\", \"Riverside\", \"Hillcrest\"]\n"
+     }
+    ],
+    "hints": [
+     "StreamlitWidgetAlreadyInstantiatedError means session state was set after the widget was drawn: set it in the callback, which runs before the widgets.",
+     "A warning about a widget created with a default value but also set through the Session State API means a default= or value= argument is still on a keyed widget; remove it.",
+     "If the form's values seem one step behind, check that the validation code is outside the with st.form block and runs only when sent is True."
+    ]
+   }
+  },
+  {
+   "title": "Multipage apps, testing and deployment",
+   "summary": "Split the app into pages with st.navigation and shared filters, test every page with AppTest, and deploy it with its configuration and secrets to Streamlit Community Cloud or a Docker container.",
+   "instructor": "sebastian-vargas",
+   "lessons": [
+    {
+     "title": "Multipage apps with st.navigation",
+     "minutes": 12,
+     "objectives": [
+      "Define pages with st.Page and a menu with st.navigation",
+      "Share filters and data between pages",
+      "Link and switch between pages"
+     ],
+     "key_points": [
+      "st.Page('app_pages/report.py', title='Report a reading', icon=':material/edit_note:') defines a page from a file (or a function); st.navigation(pages) builds the menu and returns the current page, which the entrypoint must run with page.run().",
+      "Passing a dictionary, such as {'Explore': [...], 'Contribute': [...]}, groups pages into sections, and position='top' moves the menu from the sidebar to the top of the page.",
+      "The entrypoint file runs on every page, so widgets drawn there, such as sidebar filters with keys, appear on every page and keep their values; pages read them from st.session_state.",
+      "Put cached loaders in a shared module, such as data.py, that every page imports, so all pages use one cache and one database connection.",
+      "st.page_link draws a link to another page and st.switch_page('app_pages/report.py') jumps to one in code; once st.navigation runs, Streamlit ignores the older pages/ folder convention, so name the page folder something else, such as app_pages."
+     ]
+    },
+    {
+     "title": "Testing Streamlit apps",
+     "minutes": 12,
+     "objectives": [
+      "Unit-test an app's logic by importing it",
+      "Test the app itself with AppTest: run it, change widgets and check what it shows",
+      "Smoke-test a running app with its health endpoint"
+     ],
+     "key_points": [
+      "Logic in plain functions, such as aq.summarise, is tested like any Python code: import it in a pytest file and assert on the result, with no Streamlit involved.",
+      "from streamlit.testing.v1 import AppTest; at = AppTest.from_file('app.py').run() runs the script without a browser; at.title, at.metric, at.warning and other lists hold what it drew, and at.exception holds any error.",
+      "Widgets are driven like a user would: at.slider[0].set_value(30).run(), at.button[0].click().run(), at.sidebar.multiselect[0].set_value([]).run(); at.session_state and at.switch_page('app_pages/x.py') cover state and pages.",
+      "AppTest's run has a timeout (3 seconds by default; run(timeout=10) allows more), and caches persist between tests in one process, so clear them with st.cache_data.clear() or st.cache_resource.clear() when a test needs a clean start.",
+      "Before deploying, run the real server headless and request /_stcore/health, which answers ok when the server is up; container platforms use the same endpoint for health checks."
+     ]
+    },
+    {
+     "title": "Deploying: configuration, secrets and hosting",
+     "minutes": 12,
+     "objectives": [
+      "Configure an app with config.toml and pin its requirements",
+      "Keep secrets out of the code with secrets.toml and st.secrets",
+      "Deploy to Streamlit Community Cloud or run in Docker"
+     ],
+     "key_points": [
+      ".streamlit/config.toml holds settings such as [theme] base = 'light' and primaryColor, and [server] port and headless; command-line flags override it, and streamlit config show lists every option.",
+      "Secrets go in .streamlit/secrets.toml locally, read as st.secrets['db']['password'], and never in the repository: add the file to .gitignore and enter the same TOML in the hosting platform's secrets settings instead.",
+      "requirements.txt lists the packages to install, with minimum or exact versions, so the deployed app gets the same libraries you tested with.",
+      "Streamlit Community Cloud deploys an app from a GitHub repository: choose the repository, branch and entrypoint file, set the Python version and secrets in the advanced settings, and the app is served at a streamlit.app address and redeploys when you push.",
+      "In Docker, install the requirements, expose port 8501 and run streamlit run with --server.address=0.0.0.0 so the server is reachable from outside the container, with a HEALTHCHECK on /_stcore/health.",
+      "Apps are public unless you restrict them: recent versions add st.login for sign-in with an OpenID Connect provider, configured under [auth] in secrets.toml, or the app can sit behind your organisation's own sign-in."
+     ],
+     "walkthrough": {
+      "tool": "Streamlit Community Cloud",
+      "title": "Deploy the explorer from GitHub",
+      "steps": [
+       {
+        "do": "Make sure the repository holds the entrypoint, the pages, aq.py, data.py, make_data.py and requirements.txt, and that .gitignore lists .streamlit/secrets.toml and reports.db.",
+        "code": "git add streamlit_app.py data.py aq.py make_data.py app_pages requirements.txt .gitignore\ngit commit -m \"Air quality explorer\"\ngit push",
+        "lang": "bash"
+       },
+       {
+        "do": "Because air_quality.csv is made by a script, either commit the CSV too, or load it in data.py after running make_data.py when the file is missing."
+       },
+       {
+        "do": "Sign in at share.streamlit.io with your GitHub account and choose to create an app from an existing repository."
+       },
+       {
+        "do": "Choose the repository, the branch and the main file path, streamlit_app.py, and optionally a custom subdomain.",
+        "see": "The labels may differ slightly between versions of the site."
+       },
+       {
+        "do": "Open the advanced settings: choose the Python version you tested with, and paste the contents of your local secrets.toml into the Secrets box, if the app uses any."
+       },
+       {
+        "do": "Deploy, and watch the log while the requirements install.",
+        "see": "The app opens at its streamlit.app address once it starts."
+       },
+       {
+        "do": "Push a change to the branch: the deployed app updates by itself. Use the app's settings to change secrets, or to reboot it after changing requirements."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Make the explorer multipage, test every page and prepare it for deployment",
+    "tool": "Streamlit, pytest and Docker",
+    "minutes": 60,
+    "goal": "Split the explorer into three pages with st.navigation and shared sidebar filters, write tests that visit every page and check the filters follow the user, smoke-test the server, and add the configuration and Dockerfile it needs to be deployed.",
+    "setup": [
+     "The course folder and virtual environment",
+     "The starter files: streamlit_app.py and test_app.py (with TODOs), data.py, aq.py, the three pages in app_pages, requirements.txt and make_data.py",
+     "Optional: Docker, to build and run the container"
+    ],
+    "steps": [
+     {
+      "do": "Read data.py and the three files in app_pages: each page imports data for the cached readings and connection, and reads the filters from st.session_state."
+     },
+     {
+      "do": "Replace the navigation TODO in streamlit_app.py: three pages in two sections.",
+      "code": "pages = {\n    \"Explore\": [st.Page(\"app_pages/overview.py\", title=\"Overview\", icon=\":material/monitoring:\", default=True),\n                st.Page(\"app_pages/stations.py\", title=\"Stations\", icon=\":material/location_on:\")],\n    \"Contribute\": [st.Page(\"app_pages/report.py\", title=\"Report a reading\", icon=\":material/edit_note:\")],\n}\npage = st.navigation(pages)",
+      "lang": "python"
+     },
+     {
+      "do": "Replace the shared-filters TODO: sidebar widgets drawn by the entrypoint, so they appear on every page.",
+      "code": "with st.sidebar:\n    st.multiselect(\"Stations\", aq.STATIONS, key=\"stations\")\n    st.slider(\"PM2.5 threshold (µg/m³)\", 5, 50, key=\"threshold\")",
+      "lang": "python"
+     },
+     {
+      "do": "Run the app and visit each page. Set the threshold to 30 on the Overview page, then open Stations: the slider still says 30.",
+      "code": "streamlit run streamlit_app.py",
+      "lang": "bash"
+     },
+     {
+      "do": "Replace the page-tests TODO in test_app.py with two tests of your own: every page runs, and the filters follow you between pages.",
+      "code": "def test_every_page_runs(at):\n    for path, title in [(\"app_pages/stations.py\", \"Stations\"), (\"app_pages/report.py\", \"Report a reading\")]:\n        at.switch_page(path).run()\n        assert not at.exception\n        assert at.title[0].value == title\n\n\ndef test_filters_follow_you_between_pages(at):\n    at.sidebar.slider[0].set_value(30).run()\n    at.switch_page(\"app_pages/stations.py\").run()\n    assert at.sidebar.slider[0].value == 30\n    assert at.session_state.threshold == 30",
+      "lang": "python"
+     },
+     {
+      "do": "Run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "4 passed"
+     },
+     {
+      "do": "Smoke-test the real server: run it headless and check its health endpoint from a second terminal.",
+      "code": "streamlit run streamlit_app.py --server.headless true\n# in a second terminal:\ncurl -s -w \" HTTP %{http_code}\\n\" http://localhost:8501/_stcore/health",
+      "lang": "bash",
+      "see": "ok HTTP 200"
+     },
+     {
+      "do": "Add a theme: make a .streamlit folder beside streamlit_app.py and save this as .streamlit/config.toml, then restart the app.",
+      "code": "[theme]\nbase = \"light\"\nprimaryColor = \"#0072B2\"\n\n[server]\nheadless = true",
+      "lang": "toml",
+      "see": "Buttons and sliders turn blue (#0072B2), and the server no longer opens a browser."
+     },
+     {
+      "do": "Save this Dockerfile beside streamlit_app.py. If you have Docker, build and run it, then open http://localhost:8501.",
+      "code": "FROM python:3.12-slim\nWORKDIR /app\nRUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*\nCOPY requirements.txt .\nRUN pip install --no-cache-dir -r requirements.txt\nCOPY . .\nRUN python make_data.py\nEXPOSE 8501\nHEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1\nENTRYPOINT [\"streamlit\", \"run\", \"streamlit_app.py\", \"--server.port=8501\", \"--server.address=0.0.0.0\"]\n\n# then:\n# docker build -t aq-explorer .\n# docker run --rm -p 8501:8501 aq-explorer",
+      "lang": "dockerfile",
+      "see": "The app runs in the container; docker ps shows it as healthy once the health check passes."
+     }
+    ],
+    "checks": [
+     {
+      "text": "All four tests pass, including your two page tests.",
+      "look_for": [
+       "4 passed"
+      ]
+     },
+     {
+      "text": "The headless server answers its health check.",
+      "look_for": [
+       "ok HTTP 200"
+      ]
+     },
+     {
+      "text": "The page tests visit the other pages and check the shared filter.",
+      "look_for": [
+       "switch_page",
+       "app_pages/stations.py"
+      ]
+     }
+    ],
+    "submit": "Paste the output of python -m pytest -q and the curl command, your test_app.py and your streamlit_app.py, and, if you built it, the output of docker ps showing the container.",
+    "files": [
+     {
+      "path": "make_data.py",
+      "content": "\"\"\"Write air_quality.csv: daily readings from four made-up monitoring stations, January to April 2026.\n\nUses only the standard library, and random.random() with a fixed seed, so every computer makes the same file.\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\n\nrandom.seed(2026)\nSTATIONS = [(\"Harbour\", 14.0, 31.0), (\"Old Town\", 12.5, 38.0), (\"Riverside\", 9.0, 22.0), (\"Hillcrest\", 6.5, 14.0)]\nstart, days = date(2026, 1, 1), 120\n\n\ndef noise():\n    \"\"\"A number between -1 and 1, most often near 0.\"\"\"\n    return (random.random() + random.random() + random.random() - 1.5) / 1.5\n\n\nrows = []\nfor i in range(days):\n    day = start + timedelta(days=i)\n    season = 1.25 - 0.4 * i / (days - 1)                     # winter air is dirtier\n    episode = 2.2 if date(2026, 2, 10) <= day <= date(2026, 2, 14) else 1.0   # a five-day smog episode\n    traffic = {5: 0.85, 6: 0.75}.get(day.weekday(), 1.1)      # less traffic at weekends\n    for name, pm25, no2 in STATIONS:\n        rows.append([day.isoformat(), name, round(pm25 * season * episode * (1 + 0.25 * noise()), 1),\n                     round(no2 * traffic * (1 + 0.2 * noise()), 1)])\n\nwith open(\"air_quality.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n    writer = csv.writer(f)\n    writer.writerow([\"date\", \"station\", \"pm25\", \"no2\"])\n    writer.writerows(rows)\nprint(f\"Wrote air_quality.csv: {len(rows)} rows, {len(STATIONS)} stations, {rows[0][0]} to {rows[-1][0]}\")\n"
+     },
+     {
+      "path": "streamlit_app.py",
+      "content": "\"\"\"Entrypoint: page settings, the shared filters and the navigation menu.\"\"\"\nimport streamlit as st\n\nimport aq\n\nst.set_page_config(page_title=\"Air quality explorer\", page_icon=\"🌫️\", layout=\"wide\")\nst.session_state.setdefault(\"stations\", aq.STATIONS)\nst.session_state.setdefault(\"threshold\", aq.GUIDELINE_PM25)\nst.session_state.setdefault(\"my_reports\", [])\n\n# TODO (navigation): add this part in the lab's steps\n\n# TODO (shared-filters): add this part in the lab's steps\n\npage.run()\n"
+     },
+     {
+      "path": "data.py",
+      "content": "\"\"\"Cached access to the data, shared by every page of the app.\"\"\"\nimport streamlit as st\n\nimport aq\n\n\n@st.cache_data(ttl=\"1h\", show_spinner=\"Loading readings...\")\ndef readings():\n    return aq.load_readings_counted()\n\n\n@st.cache_resource\ndef db():\n    return aq.connect()\n"
+     },
+     {
+      "path": "app_pages/overview.py",
+      "content": "\"\"\"Overview page: headline figures and the trend.\"\"\"\nimport altair as alt\nimport streamlit as st\n\nimport aq\nimport data\n\nst.title(\"Overview\")\ndf = data.readings()\nstations, threshold = st.session_state.stations, st.session_state.threshold\nif not stations:\n    st.warning(\"Choose at least one station in the sidebar.\")\n    st.stop()\nview = df[df[\"station\"].isin(stations)]\ncol1, col2 = st.columns(2)\ncol1.metric(\"Mean PM2.5\", f\"{view['pm25'].mean():.1f} µg/m³\")\ncol2.metric(\"Readings above the threshold\", aq.days_above(view, threshold))\nst.altair_chart(alt.Chart(view).mark_line().encode(x=alt.X(\"date:T\", title=None),\n                                                   y=alt.Y(\"pm25:Q\", title=\"PM2.5 (µg/m³)\"), color=\"station:N\"))\n"
+     },
+     {
+      "path": "app_pages/stations.py",
+      "content": "\"\"\"Stations page: one row per station.\"\"\"\nimport streamlit as st\n\nimport aq\nimport data\n\nst.title(\"Stations\")\ndf = data.readings()\nstations = st.session_state.stations or aq.STATIONS\nst.dataframe(aq.summarise(df[df[\"station\"].isin(stations)], st.session_state.threshold))\nst.page_link(\"app_pages/report.py\", label=\"Seen something? Report a reading\", icon=\":material/edit_note:\")\n"
+     },
+     {
+      "path": "app_pages/report.py",
+      "content": "\"\"\"Report page: a form that stores community readings in the shared database.\"\"\"\nimport streamlit as st\n\nimport aq\nimport data\n\nst.title(\"Report a reading\")\ndb = data.db()\nwith st.form(\"report\", clear_on_submit=True):\n    station = st.selectbox(\"Station\", aq.STATIONS)\n    day = st.date_input(\"Day\")\n    pm25 = st.number_input(\"PM2.5 (µg/m³)\", min_value=0.0, max_value=500.0, value=0.0, step=0.5)\n    sent = st.form_submit_button(\"Send report\")\nif sent:\n    if pm25 <= 0:\n        st.error(\"Enter the PM2.5 reading: it must be above zero.\")\n    else:\n        aq.add_report(db, station, day, pm25)\n        st.session_state.my_reports.append(station)\n        st.success(f\"Report saved for {station}.\")\nst.write(f\"You've sent {len(st.session_state.my_reports)} report(s) this session.\")\n"
+     },
+     {
+      "path": "aq.py",
+      "content": "\"\"\"Air quality helpers: plain functions, so they can be tested without Streamlit.\"\"\"\nimport pandas as pd\n\nSTATIONS = [\"Harbour\", \"Old Town\", \"Riverside\", \"Hillcrest\"]\nGUIDELINE_PM25 = 15  # µg/m³ as a 24-hour mean: the WHO's 2021 air quality guideline\n\n\ndef load_readings(path=\"air_quality.csv\"):\n    \"\"\"Read the daily readings, with dates as datetimes.\"\"\"\n    return pd.read_csv(path, parse_dates=[\"date\"])\n\n\ndef filter_readings(df, stations, start, end):\n    \"\"\"Readings for the chosen stations between two dates, both included.\"\"\"\n    keep = df[\"station\"].isin(stations) & df[\"date\"].between(pd.Timestamp(start), pd.Timestamp(end))\n    return df.loc[keep]\n\n\ndef days_above(df, threshold):\n    \"\"\"How many daily readings are above the threshold.\"\"\"\n    return int((df[\"pm25\"] > threshold).sum())\n\n\ndef summarise(df, threshold=GUIDELINE_PM25):\n    \"\"\"One row per station: mean and highest PM2.5, readings above the threshold, and mean NO2.\"\"\"\n    out = df.groupby(\"station\").agg(mean_pm25=(\"pm25\", \"mean\"), max_pm25=(\"pm25\", \"max\"),\n                                    above=(\"pm25\", lambda s: int((s > threshold).sum())),\n                                    mean_no2=(\"no2\", \"mean\"))\n    return out.round(1).sort_values(\"mean_pm25\", ascending=False)\n\n\nimport os\nimport sqlite3\n\nLOADS = 0          # how many times the CSV has been read, so tests can check the cache\nCONNECTIONS = 0    # how many database connections have been opened\n\n\ndef load_readings_counted(path=\"air_quality.csv\"):\n    \"\"\"load_readings, counting each call.\"\"\"\n    global LOADS\n    LOADS += 1\n    return load_readings(path)\n\n\ndef connect(path=None):\n    \"\"\"Open the reports database, creating its table if needed. The AQ_DB variable overrides the file name.\"\"\"\n    global CONNECTIONS\n    CONNECTIONS += 1\n    conn = sqlite3.connect(path or os.environ.get(\"AQ_DB\", \"reports.db\"), check_same_thread=False)\n    conn.execute(\"CREATE TABLE IF NOT EXISTS reports (station TEXT, day TEXT, pm25 REAL, note TEXT)\")\n    return conn\n\n\ndef count_reports(conn):\n    return conn.execute(\"SELECT COUNT(*) FROM reports\").fetchone()[0]\n\n\ndef add_report(conn, station, day, pm25, note=\"\"):\n    \"\"\"Store one community report.\"\"\"\n    conn.execute(\"INSERT INTO reports VALUES (?, ?, ?, ?)\", (station, str(day), float(pm25), note))\n    conn.commit()\n\n\ndef reports(conn):\n    \"\"\"Every stored report, newest first.\"\"\"\n    return pd.read_sql_query(\"SELECT * FROM reports ORDER BY rowid DESC\", conn)\n"
+     },
+     {
+      "path": "test_app.py",
+      "content": "\"\"\"Tests for the multipage app. Run them with:  python -m pytest -q\"\"\"\nimport pytest\nimport streamlit as st\nfrom streamlit.testing.v1 import AppTest\n\nimport aq\n\n\ndef test_summary_by_import():\n    df = aq.load_readings()\n    summary = aq.summarise(df)\n    assert summary.index[0] == \"Harbour\"\n    assert summary.loc[\"Harbour\", \"above\"] == 48\n\n\n@pytest.fixture\ndef at(tmp_path, monkeypatch):\n    monkeypatch.setenv(\"AQ_DB\", str(tmp_path / \"reports.db\"))\n    st.cache_resource.clear()\n    return AppTest.from_file(\"streamlit_app.py\").run(timeout=10)\n\n\ndef test_starts_on_overview(at):\n    assert not at.exception\n    assert at.title[0].value == \"Overview\"\n\n\n# TODO (page-tests): add this part in the lab's steps\n"
+     },
+     {
+      "path": "requirements.txt",
+      "content": "streamlit>=1.40\npandas>=2.2\naltair>=5\n"
+     }
+    ],
+    "hints": [
+     "KeyError: st.session_state has no key 'stations' on a page means the page ran without the entrypoint: run streamlit run streamlit_app.py, not a page file.",
+     "If AppTest loses the sidebar widgets after a rerun, check the page folder isn't called pages: that name switches on Streamlit's older automatic multipage mode.",
+     "The Dockerfile installs curl because the slim Python image doesn't include it, and the health check needs it.",
+     "On Community Cloud the CSV must exist: commit air_quality.csv, or run make_data.py from data.py when the file is missing."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Streamlit's rerun model, elements and widgets; build and test the first explorer.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Layout, charts, tables and downloads; reorganise the explorer with tabs.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Caching data and resources, and fragments; make the explorer fast and prove it with tests.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Session state, callbacks and forms; add the reset button and the report form.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Multipage apps, AppTest and deployment; split the explorer into pages and prepare it for hosting.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build, test and deploy the capstone app, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Build and deploy a data app",
+  "minutes": 480,
+  "brief": "A (fictional) city's environment team wants a public app where residents can explore air quality and send in their own readings, and you're building it. Start from the lab's explorer and air_quality.csv, or use a dataset of your own of a similar size (a few thousand rows at most), and build a multipage Streamlit app with st.navigation. It needs an overview page with KPI metrics and a trend chart; a detail page with a configured table, a second chart and a download; and a contribution page whose validated form stores entries in SQLite through a connection cached with st.cache_resource. Filters shared across pages live in session state, the data is cached with st.cache_data, and at least one part of a page is a fragment. Write at least six tests (pytest and AppTest), including one per page, and keep calculations in plain functions that are tested by import. Prepare it for deployment with a requirements.txt, a .streamlit/config.toml theme and any secrets read through st.secrets (nothing secret committed), then deploy it to Streamlit Community Cloud, or run it in Docker with the health check passing. Finish with a README that explains how to run, test and deploy it.",
+  "deliverables": [
+   "The app's code: the entrypoint, the pages, a data module with the cached loaders, and the logic module",
+   "At least six passing tests, with the pytest output",
+   "requirements.txt, .streamlit/config.toml and a .gitignore that excludes secrets.toml and the database",
+   "A deployed app's address, or a Dockerfile and the output of docker ps showing the container healthy",
+   "A README: what the app does, how to run it, test it and deploy it, and which caches it uses and why"
+  ],
+  "rubric": [
+   {
+    "name": "It works",
+    "points": 20,
+    "description": "Every page runs without errors; filters, the form and the download behave correctly, and missing input is handled with clear messages."
+   },
+   {
+    "name": "Layout and data display",
+    "points": 15,
+    "description": "Sidebar, columns and tabs organise the pages; charts and configured tables show the data clearly, with units."
+   },
+   {
+    "name": "Caching and performance",
+    "points": 15,
+    "description": "st.cache_data for data and st.cache_resource for the connection, used correctly; a fragment where it helps; no slow step repeated on every rerun."
+   },
+   {
+    "name": "State and forms",
+    "points": 15,
+    "description": "Shared filters in session state, callbacks used correctly, and a validated form that stores entries in the database."
+   },
+   {
+    "name": "Tests",
+    "points": 20,
+    "description": "At least six meaningful tests: logic tested by import and every page tested with AppTest, including widget interactions."
+   },
+   {
+    "name": "Deployment and configuration",
+    "points": 15,
+    "description": "Pinned requirements, a theme, secrets kept out of the repository, and a working deployment or a healthy container, with a clear README."
+   }
+  ],
+  "submit": "Paste the link to your repository (and the deployed app, if there is one), the output of python -m pytest -q, and your README."
+ }
+}
