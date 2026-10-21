@@ -336,3 +336,45 @@ def test_project_reviews_score_against_the_rubric(client, claude):
 
     with db.connect() as conn:  # a project review counts two requests
         assert conn.execute("SELECT units FROM ai_usage WHERE kind = 'project'").fetchone()[0] == 2
+
+
+def test_study_plans():
+    """A course's study plan: its own weeks, checked, or one module a week; each week's hours from the minutes,
+    with the capstone project in the last week."""
+    from app import catalog
+
+    base = json.loads((catalog.DATA / f"{SLUG}.json").read_text(encoding="utf-8"))
+    course = catalog.Course.model_validate(base)
+    derived = course.plan()
+    n = len(course.modules)
+    assert [w["week"] for w in derived] == list(range(1, n + 1))
+    assert [w["modules"] for w in derived] == [[i] for i in range(1, n + 1)]
+    assert derived[0]["focus"] == course.modules[0].summary
+
+    plan = [{"week": 1, "focus": "Get set up and write the first scripts.", "modules": [1, 2]},
+            *({"week": i, "focus": f"Work through module {i + 1} and its lab.", "modules": [i + 1]} for i in range(2, n)),
+            {"week": n, "focus": "Review with the mock exam, then build the capstone project.", "modules": []}]
+    course = catalog.Course.model_validate(base | {"study_plan": plan})
+    weeks = course.plan()
+    half_hours = lambda minutes: max(0.5, round(minutes / 30) / 2)
+    assert len(weeks) == n and weeks[-1]["modules"] == []
+    assert weeks[0]["hours"] == half_hours(course.modules[0].minutes + course.modules[1].minutes)
+    assert weeks[-1]["hours"] == half_hours(course.project.minutes)
+
+    for bad, why in [
+        ([{"week": 2, "focus": "Start in the wrong week.", "modules": list(range(1, n + 1))}], "number the weeks"),
+        ([{"week": 1, "focus": "A module the course doesn't have.", "modules": list(range(1, n + 2))}], "doesn't have"),
+        ([{"week": 1, "focus": "Modules out of order here.", "modules": [2, 1, *range(3, n + 1)]}], "in order"),
+        ([{"week": 1, "focus": "Leaves the last one out.", "modules": list(range(1, n))}], "leaves out module"),
+    ]:
+        with pytest.raises(ValueError, match=why):
+            catalog.Course.model_validate(base | {"study_plan": bad})
+
+
+def test_course_page_has_a_study_plan_and_a_mock_exam(client):
+    from app import learning
+
+    onboard(client)
+    page = client.get(f"/api/courses/{SLUG}").json()
+    assert [w["week"] for w in page["study_plan"]] == list(range(1, len(page["syllabus"]) + 1))
+    assert page["mock_exam"] == {"questions": learning.COURSE_EXAM_QUESTIONS, "minutes": learning.COURSE_EXAM_MINUTES}

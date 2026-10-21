@@ -1,0 +1,1341 @@
+{
+ "slug": "nlp-foundations-python",
+ "title": "NLP Foundations with Python and Corpora",
+ "subtitle": "Load corpora, clean and normalise raw text, tokenise it with regular expressions, and count, compare and model words in Python with NLTK.",
+ "category": "Machine Learning",
+ "kind": "course",
+ "level": "beginner",
+ "instructors": [
+  "aoife-murphy",
+  "alejandroo-riveras"
+ ],
+ "skills": [
+  "Text processing in Python",
+  "NLTK",
+  "Corpus analysis",
+  "Regular expressions",
+  "Unicode normalisation",
+  "Stemming and lemmatisation",
+  "WordNet",
+  "Tokenisation",
+  "Edit distance",
+  "N-gram language models"
+ ],
+ "tools": [
+  "Python 3",
+  "NLTK",
+  "WordNet",
+  "pytest"
+ ],
+ "outcomes": [
+  "Tokenise, normalise and pattern-match raw text with Python strings, Unicode normalisation and regular expressions",
+  "Load NLTK's corpora and your own, and compare them with frequency and conditional frequency distributions",
+  "Build a simple bigram language model from scratch and evaluate its perplexity on test sentences",
+  "Use WordNet's synsets, lexical relations and similarity scores for basic semantic tasks",
+  "Write streaming, well-organised NLP scripts with generators, small functions and pytest tests",
+  "Compute minimum edit distance for spelling correction and explain how subword tokenisers such as BPE split words"
+ ],
+ "prerequisites": "Basic Python: variables, loops, functions, lists and dictionaries, and running a script (Python Programming with PyCharm or Python Foundations for Data Science covers them). No NLP experience is needed. You need Python 3.10 or later with NLTK 3.9 or later and pytest (pip install nltk pytest); each lab gives the exact nltk.download() calls for the corpora it uses, about 25 MB in all.",
+ "description": "Every language technology, from a search box to a chat assistant, starts by turning raw text into something a program can count. This course teaches those foundations in Python with NLTK, the toolkit generations of NLP students have learned with. You'll treat text as data (tokens, types and vocabularies), load classic corpora such as Brown and Project Gutenberg as well as your own files, compare genres with conditional frequency distributions, and look up meanings and relations in WordNet.\n\nThen you'll clean real-world text: decode it correctly, normalise Unicode so that 'café' always counts as one word, strip HTML, and reduce words to stems or lemmas, knowing what each step gains and loses. You'll write NLP code that scales and can be trusted, with generators, small pure functions and pytest, and use it to build and test a bigram language model whose perplexity you measure. The last module puts regular expressions to work: groups and lookarounds, tokenisers for messy text, minimum edit distance for spelling correction, and the byte-pair encoding behind modern subword tokenisers. Every module ends with a lab whose starter files and expected output you can check line by line, and the course finishes with a mini-corpus pipeline you build end to end. It prepares you for Statistical NLP: Models, Parsing and Information Retrieval and for Text Representation: From Vectors to Context.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Language processing and Python essentials",
+   "summary": "See text as data a program can count: tokens, types and vocabularies, the Python strings and lists that hold them, a first processing pipeline, and the linguistic ideas every NLP system runs into.",
+   "instructor": "aoife-murphy",
+   "lessons": [
+    {
+     "title": "Tokens, types and vocabulary",
+     "minutes": 12,
+     "objectives": [
+      "Tell tokens from types and count both in a text",
+      "Calculate lexical diversity and explain why a text's length affects it",
+      "Describe how word frequencies are distributed in real text"
+     ],
+     "key_points": [
+      "A token is one occurrence of a word, number or punctuation mark in a text; a type is a distinct form. 'the cat saw the dog' has five tokens but four types, because 'the' occurs twice.",
+      "A text's vocabulary is its set of types: len(tokens) counts tokens and len(set(tokens)) counts types. Normalisation choices change the answer: with case kept, 'The' and 'the' are two types.",
+      "Lexical diversity, or the type-token ratio, is types divided by tokens. It falls as a text grows, because common words keep repeating while new ones appear more slowly, so compare texts of similar length or equal-sized samples.",
+      "Word frequencies are very uneven and roughly follow Zipf's law: a word's frequency is about inversely proportional to its rank, so a few function words such as 'the', 'of' and 'and' make up a large share of all tokens.",
+      "At the other end, many types occur only once; they're called hapax legomena, or hapaxes. Of the 7,079 lowercased word types in Jane Austen's Emma, as NLTK's Gutenberg corpus tokenises it, 2,739 appear just once."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Count tokens and types in a novel",
+      "steps": [
+       {
+        "do": "In a terminal, install NLTK and download its Project Gutenberg selection (about 4 MB, once).",
+        "code": "pip install nltk\npython -c \"import nltk; [nltk.download(r) for r in ('gutenberg',)]\"",
+        "lang": "bash",
+        "see": "NLTK reports that it's downloading gutenberg and unzipping it into an nltk_data folder."
+       },
+       {
+        "do": "Start Python and load Emma as a list of tokens.",
+        "code": "from nltk.corpus import gutenberg\nemma = gutenberg.words('austen-emma.txt')\nlen(emma), len(set(emma))",
+        "lang": "python",
+        "see": "(192427, 7811): tokens, punctuation included, and types."
+       },
+       {
+        "do": "Keep only alphabetic tokens, lowercase them and count them with FreqDist.",
+        "code": "from nltk import FreqDist\nwords = [w.lower() for w in emma if w.isalpha()]\nfd = FreqDist(words)\nfd.N(), len(fd)",
+        "lang": "python",
+        "see": "(161600, 7079)"
+       },
+       {
+        "do": "List the most frequent words.",
+        "code": "fd.most_common(5)",
+        "lang": "python",
+        "see": "[('to', 5239), ('the', 5201), ('and', 4896), ('of', 4291), ('i', 3178)]"
+       },
+       {
+        "do": "Count the hapaxes, then compare the type-token ratio of the whole book with that of its first 1,000 words.",
+        "code": "len(fd.hapaxes())\nround(len(set(words)) / len(words), 3), round(len(set(words[:1000])) / 1000, 3)",
+        "lang": "python",
+        "see": "2739, then (0.044, 0.424): the longer the text, the lower the ratio."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Python strings and lists for text",
+     "minutes": 12,
+     "objectives": [
+      "Inspect and change text with string methods, indexing and slicing",
+      "Build and filter lists of tokens with comprehensions and sets"
+     ],
+     "key_points": [
+      "A Python str is an immutable sequence of Unicode characters: text[0] is the first character and text[-4:] the last four, and methods such as lower() and replace() return a new string rather than changing the original.",
+      "text.split() with no argument splits on runs of whitespace and drops empty strings, but punctuation stays attached, so 'sat.' and 'sat' are different tokens until you strip it, for example with w.strip('.,!?').",
+      "str.strip(chars) removes the given characters from both ends only, never from the middle, so \"don't\" keeps its apostrophe; ' '.join(tokens) turns a list of tokens back into one string.",
+      "List comprehensions transform and filter in one line: [w.lower() for w in tokens if w.isalpha()] keeps only the alphabetic tokens, lowercased.",
+      "The in operator depends on what's on its right: 'cat' in 'concatenate' is True because it looks for a substring, but 'cat' in ['concatenate'] is False because it checks list membership. Sets give fast membership tests for large vocabularies."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "Split, strip and filter a sentence",
+      "steps": [
+       {
+        "do": "Split a sentence on whitespace and look at the punctuation.",
+        "code": "text = 'The cat sat. The dog sat too!'\ntext.split()",
+        "lang": "python",
+        "see": "['The', 'cat', 'sat.', 'The', 'dog', 'sat', 'too!']"
+       },
+       {
+        "do": "Strip punctuation from both ends of each piece, lowercase it, and count the types.",
+        "code": "tokens = [w.strip('.!').lower() for w in text.split()]\ntokens\nlen(set(tokens))",
+        "lang": "python",
+        "see": "['the', 'cat', 'sat', 'the', 'dog', 'sat', 'too'], then 5."
+       },
+       {
+        "do": "Slice the string from both ends.",
+        "code": "text[:7], text[-4:]",
+        "lang": "python",
+        "see": "('The cat', 'too!')"
+       },
+       {
+        "do": "Compare a substring test with a membership test.",
+        "code": "'cat' in 'concatenate', 'cat' in ['concatenate']",
+        "lang": "python",
+        "see": "(True, False)"
+       }
+      ]
+     }
+    },
+    {
+     "title": "A first text-processing pipeline",
+     "minutes": 12,
+     "objectives": [
+      "Break a text-processing task into stages: read, normalise, tokenise, filter and count",
+      "Explain how each stage's choices change the results"
+     ],
+     "key_points": [
+      "A pipeline is a sequence of small steps, each working on the previous step's output: read the raw text, normalise it (for example, lowercase it), split it into tokens, filter out what you don't need, then count or analyse what's left.",
+      "Open text files with an explicit encoding, open(path, encoding='utf-8'), so the script reads the same characters on every computer whatever the system's default encoding is.",
+      "Stop words are frequent function words such as 'the', 'and' and 'of'. Removing them reveals the content words that characterise a text, but the list must match your normalisation (most lists are lowercase), and for some tasks, such as sentiment, words like 'not' matter.",
+      "collections.Counter and NLTK's FreqDist, a Counter subclass, count tokens; most_common(5) returns the five most frequent (token, count) pairs, and tied counts keep the order in which their tokens were first seen.",
+      "Keep each stage a separate function and leave the raw text untouched, so you can change one decision, such as keeping numbers or case, and rerun the rest to see its effect."
+     ]
+    },
+    {
+     "title": "Linguistic ideas behind NLP",
+     "minutes": 10,
+     "objectives": [
+      "Use basic linguistic terms: morpheme, inflection, derivation, part of speech, syntax and semantics",
+      "Recognise ambiguity at different levels of language"
+     ],
+     "key_points": [
+      "Morphology is the study of word structure. A morpheme is the smallest unit with meaning, so 'unhappiness' has three (un-, happy, -ness); inflection changes a word's grammatical form (walk, walks, walked) while derivation makes a new word (happy, happiness).",
+      "Parts of speech group words by how they behave in sentences. Open classes (nouns, verbs, adjectives, adverbs) take new members all the time; closed classes (determiners, pronouns, prepositions, conjunctions) rarely change and supply most stop words.",
+      "Syntax is how words combine into phrases and sentences, semantics is what they mean, and pragmatics is meaning in context: 'Can you pass the salt?' is a request, not a question about ability.",
+      "Language is ambiguous at every level: lexical ('bank' as a riverside or a lender), structural ('I saw the man with the telescope': who has the telescope?) and referential ('it' can point to several things).",
+      "Habits from English don't carry over: Chinese, Japanese and Thai are written without spaces between words, and languages such as Turkish and Finnish build long words from many morphemes, so splitting on spaces works badly for them."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Count and compare the words in a short story",
+    "tool": "Python 3 and NLTK",
+    "minutes": 40,
+    "goal": "Build a small pipeline that reads a short story, splits it into tokens and counts them: tokens, types, lexical diversity, the most common words with and without stop words, and hapaxes.",
+    "setup": [
+     "Python 3.10 or later with NLTK (pip install nltk); this lab needs no corpus downloads",
+     "The starter files pipeline.py and night_ferry.txt, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Skim night_ferry.txt (about 570 words), then read the TODOs in pipeline.py."
+     },
+     {
+      "do": "Write tokenize() (TODOs 1 to 3): lowercase the text when lowercase is True, split it with text.split(), strip string.punctuation from both ends of each piece and keep the non-empty pieces. Try it at the Python prompt.",
+      "code": "from pipeline import tokenize\ntokenize('\"Tea?\" she asked. It\\'s late.')",
+      "lang": "python",
+      "see": "['tea', 'she', 'asked', \"it's\", 'late']"
+     },
+     {
+      "do": "Write type_token_ratio() and print the counts and ratios in main() (TODOs 4 to 6), then run it.",
+      "code": "python pipeline.py",
+      "lang": "bash",
+      "see": "Characters: 2902, Tokens: 571, Types: 200, Types with case kept: 219, then ratios of 0.350 for the whole story and 0.630 for its first 100 tokens."
+     },
+     {
+      "do": "Count the tokens with FreqDist and print the five most common, the five most common that aren't stop words, and the hapaxes (TODOs 7 to 9). Run it again.",
+      "see": "[('the', 72), ('and', 22), ('a', 21), ('it', 14), ('was', 13)], then nora, man, tea, ferry and dog, then Hapaxes: 104 of 200 types."
+     },
+     {
+      "do": "Write two or three sentences starting Notes: that explain why the ratio for the first 100 tokens is so much higher than for the whole story, and what the content words show that the most common words don't."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Tokens and types are counted after lowercasing and stripping punctuation.",
+      "look_for": [
+       "Tokens: 571",
+       "Types: 200"
+      ]
+     },
+     {
+      "text": "Keeping case gives more types.",
+      "look_for": [
+       "Types with case kept: 219"
+      ]
+     },
+     {
+      "text": "Type-token ratios are worked out for the whole story and its first 100 tokens.",
+      "look_for": [
+       "0.350",
+       "0.630"
+      ]
+     },
+     {
+      "text": "The most common tokens are function words; without stop words the story's subject shows.",
+      "look_for": [
+       "('the', 72)",
+       "('nora', 11)"
+      ]
+     },
+     {
+      "text": "Hapaxes are counted.",
+      "look_for": [
+       "Hapaxes: 104 of 200 types"
+      ]
+     },
+     {
+      "text": "The notes explain why the ratio falls as the text grows and what the content words reveal.",
+      "look_for": [
+       "Notes:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished pipeline.py, everything it printed, and your Notes: answer.",
+    "files": [
+     {
+      "path": "pipeline.py",
+      "content": "\"\"\"A first text pipeline: read a story, split it into tokens and count them.\"\"\"\n\nimport string\nimport sys\n\nfrom nltk import FreqDist\n\n# A small stop-word list of our own, so everyone gets the same counts.\n# (NLTK's list, nltk.corpus.stopwords.words(\"english\"), changes between data versions.)\nSTOP_WORDS = {\n    \"a\", \"about\", \"after\", \"again\", \"all\", \"an\", \"and\", \"as\", \"at\", \"be\", \"before\", \"but\", \"by\",\n    \"did\", \"do\", \"for\", \"from\", \"had\", \"have\", \"he\", \"her\", \"herself\", \"him\", \"his\", \"i\", \"if\",\n    \"in\", \"is\", \"it\", \"it's\", \"its\", \"me\", \"more\", \"most\", \"my\", \"not\", \"now\", \"of\", \"on\", \"one\",\n    \"or\", \"other\", \"said\", \"she\", \"so\", \"that\", \"the\", \"their\", \"them\", \"there\", \"they\", \"this\",\n    \"to\", \"under\", \"was\", \"were\", \"what\", \"when\", \"which\", \"who\", \"will\", \"with\", \"you\",\n}\n\n\ndef read_text(path):\n    \"\"\"Return the whole file as one string.\"\"\"\n    with open(path, encoding=\"utf-8\") as f:\n        return f.read()\n\n\ndef tokenize(text, lowercase=True):\n    \"\"\"Split on whitespace, strip punctuation from both ends of each piece and drop empty pieces.\"\"\"\n    # TODO 1: lowercase the text if lowercase is True\n    # TODO 2: split it on whitespace with text.split()\n    # TODO 3: strip string.punctuation from both ends of each piece, keep the non-empty ones\n    pass\n\n\ndef type_token_ratio(tokens):\n    \"\"\"Types divided by tokens.\"\"\"\n    # TODO 4\n    pass\n\n\ndef main(path=\"night_ferry.txt\"):\n    raw = read_text(path)\n    tokens = tokenize(raw)\n    print(f\"Characters: {len(raw)}\")\n    # TODO 5: print the number of tokens, the number of types, and the number of types\n    #         when case is kept (tokenize(raw, lowercase=False)), like:  Tokens: 571\n    # TODO 6: print the type-token ratio of all the tokens and of the first 100, to 3 decimal places\n\n    # TODO 7: count the tokens with FreqDist and print the 5 most common\n    # TODO 8: print the 5 most common tokens that aren't in STOP_WORDS\n    # TODO 9: print how many types occur only once, like:  Hapaxes: 104 of 200 types\n\n\nif __name__ == \"__main__\":\n    main(*sys.argv[1:])\n"
+     },
+     {
+      "path": "night_ferry.txt",
+      "content": "The Night Ferry\n\nThe night ferry left the harbour at nine, and Nora was always on it. She sold tea from a small cart on the lower deck, and she knew most of the passengers by their faces, if not by their names. There was the man with the grey dog, who read the same newspaper every night. There were the two students who argued about music. There was the old woman who knitted a blue scarf that never seemed to grow.\n\nOn Tuesday the sea was rough. The ferry rolled, and the tea cart rolled with it. Nora held the cart with one hand and the kettle with the other. \"Tea for the brave,\" she called, and the students laughed, and the man with the grey dog put down his newspaper.\n\n\"Is it always like this?\" asked a passenger Nora had never seen before. He was young, with a wet coat and a small wooden box under his arm.\n\n\"Only when the wind comes from the west,\" said Nora. \"Tea?\"\n\nHe bought a cup of tea and sat on the bench beside the cart. The box stayed under his arm. Nora tried not to look at it, but it was hard not to look at a box that someone held so carefully.\n\n\"It's a clock,\" he said at last. \"My grandmother's clock. It stopped the night she died, and I'm taking it to a man on the island who mends clocks.\"\n\n\"There is a clock man on the island,\" Nora agreed. \"He mended my father's watch. He works slowly, but he works well.\"\n\nThe ferry rolled again. The old woman dropped her knitting, and the blue scarf slid across the deck. The grey dog chased it. The students chased the dog. For a moment the whole lower deck was a game, and even the young man with the box was laughing.\n\nWhen the scarf was safe and the dog was calm, Nora poured more tea. The wind dropped a little. Through the window they could see the lights of the island, small and yellow, like a row of lanterns on a shelf.\n\n\"Will he be able to mend it?\" asked the young man.\n\n\"I don't know,\" said Nora. \"But he will try. That is what the island is good at. Trying.\"\n\nThe ferry reached the harbour at eleven. The passengers walked down the ramp one by one: the man with the grey dog, the two students, the old woman with her scarf, and the young man with the wooden box. Nora washed the cups and counted the coins. It had been a good night for tea.\n\nTwo weeks later the young man was on the ferry again. He did not have the box. He bought a cup of tea and sat on the bench beside the cart, as before.\n\n\"Well?\" said Nora.\n\n\"It works,\" he said. \"The clock man found a broken spring. He said the clock was older than the ferry, older than the harbour, maybe older than the oldest house on the island.\"\n\n\"And now it is ticking again.\"\n\n\"Now it is ticking again. It's on my kitchen wall, and every hour it rings, and every hour I think of her.\"\n\nNora smiled and poured herself a cup of tea, which she almost never did. Outside, the sea was calm, and the lights of the island were small and yellow, like a row of lanterns on a shelf.\n"
+     }
+    ],
+    "hints": [
+     "string.punctuation holds the ASCII punctuation characters, and strip() removes them only from the ends of each piece, so \"it's\" keeps its apostrophe.",
+     "If you get 219 types where you expect 200, the text wasn't lowercased before counting.",
+     "FreqDist(tokens).hapaxes() returns the types that occur exactly once."
+    ]
+   }
+  },
+  {
+   "title": "Accessing text corpora and WordNet",
+   "summary": "Load NLTK's corpora and your own text files, compare categories with conditional frequency distributions and turn bigram counts into probabilities, then use WordNet's synsets and relations to work with meaning.",
+   "instructor": "aoife-murphy",
+   "lessons": [
+    {
+     "title": "Corpus readers: Gutenberg, Brown and your own files",
+     "minutes": 12,
+     "objectives": [
+      "Download NLTK corpora and load them with corpus readers",
+      "Read a folder of your own text files as a corpus"
+     ],
+     "key_points": [
+      "A corpus is a large, structured collection of texts for studying language. nltk.download('brown') fetches a corpus once into an nltk_data folder, and nltk.corpus.brown then loads it lazily, the first time you use it.",
+      "Corpus readers share one interface: fileids() lists the files, raw() returns text as a string, words() the tokens and sents() the sentences as lists of tokens, for the whole corpus or for chosen files.",
+      "The Brown corpus has about 1.16 million words of 1961 American English in 15 categories, such as news, government and romance, so brown.words(categories='news') lets you compare genres; tagged_words() pairs each token with its part-of-speech tag.",
+      "PlaintextCorpusReader(folder, r'.*\\.txt') turns your own folder of text files into a corpus with the same methods; its words() splits text with WordPunctTokenizer, and its sents() needs the punkt_tab sentence model.",
+      "Recent NLTK releases only let corpus readers open folders on NLTK's data path, so if PlaintextCorpusReader raises PermissionError ('Unauthorized path'), call nltk.data.path.append(folder) first."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Load built-in corpora and your own",
+      "steps": [
+       {
+        "do": "Download the Brown and Gutenberg corpora, once.",
+        "code": "python -c \"import nltk; [nltk.download(r) for r in ('brown', 'gutenberg')]\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Count Gutenberg's files and list Brown's first categories.",
+        "code": "from nltk.corpus import brown, gutenberg\nlen(gutenberg.fileids()), brown.categories()[:4]",
+        "lang": "python",
+        "see": "(18, ['adventure', 'belles_lettres', 'editorial', 'fiction'])"
+       },
+       {
+        "do": "Read one genre, then the tagged version of the corpus.",
+        "code": "brown.words(categories='news')[:6]\nbrown.tagged_words()[:3]",
+        "lang": "python",
+        "see": "['The', 'Fulton', 'County', 'Grand', 'Jury', 'said'], then [('The', 'AT'), ('Fulton', 'NP-TL'), ('County', 'NN-TL')], in Brown's own tagset."
+       },
+       {
+        "do": "Put two or three .txt files in a folder called mycorpus, then read it as a corpus.",
+        "code": "import os\nimport nltk\nfrom nltk.corpus.reader import PlaintextCorpusReader\n\nfolder = os.path.abspath('mycorpus')\nnltk.data.path.append(folder)  # needed by recent NLTK releases\nmine = PlaintextCorpusReader(folder, r'.*\\.txt')\nmine.fileids(), len(mine.words())",
+        "lang": "python",
+        "see": "Your file names, and how many tokens they hold."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Conditional frequency distributions and bigram probabilities",
+     "minutes": 14,
+     "objectives": [
+      "Count words with FreqDist and compare categories with ConditionalFreqDist",
+      "Turn bigram counts into conditional probabilities"
+     ],
+     "key_points": [
+      "FreqDist counts samples: fd['ferry'] is a count, fd.N() the total number of tokens, fd.freq('ferry') the relative frequency and fd.hapaxes() the words seen once.",
+      "A ConditionalFreqDist keeps one FreqDist per condition and is built from (condition, sample) pairs, such as (genre, word) for every word in several Brown categories; cfd['romance']['she'] is then a count within one condition.",
+      "cfd.tabulate(conditions=..., samples=...) prints a table of counts that makes differences easy to see: in Brown, 'she' occurs 728 times in romance but once in government. Compare relative frequencies, not raw counts, when the categories differ in size.",
+      "Built from bigrams, pairs of neighbouring words, a ConditionalFreqDist records which words follow each word, and dividing by the condition's total gives the maximum likelihood estimate P(word | previous) = count(previous, word) / count(previous).",
+      "In Alice's Adventures in Wonderland 'mock' is always followed by 'turtle', so P(turtle | mock) = 1. Always choosing the likeliest next word soon loops ('the queen and the queen and ...'), an early sign that generating text needs sampling."
+     ]
+    },
+    {
+     "title": "WordNet: synsets, lemmas and senses",
+     "minutes": 12,
+     "objectives": [
+      "Look up a word's senses, definitions and examples in WordNet",
+      "Tell synsets from lemmas"
+     ],
+     "key_points": [
+      "WordNet is a large lexical database of English that groups nouns, verbs, adjectives and adverbs into synsets: sets of synonyms that express one concept, each with a short definition and often example sentences. NLTK's copy is WordNet 3.0, fetched with nltk.download('wordnet').",
+      "wn.synsets('bank') returns every synset containing the word, 18 noun and verb senses in all. A synset name such as bank.n.01 reads as a word, a part of speech and a sense number.",
+      "A synset's lemmas are its member words: car.n.01 has the lemma names car, auto, automobile, machine and motorcar. A lemma is a word in one sense, so 'bank' in bank.n.01 (sloping land) and 'bank' in depository_financial_institution.n.01 are different lemmas.",
+      "Filter by part of speech, as in wn.synsets('run', pos=wn.VERB), which returns 41 verb senses; function words such as 'the' and 'of' aren't in WordNet at all.",
+      "Senses are numbered roughly from most to least frequent in a sense-tagged corpus, so the first synset is a sensible default when nothing else is known, though it's often the wrong sense."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Look a word up in WordNet",
+      "steps": [
+       {
+        "do": "Download WordNet, once (about 11 MB).",
+        "code": "python -c \"import nltk; [nltk.download(r) for r in ('wordnet',)]\"",
+        "lang": "bash"
+       },
+       {
+        "do": "List the senses of bank.",
+        "code": "from nltk.corpus import wordnet as wn\nwn.synsets('bank')[:3]\nlen(wn.synsets('bank'))",
+        "lang": "python",
+        "see": "[Synset('bank.n.01'), Synset('depository_financial_institution.n.01'), Synset('bank.n.03')], then 18."
+       },
+       {
+        "do": "Read one synset's definition, lemmas and examples.",
+        "code": "car = wn.synset('car.n.01')\ncar.definition()\ncar.lemma_names()\ncar.examples()",
+        "lang": "python",
+        "see": "'a motor vehicle with four wheels; usually propelled by an internal combustion engine', ['car', 'auto', 'automobile', 'machine', 'motorcar'] and ['he needs a car to get to work']."
+       },
+       {
+        "do": "Filter by part of speech, and try a function word.",
+        "code": "len(wn.synsets('run', pos=wn.VERB)), wn.synsets('the')",
+        "lang": "python",
+        "see": "(41, [])"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Lexical relations and similarity",
+     "minutes": 12,
+     "objectives": [
+      "Navigate hypernyms, hyponyms, meronyms, holonyms and antonyms",
+      "Measure how closely two senses are related with path similarity"
+     ],
+     "key_points": [
+      "Hypernyms are more general concepts and hyponyms more specific ones. dog.n.01 has two hypernyms, canine.n.02 and domestic_animal.n.01, and following hypernyms upwards always ends at entity.n.01, the root of the noun hierarchy.",
+      "Meronyms are parts and holonyms are wholes: tree.n.01's part meronyms include trunk, limb and crown, its substance meronyms are heartwood and sapwood, and its member holonym is forest.",
+      "Antonyms link lemmas rather than synsets: wn.lemma('good.a.01.good').antonyms() returns the lemma bad.a.01.bad.",
+      "path_similarity scores two synsets from the shortest path between them in the hypernym hierarchy, 1 for the same synset and falling towards 0: dog and wolf score 0.333, dog and cat 0.2 (they meet at carnivore.n.01) and dog and car about 0.077.",
+      "Relations like these help expand search queries with synonyms or group words by concept, but WordNet is built by hand, so it misses new words and slang and covers English far better than other languages."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Explore corpora, bigrams and WordNet",
+    "tool": "Python 3 and NLTK",
+    "minutes": 45,
+    "goal": "Compare how often personal pronouns appear in five genres of the Brown corpus, estimate bigram probabilities in Alice's Adventures in Wonderland and generate text from them, then explore senses and relations in WordNet.",
+    "setup": [
+     "Python 3.10 or later with NLTK",
+     "The corpora this lab uses (about 18 MB in all), downloaded once: python -c \"import nltk; [nltk.download(r) for r in ('brown', 'gutenberg', 'wordnet')]\"",
+     "The starter file corpora.py"
+    ],
+    "steps": [
+     {
+      "do": "Run corpora.py as it is: genre_sizes() is already written.",
+      "code": "python corpora.py",
+      "lang": "bash",
+      "see": "news 100554 words, government 70117, hobbies 82345, romance 70022 and humor 21695."
+     },
+     {
+      "do": "Write pronouns_by_genre() (TODOs 1 to 3): a ConditionalFreqDist of (genre, lowercased word) pairs, a table of the six pronouns, and the share of 'she' in each genre.",
+      "see": "A table in which she has 728 in romance and 1 in government; P(she) in romance: 0.01040."
+     },
+     {
+      "do": "Write bigrams_in_alice() (TODOs 4 to 7): count bigrams by previous word, print what follows 'mock' and 'said', work out P(the | said), and generate 12 words by always taking the likeliest next word.",
+      "see": "After 'mock': [('turtle', 56)], P(the | said) = 210/462 = 0.455, and greedy text that loops: alice and the queen and the queen ..."
+     },
+     {
+      "do": "Write wordnet_tour() (TODOs 8 to 11): the first three noun senses of bank, dog's longest path to the root, three path similarities and where dog and cat meet.",
+      "see": "bank.n.01 - sloping land ..., a 14-synset path from entity.n.01 to dog.n.01, similarities of 0.333, 0.200 and 0.077, and [Synset('carnivore.n.01')]."
+     },
+     {
+      "do": "Choose your own comparison: two or more genres and a word class, such as the modal verbs can, could, may, might, must and will. Tabulate it, and write two sentences starting Finding: that say what differs and why it might."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The genres' sizes are printed.",
+      "look_for": [
+       "100554",
+       "21695"
+      ]
+     },
+     {
+      "text": "Pronouns are compared across genres with a ConditionalFreqDist, using relative frequencies.",
+      "look_for": [
+       "P(she) in romance: 0.01040",
+       "P(she) in government: 0.00001"
+      ]
+     },
+     {
+      "text": "Bigram probabilities are estimated from counts.",
+      "look_for": [
+       "('turtle', 56)",
+       "P(the | said) = 210/462 = 0.455"
+      ]
+     },
+     {
+      "text": "Greedy generation shows the loop.",
+      "look_for": [
+       "alice and the queen and the queen"
+      ]
+     },
+     {
+      "text": "WordNet senses, the hypernym path and the similarities are printed.",
+      "look_for": [
+       "depository_financial_institution.n.01",
+       "carnivore.n.01 > canine.n.02 > dog.n.01",
+       "0.077"
+      ]
+     },
+     {
+      "text": "The learner's own comparison is tabulated and explained.",
+      "look_for": [
+       "Finding:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished corpora.py, everything it printed, and your own table with its Finding: sentences.",
+    "files": [
+     {
+      "path": "corpora.py",
+      "content": "\"\"\"Explore NLTK corpora: compare genres, follow bigrams and look words up in WordNet.\n\nFirst, once:  python -c \"import nltk; [nltk.download(r) for r in ('brown', 'gutenberg', 'wordnet')]\"\n\"\"\"\n\nimport nltk\nfrom nltk.corpus import brown, gutenberg\nfrom nltk.corpus import wordnet as wn\n\nGENRES = [\"news\", \"government\", \"hobbies\", \"romance\", \"humor\"]\nPRONOUNS = [\"i\", \"you\", \"he\", \"she\", \"we\", \"they\"]\n\n\ndef genre_sizes():\n    for genre in GENRES:\n        print(f\"{genre:<11}{len(brown.words(categories=genre)):>8} words\")\n\n\ndef pronouns_by_genre():\n    # TODO 1: build a ConditionalFreqDist from (genre, word.lower()) pairs for every word in each genre\n    # TODO 2: cfd.tabulate(conditions=GENRES, samples=PRONOUNS)\n    # TODO 3: for each genre print  f\"P(she) in {genre}: {share:.5f}\"  where share = count of \"she\" / cfd[genre].N()\n    pass\n\n\ndef bigrams_in_alice():\n    words = [w.lower() for w in gutenberg.words(\"carroll-alice.txt\") if w.isalpha()]\n    # TODO 4: cfd = a ConditionalFreqDist of nltk.bigrams(words): condition = previous word, sample = next word\n    # TODO 5: print the 3 most common words after \"mock\" and after \"said\"\n    # TODO 6: print  f\"P(the | said) = {count}/{total} = {p:.3f}\"\n    # TODO 7: starting from \"alice\", append the word and move to cfd[word].max(), 12 times; print the words\n    pass\n\n\ndef wordnet_tour():\n    # TODO 8: print the name and definition of the first three noun synsets of \"bank\"\n    dog, cat, wolf, car = (wn.synset(n) for n in (\"dog.n.01\", \"cat.n.01\", \"wolf.n.01\", \"car.n.01\"))\n    # TODO 9: print the longest of dog.hypernym_paths() as names joined by \" > \"\n    #         (pick it with max(..., key=len): the order of the paths can change between runs)\n    # TODO 10: print path_similarity to 3 decimal places for (dog, wolf), (dog, cat) and (dog, car)\n    # TODO 11: print dog.lowest_common_hypernyms(cat)\n    pass\n\n\nif __name__ == \"__main__\":\n    genre_sizes()\n    pronouns_by_genre()\n    bigrams_in_alice()\n    wordnet_tour()\n"
+     }
+    ],
+    "hints": [
+     "cfd[genre].N() is the number of words in that genre, so cfd[genre]['she'] / cfd[genre].N() is a relative frequency.",
+     "nltk.bigrams(words) yields (previous, next) pairs, exactly the (condition, sample) pairs ConditionalFreqDist expects.",
+     "The order of a synset's hypernyms, and so of its hypernym paths, can change from one run to the next, so choose a path by a rule, such as the longest."
+    ]
+   }
+  },
+  {
+   "title": "Processing raw text and normalisation",
+   "summary": "Turn messy real-world text into clean tokens: decode bytes correctly, normalise Unicode, extract text from HTML, and reduce words to stems or lemmas, knowing what each step changes.",
+   "instructor": "alejandroo-riveras",
+   "lessons": [
+    {
+     "title": "Encodings and Unicode normalisation",
+     "minutes": 12,
+     "objectives": [
+      "Decode text files with the right encoding and recognise mojibake",
+      "Normalise Unicode with NFC, NFKC and casefold, and say what each changes"
+     ],
+     "key_points": [
+      "Files store bytes and an encoding maps them to characters. Decode with the encoding the text was written in, usually UTF-8, because the wrong one produces mojibake: 'café' saved as UTF-8 but read as Latin-1 comes out as 'cafÃ©'.",
+      "The same visible text can be made of different code points: 'é' can be one precomposed character (U+00E9) or 'e' followed by a combining acute accent (U+0301), so 'café' written both ways looks identical but compares unequal, with lengths 4 and 5.",
+      "unicodedata.normalize('NFC', s) composes characters and 'NFD' decomposes them. Normalise all text to one form, usually NFC, before comparing, counting or tokenising it: the regex \\w+ splits the decomposed form and drops the accent.",
+      "The compatibility forms NFKC and NFKD also fold look-alike variants: the ligature 'ﬁ' becomes 'fi' and full-width '２０２４' becomes '2024'. They can erase real distinctions too, such as superscript '²' becoming '2', so use them deliberately.",
+      "str.casefold() is a stronger lower() for caseless matching: 'Straße'.lower() keeps the 'ß' but casefold() gives 'strasse'. Stripping accents (decompose, then drop combining marks) helps fuzzy search but changes meaning: Spanish 'papá' (dad) becomes 'papa' (potato)."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "See and fix invisible Unicode differences",
+      "steps": [
+       {
+        "do": "Make café twice, precomposed and decomposed, and compare them.",
+        "code": "import unicodedata\na = 'caf\\u00e9'\nb = 'cafe\\u0301'\nprint(a, b, a == b, len(a), len(b))",
+        "lang": "python",
+        "see": "café café False 4 5"
+       },
+       {
+        "do": "Name the last two code points of the decomposed form.",
+        "code": "[unicodedata.name(c) for c in b][-2:]",
+        "lang": "python",
+        "see": "['LATIN SMALL LETTER E', 'COMBINING ACUTE ACCENT']"
+       },
+       {
+        "do": "Compose it with NFC.",
+        "code": "unicodedata.normalize('NFC', b) == a",
+        "lang": "python",
+        "see": "True"
+       },
+       {
+        "do": "Fold compatibility characters with NFKC.",
+        "code": "unicodedata.normalize('NFKC', '\\ufb01ve ２０２４ x²')",
+        "lang": "python",
+        "see": "'five 2024 x2'"
+       },
+       {
+        "do": "Compare lower() with casefold().",
+        "code": "'Straße'.lower(), 'Straße'.casefold()",
+        "lang": "python",
+        "see": "('straße', 'strasse')"
+       },
+       {
+        "do": "Produce mojibake on purpose.",
+        "code": "'café'.encode('utf-8').decode('latin-1')",
+        "lang": "python",
+        "see": "'cafÃ©': UTF-8 bytes decoded with the wrong encoding."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Text from the web: HTML, entities and boilerplate",
+     "minutes": 12,
+     "objectives": [
+      "Extract readable text from an HTML page, skipping scripts, styles and boilerplate",
+      "Clean up entities, whitespace and typographic punctuation"
+     ],
+     "key_points": [
+      "Web pages mix the text you want with markup, scripts, styles and boilerplate such as menus and footers. Extract text with an HTML parser rather than regular expressions, which break on nested, broken or unusual markup.",
+      "Python's html.parser.HTMLParser calls your handle_starttag, handle_endtag and handle_data methods as it reads, so a small subclass can skip everything inside <script>, <style>, <nav> and <footer>; libraries such as Beautiful Soup do the same with less code.",
+      "HTML entities encode characters: &amp; is &, &eacute; is é, &#8217; is a curly apostrophe and &nbsp; a no-break space (U+00A0). HTMLParser decodes them in text by default (convert_charrefs=True), and html.unescape() decodes them anywhere else.",
+      "Collapse whitespace with re.sub(r'\\s+', ' ', text); in Python 3, \\s in a str pattern also matches Unicode whitespace such as the no-break space.",
+      "Typographic characters look like ASCII but aren't: 'don’t' with a curly apostrophe and \"don't\" are different strings to a tokeniser. Map curly quotes to straight ones, or allow both in your patterns, before tokenising.",
+      "When you collect pages, follow each site's terms and robots.txt, keep every document's source URL and date, and remove duplicate pages before counting."
+     ]
+    },
+    {
+     "title": "Stemming algorithms",
+     "minutes": 12,
+     "objectives": [
+      "Explain how rule-based stemmers strip suffixes",
+      "Compare the Porter, Snowball and Lancaster stemmers and their typical errors"
+     ],
+     "key_points": [
+      "A stemmer cuts affixes off with rules so that related forms share a stem: Porter turns 'studies' and 'studying' into 'studi'. Stems needn't be real words; they only need to match each other.",
+      "The Porter stemmer (1980) applies several steps of suffix rules, each with conditions on the stem that remains. SnowballStemmer('english') implements its revised successor, often called Porter2, and Snowball has stemmers for many other languages, such as Spanish, Arabic and Swedish.",
+      "The Lancaster stemmer is the most aggressive of the three: it turns 'organization' into 'org' and 'generously' into 'gen', where Snowball gives 'organ' and 'generous'.",
+      "Over-stemming merges unrelated words: Porter reduces both 'university' and 'universe' to 'univers', and 'organization' to 'organ'. Under-stemming misses related ones: irregular 'ran' stays 'ran' while 'running' becomes 'run'.",
+      "Stemming is fast and raises recall in search, since 'connected', 'connecting' and 'connection' all become 'connect', but it can lower precision and makes output hard to read, so measure its effect on your task."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Compare three stemmers",
+      "steps": [
+       {
+        "do": "Stem eight words with Porter.",
+        "code": "from nltk.stem import LancasterStemmer, PorterStemmer, SnowballStemmer\nwords = ['studies', 'studying', 'university', 'universe', 'generously', 'organization', 'running', 'ran']\n[PorterStemmer().stem(w) for w in words]",
+        "lang": "python",
+        "see": "['studi', 'studi', 'univers', 'univers', 'gener', 'organ', 'run', 'ran']"
+       },
+       {
+        "do": "Stem them with Snowball (Porter2).",
+        "code": "[SnowballStemmer('english').stem(w) for w in words]",
+        "lang": "python",
+        "see": "['studi', 'studi', 'univers', 'univers', 'generous', 'organ', 'run', 'ran']"
+       },
+       {
+        "do": "Stem them with Lancaster.",
+        "code": "[LancasterStemmer().stem(w) for w in words]",
+        "lang": "python",
+        "see": "['study', 'study', 'univers', 'univers', 'gen', 'org', 'run', 'ran']"
+       },
+       {
+        "do": "List the languages Snowball supports.",
+        "code": "SnowballStemmer.languages",
+        "lang": "python",
+        "see": "A tuple from 'arabic', 'danish' and 'dutch' to 'spanish' and 'swedish'."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Lemmatisation",
+     "minutes": 12,
+     "objectives": [
+      "Lemmatise words with WordNet using part-of-speech tags",
+      "Choose between stemming and lemmatisation for a task"
+     ],
+     "key_points": [
+      "Lemmatisation maps a word to its dictionary form, its lemma, using a vocabulary and morphological rules, so irregular forms work too: 'geese' becomes 'goose' and 'were' becomes 'be'.",
+      "NLTK's WordNetLemmatizer treats every word as a noun unless told otherwise: lemmatize('running') returns 'running' while lemmatize('running', pos='v') returns 'run', and lemmatize('was') returns 'wa', a classic mistake.",
+      "Get parts of speech from a tagger such as nltk.pos_tag, which needs nltk.download('averaged_perceptron_tagger_eng') in NLTK 3.9 and later, then map Penn Treebank tags to WordNet's: tags starting J to 'a', V to 'v', R to 'r' and everything else to 'n'.",
+      "Tag before you lowercase: taggers use capital letters as clues, and a wrong tag gives a wrong lemma, as when lowercased 'geese' in this module's lab is tagged as an adjective and left unchanged.",
+      "Lemmas are real words and keep distinctions stemmers lose ('better' as an adjective becomes 'good'), but lemmatisers are slower, need tagging and only know the words in their dictionary. spaCy and Stanza lemmatise many languages inside their pipelines."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Lemmatise with and without a part of speech",
+      "steps": [
+       {
+        "do": "Download WordNet and the tagger, once.",
+        "code": "python -c \"import nltk; [nltk.download(r) for r in ('wordnet', 'averaged_perceptron_tagger_eng')]\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Lemmatise without a part of speech.",
+        "code": "from nltk.stem import WordNetLemmatizer\nwnl = WordNetLemmatizer()\nwnl.lemmatize('geese'), wnl.lemmatize('running'), wnl.lemmatize('was')",
+        "lang": "python",
+        "see": "('goose', 'running', 'wa'): every word is treated as a noun."
+       },
+       {
+        "do": "Give the part of speech.",
+        "code": "wnl.lemmatize('running', pos='v'), wnl.lemmatize('was', pos='v'), wnl.lemmatize('better', pos='a')",
+        "lang": "python",
+        "see": "('run', 'be', 'good')"
+       },
+       {
+        "do": "Tag a sentence to get the parts of speech.",
+        "code": "import nltk\nnltk.pos_tag(['Two', 'students', 'were', 'studying', 'here'])",
+        "lang": "python",
+        "see": "[('Two', 'CD'), ('students', 'NNS'), ('were', 'VBD'), ('studying', 'VBG'), ('here', 'RB')]"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Clean a web page and normalise its words",
+    "tool": "Python 3 and NLTK",
+    "minutes": 50,
+    "goal": "Extract the text of a bakery's web page without its scripts, styles, menu and footer, normalise its Unicode, and compare the vocabularies you get from raw tokens, stems and lemmas.",
+    "setup": [
+     "Python 3.10 or later with NLTK",
+     "WordNet and the tagger, downloaded once: python -c \"import nltk; [nltk.download(r) for r in ('wordnet', 'averaged_perceptron_tagger_eng')]\"",
+     "The starter files clean.py and bakery.html, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Open bakery.html in a browser, then in a text editor. Find the entities (&eacute;, &#8217;, &nbsp;), the combining accent written as &#769;, the ligature &#64257; and the full-width digits."
+     },
+     {
+      "do": "Write the TextExtractor methods (TODO 1): count how deep you are inside script, style, nav and footer tags, and keep text only at depth 0. Run the script.",
+      "code": "python clean.py",
+      "lang": "bash",
+      "see": "Extracted 795 characters, 1 no-break space(s), then Before normalising: 128 tokens, 98 types, with two forms of café: 'caf\\xe9' and 'cafe', because the regex dropped the combining accent."
+     },
+     {
+      "do": "Write normalise() (TODO 2): NFKC, casefold when asked, straight quotes and collapsed whitespace. Run it again.",
+      "see": "After normalising: 125 tokens, 93 types, one form of café counted 5 times, and o'clock, hadn't, filling, 4, 50 and torstrasse (twice) among the tokens."
+     },
+     {
+      "do": "Write wordnet_pos() and the tagging, stemming and lemmatising (TODOs 3 and 4). First tag the casefolded tokens and look at geese and bakes; then tag the cased tokens, as the comment says.",
+      "see": "Tagged in lower case, geese is an adjective and bakes a preposition, and neither is lemmatised; tagged with their capitals, they become goose and bake."
+     },
+     {
+      "do": "Run the finished script.",
+      "see": "loaves: tag NNS, stem loav, lemma loaf; were: lemma be; better: tag JJR, lemma good; then Types: 93 words, 90 stems, 87 lemmas."
+     },
+     {
+      "do": "In two or three sentences starting Choice:, say whether you'd use stems or lemmas for the bakery site's search box, and why."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Scripts, styles, the menu and the footer are skipped, and entities are decoded.",
+      "look_for": [
+       "Extracted 795 characters, 1 no-break space(s)"
+      ]
+     },
+     {
+      "text": "Unicode normalisation merges the two forms of café.",
+      "look_for": [
+       "Before normalising: 128 tokens, 98 types",
+       "After normalising: 125 tokens, 93 types"
+      ]
+     },
+     {
+      "text": "NFKC and casefolding fold the ligature, the full-width digits and the ß.",
+      "look_for": [
+       "'filling', '4', '50', 'torstrasse', 'torstrasse'"
+      ]
+     },
+     {
+      "text": "Words are tagged before casefolding, so geese and bakes get the right lemmas.",
+      "look_for": [
+       "geese: tag NNP, stem gees, lemma goose",
+       "bakes: tag VBP, stem bake, lemma bake"
+      ]
+     },
+     {
+      "text": "Stems and lemmas are compared.",
+      "look_for": [
+       "Types: 93 words, 90 stems, 87 lemmas"
+      ]
+     },
+     {
+      "text": "The choice between stems and lemmas is justified for the search box.",
+      "look_for": [
+       "Choice:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished clean.py, everything it printed, and your Choice: answer.",
+    "files": [
+     {
+      "path": "clean.py",
+      "content": "\"\"\"Clean a web page: extract its text, normalise Unicode, then compare stems and lemmas.\n\nFirst, once:  python -c \"import nltk; [nltk.download(r) for r in ('wordnet', 'averaged_perceptron_tagger_eng')]\"\n\"\"\"\n\nimport re\nimport sys\nimport unicodedata\nfrom html.parser import HTMLParser\n\nimport nltk\nfrom nltk.stem import PorterStemmer, WordNetLemmatizer\n\nSKIP = {\"script\", \"style\", \"nav\", \"footer\"}\nQUOTES = str.maketrans({\"‘\": \"'\", \"’\": \"'\", \"“\": '\"', \"”\": '\"'})\nWORDS = [\"baking\", \"bakes\", \"bakers\", \"loaves\", \"studies\", \"studying\", \"were\", \"better\", \"geese\"]\n\n\nclass TextExtractor(HTMLParser):\n    \"\"\"Collect the text of a page, skipping everything inside the SKIP tags.\"\"\"\n\n    def __init__(self):\n        super().__init__()  # convert_charrefs=True by default: entities arrive decoded\n        self.depth = 0\n        self.parts = []\n\n    # TODO 1: write handle_starttag(self, tag, attrs) and handle_endtag(self, tag), which add 1 to and\n    #         subtract 1 from self.depth for tags in SKIP, and handle_data(self, data), which appends\n    #         data to self.parts only when self.depth is 0\n\n\ndef extract_text(html):\n    parser = TextExtractor()\n    parser.feed(html)\n    parser.close()\n    return \" \".join(parser.parts)\n\n\ndef normalise(text, casefold=True):\n    # TODO 2: unicodedata.normalize(\"NFKC\", ...), then casefold() if casefold is True, then\n    #         translate(QUOTES), then collapse runs of whitespace to one space with re.sub and strip()\n    return text\n\n\ndef tokenize(text):\n    return re.findall(r\"\\w+(?:'\\w+)?\", text)\n\n\ndef wordnet_pos(tag):\n    \"\"\"Map a Penn Treebank tag to the part of speech WordNetLemmatizer expects.\"\"\"\n    # TODO 3: tags starting with J -> \"a\", V -> \"v\", R -> \"r\", anything else -> \"n\"\n    return \"n\"\n\n\ndef main(path=\"bakery.html\"):\n    with open(path, encoding=\"utf-8\") as f:\n        text = extract_text(f.read())\n    print(f\"Extracted {len(text)} characters, {text.count(chr(0xA0))} no-break space(s)\")\n\n    raw_tokens = tokenize(text.lower())\n    print(f\"Before normalising: {len(raw_tokens)} tokens, {len(set(raw_tokens))} types\")\n    print(\"  cafe forms:\", sorted(ascii(t) for t in set(raw_tokens) if t.startswith(\"caf\")))\n\n    tokens = tokenize(normalise(text))\n    print(f\"After normalising: {len(tokens)} tokens, {len(set(tokens))} types\")\n    print(\"  cafe forms:\", sorted(ascii(t) for t in set(tokens) if t.startswith(\"caf\")), \"x\", tokens.count(\"café\"))\n    print(\"  changed:\", [t for t in tokens if t in (\"filling\", \"4\", \"50\", \"torstrasse\", \"o'clock\", \"hadn't\")])\n\n    # TODO 4: tag, stem and lemmatise. Taggers use capital letters as clues, so tag before casefolding:\n    #   cased = tokenize(normalise(text, casefold=False))\n    #   tagged = [(w.casefold(), tag) for w, tag in nltk.pos_tag(cased)]\n    # Then make stems with PorterStemmer and lemmas with WordNetLemmatizer().lemmatize(w, wordnet_pos(tag)),\n    # print  f\"  {word}: tag {tag}, stem {stem}, lemma {lemma}\"  for each word in WORDS (use tokens.index(word)),\n    # and finally  f\"Types: {...} words, {...} stems, {...} lemmas\"\n\n\nif __name__ == \"__main__\":\n    main(*sys.argv[1:])\n"
+     },
+     {
+      "path": "bakery.html",
+      "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>Harbour Lane Bakery &amp; Café</title>\n  <style>\n    body { font-family: Georgia, serif; }\n    .price { color: darkred; }\n  </style>\n  <script>\n    var bakingTimer = 45; // minutes until the loaves come out\n    function showOffer() { alert(\"Fresh loaves baking now!\"); }\n  </script>\n</head>\n<body>\n  <nav><a href=\"/\">Home</a> | <a href=\"/menu\">Menu</a> | <a href=\"/contact\">Contact</a></nav>\n  <h1>Harbour Lane Bakery &amp; Caf&eacute;</h1>\n  <p>Our bakers start baking at four o&#8217;clock, so the loaves are warm when the caf&eacute; opens.\n     We bake sourdough, rye and soda bread, and on Fridays the bakers are baking cinnamon buns too.</p>\n  <p>&#8220;The best loaves on the coast,&#8221; wrote one visitor. Another said the cafe&#769; was\n     better than any in the city&nbsp;&mdash; though she admitted she hadn&#8217;t tried them all&hellip;</p>\n  <p>This week&#8217;s special: apple &#64257;lling in a buttery crust, &euro;&#65300;.&#65301;&#65296; a slice.\n     Our sister bakery in Berlin bakes the same recipe on Torstraße, which is signposted TORSTRASSE.</p>\n  <p>Two students were studying here all winter; their studies went well, they told us, because\n     the café kept their cups full. Geese walk past the window most mornings.</p>\n  <footer>&copy; Harbour Lane Bakery. All rights reserved.</footer>\n</body>\n</html>\n"
+     }
+    ],
+    "hints": [
+     "In handle_starttag add 1 to the depth when the tag is in SKIP, subtract 1 in handle_endtag, and in handle_data keep the text only when the depth is 0.",
+     "Normalise before tokenising: re.findall(r'\\w+', 'cafe\\u0301') gives ['cafe'], because a combining accent isn't a word character.",
+     "If café still has two forms, check that you used NFKC (or NFC), not NFD."
+    ]
+   }
+  },
+  {
+   "title": "Structured programming for NLP scripts",
+   "summary": "Write NLP code that scales and can be trusted: stream corpora with generators, compose small pure functions, choose data structures and algorithms for counting, and organise and test your code with pytest, ending with a tested bigram language model.",
+   "instructor": "alejandroo-riveras",
+   "lessons": [
+    {
+     "title": "Iterators and generators for large corpora",
+     "minutes": 12,
+     "objectives": [
+      "Write generator functions that stream text a line or a token at a time",
+      "Avoid the single-pass pitfall of iterators"
+     ],
+     "key_points": [
+      "An iterable is anything a for loop can walk through; an iterator hands out one item at a time with next() and remembers its place, and once it's exhausted it stays empty.",
+      "A generator function contains yield: calling it returns a generator that runs lazily, only as far as the next yield, so a function that yields the tokens of each line of a file can stream a corpus of any size in little memory.",
+      "Generator expressions, such as (w.lower() for w in tokens), work like list comprehensions without building the list, and chain into pipelines: lines, then tokens, then filtered tokens, then a Counter.",
+      "Iterating a generator twice is a common bug: the second loop silently sees nothing. Build a list if you need several passes and it fits in memory, or call the generator function again.",
+      "itertools helps with streams: islice(stream, 10) takes the first ten items, chain.from_iterable() flattens a stream of token lists, and pairwise() (Python 3.10 and later) yields overlapping pairs, which are bigrams."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "Watch a generator run out",
+      "steps": [
+       {
+        "do": "Define a generator of tokens and take two.",
+        "code": "def tokens_of(lines):\n    for line in lines:\n        yield from line.lower().split()\n\ngen = tokens_of(['The cat sat', 'The dog ran'])\nnext(gen), next(gen)",
+        "lang": "python",
+        "see": "('the', 'cat')"
+       },
+       {
+        "do": "Take the rest.",
+        "code": "list(gen)",
+        "lang": "python",
+        "see": "['sat', 'the', 'dog', 'ran']"
+       },
+       {
+        "do": "Try again.",
+        "code": "list(gen)",
+        "lang": "python",
+        "see": "[]: the generator is exhausted."
+       },
+       {
+        "do": "Make bigrams from a padded sentence.",
+        "code": "from itertools import pairwise\nlist(pairwise(['<s>', 'the', 'cat', 'sat', '</s>']))",
+        "lang": "python",
+        "see": "[('<s>', 'the'), ('the', 'cat'), ('cat', 'sat'), ('sat', '</s>')]"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Functional programming for text",
+     "minutes": 10,
+     "objectives": [
+      "Use functions as values with map, filter, sorted and lambda",
+      "Write small pure functions that compose into a pipeline"
+     ],
+     "key_points": [
+      "Functions are values in Python: you can pass them as arguments, keep them in a list and return them, so a pipeline can be a list of steps applied in turn.",
+      "map(f, items) applies f to every item and filter(pred, items) keeps the items for which pred is true; both are lazy, and a comprehension often says the same thing more readably.",
+      "sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])) sorts by count, highest first, and breaks ties alphabetically, so a report comes out in the same order on every run.",
+      "A pure function's result depends only on its arguments and it changes nothing outside itself; pure normalising and tokenising functions are easy to test and safe to reuse.",
+      "functools.partial fixes some of a function's arguments, so partial(re.sub, r'\\s+', ' ') is a function that collapses the whitespace in any string it's given; functools.reduce folds a sequence into a single value."
+     ]
+    },
+    {
+     "title": "Algorithm design for text: counting, bigrams and perplexity",
+     "minutes": 14,
+     "objectives": [
+      "Choose data structures that keep text algorithms fast",
+      "Build a bigram language model with add-one smoothing",
+      "Measure a language model with perplexity"
+     ],
+     "key_points": [
+      "Choose data structures by the operation you repeat: looking up a key in a dict or set takes about the same time however big it is, while searching a list takes longer the longer it gets, so count with a dict or Counter in a single pass.",
+      "A bigram language model estimates P(word | previous word) as count(previous, word) / count(previous). Padding each sentence with <s> and </s> lets it learn how sentences start and end, and a sentence's probability is the product of its bigram probabilities.",
+      "Add log probabilities instead of multiplying probabilities: a product of many small numbers underflows to zero in floating point, while a sum of logs stays well within range.",
+      "A bigram missing from the training data gets probability zero, which makes a whole test sentence impossible. Add-one (Laplace) smoothing adds 1 to every bigram count and the vocabulary size V to each denominator: (count(prev, w) + 1) / (count(prev) + V); add-k uses a smaller k.",
+      "Perplexity measures how well a model predicts unseen text: the exponential of the average negative log probability per predicted token, counting </s>. Lower is better, and it's only comparable between models with the same vocabulary and tokenisation.",
+      "Map test words never seen in training to an <UNK> token in the vocabulary, and tune k on held-out data, never the test set; add-one usually gives unseen bigrams too much probability, so a smaller k often does better."
+     ]
+    },
+    {
+     "title": "Organising and testing NLP code",
+     "minutes": 12,
+     "objectives": [
+      "Structure an NLP script as importable functions with a command-line entry point",
+      "Write pytest tests for text-processing functions, including edge cases"
+     ],
+     "key_points": [
+      "Put reusable code in functions in a module, and call main() under if __name__ == '__main__':, so tests and other scripts can import the module without running it.",
+      "Docstrings and type hints, such as def tokenize(line: str) -> list[str]:, record what each function expects and returns; sys.argv or argparse turns command-line arguments into parameters.",
+      "pytest finds files named test_*.py and runs their test_ functions; each test runs your code on a small input whose answer you've worked out by hand and checks it with a plain assert.",
+      "Test the edge cases text throws at you: empty strings and blank lines, input that's only punctuation, contractions, accented and non-Latin characters, and words never seen in training.",
+      "Compare floating-point results with pytest.approx, as in assert p == pytest.approx(2 / 3), and use the tmp_path fixture to give a test its own temporary folder for files."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Run tests with pytest",
+      "steps": [
+       {
+        "do": "Install pytest and run every test verbosely.",
+        "code": "pip install pytest\npython -m pytest -v",
+        "lang": "bash",
+        "see": "Each test listed with PASSED or FAILED, then a summary line such as 9 passed."
+       },
+       {
+        "do": "Run only the tests whose names contain a word.",
+        "code": "python -m pytest -k perplexity",
+        "lang": "bash"
+       },
+       {
+        "do": "Stop at the first failure, which helps while you fix tests one at a time.",
+        "code": "python -m pytest -x",
+        "lang": "bash"
+       },
+       {
+        "do": "Read a test: a small input, its expected output worked out by hand, and an assert.",
+        "code": "def test_tokenize_keeps_apostrophes_inside_words():\n    assert tokenize(\"Don't stop.\") == [\"don't\", \"stop\"]",
+        "lang": "python"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Build and test a bigram language model",
+    "tool": "Python 3 and pytest",
+    "minutes": 60,
+    "goal": "Implement a bigram language model as a tested module: stream sentences with a generator, count bigrams with sentence boundaries, estimate probabilities with add-k smoothing, and compare the test perplexity of maximum likelihood, add-one and smaller values of k.",
+    "setup": [
+     "Python 3.10 or later with pytest (pip install pytest); this lab needs no NLTK data",
+     "The starter files bigram_lm.py, test_bigram_lm.py, train.txt and test.txt, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Run the tests before writing anything.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "9 failed: nothing is implemented yet."
+     },
+     {
+      "do": "Write tokenize() and read_sentences() (TODOs 1 and 2); read_sentences must use yield. Run the tests.",
+      "see": "The two tokenize tests and the read_sentences test pass."
+     },
+     {
+      "do": "Write fit() (TODO 3): pad each sentence, update vocab, history and bigrams, then add </s> and <UNK> to the vocabulary."
+     },
+     {
+      "do": "Write replace_unknown() and prob() (TODOs 4 and 5), then sentence_logprob() and perplexity() (TODOs 6 and 7), running the tests after each.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "9 passed"
+     },
+     {
+      "do": "Train on the ferry sentences and score the test sentences.",
+      "code": "python bigram_lm.py train.txt test.txt",
+      "lang": "bash",
+      "see": "Training: 60 sentences, 431 tokens, vocabulary 126; drinks is the only unknown test word; test perplexity inf for k=0, 35.91 for k=1, then 12.17, 7.42 and 7.66 for k=0.1, 0.01 and 0.001."
+     },
+     {
+      "do": "In two or three sentences starting Explanation:, say why k=0 gives inf, why a smaller k beats add-one here, why the perplexity rises again at k=0.001, and why choosing k on the test set isn't fair."
+     }
+    ],
+    "checks": [
+     {
+      "text": "All nine tests pass.",
+      "look_for": [
+       "9 passed"
+      ]
+     },
+     {
+      "text": "The model is trained with sentence boundaries and the right vocabulary.",
+      "look_for": [
+       "Training: 60 sentences, 431 tokens, vocabulary 126",
+       "(('<s>', 'the'), 46)"
+      ]
+     },
+     {
+      "text": "Unknown test words are found and mapped to <UNK>.",
+      "look_for": [
+       "Unknown test words: ['drinks']"
+      ]
+     },
+     {
+      "text": "Maximum likelihood gives infinite perplexity on the test sentences, and smoothing fixes it.",
+      "look_for": [
+       "k=0: P(ferry | the) = 0.1158, test perplexity inf",
+       "test perplexity 35.91"
+      ]
+     },
+     {
+      "text": "Smaller values of k are compared.",
+      "look_for": [
+       "test perplexity 7.42",
+       "test perplexity 7.66"
+      ]
+     },
+     {
+      "text": "The explanation covers zero probabilities, how much probability add-one gives unseen bigrams, and tuning on held-out data.",
+      "look_for": [
+       "Explanation:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished bigram_lm.py, the pytest summary, the output of python bigram_lm.py train.txt test.txt, and your Explanation:.",
+    "files": [
+     {
+      "path": "bigram_lm.py",
+      "content": "\"\"\"A bigram language model with add-k smoothing, and its perplexity on test sentences.\n\nMake the tests in test_bigram_lm.py pass, one at a time:  python -m pytest -v\nThen run the model:  python bigram_lm.py train.txt test.txt\n\"\"\"\n\nimport math\nimport re\nimport sys\nfrom collections import Counter\n\nSTART, END, UNK = \"<s>\", \"</s>\", \"<UNK>\"\n\n\ndef tokenize(line):\n    \"\"\"Lowercase a line and return its words: letters, with an optional apostrophe part.\"\"\"\n    # TODO 1: re.findall with the pattern r\"[a-z]+(?:'[a-z]+)?\" on the lowercased line\n    pass\n\n\ndef read_sentences(path):\n    \"\"\"Yield the tokens of each non-empty line of a UTF-8 text file, one list per line.\"\"\"\n    # TODO 2: open the file in a with block and, for each line, yield its tokens if there are any.\n    #         Use yield, not return: the tests check that this is a generator.\n    pass\n\n\nclass BigramLM:\n    \"\"\"P(word | previous word) from counts, with add-k smoothing (k=0 is maximum likelihood).\"\"\"\n\n    def __init__(self, k=1.0):\n        self.k = k\n        self.bigrams = Counter()  # (previous, word) -> count\n        self.history = Counter()  # previous -> how often it is followed by something\n        self.vocab = set()\n\n    def fit(self, sentences):\n        # TODO 3: for each sentence, pad it as [START] + tokens + [END]; add its tokens to vocab,\n        #         count every token except the last in history, and count zip(padded, padded[1:]) in bigrams.\n        #         After the loop, add END and UNK to vocab. Return self.\n        pass\n\n    def replace_unknown(self, tokens):\n        # TODO 4: return the tokens with every word that isn't in vocab replaced by UNK\n        pass\n\n    def prob(self, prev, word):\n        # TODO 5: (count(prev, word) + k) / (count(prev) + k * V), where V = len(self.vocab);\n        #         return 0.0 when the denominator is 0\n        pass\n\n    def sentence_logprob(self, tokens):\n        # TODO 6: pad the sentence (after replace_unknown) and add up math.log(p) for each bigram;\n        #         return -math.inf as soon as a probability is 0\n        pass\n\n    def perplexity(self, sentences):\n        # TODO 7: math.exp(-total log probability / N), where N counts every word plus one END per sentence\n        pass\n\n\ndef main(train_path=\"train.txt\", test_path=\"test.txt\"):\n    train = list(read_sentences(train_path))\n    test = list(read_sentences(test_path))\n    model = BigramLM(k=1).fit(train)\n    print(f\"Training: {len(train)} sentences, {sum(map(len, train))} tokens, vocabulary {len(model.vocab)}\")\n    print(\"Most common bigrams:\", model.bigrams.most_common(3))\n    print(\"Unknown test words:\", sorted({t for s in test for t in s if t not in model.vocab}))\n    for k in (0, 1, 0.1, 0.01, 0.001):\n        model.k = k\n        print(f\"k={k}: P(ferry | the) = {model.prob('the', 'ferry'):.4f}, test perplexity {model.perplexity(test):.2f}\")\n\n\nif __name__ == \"__main__\":\n    main(*sys.argv[1:])\n"
+     },
+     {
+      "path": "test_bigram_lm.py",
+      "content": "\"\"\"Tests for bigram_lm.py. Run them with:  python -m pytest -v\"\"\"\n\nimport inspect\nimport math\n\nimport pytest\n\nfrom bigram_lm import END, START, UNK, BigramLM, read_sentences, tokenize\n\nTOY = [[\"the\", \"cat\", \"sat\"], [\"the\", \"dog\", \"sat\"], [\"a\", \"cat\", \"ran\"]]\n\n\ndef test_tokenize_lowercases_and_drops_punctuation():\n    assert tokenize(\"The cat, sat!\") == [\"the\", \"cat\", \"sat\"]\n\n\ndef test_tokenize_keeps_apostrophes_inside_words():\n    assert tokenize(\"Don't stop.\") == [\"don't\", \"stop\"]\n\n\ndef test_read_sentences_is_a_generator_and_skips_blank_lines(tmp_path):\n    path = tmp_path / \"s.txt\"\n    path.write_text(\"The cat sat.\\n\\nA dog ran.\\n\", encoding=\"utf-8\")\n    sentences = read_sentences(path)\n    assert inspect.isgenerator(sentences)\n    assert list(sentences) == [[\"the\", \"cat\", \"sat\"], [\"a\", \"dog\", \"ran\"]]\n\n\ndef test_counts_include_sentence_boundaries():\n    model = BigramLM().fit(TOY)\n    assert model.bigrams[(START, \"the\")] == 2\n    assert model.bigrams[(\"sat\", END)] == 2\n    assert model.history[START] == 3\n    assert len(model.vocab) == 8  # 6 words, plus </s> and <UNK>\n\n\ndef test_maximum_likelihood_probabilities():\n    model = BigramLM(k=0).fit(TOY)\n    assert model.prob(START, \"the\") == pytest.approx(2 / 3)\n    assert model.prob(\"the\", \"cat\") == pytest.approx(1 / 2)\n    assert model.prob(\"dog\", \"ran\") == 0.0\n\n\ndef test_add_one_probabilities():\n    model = BigramLM(k=1).fit(TOY)\n    assert model.prob(\"the\", \"cat\") == pytest.approx((1 + 1) / (2 + 8))\n    assert model.prob(\"dog\", \"ran\") == pytest.approx(1 / 9)\n\n\ndef test_add_one_probabilities_sum_to_one():\n    model = BigramLM(k=1).fit(TOY)\n    assert sum(model.prob(\"cat\", w) for w in model.vocab) == pytest.approx(1.0)\n\n\ndef test_unknown_words_become_unk():\n    model = BigramLM().fit(TOY)\n    assert model.replace_unknown([\"the\", \"zebra\"]) == [\"the\", UNK]\n\n\ndef test_perplexity_by_hand():\n    model = BigramLM(k=0).fit(TOY)\n    # P(the cat sat) = 2/3 * 1/2 * 1/2 * 1 (for </s>) = 1/6, over 4 predicted tokens\n    assert model.perplexity([[\"the\", \"cat\", \"sat\"]]) == pytest.approx(6 ** 0.25)\n    assert math.isinf(model.perplexity([[\"the\", \"cat\", \"ran\", \"away\"]]))\n"
+     },
+     {
+      "path": "train.txt",
+      "content": "The ferry leaves the harbour at nine.\nThe ferry reaches the island at eleven.\nNora sells tea on the ferry.\nNora sells tea and cake on the lower deck.\nThe students drink tea on the lower deck.\nThe man with the grey dog reads the newspaper.\nThe grey dog sleeps under the bench.\nThe old woman knits a blue scarf.\nThe sea is calm tonight.\nThe sea is rough when the wind comes from the west.\nThe wind comes from the west tonight.\nThe ferry rolls when the sea is rough.\nThe tea cart rolls when the ferry rolls.\nNora holds the cart with one hand.\nThe students laugh when the ferry rolls.\nThe clock man lives on the island.\nThe clock man mends old clocks.\nThe clock man mends watches and clocks.\nThe young man takes the clock to the island.\nThe young man buys a cup of tea.\nNora pours a cup of tea for the young man.\nThe lights of the island are small and yellow.\nThe lights of the harbour are bright tonight.\nThe passengers walk down the ramp.\nThe passengers leave the ferry at the harbour.\nNora counts the coins after the last crossing.\nNora washes the cups after the last crossing.\nThe last crossing leaves the island at midnight.\nThe dog chases the blue scarf across the deck.\nThe students chase the dog across the deck.\nThe old woman drops her knitting.\nThe old woman smiles at the students.\nThe man with the grey dog smiles at Nora.\nTea is good when the sea is rough.\nCake is good when the sea is calm.\nThe ferry is late when the wind is strong.\nThe wind is strong in winter.\nThe sea is cold in winter.\nThe island is quiet in winter.\nThe harbour is busy in summer.\nThe ferry is full in summer.\nNora sells more tea in winter.\nNora sells more cake in summer.\nThe young man has a wooden box.\nThe wooden box holds an old clock.\nThe old clock rings every hour.\nThe clock rings in the kitchen every hour.\nThe young man thinks of his grandmother.\nHis grandmother lived on the island.\nThe students argue about music.\nThe students argue about the weather.\nThe man reads the newspaper every night.\nThe dog sleeps every night on the ferry.\nNora knows the passengers by their faces.\nNora knows the island and the harbour.\nThe ferry crosses the bay every night.\nThe bay is calm in the morning.\nThe morning ferry is quiet.\nThe night ferry is busy.\nNora likes the night ferry.\n"
+     },
+     {
+      "path": "test.txt",
+      "content": "The ferry leaves the island at midnight.\nNora sells tea on the night ferry.\nThe sea is cold tonight.\nThe grey dog chases the students.\nThe clock man drinks tea.\nThe harbour is quiet in winter.\nThe young man smiles at the old woman.\nNora pours tea for the students.\n"
+     }
+    ],
+    "hints": [
+     "history counts every padded token except the last of each sentence, so history['<s>'] is the number of sentences.",
+     "The vocabulary is everything the model can predict: the training words plus </s> and <UNK>, but not <s>, which is never predicted.",
+     "math.exp(math.inf) is inf, so a sentence log probability of -math.inf makes the perplexity inf without any special case."
+    ]
+   }
+  },
+  {
+   "title": "Tokenisation, edit distance and regex in practice",
+   "summary": "Write regular expressions with groups and lookarounds, design tokenisers for messy text, compute edit distance to correct spelling, and see how subword tokenisers such as byte-pair encoding split words.",
+   "instructor": "aoife-murphy",
+   "lessons": [
+    {
+     "title": "Regular expressions in practice: groups and lookarounds",
+     "minutes": 14,
+     "objectives": [
+      "Write regular expressions with character classes, quantifiers and groups",
+      "Use lookahead and lookbehind to match by context"
+     ],
+     "key_points": [
+      "Write patterns as raw strings, r'\\d+', so backslashes reach the regex engine unchanged. re.findall returns every match, re.finditer yields match objects with positions, re.sub replaces and re.split splits.",
+      "The quantifiers *, + and {m,n} are greedy and match as much as they can; adding ? makes them lazy, so r'<.+?>' matches one HTML tag where r'<.+>' runs from the first '<' to the last '>' on the line.",
+      "Parentheses capture, and when a pattern has groups re.findall returns the groups instead of the whole match, a common surprise. (?:...) groups without capturing, and (?P<year>\\d{4}) names a group that m.group('year') reads.",
+      "Lookarounds check what's beside a position without consuming it: (?=...) lookahead, (?!...) negative lookahead, (?<=...) lookbehind and (?<!...) negative lookbehind. r'(?<=€)\\d+' finds amounts after a euro sign without including the sign.",
+      "Python's re module needs lookbehinds of fixed width, so (?<=€|EUR )\\d+ raises 'look-behind requires fixed-width pattern' while (?<=€)\\d+|(?<=EUR )\\d+ works. re.VERBOSE lets you spread a long pattern over several lines with comments."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "Groups and lookarounds at the prompt",
+      "steps": [
+       {
+        "do": "Find dates with two groups.",
+        "code": "import re\nre.findall(r'(\\d{4})-(\\d{2})', 'from 2024-05 to 2025-01')",
+        "lang": "python",
+        "see": "[('2024', '05'), ('2025', '01')]: the groups, not the whole matches."
+       },
+       {
+        "do": "Without groups you get whole matches.",
+        "code": "re.findall(r'\\d{4}-\\d{2}', 'from 2024-05 to 2025-01')",
+        "lang": "python",
+        "see": "['2024-05', '2025-01']"
+       },
+       {
+        "do": "Name the groups and read one match.",
+        "code": "m = re.search(r'(?P<year>\\d{4})-(?P<month>\\d{2})', 'from 2024-05 to 2025-01')\nm.group('year'), m.group('month'), m.span()",
+        "lang": "python",
+        "see": "('2024', '05', (5, 12))"
+       },
+       {
+        "do": "Compare greedy and lazy matching.",
+        "code": "re.findall(r'<.+>', '<b>bold</b> and <i>it</i>'), re.findall(r'<.+?>', '<b>bold</b>')",
+        "lang": "python",
+        "see": "(['<b>bold</b> and <i>it</i>'], ['<b>', '</b>'])"
+       },
+       {
+        "do": "Insert spaces where a lower-case letter meets a capital, matching only a position.",
+        "code": "re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', 'NaturalLanguageProcessing')",
+        "lang": "python",
+        "see": "'Natural Language Processing'"
+       },
+       {
+        "do": "Try a lookbehind whose alternatives differ in width.",
+        "code": "re.findall(r'(?<=€|EUR )\\d+', 'Tea €4, cake EUR 12')",
+        "lang": "python",
+        "see": "re.error: look-behind requires fixed-width pattern"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Tokenisation strategies and tricky characters",
+     "minutes": 12,
+     "objectives": [
+      "Compare whitespace, rule-based and regular-expression tokenisers",
+      "Handle punctuation, contractions, numbers, URLs, hashtags and emoji deliberately"
+     ],
+     "key_points": [
+      "Every tokeniser makes decisions: whether \"don't\" is one token or two, whether 'e-mail' splits at the hyphen, whether '$4.50' or '20%' stays whole. Choose rules that suit the task, and apply the same ones to training data, test data and queries.",
+      "nltk.word_tokenize follows Penn Treebank conventions, so \"Don't\" becomes 'Do' and \"n't\", and it splits sentences first with the Punkt model, which needs nltk.download('punkt_tab') in NLTK 3.9 and later. It breaks URLs and email addresses into pieces.",
+      "Punkt sentence splitting knows about abbreviations, so 'Dr. Smith arrived at 3 p.m. He was late.' is split after 'p.m.' but not after 'Dr.', where splitting at every full stop gets both wrong.",
+      "A regular-expression tokeniser gives full control: list the specific patterns first (URLs, email addresses, money, numbers, words with inner hyphens or apostrophes) and a catch-all for single symbols last, because alternatives are tried left to right and the first that matches wins.",
+      "Social media text needs its own rules: NLTK's TweetTokenizer keeps hashtags, @mentions, URLs and emoji whole. Languages written without spaces, such as Chinese, Japanese and Thai, need dedicated word segmenters."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "One sentence, three tokenisers",
+      "steps": [
+       {
+        "do": "Download the Punkt sentence model, once.",
+        "code": "python -c \"import nltk; [nltk.download(r) for r in ('punkt_tab',)]\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Split sentences with Punkt.",
+        "code": "import nltk\nnltk.sent_tokenize('Dr. Smith arrived at 3 p.m. He was late. Was he?')",
+        "lang": "python",
+        "see": "['Dr. Smith arrived at 3 p.m.', 'He was late.', 'Was he?']"
+       },
+       {
+        "do": "Tokenise a social-media style sentence with word_tokenize.",
+        "code": "s = \"Don't email ana.lima@example.org! #FerryFest 🙂\"\nnltk.word_tokenize(s)",
+        "lang": "python",
+        "see": "['Do', \"n't\", 'email', 'ana.lima', '@', 'example.org', '!', '#', 'FerryFest', '🙂']"
+       },
+       {
+        "do": "Tokenise it with TweetTokenizer.",
+        "code": "from nltk.tokenize import TweetTokenizer\nTweetTokenizer().tokenize(s)",
+        "lang": "python",
+        "see": "[\"Don't\", 'email', 'ana.lima@example.org', '!', '#FerryFest', '🙂']"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Minimum edit distance and spelling correction",
+     "minutes": 14,
+     "objectives": [
+      "Compute minimum edit distance with dynamic programming",
+      "Build a simple spelling corrector from edit distance and word frequencies"
+     ],
+     "key_points": [
+      "Minimum edit distance is the smallest number of edits (insertions, deletions and substitutions) that turns one string into another. With every edit costing 1, the Levenshtein distance, 'kitten' to 'sitting' is 3.",
+      "Dynamic programming fills a table D in which D[i][j] is the distance between the first i characters of the source and the first j of the target: D[i][0] = i, D[0][j] = j, and D[i][j] = min(D[i-1][j] + 1, D[i][j-1] + 1, D[i-1][j-1] + (0 if the characters match, else 1)).",
+      "The table takes time and memory proportional to the product of the two lengths; recording which choice won in each cell (a backpointer) recovers the alignment, the edits themselves.",
+      "Costs are a modelling choice: if a substitution costs 2, 'intention' to 'execution' is 8 instead of 5 (nltk.edit_distance(a, b, substitution_cost=2)). With transpositions=True, swapping two adjacent letters counts as one edit, so 'teh' is 1 from 'the' instead of 2.",
+      "A simple spelling corrector proposes known words within distance 1 or 2 and picks the most frequent. Allowing swaps matters: with Brown corpus counts, plain Levenshtein corrects 'teh' to 'ten' and 'recieve' to 'relieve', while counting transpositions gives 'the' and 'receive'."
+     ],
+     "walkthrough": {
+      "tool": "Python and NLTK",
+      "title": "Edit distances with NLTK",
+      "steps": [
+       {
+        "do": "Compute two Levenshtein distances.",
+        "code": "import nltk\nnltk.edit_distance('kitten', 'sitting'), nltk.edit_distance('intention', 'execution')",
+        "lang": "python",
+        "see": "(3, 5)"
+       },
+       {
+        "do": "Make a substitution cost 2.",
+        "code": "nltk.edit_distance('intention', 'execution', substitution_cost=2)",
+        "lang": "python",
+        "see": "8"
+       },
+       {
+        "do": "Count a swap of adjacent letters as one edit.",
+        "code": "nltk.edit_distance('teh', 'the'), nltk.edit_distance('teh', 'the', transpositions=True)",
+        "lang": "python",
+        "see": "(2, 1)"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Subword tokenisation: byte-pair encoding and its relatives",
+     "minutes": 12,
+     "objectives": [
+      "Explain why modern language models split words into subwords",
+      "Trace how byte-pair encoding learns and applies merges"
+     ],
+     "key_points": [
+      "A fixed word vocabulary can't cover every word, so new names, typos and rare inflected forms all become unknown. Subword tokenisers split rare words into frequent pieces while keeping common words whole, so any word can be represented.",
+      "Byte-pair encoding (BPE) learns its vocabulary from a corpus: start from single characters plus an end-of-word marker, count adjacent symbol pairs across all words weighted by word frequency, merge the most frequent pair into a new symbol, and repeat for a chosen number of merges.",
+      "On the toy corpus low ×5, lower ×2, newest ×6 and widest ×3 the first merges are e+s, es+t and est+</w>. To tokenise new text BPE applies the learned merges in the same order, so the unseen word 'lowest' becomes 'low' + 'est</w>'.",
+      "The number of merges sets the vocabulary size: more merges give shorter token sequences but a bigger vocabulary to learn. BERT's WordPiece vocabulary has 30,522 entries and GPT-2's byte-level BPE 50,257.",
+      "The relatives differ in detail: WordPiece (BERT) picks the merge that most increases the likelihood of the training data and marks word-internal pieces with ##; SentencePiece's unigram model prunes a large vocabulary and treats the space as an ordinary symbol (▁); byte-level BPE starts from the 256 byte values, so no character is ever unknown."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Tokenise, correct and segment text",
+    "tool": "Python 3 and NLTK",
+    "minutes": 60,
+    "goal": "Finish a small text toolkit: a regular-expression tokeniser for messy text, pattern finders with named groups and lookarounds, a dynamic-programming edit distance with a spelling corrector, and a byte-pair encoding learner.",
+    "setup": [
+     "Python 3.10 or later with NLTK",
+     "The Punkt model and the Brown corpus, downloaded once: python -c \"import nltk; [nltk.download(r) for r in ('punkt_tab', 'brown')]\"",
+     "The starter file textkit.py"
+    ],
+    "steps": [
+     {
+      "do": "Fill in the four missing alternatives of TOKEN (TODOs 1 to 4), keeping specific patterns before general ones, and write DATE with named groups (TODO 5). Comment out the later parts of main() for now and run it.",
+      "code": "python textkit.py",
+      "lang": "bash",
+      "see": "Regex tokens (31), with 'ana.lima@example.org', '#FerryFest', '€12.50', '20%', 'https://example.org/tickets' and \"Don't\" each whole; word_tokenize gives 35 tokens and breaks the URL and email apart; TweetTokenizer gives 33."
+     },
+     {
+      "do": "Write find_prices() with a lookbehind, and split_hashtag() with a lookbehind and a lookahead (TODOs 6 and 7).",
+      "see": "Prices: ['12.50'] | hashtag: Ferry Fest, then Date: 2025 March 14"
+     },
+     {
+      "do": "Write edit_distance() with the dynamic-programming table (TODO 8) and compare it with NLTK's.",
+      "see": "kitten -> sitting: ours 3, nltk 3, with transpositions 3 ... teh -> the: ours 2, nltk 2, with transpositions 1"
+     },
+     {
+      "do": "Run the spelling corrector over the Brown corpus's word counts; it takes a few seconds.",
+      "see": "teh: Levenshtein -> ten, with transpositions -> the; recieve: Levenshtein -> relieve, with transpositions -> receive; langauge and speling are corrected either way."
+     },
+     {
+      "do": "Finish learn_bpe() (TODO 9) and run the whole script.",
+      "see": "Merges: ['e s', 'es t', 'est </w>', 'l o', 'lo w', 'n e', 'ne w', 'new est</w>'], then lowest -> ['low', 'est</w>'], newer -> ['new', 'e', 'r', '</w>'] and wider split into single characters."
+     },
+     {
+      "do": "In two or three sentences starting Reflection:, explain why newer and wider split into many pieces and what more training text and more merges would change."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The regex tokeniser keeps emails, money, URLs and contractions whole.",
+      "look_for": [
+       "Regex tokens (31)",
+       "'ana.lima@example.org'",
+       "'€12.50'",
+       "'https://example.org/tickets'"
+      ]
+     },
+     {
+      "text": "Lookarounds and named groups work.",
+      "look_for": [
+       "Prices: ['12.50'] | hashtag: Ferry Fest",
+       "Date: 2025 March 14"
+      ]
+     },
+     {
+      "text": "The dynamic-programming edit distance matches NLTK's.",
+      "look_for": [
+       "kitten -> sitting: ours 3, nltk 3",
+       "intention -> execution: ours 5, nltk 5"
+      ]
+     },
+     {
+      "text": "The corrector shows why transpositions matter.",
+      "look_for": [
+       "teh: Levenshtein -> ten, with transpositions -> the",
+       "recieve: Levenshtein -> relieve, with transpositions -> receive"
+      ]
+     },
+     {
+      "text": "BPE learns its merges in order and applies them to unseen words.",
+      "look_for": [
+       "'e s', 'es t', 'est </w>'",
+       "lowest -> ['low', 'est</w>']"
+      ]
+     },
+     {
+      "text": "The reflection explains how subwords handle unseen words.",
+      "look_for": [
+       "Reflection:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished textkit.py, everything it printed, and your Reflection:.",
+    "files": [
+     {
+      "path": "textkit.py",
+      "content": "\"\"\"Tokenise with a regular expression, find patterns, correct spelling and learn BPE merges.\n\nFirst, once:  python -c \"import nltk; [nltk.download(r) for r in ('punkt_tab', 'brown')]\"\n\"\"\"\n\nimport re\nfrom collections import Counter\n\nimport nltk\nfrom nltk.tokenize import TweetTokenizer\n\nTEXT = (\"Email ana.lima@example.org by 5 p.m. on 14 March 2025: tickets for #FerryFest are €12.50 \"\n        \"(20% off), see https://example.org/tickets... Don't be late! 🙂\")\n\n# Alternatives are tried left to right, so specific patterns go before general ones.\nTOKEN = re.compile(r\"\"\"\n      https?://\\S+?(?=\\.{3}|[.,!?]?(?:\\s|$))   # a URL, without the punctuation after it\n    # TODO 1: an email address, such as ana.lima@example.org\n    # TODO 2: a hashtag or @mention\n    # TODO 3: money: a $, € or £ sign, then digits with optional . or , groups\n    # TODO 4: a number or percentage, such as 14, 2025 or 20%\n    | \\w+(?:[-']\\w+)*                            # a word, with inner hyphens or apostrophes\n    | \\.\\.\\.                                     # an ellipsis\n    | [^\\w\\s]                                    # any other single character\n\"\"\", re.VERBOSE)\n\n# TODO 5: a DATE pattern with named groups day, month and year that matches \"14 March 2025\"\nDATE = None\n\n\ndef tokenize(text):\n    return TOKEN.findall(text)\n\n\ndef find_prices(text):\n    \"\"\"Amounts written after a euro sign, without the sign.\"\"\"\n    # TODO 6: use a lookbehind, (?<=€), so the sign is checked but not returned\n    pass\n\n\ndef split_hashtag(tag):\n    \"\"\"'#FerryFest' -> 'Ferry Fest': a space wherever a lower-case letter meets a capital.\"\"\"\n    # TODO 7: re.sub with a lookbehind for [a-z] and a lookahead for [A-Z], replacing the empty match with \" \"\n    pass\n\n\ndef edit_distance(source, target):\n    \"\"\"Levenshtein distance: insertions, deletions and substitutions each cost 1.\"\"\"\n    # TODO 8: fill a (len(source) + 1) x (len(target) + 1) table:\n    #   d[i][0] = i, d[0][j] = j, and\n    #   d[i][j] = min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (0 if the characters match else 1))\n    pass\n\n\ndef correct(word, counts, distance):\n    \"\"\"The most frequent known word at the smallest distance (at most 2) from word.\"\"\"\n    if word in counts:\n        return word\n    candidates = [(distance(word, w), -c, w) for w, c in counts.items() if abs(len(w) - len(word)) <= 2]\n    best = min(candidates)\n    return best[2] if best[0] <= 2 else word\n\n\ndef learn_bpe(word_counts, merges):\n    \"\"\"Learn BPE merges from {word: count}; each word starts as characters plus an end-of-word marker.\"\"\"\n    vocab = {tuple(word) + (\"</w>\",): count for word, count in word_counts.items()}\n    learned = []\n    for _ in range(merges):\n        # TODO 9: count every adjacent pair of symbols, weighted by the word's count, in a Counter;\n        #         take the most common pair with .most_common(1), add it to learned, and\n        #         rebuild vocab with merge_pair applied to every word\n        pass\n    return learned\n\n\ndef merge_pair(symbols, pair):\n    out, i = [], 0\n    while i < len(symbols):\n        if i < len(symbols) - 1 and (symbols[i], symbols[i + 1]) == pair:\n            out.append(symbols[i] + symbols[i + 1])\n            i += 2\n        else:\n            out.append(symbols[i])\n            i += 1\n    return tuple(out)\n\n\ndef apply_bpe(word, learned):\n    symbols = tuple(word) + (\"</w>\",)\n    for pair in learned:  # in the order they were learned\n        symbols = merge_pair(symbols, pair)\n    return list(symbols)\n\n\ndef main():\n    tokens = tokenize(TEXT)\n    print(f\"Regex tokens ({len(tokens)}):\", tokens)\n    print(f\"word_tokenize ({len(nltk.word_tokenize(TEXT))}):\", nltk.word_tokenize(TEXT))\n    print(f\"TweetTokenizer ({len(TweetTokenizer().tokenize(TEXT))}):\", TweetTokenizer().tokenize(TEXT))\n\n    print(\"Prices:\", find_prices(TEXT), \"| hashtag:\", split_hashtag(\"#FerryFest\"))\n    m = DATE.search(TEXT)\n    print(\"Date:\", m.group(\"year\"), m.group(\"month\"), m.group(\"day\"))\n\n    for a, b in [(\"kitten\", \"sitting\"), (\"intention\", \"execution\"), (\"teh\", \"the\")]:\n        print(f\"{a} -> {b}: ours {edit_distance(a, b)}, nltk {nltk.edit_distance(a, b)}, \"\n              f\"with transpositions {nltk.edit_distance(a, b, transpositions=True)}\")\n\n    counts = Counter(w.lower() for w in nltk.corpus.brown.words() if w.isalpha())\n    def damerau(a, b):\n        return nltk.edit_distance(a, b, transpositions=True)\n    for typo in [\"teh\", \"recieve\", \"langauge\", \"speling\"]:\n        print(f\"{typo}: Levenshtein -> {correct(typo, counts, edit_distance)}, \"\n              f\"with transpositions -> {correct(typo, counts, damerau)}\")\n\n    learned = learn_bpe({\"low\": 5, \"lower\": 2, \"newest\": 6, \"widest\": 3}, merges=8)\n    print(\"Merges:\", [\" \".join(p) for p in learned])\n    for word in [\"lowest\", \"newer\", \"wider\"]:\n        print(f\"{word} -> {apply_bpe(word, learned)}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "If '€12.50' comes out as '€' and '12.50', the money alternative is missing or comes after the catch-all [^\\w\\s].",
+     "Leave the URL alternative as given: its lookahead stops the match before trailing punctuation such as the '...'.",
+     "Counter.most_common(1)[0][0] is the most frequent pair, and on ties it returns the pair counted first, which keeps the merges in the order shown."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Set up Python and NLTK, learn tokens, types and Python's string tools, and build your first counting pipeline in the module 1 lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Load Brown, Gutenberg and your own files, compare genres with conditional frequency distributions, and explore WordNet's senses and relations.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Clean raw and web text: decode and normalise Unicode, strip HTML, and compare stemming with lemmatisation in the module 3 lab.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Write streaming, tested code, and build a bigram language model whose perplexity you measure.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Write regular expressions with groups and lookarounds, build a tokeniser and a spelling corrector, and trace BPE merges.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the mini-corpus pipeline, then review the course with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Build a mini-corpus processing pipeline",
+  "minutes": 480,
+  "brief": "Kilbrack, a small harbour town, has sent you a raw mini-corpus: two months of community noticeboard posts, a page of ferry service updates in HTML, visitor reviews, and a held-out file of May notices. Build an end-to-end Python pipeline that loads every file (extracting the HTML page's text), normalises Unicode and typography, tokenises with your own regular-expression tokeniser, and extracts the emails, dates, euro prices and hashtags with named groups and lookarounds. Report frequency distributions, including a comparison of chosen words across the files with a ConditionalFreqDist. Then build a bigram language model on the training files: report the most probable bigrams with their probabilities, choose a smoothing value k on a development split of the training text, and measure perplexity on the held-out May file. Organise the code as a small, tested package with a command-line entry point, so the whole report comes from one command.",
+  "deliverables": [
+   "pipeline.py and any modules it imports: loading, normalising, tokenising, extracting, counting and modelling as separate, documented functions, with the corpus streamed by generators",
+   "A pytest file with at least eight meaningful tests, including edge cases such as a decomposed accent, a curly apostrophe, an email address and an unseen word, all passing",
+   "The report: token and type counts before and after normalisation; the emails, dates, prices and hashtags found, with counts; the top 15 content words; and a table comparing chosen words across files",
+   "Bigram results: the 10 most frequent bigrams with their probabilities, development-set perplexity for at least three values of k, and held-out perplexity for the k you chose",
+   "A short README: how to run the pipeline and the tests, the NLTK downloads needed, and your normalisation and tokenisation decisions with their trade-offs"
+  ],
+  "rubric": [
+   {
+    "name": "Loading and normalisation",
+    "points": 20,
+    "description": "Every file is read as UTF-8, the HTML page's text is extracted without its script, style, menu or footer, and NFC or NFKC, casefolding and quote mapping are applied consistently, so the decomposed é and the ligatures are handled."
+   },
+   {
+    "name": "Tokenisation and pattern extraction",
+    "points": 20,
+    "description": "The tokeniser keeps emails, prices, hashtags and contractions whole; dates come from named groups and prices from a lookbehind, and every match is listed correctly."
+   },
+   {
+    "name": "Frequency analysis",
+    "points": 15,
+    "description": "FreqDist and ConditionalFreqDist results are correct, stop words are handled deliberately, and the comparison across files uses relative frequencies because the files differ in size."
+   },
+   {
+    "name": "Bigram model and evaluation",
+    "points": 20,
+    "description": "Probabilities are estimated with sentence boundaries, unseen words map to <UNK>, k is chosen on a development split rather than the May file, and the perplexities are reported and interpreted."
+   },
+   {
+    "name": "Code quality and tests",
+    "points": 15,
+    "description": "Small, documented functions, generators for streaming, a main() entry point, and at least eight passing pytest tests that cover edge cases."
+   },
+   {
+    "name": "README and reflection",
+    "points": 10,
+    "description": "Clear instructions, the NLTK resources needed, and an honest account of the normalisation and tokenisation choices and how they change the counts."
+   }
+  ],
+  "submit": "Paste your pipeline code (each file with its name), your test file and the pytest summary, the full report the pipeline prints, and your README. A link to a repository is welcome too.",
+  "files": [
+   {
+    "path": "corpus/noticeboard_march.txt",
+    "content": "KILBRACK COMMUNITY NOTICEBOARD — MARCH 2025\n\nThe harbour café reopens on Saturday 1 March 2025 after its winter repairs. Soup and soda bread cost €6.50 until the end of the month. Questions to cafe@example.org.\n\nKilbrack Tidy Towns meet on 8 March 2025 at the pier. Bring gloves; bin bags are provided. Everyone welcome! #TidyKilbrack #Kilbrack\n\nThe ferry timetable changes on 17 March 2025. The night ferry now leaves the harbour at 21:00 and the island at 23:00. Return tickets cost €12.50, or €8 for students. See the updates page or email ferry@example.org.\n\nSeán O’Malley is teaching a ﬁve-week beginners’ course in boat repair. It starts on 20 March 2025 in the old net loft and costs €45. “No experience needed,” says Seán, “just old clothes.” Book with sean.omalley@example.org.\n\nLost: a blue knitted scarf, last seen on the night ferry. If you find it, please leave it at the harbour café or email maire.k@example.org. Thank you!\n\nThe library’s reading group meets on 27 March 2025 to talk about island stories. Tea and scones are €3. #KilbrackReads\n"
+   },
+   {
+    "path": "corpus/noticeboard_april.txt",
+    "content": "KILBRACK COMMUNITY NOTICEBOARD — APRIL 2025\n\nThe spring market runs every Saturday from 5 April 2025 on the harbour green. Stalls cost €15 a day; book a stall with market@example.org. #KilbrackMarket\n\nThe night ferry will not sail on 12 April 2025 because of work on the island pier. A morning ferry leaves the harbour at 08:30 instead. Tickets bought for the night ferry will be refunded.\n\nThe clock-mending workshop on the island is open again, Tuesday to Friday. Mended clocks and watches can be collected from the harbour café on Saturdays.\n\nThe harbour café is looking for a part-time cook for the summer. €14 an hour, weekends and evenings. Send a short letter to cafe@example.org before 25 April 2025.\n\nKilbrack Rowing Club’s open day is on 26 April 2025. Try a boat for free, then join for €40 a year. “The sea is calmer than it looks,” the club promises. #Kilbrack #RowKilbrack\n\nThank you to everyone who came to the beach clean on 8 March 2025: 61 bags of rubbish were collected! #TidyKilbrack\n"
+   },
+   {
+    "path": "corpus/ferry_updates.html",
+    "content": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta charset=\"utf-8\">\n  <title>Kilbrack Ferry &ndash; Service Updates</title>\n  <style>.cancelled { color: red; } body { margin: 2em; }</style>\n  <script>var lastUpdated = \"2025-04-30\"; console.log(\"ferry updates loaded\");</script>\n</head>\n<body>\n  <nav><a href=\"/\">Home</a> &middot; <a href=\"/timetable\">Timetable</a> &middot; <a href=\"/fares\">Fares</a></nav>\n  <h1>Service updates</h1>\n  <p class=\"cancelled\">Saturday 12 April 2025: the night ferry is cancelled while the island pier is repaired.\n     A morning ferry leaves at 08:30 instead.</p>\n  <p>From 1 May 2025 the night ferry leaves the harbour at 21:30. Fares stay the same: &euro;12.50 return,\n     &euro;8 for students and &euro;0 for children under five.</p>\n  <p>Passengers with bicycles: please tell the crew before boarding &mdash; space on deck is limited.</p>\n  <p>Lost property is kept at the harbour caf&eacute; for 30&nbsp;days. Ask at the counter or write to\n     lost@example.org.</p>\n  <p>Follow #KilbrackFerry for weather warnings. When the wind comes from the west, crossings can be rough&hellip;</p>\n  <footer>&copy; 2025 Kilbrack Ferry Company. Updated 30 April 2025.</footer>\n</body>\n</html>\n"
+   },
+   {
+    "path": "corpus/visitor_reviews.txt",
+    "content": "★★★★★ The night ferry was rough but the tea was hot. Nora on the tea cart is a legend!! #Kilbrack\n\n★★★★ Lovely harbour café, great soda bread. The soup was €6.50 and worth every cent 🙂\n\n★★ Ferry was 40 minutes late on 17 March 2025 and nobody told us why. The crossing was VERY rough.\n\n★★★★★ We took the clock-mending workshop tour on the island. The clock man was kind and patient, and he mended my grandfather’s watch in a week.\n\n★★★ The market is small but friendly. Prices are fair: honey €7, jam €4.50. Parking is difficult on Saturdays.\n\n★★★★ Rowing club open day was brilliant. “The sea is calmer than it looks” — it wasn’t, but we loved it. #RowKilbrack\n\n★ Cafe was closed when the website said open. Emailed cafe@example.org, no reply yet.\n\n★★★★★ Best fish and chips on the coast. Ask for the ﬁsh of the day!\n"
+   },
+   {
+    "path": "corpus/heldout_may.txt",
+    "content": "KILBRACK COMMUNITY NOTICEBOARD — MAY 2025\n\nThe night ferry leaves the harbour at 21:30 from 1 May 2025. Return tickets still cost €12.50.\n\nThe harbour café is open every day in May. Tea and scones cost €3, and soup and soda bread €6.50.\n\nThe spring market moves to the pier on 10 May 2025. Book a stall with market@example.org. #KilbrackMarket\n\nThe rowing club thanks everyone who came to the open day. Join for €40 a year. #RowKilbrack\n\nLost: a wooden box, last seen at the harbour café. Please email lost@example.org.\n"
+   }
+  ]
+ }
+}

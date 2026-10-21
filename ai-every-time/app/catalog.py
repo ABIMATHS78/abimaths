@@ -36,12 +36,14 @@ DATA = Path(__file__).with_name("course_data")
 
 # Subjects, in the order the catalogue lists them.
 CATEGORIES = (
-    "Generative AI", "Machine Learning", "Data Science", "Software Development", "Networking", "Cybersecurity",
-    "Cloud & DevOps", "AI for Business", "Responsible AI", "AI in Industry", "Robotics & Edge AI",
+    "Generative AI", "Machine Learning", "AI Engineering", "Data Science", "Data Engineering", "Software Development",
+    "Computer Science", "Networking", "Cybersecurity", "Cloud & DevOps", "AI for Business", "Responsible AI",
+    "AI in Industry", "Robotics & Edge AI",
 )
 Category = Literal[
-    "Generative AI", "Machine Learning", "Data Science", "Software Development", "Networking", "Cybersecurity",
-    "Cloud & DevOps", "AI for Business", "Responsible AI", "AI in Industry", "Robotics & Edge AI",
+    "Generative AI", "Machine Learning", "AI Engineering", "Data Science", "Data Engineering", "Software Development",
+    "Computer Science", "Networking", "Cybersecurity", "Cloud & DevOps", "AI for Business", "Responsible AI",
+    "AI in Industry", "Robotics & Edge AI",
 ]
 LEVELS = ("beginner", "intermediate", "advanced")
 
@@ -193,6 +195,15 @@ class Module(Content):
         return sum(l.minutes for l in self.lessons) + (self.lab.minutes if self.lab else 0) + QUIZ_MINUTES
 
 
+class StudyWeek(Content):
+    """A week of a course's study plan: what to get done, and the modules it works through (from 1; none for a
+    week of review or the capstone project)."""
+
+    week: int = Field(ge=1, le=16)
+    focus: str = Field(min_length=10, max_length=300)
+    modules: list[int] = Field(default_factory=list, max_length=8)
+
+
 class Course(Content):
     slug: str = Field(min_length=3, max_length=48)
     title: str = Field(min_length=3, max_length=100)
@@ -209,6 +220,7 @@ class Course(Content):
     aligned_with: str = Field("", max_length=200)  # e.g. a certification's published exam topics
     modules: list[Module] = Field(min_length=1, max_length=8)
     project: Project | None = None
+    study_plan: list[StudyWeek] = Field(default_factory=list, max_length=16)  # week by week; one module a week if empty
 
     @field_validator("slug")
     @classmethod
@@ -241,6 +253,16 @@ class Course(Content):
             raise ValueError("a guided project has one module, which ends with its lab")
         if self.kind == "course" and len(self.modules) < 2:
             raise ValueError("a course has at least two modules")
+        if self.study_plan:
+            if [w.week for w in self.study_plan] != list(range(1, len(self.study_plan) + 1)):
+                raise ValueError("study_plan: number the weeks 1, 2, 3… in order")
+            covered = [m for w in self.study_plan for m in w.modules]
+            if any(not 1 <= m <= len(self.modules) for m in covered):
+                raise ValueError(f"study_plan names a module the course doesn't have (it has {len(self.modules)})")
+            if covered != sorted(covered):
+                raise ValueError("study_plan: take the modules in order")
+            if missing := sorted(set(range(1, len(self.modules) + 1)) - set(covered)):
+                raise ValueError(f"study_plan leaves out module {', '.join(map(str, missing))}")
         return self
 
     @property
@@ -252,6 +274,21 @@ class Course(Content):
         """Roughly how long it takes, as Coursera shows it: whole hours, or half hours under ten."""
         h = self.minutes / 60
         return max(0.5, round(h * 2) / 2) if h < 10 else float(round(h))
+
+    def plan(self) -> list[dict]:
+        """The study plan, week by week, with roughly how many hours each week takes: the one written for the course,
+        or one module a week. A module spread over several weeks shares its time between them; the capstone project
+        goes in the last week."""
+        weeks = [(w.week, w.focus, list(w.modules)) for w in self.study_plan] or \
+            [(i, m.summary, [i]) for i, m in enumerate(self.modules, 1)]
+        spread = {i: sum(i in mods for _, _, mods in weeks) for i in range(1, len(self.modules) + 1)}
+        out = []
+        for k, (week, focus, mods) in enumerate(weeks, 1):
+            minutes = sum(self.modules[m - 1].minutes / spread[m] for m in mods)
+            if k == len(weeks) and self.project:
+                minutes += self.project.minutes
+            out.append({"week": week, "focus": focus, "modules": mods, "hours": max(0.5, round(minutes / 30) / 2)})
+        return out
 
     @property
     def labs(self) -> list[tuple[int, Lab]]:

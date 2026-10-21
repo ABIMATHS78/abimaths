@@ -1,0 +1,1021 @@
+{
+  "slug": "data-warehousing-modelling",
+  "title": "Data Warehousing and Dimensional Modelling",
+  "subtitle": "Design star schemas the Kimball way, keep history with slowly changing dimensions, and build and load a working warehouse in DuckDB with SQL you run.",
+  "category": "Data Engineering",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "thandiwe-dlamini",
+    "ingride-bjornsson"
+  ],
+  "skills": [
+    "Dimensional modelling",
+    "Star schema design",
+    "Fact and dimension tables",
+    "Slowly changing dimensions",
+    "Analytical SQL",
+    "Aggregate tables and partitioning",
+    "Incremental warehouse loading",
+    "Lakehouse table formats"
+  ],
+  "tools": [
+    "DuckDB",
+    "Python",
+    "Apache Parquet",
+    "PostgreSQL"
+  ],
+  "outcomes": [
+    "Explain how analytical workloads differ from transactional ones, and why warehouses store data by column",
+    "Design a dimensional model with Kimball's four steps: business process, grain, dimensions and facts",
+    "Keep history with type 1 and type 2 slowly changing dimensions, and find the right version when loading facts",
+    "Choose between star and snowflake designs, and build aggregates and partitioned Parquet that reconcile with the base facts",
+    "Write incremental, idempotent loads with unknown and inferred members, and explain where lakehouse table formats fit"
+  ],
+  "prerequisites": "SQL for Data Analysis with DataGrip, or the same SQL: joins, GROUP BY, CTEs and window functions. Data Engineering Foundations: Batch and Streaming Pipelines helps but isn't required. Install Python 3.10 or later and the duckdb package (pip install duckdb); PostgreSQL is optional. Analytics Engineering with dbt and DuckDB and Enterprise Data and ML Platforms make good next steps.",
+  "description": "A data warehouse turns the records a business keeps into answers it can trust: revenue by region and month, stock that's about to run out, customers as they were last year and as they are today. This course teaches the design behind that, the dimensional modelling Ralph Kimball made standard, and has you build it. You'll start from a co-op's normalised sales database and see why analysts need a different shape, then declare a grain, design facts and dimensions with surrogate keys, keep history with type 1 and type 2 slowly changing dimensions, and compare star and snowflake schemas, aggregate tables and partitioned Parquet files.\n\nEvery module has a lab in DuckDB, a free analytical database that runs on any laptop with no server, with starter files and data that are identical on every computer, so your results can be checked to the penny. You'll write the SQL that builds the star, applies customer changes and looks up the right version of each customer, then a Python loader that's incremental, idempotent and audited. The last module places all of this in today's stack of cloud warehouses, ELT and lakehouse table formats such as Apache Iceberg and Delta Lake, and the capstone has you design and build a medicine-supply warehouse for rural clinics with three kinds of fact table.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Analytical workloads and the data warehouse",
+      "summary": "Why the database that records sales is the wrong shape for analysing them: OLTP versus OLAP, what a data warehouse is and how it's built, and how columnar engines such as DuckDB run analytical queries.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "OLTP and OLAP: two workloads, two designs",
+          "minutes": 12,
+          "objectives": [
+            "Contrast transactional and analytical workloads",
+            "Explain why normalised schemas suit recording data but not analysing it"
+          ],
+          "key_points": [
+            "Online transaction processing (OLTP) systems, such as a shop's tills or an order website, run many small reads and writes that each touch a few rows found by key, and must stay correct while many users change data at once.",
+            "Online analytical processing (OLAP) runs fewer, larger queries that scan and summarise many rows, such as revenue by region and month, and mostly reads data rather than changing it.",
+            "OLTP schemas are normalised, typically to third normal form, so each fact is stored once and updates can't contradict each other; answering a business question from them needs many joins across many tables.",
+            "Running heavy analysis on the operational database slows the application people depend on, and that database usually keeps only current values, not the history analysts need.",
+            "A data warehouse is a separate database designed for analysis: data is copied from the source systems, cleaned, integrated and reshaped for querying, and kept with its history."
+          ]
+        },
+        {
+          "title": "What a data warehouse is, and how it's built",
+          "minutes": 12,
+          "objectives": [
+            "Describe the layers data passes through on its way into a warehouse",
+            "Compare the Inmon and Kimball approaches, and ETL with ELT"
+          ],
+          "key_points": [
+            "Bill Inmon's classic definition calls a warehouse subject-oriented, integrated, time-variant and non-volatile: organised around business subjects, consistent across sources, kept over time, and added to rather than overwritten.",
+            "Inmon's approach builds a normalised enterprise warehouse first and feeds departmental data marts from it; Ralph Kimball's builds dimensional models one business process at a time, tied together by shared (conformed) dimensions in what he calls the bus architecture.",
+            "Data usually passes through layers: staging holds raw extracts as they arrived, an integration layer cleans them and matches keys across sources, and a presentation layer of dimensional models is what people and BI tools query.",
+            "ETL transforms data before loading it into the warehouse; ELT loads raw data first and transforms it inside the warehouse with SQL, which is now common because cloud warehouses scale storage and compute separately.",
+            "A warehouse is only trusted if its numbers reconcile with the source systems, so every load is checked with row counts and control totals, such as the sum of net sales, against the source."
+          ]
+        },
+        {
+          "title": "Columnar storage and how analytical engines run queries",
+          "minutes": 13,
+          "objectives": [
+            "Explain why column-oriented storage speeds up analytical queries",
+            "Read a DuckDB query plan and a Parquet file's metadata"
+          ],
+          "key_points": [
+            "Row stores such as PostgreSQL keep each row's values together, which suits reading or updating whole records; column stores keep each column's values together, so a query reads only the columns it uses.",
+            "Values in one column are alike, so they compress well with encodings such as dictionary and run-length encoding, and the engine reads less data from disk.",
+            "Columnar engines keep the minimum and maximum of each block of rows, called zone maps or, in Parquet, row-group statistics, and skip any block whose range can't match a query's filter.",
+            "Vectorised execution, as in DuckDB, processes a batch of values from a column at a time instead of one row at a time, which makes better use of modern CPUs.",
+            "DuckDB is an in-process analytical database: it runs inside Python or its command-line tool with no server, reads CSV and Parquet files directly, and EXPLAIN shows the operators, such as SEQ_SCAN, HASH_JOIN and HASH_GROUP_BY, that will run a query.",
+            "Apache Parquet is an open columnar file format: a file is split into row groups, each with one column chunk per column and that chunk's statistics, and most warehouse and lakehouse tools read and write it."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB CLI",
+            "title": "Explore a database from the DuckDB command line",
+            "steps": [
+              {
+                "do": "Install the DuckDB command-line tool from the installation page on duckdb.org, for example with brew install duckdb on macOS or winget install DuckDB.cli on Windows, then open the lab's database.",
+                "code": "duckdb shop.duckdb",
+                "lang": "bash",
+                "see": "A D prompt: you're in DuckDB, connected to shop.duckdb."
+              },
+              {
+                "do": "List the tables, then describe one to see its columns and types.",
+                "code": ".tables\nDESCRIBE orders;",
+                "lang": "sql",
+                "see": "categories, customers, order_lines, orders, products and stores; orders has order_id INTEGER, order_date DATE and so on."
+              },
+              {
+                "do": "Profile a table in one command: SUMMARIZE gives each column's type, minimum, maximum, approximate unique count and null percentage.",
+                "code": "SUMMARIZE order_lines;",
+                "lang": "sql"
+              },
+              {
+                "do": "Turn on the timer and run an analytical query.",
+                "code": ".timer on\nSELECT product_id, sum(quantity) AS units FROM order_lines GROUP BY product_id ORDER BY units DESC LIMIT 3;",
+                "lang": "sql",
+                "see": "Three rows, then a Run Time line."
+              },
+              {
+                "do": "Look at the plan for the same query: read it from the bottom (the scan) to the top (the result).",
+                "code": "EXPLAIN SELECT product_id, sum(quantity) AS units FROM order_lines GROUP BY product_id;",
+                "lang": "sql",
+                "see": "A SEQ_SCAN of order_lines projecting only product_id and quantity, under a group-by operator (PERFECT_HASH_GROUP_BY in recent versions, a fast path for small integer keys)."
+              },
+              {
+                "do": "Leave the CLI.",
+                "code": ".quit",
+                "lang": "sql"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Ask the operational database an analytical question",
+        "tool": "DuckDB",
+        "minutes": 45,
+        "goal": "Load the co-op's normalised sales database into DuckDB, answer a till-style question and an analyst's question, read the analyst's query plan, and look inside a Parquet file to see columnar storage at work.",
+        "setup": [
+          "Python 3.10 or later, in a new folder with its own virtual environment",
+          "The duckdb package: pip install duckdb",
+          "The starter files make_data.py, run_sql.py, oltp_schema.sql and lab1_queries.sql in that folder; keep the folder, because later labs use the same data"
+        ],
+        "steps": [
+          {
+            "do": "Create the source data. make_data.py writes CSV files to a data folder, and they're identical on every computer.",
+            "code": "python make_data.py",
+            "lang": "bash",
+            "see": "stores.csv: 3 rows down to order_lines.csv: 368 rows, then the files later labs use."
+          },
+          {
+            "do": "Build the co-op's operational database: normalised tables with primary and foreign keys, loaded from the CSV files. run_sql.py runs each statement in a file and prints every query's result.",
+            "code": "python run_sql.py shop.duckdb oltp_schema.sql",
+            "lang": "bash",
+            "see": "A table of row counts: 150 orders and 368 order lines."
+          },
+          {
+            "do": "Run lab1_queries.sql as it is. Q1 fetches one order by its key, the kind of question the tills ask all day; Q5 and Q6 look inside a Parquet copy of order_lines.",
+            "code": "python run_sql.py shop.duckdb lab1_queries.sql",
+            "lang": "bash",
+            "see": "Order 1042 has three lines, the last Whole milk 2l at 5.40."
+          },
+          {
+            "do": "Write Q2 where the TODO is: net revenue by region, department and quarter for completed orders. It needs four joins, from order_lines to orders, stores, products and categories. Run the file again.",
+            "code": "SELECT s.region, cat.department, EXTRACT(QUARTER FROM o.order_date) AS qtr,\n       CAST(sum(l.quantity * l.unit_price * (100 - l.discount_pct) / 100) AS DECIMAL(12, 2)) AS net_revenue\nFROM order_lines AS l\nJOIN orders AS o USING (order_id)\n-- ...three more joins, the WHERE, GROUP BY and ORDER BY",
+            "lang": "sql",
+            "see": "18 rows, from East | Farm | 1 | 804.14 to West | Garden | 2 | 2547.09."
+          },
+          {
+            "do": "Write Q3: the total net revenue of completed orders as one number named total_net_revenue."
+          },
+          {
+            "do": "Write Q4: EXPLAIN followed by a copy of Q2. Count the HASH_JOIN operators and find a SEQ_SCAN for each table: every question asked of this schema pays for these joins.",
+            "see": "Four HASH_JOIN operators and five SEQ_SCANs under a HASH_GROUP_BY."
+          },
+          {
+            "do": "Read Q5's output: one column chunk per column, each with its own minimum and maximum, the statistics an engine uses to skip data. Q6 needs one column, so a columnar engine reads just that one.",
+            "see": "order_id runs from 1001 to 1150, and units_sold is 1623."
+          },
+          {
+            "do": "Add a query that counts orders by status, and confirm your Q2 and Q3 leave the cancelled ones out.",
+            "code": "SELECT status, count(*) AS orders FROM orders GROUP BY status ORDER BY status;",
+            "lang": "sql",
+            "see": "cancelled | 5 and completed | 145."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The operational database was built with the right row counts.",
+            "look_for": [
+              "orders | 150",
+              "order_lines | 368"
+            ]
+          },
+          {
+            "text": "Q2 gives net revenue by region, department and quarter for completed orders only.",
+            "look_for": [
+              "East | Farm | 1 | 804.14",
+              "West | Garden | 2 | 2547.09"
+            ]
+          },
+          {
+            "text": "Q3's total leaves out the cancelled orders.",
+            "look_for": [
+              "17093.99"
+            ]
+          },
+          {
+            "text": "Q4's plan shows the joins the normalised schema forces.",
+            "look_for": [
+              "HASH_JOIN",
+              "SEQ_SCAN"
+            ]
+          },
+          {
+            "text": "The Parquet metadata shows per-column statistics.",
+            "look_for": [
+              "1001 | 1150"
+            ]
+          }
+        ],
+        "submit": "Paste your Q2, Q3 and Q4, then the output of python run_sql.py shop.duckdb lab1_queries.sql (you can cut the plan down to its operator names) and the counts by status.",
+        "files": [
+          {
+            "path": "make_data.py",
+            "content": "\"\"\"Write the Millbrook Co-op's source data to the data folder as CSV files.\n\nThe co-op has three stores and an online shop. Only random.Random(42).random() is used,\nso every computer and every Python 3 version writes exactly the same rows.\n\nRun:  python make_data.py\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\nfrom pathlib import Path\n\nOUT = Path(\"data\")\nrng = random.Random(42)\n\n\ndef pick(seq):\n    return seq[int(rng.random() * len(seq))]\n\n\ndef between(lo, hi):\n    return lo + int(rng.random() * (hi - lo + 1))\n\n\nSTORES = [(1, \"Millbrook High Street\", \"Millbrook\", \"North\", \"2015-04-01\"),\n          (2, \"Eastholm Market\", \"Eastholm\", \"East\", \"2018-09-15\"),\n          (3, \"Westcombe Depot\", \"Westcombe\", \"West\", \"2021-03-01\")]\nCATEGORIES = [(1, \"Seeds\", \"Garden\"), (2, \"Tools\", \"Garden\"), (3, \"Feed\", \"Farm\"),\n              (4, \"Fencing\", \"Farm\"), (5, \"Produce\", \"Food\"), (6, \"Dairy\", \"Food\")]\nPRODUCTS = [  # product_id, sku, name, category_id, list price (multiples of 0.10)\n    (1, \"SD-001\", \"Carrot seeds\", 1, \"2.50\"), (2, \"SD-002\", \"Kale seeds\", 1, \"2.80\"),\n    (3, \"SD-003\", \"Seed potatoes 5kg\", 1, \"7.90\"), (4, \"TL-001\", \"Spade\", 2, \"24.90\"),\n    (5, \"TL-002\", \"Pruning shears\", 2, \"14.50\"), (6, \"TL-003\", \"Wheelbarrow\", 2, \"69.00\"),\n    (7, \"FD-001\", \"Layer pellets 20kg\", 3, \"15.60\"), (8, \"FD-002\", \"Sheep nuts 25kg\", 3, \"13.20\"),\n    (9, \"FD-003\", \"Calf milk replacer\", 3, \"32.40\"), (10, \"FN-001\", \"Fence post 1.8m\", 4, \"4.20\"),\n    (11, \"FN-002\", \"Barbed wire 200m\", 4, \"38.50\"), (12, \"FN-003\", \"Electric fence tape\", 4, \"9.70\"),\n    (13, \"PR-001\", \"Apples 1kg\", 5, \"2.20\"), (14, \"PR-002\", \"Potatoes 2.5kg\", 5, \"2.90\"),\n    (15, \"PR-003\", \"Free-range eggs x12\", 5, \"3.60\"), (16, \"DY-001\", \"Whole milk 2l\", 6, \"1.80\"),\n    (17, \"DY-002\", \"Cheddar 400g\", 6, \"4.40\"), (18, \"DY-003\", \"Butter 250g\", 6, \"2.60\")]\nFIRST = [\"Amara\", \"Kofi\", \"Lena\", \"Ravi\", \"Sofia\", \"Mateo\", \"Aiko\", \"Tomasz\", \"Ngozi\", \"Liam\",\n         \"Priya\", \"Jonas\", \"Fatima\", \"Hugo\", \"Mei\", \"Omar\", \"Elif\", \"Arjun\", \"Nadia\", \"Rhys\"]\nLAST = [\"Okafor\", \"Mensah\", \"Novak\", \"Patel\", \"Rossi\", \"Silva\", \"Tanaka\", \"Kowalski\", \"Eze\", \"Murphy\",\n        \"Singh\", \"Berg\", \"Haddad\", \"Laurent\", \"Chen\", \"Farah\", \"Yilmaz\", \"Rao\", \"Petrova\", \"Evans\"]\nTOWNS = [\"Millbrook\", \"Eastholm\", \"Westcombe\", \"Brackenridge\"]\nHOME_STORE = {\"Millbrook\": 1, \"Eastholm\": 2, \"Westcombe\": 3}\n\n\ndef write(name, header, rows):\n    with open(OUT / name, \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow(header)\n        w.writerows(rows)\n    print(f\"{name}: {len(rows)} rows\")\n\n\ndef customers():\n    rows = []\n    for cid in range(1, 41):\n        first, last = pick(FIRST), pick(LAST)\n        rows.append([cid, first, last, f\"{first}.{last}{cid}@example.org\".lower(), pick(TOWNS),\n                     pick([\"member\", \"member\", \"member\", \"trade\", \"guest\"]),\n                     (date(2023, 1, 1) + timedelta(days=between(0, 700))).isoformat()])\n    return rows\n\n\ndef changed_customers(rows):\n    \"\"\"The customer extract on 2025-07-01: moves, a segment change, corrections and two new customers.\"\"\"\n    new = [list(r) for r in rows]\n    by_id = {r[0]: r for r in new}\n    for cid in (3, 17, 29):  # moved town\n        r = by_id[cid]\n        r[4] = TOWNS[(TOWNS.index(r[4]) + 1) % len(TOWNS)]\n    by_id[12][5] = \"trade\" if by_id[12][5] != \"trade\" else \"member\"  # changed segment\n    for cid in (8, 21):  # email address corrected\n        by_id[cid][3] = by_id[cid][3].replace(\"example.org\", \"example.net\")\n    by_id[5][2] = by_id[5][2] + \"-Hughes\"  # surname corrected\n    new.append([41, \"Grace\", \"Adeyemi\", \"grace.adeyemi41@example.org\", \"Eastholm\", \"member\", \"2025-06-20\"])\n    new.append([42, \"Ivan\", \"Horvat\", \"ivan.horvat42@example.org\", \"Brackenridge\", \"trade\", \"2025-06-28\"])\n    return new\n\n\ndef orders(custs):\n    town = {r[0]: r[4] for r in custs}\n    days = sorted(between(0, 180) for _ in range(150))\n    order_rows, line_rows = [], []\n    for i, day in enumerate(days):\n        oid = 1001 + i\n        cid = between(1, 40)\n        home = HOME_STORE.get(town[cid])\n        store = home if home and rng.random() < 0.8 else between(1, 3)\n        channel = \"online\" if rng.random() < 0.3 else \"in-store\"\n        status = \"cancelled\" if rng.random() < 0.05 else \"completed\"\n        order_rows.append([oid, cid, store, (date(2025, 1, 1) + timedelta(days=day)).isoformat(),\n                           channel, pick([\"card\", \"card\", \"cash\", \"account\"]), status])\n        line_rows += lines(oid)\n    return order_rows, line_rows\n\n\ndef lines(oid, n=None):\n    chosen = []\n    for _ in range(n or between(1, 4)):\n        p = pick(PRODUCTS)\n        if p not in chosen:\n            chosen.append(p)\n    out = []\n    for line_no, p in enumerate(chosen, 1):\n        qty = between(10, 40) if p[0] == 10 else between(1, 5)\n        out.append([oid, line_no, p[0], qty, p[4], pick([0, 0, 0, 10, 20])])\n    return out\n\n\ndef daily_extract(day, first_oid, customer_ids, store_ids):\n    \"\"\"A flat sales extract, one row per order line, as a source system might send each night.\"\"\"\n    rows = []\n    for k, (cid, sid) in enumerate(zip(customer_ids, store_ids)):\n        oid = first_oid + k\n        channel, payment = pick([\"in-store\", \"online\"]), pick([\"card\", \"cash\", \"account\"])\n        for line in lines(oid, n=2):\n            rows.append([line[0], line[1], day, cid, sid, line[2], line[3], line[4], line[5], channel, payment])\n    return rows\n\n\ndef main():\n    OUT.mkdir(exist_ok=True)\n    custs = customers()\n    order_rows, line_rows = orders(custs)\n    write(\"stores.csv\", [\"store_id\", \"store_name\", \"town\", \"region\", \"opened\"], STORES)\n    write(\"categories.csv\", [\"category_id\", \"category_name\", \"department\"], CATEGORIES)\n    write(\"products.csv\", [\"product_id\", \"sku\", \"product_name\", \"category_id\", \"list_price\"], PRODUCTS)\n    write(\"customers.csv\", [\"customer_id\", \"first_name\", \"last_name\", \"email\", \"town\", \"segment\", \"joined\"], custs)\n    write(\"orders.csv\", [\"order_id\", \"customer_id\", \"store_id\", \"order_date\", \"channel\", \"payment\", \"status\"],\n          order_rows)\n    write(\"order_lines.csv\", [\"order_id\", \"line_no\", \"product_id\", \"quantity\", \"unit_price\", \"discount_pct\"],\n          line_rows)\n    write(\"customers_2025-07-01.csv\",\n          [\"customer_id\", \"first_name\", \"last_name\", \"email\", \"town\", \"segment\", \"joined\"], changed_customers(custs))\n    header = [\"order_id\", \"line_no\", \"order_date\", \"customer_id\", \"store_id\", \"product_id\", \"quantity\",\n              \"unit_price\", \"discount_pct\", \"channel\", \"payment\"]\n    write(\"sales_2025-07-01.csv\", header, daily_extract(\"2025-07-01\", 1151, [3, 41, 12, 8, 30], [2, 2, 1, 3, 1]))\n    write(\"sales_2025-07-02.csv\", header, daily_extract(\"2025-07-02\", 1156, [17, 99, 22, 5], [1, 2, 9, 3]))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "run_sql.py",
+            "content": "\"\"\"Run every statement in a .sql file against a DuckDB database and print each query's result.\n\nUsage:  python run_sql.py shop.duckdb oltp_schema.sql\n\nA comment line such as  -- Q1: revenue by region  just before a query is printed as its title.\n\"\"\"\nimport sys\n\nimport duckdb\n\n\ndef title_of(query):\n    titles = []\n    for line in query.strip().splitlines():\n        if line.startswith(\"--\"):\n            titles.append(line.lstrip(\"- \").strip())\n        elif line.strip():\n            break\n    return titles[-1] if titles else \"\"\n\n\ndef show(cur):\n    cols = [d[0] for d in cur.description]\n    rows = cur.fetchall()\n    print(\" | \".join(cols))\n    for row in rows:\n        print(\" | \".join(\"NULL\" if v is None else str(v) for v in row))\n    print(f\"({len(rows)} rows)\\n\")\n\n\ndef main(db_path, sql_path):\n    con = duckdb.connect(db_path)\n    with open(sql_path, encoding=\"utf-8\") as f:\n        sql = f.read()\n    for stmt in con.extract_statements(sql):\n        cur = con.execute(stmt.query)\n        if stmt.type in (duckdb.StatementType.SELECT, duckdb.StatementType.EXPLAIN):\n            if title_of(stmt.query):\n                print(\"==\", title_of(stmt.query))\n            if stmt.type == duckdb.StatementType.EXPLAIN:\n                print(cur.fetchall()[0][1])\n            else:\n                show(cur)\n    con.close()\n\n\nif __name__ == \"__main__\":\n    if len(sys.argv) != 3:\n        sys.exit(\"usage: python run_sql.py DATABASE_FILE SQL_FILE\")\n    main(sys.argv[1], sys.argv[2])\n"
+          },
+          {
+            "path": "oltp_schema.sql",
+            "content": "-- The co-op's operational (OLTP) database: normalised tables with keys,\n-- shaped for recording one sale at a time.\nCREATE OR REPLACE TABLE stores (\n    store_id   INTEGER PRIMARY KEY,\n    store_name VARCHAR NOT NULL,\n    town       VARCHAR NOT NULL,\n    region     VARCHAR NOT NULL,\n    opened     DATE\n);\nCREATE OR REPLACE TABLE categories (\n    category_id   INTEGER PRIMARY KEY,\n    category_name VARCHAR NOT NULL,\n    department    VARCHAR NOT NULL\n);\nCREATE OR REPLACE TABLE products (\n    product_id   INTEGER PRIMARY KEY,\n    sku          VARCHAR NOT NULL UNIQUE,\n    product_name VARCHAR NOT NULL,\n    category_id  INTEGER NOT NULL REFERENCES categories (category_id),\n    list_price   DECIMAL(8, 2) NOT NULL\n);\nCREATE OR REPLACE TABLE customers (\n    customer_id INTEGER PRIMARY KEY,\n    first_name  VARCHAR NOT NULL,\n    last_name   VARCHAR NOT NULL,\n    email       VARCHAR NOT NULL,\n    town        VARCHAR NOT NULL,\n    segment     VARCHAR NOT NULL,\n    joined      DATE NOT NULL\n);\nCREATE OR REPLACE TABLE orders (\n    order_id    INTEGER PRIMARY KEY,\n    customer_id INTEGER NOT NULL REFERENCES customers (customer_id),\n    store_id    INTEGER NOT NULL REFERENCES stores (store_id),\n    order_date  DATE NOT NULL,\n    channel     VARCHAR NOT NULL,\n    payment     VARCHAR NOT NULL,\n    status      VARCHAR NOT NULL\n);\nCREATE OR REPLACE TABLE order_lines (\n    order_id     INTEGER NOT NULL REFERENCES orders (order_id),\n    line_no      INTEGER NOT NULL,\n    product_id   INTEGER NOT NULL REFERENCES products (product_id),\n    quantity     INTEGER NOT NULL,\n    unit_price   DECIMAL(8, 2) NOT NULL,\n    discount_pct INTEGER NOT NULL,\n    PRIMARY KEY (order_id, line_no)\n);\nINSERT INTO stores SELECT * FROM read_csv('data/stores.csv', header = true);\nINSERT INTO categories SELECT * FROM read_csv('data/categories.csv', header = true);\nINSERT INTO products SELECT * FROM read_csv('data/products.csv', header = true);\nINSERT INTO customers SELECT * FROM read_csv('data/customers.csv', header = true);\nINSERT INTO orders SELECT * FROM read_csv('data/orders.csv', header = true);\nINSERT INTO order_lines SELECT * FROM read_csv('data/order_lines.csv', header = true);\n\n-- Rows loaded\nSELECT 'stores' AS table_name, count(*) AS row_count FROM stores\nUNION ALL SELECT 'categories', count(*) FROM categories\nUNION ALL SELECT 'products', count(*) FROM products\nUNION ALL SELECT 'customers', count(*) FROM customers\nUNION ALL SELECT 'orders', count(*) FROM orders\nUNION ALL SELECT 'order_lines', count(*) FROM order_lines;\n"
+          },
+          {
+            "path": "lab1_queries.sql",
+            "content": "-- Lab 1: the same data, asked two different kinds of question.\n-- Run with:  python run_sql.py shop.duckdb lab1_queries.sql\n\n-- Q1: one order, as the till sees it (an OLTP question: a few rows, found by key)\nSELECT o.order_id, o.order_date, c.first_name || ' ' || c.last_name AS customer,\n       l.line_no, p.product_name, l.quantity, l.unit_price, l.discount_pct,\n       CAST(l.quantity * l.unit_price * (100 - l.discount_pct) / 100 AS DECIMAL(10, 2)) AS line_total\nFROM orders AS o\nJOIN customers AS c USING (customer_id)\nJOIN order_lines AS l USING (order_id)\nJOIN products AS p USING (product_id)\nWHERE o.order_id = 1042\nORDER BY l.line_no;\n\n-- TODO Q2: net revenue by region, department and quarter (an OLAP question: every row, summarised).\n-- Completed orders only. Net revenue of a line = quantity * unit_price * (100 - discount_pct) / 100.\n-- Join order_lines to orders, stores, products and categories; group by region, department and\n-- EXTRACT(QUARTER FROM order_date); cast the sum to DECIMAL(12, 2); order by all three.\n\n-- TODO Q3: the total net revenue of completed orders, as one number called total_net_revenue.\n\n-- TODO Q4: put EXPLAIN in front of a copy of your Q2 and count the HASH_JOIN operators.\n\n-- Columnar storage: write order_lines to a Parquet file and look inside it.\nCOPY order_lines TO 'order_lines.parquet' (FORMAT parquet);\n\n-- Q5: one column chunk per column, each with its own min and max\nSELECT path_in_schema AS column_name, type, num_values, stats_min, stats_max\nFROM parquet_metadata('order_lines.parquet')\nORDER BY column_id;\n\n-- Q6: a query that needs one column reads only that column\nSELECT sum(quantity) AS units_sold FROM 'order_lines.parquet';\n"
+          }
+        ],
+        "hints": [
+          "USING (order_id) joins two tables on a column with the same name in both.",
+          "A total of 17643.15 includes the cancelled orders: add WHERE o.status = 'completed'.",
+          "EXTRACT(QUARTER FROM order_date) works in both DuckDB and PostgreSQL.",
+          "Keep money in DECIMAL: cast the sum with CAST(... AS DECIMAL(12, 2))."
+        ]
+      }
+    },
+    {
+      "title": "Dimensional modelling: facts, dimensions and grain",
+      "summary": "Kimball's four-step design process, the kinds of fact table and measure, how to design dimensions, and the surrogate keys, conformed dimensions and bus matrix that tie a warehouse together.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "The four-step design process and the grain",
+          "minutes": 12,
+          "objectives": [
+            "Apply Kimball's four design steps to a business process",
+            "Declare a fact table's grain and explain why it comes first"
+          ],
+          "key_points": [
+            "Kimball's four steps are: choose the business process, such as retail sales; declare the grain; identify the dimensions; and identify the facts. The order matters, because each step depends on the one before.",
+            "The grain states exactly what one row of the fact table represents, such as one row per order line, and every dimension and fact in the table must be true to it.",
+            "Choose the most atomic grain the source can provide: detailed rows can always be summarised later, but summarised rows can't answer questions about the detail they've lost.",
+            "Dimensions give a measurement its context (who, what, where, when and how), and facts are the numeric measurements of the process, such as quantity sold and net amount.",
+            "A common mistake is mixing grains in one table, such as an order-level delivery charge repeated on every order line, which double counts when summed; allocate it to the lines or give it its own fact table."
+          ]
+        },
+        {
+          "title": "Fact tables and their measures",
+          "minutes": 13,
+          "objectives": [
+            "Distinguish transaction, periodic snapshot and accumulating snapshot fact tables",
+            "Classify measures as additive, semi-additive or non-additive"
+          ],
+          "key_points": [
+            "A transaction fact table has one row per event, such as an order line or a payment: the most common kind and the most detailed.",
+            "A periodic snapshot records a state at regular intervals, such as stock on hand per store at the end of each day; an accumulating snapshot has one row per process instance, such as an order, updated as it reaches milestones like shipped and delivered.",
+            "Additive facts, such as quantity and net amount, can be summed across every dimension; semi-additive facts, such as a stock level or an account balance, can be summed across stores but not across time, where you take the closing value or the average instead.",
+            "Non-additive facts, such as a unit price or a margin percentage, can't be summed at all: store the additive parts, such as revenue and cost, and calculate the ratio after summing.",
+            "A factless fact table records that an event happened or a relationship existed, with no measures, such as which students attended which classes; queries count its rows.",
+            "Fact tables are narrow and long, holding foreign keys to dimensions plus measures; a degenerate dimension, such as an order number, is a dimension key kept in the fact table with no table of its own."
+          ]
+        },
+        {
+          "title": "Designing dimensions",
+          "minutes": 12,
+          "objectives": [
+            "Design dimension tables with descriptive attributes and flattened hierarchies",
+            "Build a date dimension, a junk dimension and role-playing dimensions"
+          ],
+          "key_points": [
+            "Dimension tables are wide and denormalised: they hold the descriptive text people filter and group by, such as product name, category and department, in one table, with hierarchies flattened into columns.",
+            "Every warehouse needs a date dimension, one row per day with attributes such as month name, quarter, weekday and holiday flags; a yyyymmdd integer key such as 20250318 is the usual exception to meaningless keys.",
+            "A junk dimension gathers low-cardinality flags and codes, such as sales channel and payment method, into one small table of their combinations, instead of cluttering the fact table or making many tiny dimensions.",
+            "A role-playing dimension is one physical dimension used in several roles, such as the date dimension joined as both order date and ship date, usually through views that give each role its own column names.",
+            "Use readable labels rather than codes in dimension attributes, and avoid nulls in attributes people filter on: use a value such as 'Unknown' or 'Not applicable' instead."
+          ]
+        },
+        {
+          "title": "Surrogate keys, conformed dimensions and the bus matrix",
+          "minutes": 12,
+          "objectives": [
+            "Explain why dimensions use surrogate keys",
+            "Use conformed dimensions and a bus matrix to plan a warehouse"
+          ],
+          "key_points": [
+            "A surrogate key is a meaningless integer the warehouse assigns, such as product_key 7, while the source system's own identifier is kept as the natural, or durable, key.",
+            "Surrogate keys protect the warehouse from changes and clashes in source keys, let one natural key have several historical versions, and allow special rows such as an unknown member; integer joins are also compact and fast.",
+            "Conformed dimensions are shared by several fact tables with the same keys, attribute names and values, so measures from different processes, such as sales and stock, can be compared side by side, which is called drilling across.",
+            "The enterprise bus matrix lists business processes as rows and dimensions as columns, with a mark where a process uses a dimension; it shows which conformed dimensions to build first and which facts can be compared.",
+            "Build the warehouse one business process at a time against the bus matrix: each new fact table reuses the existing conformed dimensions instead of creating its own copies."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build the co-op's star schema",
+        "tool": "DuckDB",
+        "minutes": 60,
+        "goal": "Turn the normalised sales tables into a star schema at order-line grain: a date dimension, store, product and customer dimensions with surrogate keys, a junk dimension and a fact table, then prove it reconciles with the source system.",
+        "setup": [
+          "Your module 1 lab folder, with shop.duckdb, run_sql.py and the data folder",
+          "The starter files build_star.sql and check_star.sql, in the same folder"
+        ],
+        "steps": [
+          {
+            "do": "Open build_star.sql. dim_date and dim_store are written for you: see how dim_date makes one row per day of 2025 with range() and builds a yyyymmdd date_key, and how row_number() assigns surrogate keys."
+          },
+          {
+            "do": "TODO 1: write dim_product, joining categories in so the category name and department sit in the product dimension itself.",
+            "code": "CREATE OR REPLACE TABLE dim_product AS\nSELECT row_number() OVER (ORDER BY p.product_id) AS product_key,\n       p.product_id, p.sku, p.product_name, c.category_name AS category, c.department, p.list_price\nFROM products AS p\nJOIN categories AS c USING (category_id);",
+            "lang": "sql"
+          },
+          {
+            "do": "TODO 2 and 3: write dim_customer, and dim_order_type as a junk dimension holding every combination of channel and payment."
+          },
+          {
+            "do": "TODO 4: write fact_sales at order-line grain for completed orders. Look up each surrogate key in its dimension on the natural key, keep order_id and line_no as degenerate dimensions, and calculate gross, discount and net amounts as DECIMAL(12, 2).",
+            "code": "JOIN dim_date AS d ON d.full_date = o.order_date\nJOIN dim_store AS s ON s.store_id = o.store_id\n-- ...and the same for product, customer and order type",
+            "lang": "sql"
+          },
+          {
+            "do": "Build the star.",
+            "code": "python run_sql.py shop.duckdb build_star.sql",
+            "lang": "bash"
+          },
+          {
+            "do": "Run the checks: row counts, a unique grain, no orphan keys and reconciliation with the source.",
+            "code": "python run_sql.py shop.duckdb check_star.sql",
+            "lang": "bash",
+            "see": "fact_sales | 353, duplicate_lines 0, and star_net equal to source_net at 17093.99."
+          },
+          {
+            "do": "Write a query of your own against the star: online net revenue by store region. It needs only joins from the fact to its dimensions, never between dimensions.",
+            "see": "East 853.00, North 1206.21 and West 2701.63."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The star has the expected row counts.",
+            "look_for": [
+              "dim_date | 365",
+              "dim_order_type | 6",
+              "fact_sales | 353"
+            ]
+          },
+          {
+            "text": "The grain is unique and every fact row finds its dimension rows.",
+            "look_for": [
+              "duplicate_lines",
+              "0 | 0 | 0 | 0"
+            ]
+          },
+          {
+            "text": "The star reconciles with the source system.",
+            "look_for": [
+              "17093.99 | 17093.99 | 0.00"
+            ]
+          },
+          {
+            "text": "Net revenue by department and quarter is right.",
+            "look_for": [
+              "Garden | 2 | 5788.01",
+              "Farm | 1 | 3750.00"
+            ]
+          },
+          {
+            "text": "The weekend split by channel is right.",
+            "look_for": [
+              "in-store | 12333.15 | 2613.12"
+            ]
+          },
+          {
+            "text": "The learner's own query gives online revenue by region.",
+            "look_for": [
+              "853.00",
+              "1206.21",
+              "2701.63"
+            ]
+          }
+        ],
+        "submit": "Paste your build_star.sql (at least the TODO parts), the output of check_star.sql, and your own query with its output.",
+        "files": [
+          {
+            "path": "build_star.sql",
+            "content": "-- Lab 2: build the co-op's star schema from the OLTP tables (run oltp_schema.sql first).\n-- Run with:  python run_sql.py shop.duckdb build_star.sql   then   python run_sql.py shop.duckdb check_star.sql\n-- Grain of fact_sales: one row per order line of a completed order.\n\n-- dim_date: one row per day of 2025, keyed by a yyyymmdd integer\nCREATE OR REPLACE TABLE dim_date AS\nSELECT CAST(strftime(d, '%Y%m%d') AS INTEGER) AS date_key,\n       CAST(d AS DATE)                        AS full_date,\n       year(d)                                AS year,\n       quarter(d)                             AS quarter,\n       month(d)                               AS month,\n       strftime(d, '%B')                      AS month_name,\n       strftime(d, '%Y-%m')                   AS year_month,\n       strftime(d, '%A')                      AS day_name,\n       isodow(d) >= 6                         AS is_weekend\nFROM range(DATE '2025-01-01', DATE '2026-01-01', INTERVAL 1 DAY) AS t(d);\n\n-- dim_store: a surrogate key for each store\nCREATE OR REPLACE TABLE dim_store AS\nSELECT row_number() OVER (ORDER BY store_id) AS store_key,\n       store_id, store_name, town, region, opened\nFROM stores;\n\n-- TODO 1, dim_product: product_key (row_number() over product_id), product_id, sku, product_name,\n-- category (the category's name) and department, joined in from categories, and list_price.\n\n-- TODO 2, dim_customer: customer_key (row_number() over customer_id), customer_id,\n-- full_name (first_name || ' ' || last_name), email, town, segment and joined.\n\n-- TODO 3, dim_order_type: a junk dimension with one row for every combination of channel and payment\n-- (CROSS JOIN the distinct values of each); order_type_key is row_number() over channel, payment.\n\n-- TODO 4, fact_sales: one row per order line of a completed order, with\n--   date_key, store_key, product_key, customer_key, order_type_key  (look each one up in its dimension)\n--   order_id, line_no                                                (degenerate dimensions)\n--   quantity, gross_amount, discount_amount, net_amount             (additive measures, DECIMAL(12, 2))\n-- gross = quantity * unit_price; discount = gross * discount_pct / 100; net = gross - discount.\n"
+          },
+          {
+            "path": "check_star.sql",
+            "content": "-- Checks for the star schema. Run with:  python run_sql.py shop.duckdb check_star.sql\n\n-- C1: rows in each table of the star\nSELECT 'dim_date' AS table_name, count(*) AS row_count FROM dim_date\nUNION ALL SELECT 'dim_store', count(*) FROM dim_store\nUNION ALL SELECT 'dim_product', count(*) FROM dim_product\nUNION ALL SELECT 'dim_customer', count(*) FROM dim_customer\nUNION ALL SELECT 'dim_order_type', count(*) FROM dim_order_type\nUNION ALL SELECT 'fact_sales', count(*) FROM fact_sales;\n\n-- C2: the grain is unique, one row per order line\nSELECT count(*) AS duplicate_lines\nFROM (SELECT order_id, line_no FROM fact_sales GROUP BY order_id, line_no HAVING count(*) > 1);\n\n-- C3: every fact row finds its dimension rows (all zeros)\nSELECT count(*) FILTER (WHERE d.date_key IS NULL)      AS missing_dates,\n       count(*) FILTER (WHERE s.store_key IS NULL)     AS missing_stores,\n       count(*) FILTER (WHERE p.product_key IS NULL)   AS missing_products,\n       count(*) FILTER (WHERE c.customer_key IS NULL)  AS missing_customers\nFROM fact_sales AS f\nLEFT JOIN dim_date AS d USING (date_key)\nLEFT JOIN dim_store AS s USING (store_key)\nLEFT JOIN dim_product AS p USING (product_key)\nLEFT JOIN dim_customer AS c USING (customer_key);\n\n-- C4: the star reconciles with the source system\nSELECT (SELECT sum(net_amount) FROM fact_sales) AS star_net,\n       (SELECT CAST(sum(l.quantity * l.unit_price * (100 - l.discount_pct) / 100) AS DECIMAL(12, 2))\n        FROM order_lines AS l JOIN orders AS o USING (order_id)\n        WHERE o.status = 'completed') AS source_net,\n       (SELECT sum(gross_amount) - sum(discount_amount) - sum(net_amount) FROM fact_sales) AS gross_less_discount_less_net;\n\n-- C5: net revenue by department and quarter, from the star\nSELECT p.department, d.quarter, sum(f.net_amount) AS net_revenue\nFROM fact_sales AS f\nJOIN dim_product AS p USING (product_key)\nJOIN dim_date AS d USING (date_key)\nGROUP BY p.department, d.quarter\nORDER BY p.department, d.quarter;\n\n-- C6: weekend share of net revenue by channel\nSELECT ot.channel,\n       sum(f.net_amount) AS net_revenue,\n       sum(f.net_amount) FILTER (WHERE d.is_weekend) AS weekend_net\nFROM fact_sales AS f\nJOIN dim_order_type AS ot USING (order_type_key)\nJOIN dim_date AS d USING (date_key)\nGROUP BY ot.channel\nORDER BY ot.channel;\n"
+          }
+        ],
+        "hints": [
+          "If fact_sales has 368 rows, the cancelled orders' lines are still in: filter on o.status = 'completed'.",
+          "If star_net is bigger than source_net, a join is multiplying rows: each dimension must have one row per natural key, and dim_order_type must be joined on both channel and payment.",
+          "dim_order_type is (SELECT DISTINCT channel FROM orders) CROSS JOIN (SELECT DISTINCT payment FROM orders), with row_number() for the key."
+        ]
+      }
+    },
+    {
+      "title": "Slowly changing dimensions",
+      "summary": "How dimensions keep up with a changing world: SCD types 0, 1, 2 and 3, the mechanics of type 2 versions, and the SQL that applies changes and finds the right version when facts arrive.",
+      "instructor": "ingride-bjornsson",
+      "lessons": [
+        {
+          "title": "Why dimensions change, and the SCD types",
+          "minutes": 12,
+          "objectives": [
+            "Explain the slowly changing dimension types and what each does to history",
+            "Choose a type for each attribute of a dimension"
+          ],
+          "key_points": [
+            "Dimension attributes change: customers move, products are recategorised and stores are reorganised; a slowly changing dimension (SCD) technique decides, attribute by attribute, what happens to history when they do.",
+            "Type 0 keeps the original value for ever, such as the channel a customer first signed up through; type 1 overwrites the old value, so every past fact now reports the new value and the history is lost.",
+            "Type 2 adds a new row, a new version with its own surrogate key, so facts recorded before the change still point to the old version and reports show history as it was.",
+            "Type 3 adds a column for the previous value, such as previous_region, which lets reports compare the old and new values side by side but keeps only one step of history.",
+            "Use type 1 for corrections and attributes whose history nobody needs, such as a mistyped surname, and type 2 for attributes that change how history should be reported, such as a customer's region; one dimension usually mixes both.",
+            "Type 6 combines types 1, 2 and 3: type 2 versions, plus a current-value column overwritten on every version, so reports can show either the value at the time or the value today."
+          ]
+        },
+        {
+          "title": "Type 2 mechanics: versions, dates and lookups",
+          "minutes": 13,
+          "objectives": [
+            "Describe the columns a type 2 dimension needs",
+            "Look up the version that was current when a fact happened"
+          ],
+          "key_points": [
+            "A type 2 dimension keeps the natural key on every version and adds a validity range, valid_from and valid_to (also called effective and expiry dates), and an is_current flag.",
+            "Half-open ranges avoid gaps and overlaps: a version applies from valid_from up to but not including valid_to, the next version starts on that same date, and the current version's valid_to is a far-future date such as 9999-12-31 rather than NULL.",
+            "Each natural key must have exactly one current row and no overlapping ranges, and both rules are worth checking after every load.",
+            "When facts are loaded, the lookup joins on the natural key and the fact's date, order_date >= valid_from AND order_date < valid_to, which finds the version current at the time, even for a fact that arrives late.",
+            "Reporting through the fact's surrogate key shows history as it was; joining through the natural key to the current row shows all of history by today's attributes, as it is.",
+            "Leaving the date condition out of the lookup joins each fact to every version of its customer, which silently multiplies rows and revenue."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB",
+            "title": "Trace one customer through a type 2 change",
+            "steps": [
+              {
+                "do": "After the module 3 lab's change load, list every version of customer 3, oldest first.",
+                "code": "SELECT customer_key, town, valid_from, valid_to, is_current\nFROM dim_customer WHERE customer_id = 3 ORDER BY valid_from;",
+                "lang": "sql",
+                "see": "Two rows: key 3 in Millbrook until 2025-07-01, then key 41 in Eastholm from 2025-07-01, current."
+              },
+              {
+                "do": "Find the version valid on a given date with the half-open range.",
+                "code": "SELECT customer_key, town FROM dim_customer\nWHERE customer_id = 3\n  AND DATE '2025-03-15' >= valid_from AND DATE '2025-03-15' < valid_to;",
+                "lang": "sql",
+                "see": "Key 3, Millbrook."
+              },
+              {
+                "do": "Try the boundary: on the change date itself the new version applies, and only one row matches.",
+                "code": "SELECT customer_key, town FROM dim_customer\nWHERE customer_id = 3\n  AND DATE '2025-07-01' >= valid_from AND DATE '2025-07-01' < valid_to;",
+                "lang": "sql",
+                "see": "Key 41, Eastholm."
+              },
+              {
+                "do": "Report customer 3's sales as they were, through each fact's own key.",
+                "code": "SELECT c.town, sum(f.net_amount) AS net\nFROM fact_sales AS f JOIN dim_customer AS c USING (customer_key)\nWHERE c.customer_id = 3 GROUP BY c.town;",
+                "lang": "sql",
+                "see": "Millbrook 559.88 (before the move) and Eastholm 57.12 (July)."
+              },
+              {
+                "do": "Report the same sales as they are, through the natural key to the current version.",
+                "code": "SELECT cur.town, sum(f.net_amount) AS net\nFROM fact_sales AS f\nJOIN dim_customer AS c USING (customer_key)\nJOIN dim_customer AS cur ON cur.customer_id = c.customer_id AND cur.is_current\nWHERE c.customer_id = 3 GROUP BY cur.town;",
+                "lang": "sql",
+                "see": "Eastholm 617.00: all of them under today's town."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Applying changes with SQL",
+          "minutes": 12,
+          "objectives": [
+            "Detect changed rows by comparing a staged extract with the dimension",
+            "Apply type 1 and type 2 changes in a safe, repeatable order"
+          ],
+          "key_points": [
+            "A change load compares a staged extract with the dimension's current rows on the natural key; IS DISTINCT FROM compares safely when either side can be NULL, where <> returns NULL and misses the change.",
+            "Apply type 1 attributes first, on every version; then close the current version of rows whose type 2 attributes changed; then insert a new current version for each staged key that has no current row, which covers both changed and new customers.",
+            "Run the steps in one transaction, so a failure can't leave a customer without a current version, and write them so that applying the same extract twice changes nothing the second time.",
+            "New versions' surrogate keys come from a sequence or identity column, or the current maximum key plus row_number(); never reuse or renumber existing keys, because facts point at them.",
+            "PostgreSQL 15 and later and DuckDB 1.4 and later also support MERGE, which matches, updates and inserts in one statement; a type 2 change still needs both the old version closed and the new one inserted.",
+            "For wide dimensions, comparing a hash of the type 2 columns, such as md5 of the values joined with a separator, is a common shortcut for spotting which rows changed."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Track customer history with type 1 and type 2 changes",
+        "tool": "DuckDB",
+        "minutes": 60,
+        "goal": "Apply a day's customer changes to a type 2 customer dimension, with corrections as type 1 and moves and segment changes as type 2, then load new sales with a point-in-time lookup and compare revenue as it was with revenue as it is.",
+        "setup": [
+          "Your module 1 lab folder, with run_sql.py, oltp_schema.sql and the data folder",
+          "The starter files scd_setup.sql, scd_apply.sql, load_july.sql and check_scd.sql, in the same folder"
+        ],
+        "steps": [
+          {
+            "do": "Start a new database for this lab, so the type 2 dimension doesn't clash with the module 2 star.",
+            "code": "python run_sql.py scd.duckdb oltp_schema.sql\npython run_sql.py scd.duckdb scd_setup.sql",
+            "lang": "bash",
+            "see": "dim_rows 40, staged_rows 42 and fact_rows 353."
+          },
+          {
+            "do": "Read scd_setup.sql: which columns are type 1 and which type 2, why the first versions start on 1900-01-01, and what stg_customer holds."
+          },
+          {
+            "do": "Open scd_apply.sql. Step 1, the type 1 update, is written: it overwrites corrected names and emails on every version of the customer."
+          },
+          {
+            "do": "Write step 2: close the current version of each customer whose town or segment changed.",
+            "code": "UPDATE dim_customer AS d\nSET valid_to = DATE '2025-07-01', is_current = false\nFROM stg_customer AS s\nWHERE d.customer_id = s.customer_id\n  AND d.is_current\n  AND (...);  -- town or segment IS DISTINCT FROM",
+            "lang": "sql"
+          },
+          {
+            "do": "Write step 3: insert a new current version for every staged customer with no current row. A LEFT JOIN to the current rows, keeping WHERE d.customer_id IS NULL, finds them."
+          },
+          {
+            "do": "Apply the changes and run the checks.",
+            "code": "python run_sql.py scd.duckdb scd_apply.sql\npython run_sql.py scd.duckdb check_scd.sql",
+            "lang": "bash",
+            "see": "S1: 46 | 42 | 42, and S3: 0 | 0."
+          },
+          {
+            "do": "Run scd_apply.sql a second time, then the checks again. A correct change load is safe to repeat.",
+            "see": "S1 is still 46 | 42 | 42."
+          },
+          {
+            "do": "Open load_july.sql and finish the join, so each sale finds the customer version valid on its order date. Load it and run the checks.",
+            "code": "python run_sql.py scd.duckdb load_july.sql\npython run_sql.py scd.duckdb check_scd.sql",
+            "lang": "bash",
+            "see": "july_rows is 9, and order 1151 points at customer_key 41, customer 3's Eastholm version."
+          },
+          {
+            "do": "Compare the two columns of S5, and write a sentence explaining why Millbrook's as-was revenue is higher than its as-is revenue."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The dimension has the right number of versions after the change.",
+            "look_for": [
+              "46 | 42 | 42"
+            ]
+          },
+          {
+            "text": "Customer 3's move closed the first version on 2025-07-01 and added a second.",
+            "look_for": [
+              "1900-01-01 | 2025-07-01 | False",
+              "3 | 41 | Singh"
+            ]
+          },
+          {
+            "text": "Corrections overwrote the values without adding versions.",
+            "look_for": [
+              "Laurent-Hughes",
+              "jonas.yilmaz8@example.net"
+            ]
+          },
+          {
+            "text": "Every customer has one current row and no versions overlap.",
+            "look_for": [
+              "customers_without_one_current_row",
+              "0 | 0"
+            ]
+          },
+          {
+            "text": "July's sales point at the version current on their date.",
+            "look_for": [
+              "1151 | 3 | 41 | Eastholm",
+              "1153 | 12 | 42 | Westcombe"
+            ]
+          },
+          {
+            "text": "Revenue as it was and as it is differ for the towns customers left and joined, with a sentence explaining why.",
+            "look_for": [
+              "Millbrook | 3804.84 | 3244.96"
+            ]
+          }
+        ],
+        "submit": "Paste your steps 2 and 3, your finished join from load_july.sql, the output of check_scd.sql, and your sentence about Millbrook.",
+        "files": [
+          {
+            "path": "scd_setup.sql",
+            "content": "-- Lab 3 set-up: a type 2 customer dimension, a small sales fact and the new customer extract.\n-- Run oltp_schema.sql first, then:  python run_sql.py shop.duckdb scd_setup.sql\nCREATE OR REPLACE TABLE dim_customer (\n    customer_key INTEGER PRIMARY KEY,   -- surrogate key: one per version\n    customer_id  INTEGER NOT NULL,      -- natural (durable) key from the source system\n    first_name   VARCHAR NOT NULL,      -- type 1: a correction overwrites every version\n    last_name    VARCHAR NOT NULL,      -- type 1\n    email        VARCHAR NOT NULL,      -- type 1\n    town         VARCHAR NOT NULL,      -- type 2: a change starts a new version\n    segment      VARCHAR NOT NULL,      -- type 2\n    valid_from   DATE NOT NULL,         -- first day this version applies\n    valid_to     DATE NOT NULL,         -- first day it no longer applies; 9999-12-31 if current\n    is_current   BOOLEAN NOT NULL\n);\nINSERT INTO dim_customer\nSELECT row_number() OVER (ORDER BY customer_id), customer_id, first_name, last_name, email, town, segment,\n       DATE '1900-01-01', DATE '9999-12-31', true\nFROM customers;\n\nCREATE OR REPLACE TABLE fact_sales (\n    date_key     INTEGER NOT NULL,\n    order_id     INTEGER NOT NULL,\n    line_no      INTEGER NOT NULL,\n    customer_key INTEGER NOT NULL,\n    net_amount   DECIMAL(12, 2) NOT NULL\n);\nINSERT INTO fact_sales\nSELECT CAST(strftime(o.order_date, '%Y%m%d') AS INTEGER), o.order_id, l.line_no, c.customer_key,\n       CAST(l.quantity * l.unit_price * (100 - l.discount_pct) / 100 AS DECIMAL(12, 2))\nFROM order_lines AS l\nJOIN orders AS o USING (order_id)\nJOIN dim_customer AS c ON c.customer_id = o.customer_id\nWHERE o.status = 'completed';\n\n-- The customer extract the source system sent on 2025-07-01\nCREATE OR REPLACE TABLE stg_customer AS\nSELECT * FROM read_csv('data/customers_2025-07-01.csv', header = true);\n\n-- Before the change\nSELECT count(*) AS dim_rows, (SELECT count(*) FROM stg_customer) AS staged_rows,\n       (SELECT count(*) FROM fact_sales) AS fact_rows\nFROM dim_customer;\n"
+          },
+          {
+            "path": "scd_apply.sql",
+            "content": "-- Lab 3: apply the 2025-07-01 customer extract (stg_customer) to the type 2 dim_customer.\n-- Run with:  python run_sql.py shop.duckdb scd_apply.sql\n\n-- Step 1 (type 1): overwrite corrected names and emails on every version of the customer\nUPDATE dim_customer AS d\nSET first_name = s.first_name, last_name = s.last_name, email = s.email\nFROM stg_customer AS s\nWHERE d.customer_id = s.customer_id\n  AND (d.first_name IS DISTINCT FROM s.first_name\n       OR d.last_name IS DISTINCT FROM s.last_name\n       OR d.email IS DISTINCT FROM s.email);\n\n-- TODO Step 2 (type 2): close the current version of each customer whose town or segment changed:\n-- set valid_to to DATE '2025-07-01' and is_current to false. Compare with IS DISTINCT FROM.\n\n-- TODO Step 3: insert a new current version for every staged customer that has no current row now\n-- (the ones step 2 closed, and brand-new customers): a new customer_key (the current maximum plus\n-- row_number() over customer_id), the staged attributes, valid_from DATE '2025-07-01',\n-- valid_to DATE '9999-12-31' and is_current true. A LEFT JOIN to the current rows finds them.\n"
+          },
+          {
+            "path": "load_july.sql",
+            "content": "-- Lab 3: load the 2025-07-01 sales extract with a point-in-time lookup of the customer.\n-- Run with:  python run_sql.py shop.duckdb load_july.sql\nINSERT INTO fact_sales (date_key, order_id, line_no, customer_key, net_amount)\nSELECT CAST(strftime(x.order_date, '%Y%m%d') AS INTEGER), x.order_id, x.line_no, c.customer_key,\n       CAST(x.quantity * x.unit_price * (100 - x.discount_pct) / 100 AS DECIMAL(12, 2))\nFROM read_csv('data/sales_2025-07-01.csv', header = true) AS x\nJOIN dim_customer AS c\n  ON c.customer_id = x.customer_id\n -- TODO: and the version that was valid on the order date (valid_to is exclusive)\n;\n\n-- Rows loaded for 2025-07-01\nSELECT count(*) AS july_rows FROM fact_sales WHERE date_key = 20250701;\n"
+          },
+          {
+            "path": "check_scd.sql",
+            "content": "-- Checks for the type 2 customer dimension. Run with:  python run_sql.py shop.duckdb check_scd.sql\n\n-- S1: versions in the dimension\nSELECT count(*) AS total_rows,\n       count(*) FILTER (WHERE is_current) AS current_rows,\n       count(DISTINCT customer_id) AS customers\nFROM dim_customer;\n\n-- S2: the history of five customers\nSELECT customer_id, customer_key, last_name, email, town, segment, valid_from, valid_to, is_current\nFROM dim_customer\nWHERE customer_id IN (3, 5, 8, 12, 41)\nORDER BY customer_id, valid_from;\n\n-- S3: rules every type 2 dimension keeps (both should be 0)\nSELECT\n  (SELECT count(*) FROM (SELECT customer_id FROM dim_customer GROUP BY customer_id\n                         HAVING count(*) FILTER (WHERE is_current) <> 1)) AS customers_without_one_current_row,\n  (SELECT count(*) FROM dim_customer AS a\n   JOIN dim_customer AS b\n     ON a.customer_id = b.customer_id AND a.customer_key < b.customer_key\n    AND a.valid_from < b.valid_to AND b.valid_from < a.valid_to) AS overlapping_versions;\n\n-- S4: each July order points at the customer version current on its date\nSELECT DISTINCT f.order_id, c.customer_id, c.customer_key, c.town, c.valid_from\nFROM fact_sales AS f\nJOIN dim_customer AS c USING (customer_key)\nWHERE f.date_key = 20250701\nORDER BY f.order_id;\n\n-- S5: net revenue by town, as it was at the time of each sale and as it is now\nWITH as_was AS (\n    SELECT c.town, sum(f.net_amount) AS net\n    FROM fact_sales AS f JOIN dim_customer AS c USING (customer_key)\n    GROUP BY c.town),\nas_is AS (\n    SELECT cur.town, sum(f.net_amount) AS net\n    FROM fact_sales AS f\n    JOIN dim_customer AS c USING (customer_key)\n    JOIN dim_customer AS cur ON cur.customer_id = c.customer_id AND cur.is_current\n    GROUP BY cur.town)\nSELECT town, as_was.net AS as_was_net, as_is.net AS as_is_net\nFROM as_was FULL JOIN as_is USING (town)\nORDER BY town;\n"
+          }
+        ],
+        "hints": [
+          "If july_rows is 13 rather than 9, the lookup is missing its date condition, so every version of customers 3 and 12 matched.",
+          "Step 3's LEFT JOIN must match current rows only (AND d.is_current); otherwise the four customers step 2 closed still find their old row, get no new version, and S3 reports them.",
+          "The new keys can be (SELECT max(customer_key) FROM dim_customer) + row_number() OVER (ORDER BY s.customer_id)."
+        ]
+      }
+    },
+    {
+      "title": "Star or snowflake, aggregates and physical design",
+      "summary": "When to normalise a dimension and when not to, how aggregate tables and materialised views speed up common questions without changing the answers, and the partitioning, sorting and file choices that keep large fact tables fast.",
+      "instructor": "ingride-bjornsson",
+      "lessons": [
+        {
+          "title": "Star and snowflake schemas",
+          "minutes": 12,
+          "objectives": [
+            "Compare star and snowflake schemas and choose between them",
+            "Handle a many-to-many relationship with a bridge table"
+          ],
+          "key_points": [
+            "In a star schema each dimension is one denormalised table joined directly to the fact table; in a snowflake schema dimensions are normalised into several tables, such as product, category and department, joined in a chain.",
+            "Stars are simpler to query and understand and need fewer joins; the repeated text in a denormalised dimension costs little, because dimensions are small next to facts and columnar storage compresses repeated values well.",
+            "Snowflaking can be justified for a large, separately maintained group of attributes hanging off a dimension (an outrigger, such as demographics attached to customer), or when a tool needs it, but it rarely makes queries faster.",
+            "Kimball's guidance is to snowflake sparingly, if at all; built correctly, both designs give the same answers, so the choice is about usability and maintenance.",
+            "When one fact relates to many values of a dimension, such as a hospital visit with several diagnoses, a bridge table between them holds the pairs, often with a weighting factor so totals aren't double counted."
+          ]
+        },
+        {
+          "title": "Aggregate tables and materialised views",
+          "minutes": 12,
+          "objectives": [
+            "Design aggregate fact tables that reconcile with the base fact",
+            "Compare summary tables with materialised views, and report subtotals with ROLLUP"
+          ],
+          "key_points": [
+            "An aggregate fact table stores the base facts summarised to a coarser grain, such as month by store by category, so frequent queries scan far fewer rows.",
+            "Aggregates join to shrunken dimensions: rolled-up versions of the base dimensions with only the attributes at the aggregate's grain, such as a month dimension, using the same attribute names and values.",
+            "An aggregate must reconcile exactly with its base fact, with the same totals and row counts, checked after every refresh; only additive measures can be summed into it, so store counts and sums and calculate ratios afterwards.",
+            "In PostgreSQL, CREATE MATERIALIZED VIEW stores a query's result and REFRESH MATERIALIZED VIEW recomputes it; CONCURRENTLY lets readers carry on during the refresh if the view has a unique index. DuckDB has no materialised views, so a rebuilt summary table does the job.",
+            "Aggregate navigation sends each query to the smallest aggregate that can answer it; some BI tools and warehouses do it automatically, otherwise report queries name the aggregate directly.",
+            "GROUP BY ROLLUP, CUBE and GROUPING SETS calculate subtotals and grand totals in one query, and the GROUPING() function tells a subtotal row from a detail row."
+          ]
+        },
+        {
+          "title": "Physical design: partitions, sorting and files",
+          "minutes": 12,
+          "objectives": [
+            "Choose partitioning and a sort order for a large fact table",
+            "Write and query partitioned Parquet with DuckDB"
+          ],
+          "key_points": [
+            "Partitioning splits a large table into parts by a column, usually a date, so a query filtering on that column reads only the matching parts (partition pruning), and a whole partition can be loaded, replaced or deleted as a unit.",
+            "Keep partitions coarse enough to be a sensible size: partitioning a small table by day, or by a column with many distinct values, makes many tiny files that slow queries down.",
+            "Sorting or clustering data by commonly filtered columns narrows each block's min-max range, so zone maps skip more blocks; cloud warehouses offer this as clustering keys or sort keys.",
+            "Row stores such as PostgreSQL rely on B-tree indexes for selective lookups and support declarative partitioning; columnar warehouses rely mainly on scans, compression, pruning and statistics rather than indexes.",
+            "DuckDB's COPY ... TO with PARTITION_BY writes Hive-style folders such as year=2025/month=3, and read_parquet with hive_partitioning = true turns the folder names back into columns and prunes partitions using a query's filters."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Snowflake, aggregate and partition the sales star",
+        "tool": "DuckDB",
+        "minutes": 50,
+        "goal": "Snowflake the product dimension and show it gives the same answers, build a monthly aggregate that reconciles with the fact, report subtotals with ROLLUP, and write the fact as partitioned Parquet that a query prunes.",
+        "setup": [
+          "Your module 1 lab folder, with run_sql.py, oltp_schema.sql and the data folder",
+          "The starter files build_star_reference.sql (a reference copy of the module 2 star, so everyone starts from the same state) and lab4.sql",
+          "Optional: PostgreSQL 15 or later, for the materialised view step"
+        ],
+        "steps": [
+          {
+            "do": "Build the reference star in a new database.",
+            "code": "python run_sql.py star.duckdb oltp_schema.sql\npython run_sql.py star.duckdb build_star_reference.sql",
+            "lang": "bash"
+          },
+          {
+            "do": "A1: sf_department is written for you. Write sf_category, one row per category with its department_key, and sf_product, which keeps the product attributes and a category_key."
+          },
+          {
+            "do": "A2: add the snowflake version of the query after UNION ALL. It needs three joins where the star needs one, and every department's total must match.",
+            "code": "SELECT 'snowflake', d.department_name, sum(f.net_amount)\nFROM fact_sales AS f\nJOIN sf_product AS p USING (product_key)\nJOIN sf_category AS c USING (category_key)\nJOIN sf_department AS d USING (department_key)\nGROUP BY d.department_name",
+            "lang": "sql"
+          },
+          {
+            "do": "A3: write agg_sales_month at month by store by category grain. Until it exists, A4 fails, so write it before running the file."
+          },
+          {
+            "do": "A5 and A6: answer the second quarter by month and region from the aggregate, and write the ROLLUP report with subtotals labelled by GROUPING().",
+            "code": "GROUP BY ROLLUP (department, category)",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the file. A7 writes the fact as Parquet partitioned by year and month, A8 lists the folders and A9 queries March.",
+            "code": "python run_sql.py star.duckdb lab4.sql",
+            "lang": "bash",
+            "see": "Six files under year=2025/month=1 to month=6, and March's 41 lines worth 1427.75."
+          },
+          {
+            "do": "Read A10's plan: the filter is applied to the file list before any data is read.",
+            "see": "File Filters: (month = 3) and, in recent DuckDB versions, Scanning Files: 1/6."
+          },
+          {
+            "do": "Optional, in PostgreSQL: after loading the same tables there, build the aggregate as a materialised view, give it a unique index and refresh it without blocking readers.",
+            "code": "CREATE MATERIALIZED VIEW agg_sales_month AS\nSELECT d.year_month, f.store_key, p.category, p.department,\n       count(*) AS order_lines, sum(f.net_amount) AS net_amount\nFROM fact_sales AS f\nJOIN dim_date AS d USING (date_key)\nJOIN dim_product AS p USING (product_key)\nGROUP BY d.year_month, f.store_key, p.category, p.department;\n\nCREATE UNIQUE INDEX ON agg_sales_month (year_month, store_key, category);\nREFRESH MATERIALIZED VIEW CONCURRENTLY agg_sales_month;",
+            "lang": "sql"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The snowflake gives the same department totals as the star.",
+            "look_for": [
+              "snowflake | Garden | 8903.49",
+              "star | Garden | 8903.49"
+            ]
+          },
+          {
+            "text": "The aggregate reconciles with the base fact.",
+            "look_for": [
+              "103 | 353 | 353 | 17093.99 | 17093.99"
+            ]
+          },
+          {
+            "text": "The second quarter by month and region comes from the aggregate.",
+            "look_for": [
+              "2025-05 | West | 1877.59",
+              "2025-06 | North | 1536.13"
+            ]
+          },
+          {
+            "text": "ROLLUP gives department subtotals and a grand total.",
+            "look_for": [
+              "Farm | All categories | 7193.92",
+              "All departments | All categories | 17093.99"
+            ]
+          },
+          {
+            "text": "The fact is written as one Parquet folder per month, and the March query is right.",
+            "look_for": [
+              "month=3",
+              "41 | 1427.75"
+            ]
+          }
+        ],
+        "submit": "Paste your A1, A2, A3, A5 and A6 SQL and the output of python run_sql.py star.duckdb lab4.sql (the plan can be cut to its READ_PARQUET box).",
+        "files": [
+          {
+            "path": "build_star_reference.sql",
+            "content": "-- The co-op's reference star schema (the module 2 lab's solution), built from the OLTP tables.\n-- Run oltp_schema.sql first, then:  python run_sql.py shop.duckdb build_star_reference.sql\n\n-- dim_date: one row per day of 2025, keyed by a yyyymmdd integer\nCREATE OR REPLACE TABLE dim_date AS\nSELECT CAST(strftime(d, '%Y%m%d') AS INTEGER) AS date_key,\n       CAST(d AS DATE)                        AS full_date,\n       year(d)                                AS year,\n       quarter(d)                             AS quarter,\n       month(d)                               AS month,\n       strftime(d, '%B')                      AS month_name,\n       strftime(d, '%Y-%m')                   AS year_month,\n       strftime(d, '%A')                      AS day_name,\n       isodow(d) >= 6                         AS is_weekend\nFROM range(DATE '2025-01-01', DATE '2026-01-01', INTERVAL 1 DAY) AS t(d);\n\n-- dim_store: a surrogate key for each store\nCREATE OR REPLACE TABLE dim_store AS\nSELECT row_number() OVER (ORDER BY store_id) AS store_key,\n       store_id, store_name, town, region, opened\nFROM stores;\n\n-- dim_product: the category and department are folded in (denormalised)\nCREATE OR REPLACE TABLE dim_product AS\nSELECT row_number() OVER (ORDER BY p.product_id) AS product_key,\n       p.product_id, p.sku, p.product_name, c.category_name AS category, c.department, p.list_price\nFROM products AS p\nJOIN categories AS c USING (category_id);\n\n-- dim_customer: one row per customer (type 1 for now; module 3 adds history)\nCREATE OR REPLACE TABLE dim_customer AS\nSELECT row_number() OVER (ORDER BY customer_id) AS customer_key,\n       customer_id, first_name || ' ' || last_name AS full_name, email, town, segment, joined\nFROM customers;\n\n-- dim_order_type: a junk dimension for two low-cardinality flags\nCREATE OR REPLACE TABLE dim_order_type AS\nSELECT row_number() OVER (ORDER BY channel, payment) AS order_type_key, channel, payment\nFROM (SELECT DISTINCT channel FROM orders) AS ch\nCROSS JOIN (SELECT DISTINCT payment FROM orders) AS pay;\n\n-- fact_sales: foreign keys to every dimension, the order number as a degenerate dimension,\n-- and additive measures\nCREATE OR REPLACE TABLE fact_sales AS\nSELECT d.date_key, s.store_key, p.product_key, c.customer_key, ot.order_type_key,\n       o.order_id, l.line_no,\n       l.quantity,\n       CAST(l.quantity * l.unit_price AS DECIMAL(12, 2))                              AS gross_amount,\n       CAST(l.quantity * l.unit_price * l.discount_pct / 100 AS DECIMAL(12, 2))       AS discount_amount,\n       CAST(l.quantity * l.unit_price * (100 - l.discount_pct) / 100 AS DECIMAL(12, 2)) AS net_amount\nFROM order_lines AS l\nJOIN orders AS o USING (order_id)\nJOIN dim_date AS d ON d.full_date = o.order_date\nJOIN dim_store AS s ON s.store_id = o.store_id\nJOIN dim_product AS p ON p.product_id = l.product_id\nJOIN dim_customer AS c ON c.customer_id = o.customer_id\nJOIN dim_order_type AS ot ON ot.channel = o.channel AND ot.payment = o.payment\nWHERE o.status = 'completed';\n"
+          },
+          {
+            "path": "lab4.sql",
+            "content": "-- Lab 4: snowflake a dimension, build an aggregate, and partition the fact.\n-- Run build_star_reference.sql first, then:  python run_sql.py star.duckdb lab4.sql\n\n-- A1: snowflake the product dimension. sf_department is done for you.\nCREATE OR REPLACE TABLE sf_department AS\nSELECT row_number() OVER (ORDER BY department) AS department_key, department AS department_name\nFROM (SELECT DISTINCT department FROM dim_product);\n\n-- TODO A1: sf_category (category_key, category_name, department_key), one row per category,\n-- and sf_product (product_key, product_id, sku, product_name, category_key, list_price).\n\n-- A2: the same question from the star and from the snowflake (the numbers must match)\n-- TODO: add  UNION ALL  and the snowflake version, which joins fact_sales to sf_product,\n-- sf_category and sf_department, before the ORDER BY.\nSELECT 'star' AS model, p.department, sum(f.net_amount) AS net\nFROM fact_sales AS f\nJOIN dim_product AS p USING (product_key)\nGROUP BY p.department\nORDER BY 2, 1;\n\n-- TODO A3: agg_sales_month, an aggregate fact at month x store x category grain:\n-- year_month, store_key, category, department, count(*) AS order_lines, sum(quantity) AS units,\n-- sum(net_amount) AS net_amount.\n\n-- A4: the aggregate reconciles with the base fact\nSELECT (SELECT count(*) FROM agg_sales_month) AS agg_rows,\n       (SELECT sum(order_lines) FROM agg_sales_month) AS agg_lines,\n       (SELECT count(*) FROM fact_sales) AS fact_lines,\n       (SELECT sum(net_amount) FROM agg_sales_month) AS agg_net,\n       (SELECT sum(net_amount) FROM fact_sales) AS fact_net;\n\n-- TODO A5: second-quarter (2025-04 to 2025-06) net revenue by month and region, from agg_sales_month\n-- joined to dim_store, ordered by month and region.\n\n-- TODO A6: net revenue by department and category with subtotals and a grand total:\n-- GROUP BY ROLLUP (department, category), labelling subtotal rows 'All departments' and\n-- 'All categories' with GROUPING().\n\n-- A7: write the fact to Parquet files partitioned by year and month\nCOPY (SELECT f.*, d.year, d.month FROM fact_sales AS f JOIN dim_date AS d USING (date_key))\nTO 'fact_sales_parquet' (FORMAT parquet, PARTITION_BY (year, month), OVERWRITE_OR_IGNORE);\n\n-- A8: one folder per partition\nSELECT replace(file, '\\', '/') AS file\nFROM glob('fact_sales_parquet/*/*/*.parquet')\nORDER BY file;\n\n-- A9: a query for March reads only the March folder\nSELECT count(*) AS march_lines, sum(net_amount) AS march_net\nFROM read_parquet('fact_sales_parquet/*/*/*.parquet', hive_partitioning = true)\nWHERE year = 2025 AND month = 3;\n\n-- A10: the plan shows the partition filter\nEXPLAIN\nSELECT count(*) FROM read_parquet('fact_sales_parquet/*/*/*.parquet', hive_partitioning = true)\nWHERE year = 2025 AND month = 3;\n"
+          }
+        ],
+        "hints": [
+          "sf_category can be built from SELECT DISTINCT category, department FROM dim_product, joined to sf_department on the department name.",
+          "If agg_net is right but agg_lines isn't 353, sum the order_lines column rather than counting the aggregate's rows.",
+          "ORDER BY GROUPING(department), department, GROUPING(category), category puts each subtotal after its details and the grand total last."
+        ]
+      }
+    },
+    {
+      "title": "Loading the warehouse, and the lakehouse",
+      "summary": "Load patterns that keep a warehouse right night after night (incremental and idempotent loads, unknown and inferred members, audit columns), and where open table formats, lakehouses and cloud warehouses fit around a dimensional model.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "Incremental, idempotent loads",
+          "minutes": 13,
+          "objectives": [
+            "Design loads that pick up only new data and can safely run twice",
+            "Handle late-arriving dimension rows and keys that can't be found"
+          ],
+          "key_points": [
+            "Full reloads are simple but slow down as data grows; incremental loads pick up only what's new, tracked by a high-water mark such as the latest updated_at value loaded, or by a log of the files already processed.",
+            "An idempotent load gives the same result however many times it runs: inside one transaction, delete what an earlier run loaded from the same file or date and insert it again (delete-insert), or MERGE on the fact's natural key.",
+            "Load dimensions before facts, so fact rows can find their surrogate keys; a fact whose key can't be found gets the unknown member, often key -1, rather than being dropped, because an inner join silently loses revenue.",
+            "A late-arriving dimension row, such as a sale for a customer the customer extract hasn't sent yet, gets an inferred member: a placeholder row with the natural key and an is_inferred flag, filled in with a type 1 update when the details arrive.",
+            "Audit columns and a load log, such as the source file, load time and rows loaded, trace every fact back to its batch, so you can reconcile counts and re-run or remove one batch."
+          ]
+        },
+        {
+          "title": "From warehouse to lakehouse: open table formats",
+          "minutes": 12,
+          "objectives": [
+            "Explain what an open table format adds to files in object storage",
+            "Describe how a lakehouse relates to a dimensional warehouse"
+          ],
+          "key_points": [
+            "A data lake keeps files, often Parquet, in object storage such as Amazon S3, Azure Data Lake Storage or Google Cloud Storage; plain files have no transactions, so a reader can see a half-written change, and nothing records a table's schema or history.",
+            "Open table formats, Apache Iceberg, Delta Lake and Apache Hudi, add a metadata layer over the data files that records which files make up each version (snapshot) of a table, giving atomic commits, schema evolution and time travel.",
+            "Because the format is open, several engines, such as Apache Spark, Trino, Apache Flink and DuckDB, can work with the same tables, with storage and compute separated; each engine's read and write support differs by format and version.",
+            "Updates and deletes either rewrite the affected files (copy-on-write) or write small delete files that readers merge in (merge-on-read), so tables with frequent small changes need regular compaction.",
+            "A lakehouse uses these tables to give a data lake warehouse features, and dimensional modelling still applies on top, often in medallion layers: bronze for raw data, silver for cleaned and conformed data, and gold for facts, dimensions and aggregates.",
+            "Table formats make warehouse load patterns easier on a lake: MERGE applies upserts and type 2 changes atomically, and snapshots let you audit a bad load or roll it back."
+          ]
+        },
+        {
+          "title": "Dimensional models in today's data stack",
+          "minutes": 12,
+          "objectives": [
+            "Place dimensional modelling in a modern ELT stack",
+            "Weigh a star schema against one big wide table"
+          ],
+          "key_points": [
+            "Cloud data warehouses such as Snowflake, Google BigQuery, Amazon Redshift and Microsoft Fabric separate storage from compute and store data by column, and the dimensional techniques in this course apply to all of them.",
+            "In an ELT stack, raw data lands in staging tables or files and SQL transformations build the dimensional layer inside the warehouse; tools such as dbt manage those SQL models with their dependencies, tests and documentation.",
+            "One big table pre-joins a fact with its dimensions into a single wide table: easy for some tools to query, but it repeats dimension values on every row and must be rebuilt when a type 1 attribute changes, so many teams build wide tables from a star rather than instead of one.",
+            "A semantic layer, in a BI tool or a separate service, defines measures such as net revenue once on top of the dimensional model, so every report calculates them the same way.",
+            "Whatever the stack, the habits that keep a warehouse trusted are the same: a declared grain, conformed dimensions, tested loads and numbers that reconcile with the source systems."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Load nightly extracts safely",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Finish a Python loader that adds nightly sales extracts to the star: unknown members instead of dropped rows, inferred members for late-arriving customers, and delete-insert in a transaction with a load log, so a re-run changes nothing.",
+        "setup": [
+          "Your module 1 lab folder, with run_sql.py, oltp_schema.sql and the data folder (it holds sales_2025-07-01.csv and sales_2025-07-02.csv)",
+          "build_star_reference.sql from the module 4 lab",
+          "The starter file load_sales.py, in the same folder"
+        ],
+        "steps": [
+          {
+            "do": "Build the reference star in a new database.",
+            "code": "python run_sql.py load.duckdb oltp_schema.sql\npython run_sql.py load.duckdb build_star_reference.sql",
+            "lang": "bash"
+          },
+          {
+            "do": "Run the starter as it is: load the first extract twice, then print the report.",
+            "code": "python load_sales.py load.duckdb data/sales_2025-07-01.csv\npython load_sales.py load.duckdb data/sales_2025-07-01.csv\npython load_sales.py load.duckdb --report",
+            "lang": "bash",
+            "see": "8 rows loaded each time, though the file has 9 lines, and fact_sales: 369 rows: one line was dropped and the second run duplicated the batch."
+          },
+          {
+            "do": "TODO 1: change the inner joins in INSERT_FACTS to LEFT JOINs and coalesce each missing key to -1, the unknown member that prepare() adds to every dimension.",
+            "code": "coalesce(s.store_key, -1), coalesce(p.product_key, -1), coalesce(c.customer_key, -1),\ncoalesce(ot.order_type_key, -1),\n...\nLEFT JOIN dim_store AS s ON s.store_id = x.store_id",
+            "lang": "sql"
+          },
+          {
+            "do": "TODO 2: write add_inferred_customers, so a customer in the extract who isn't in dim_customer gets an inferred member row before the facts are loaded."
+          },
+          {
+            "do": "TODO 3: in load_file, delete the rows an earlier run loaded from this file before inserting, and replace the file's row in load_log afterwards, all inside the transaction."
+          },
+          {
+            "do": "Start again from a new database and run the full sequence: two extracts, the second one twice, then the pending check and the report.",
+            "code": "rm load.duckdb   # on Windows: del load.duckdb\npython run_sql.py load.duckdb oltp_schema.sql\npython run_sql.py load.duckdb build_star_reference.sql\npython load_sales.py load.duckdb data/sales_2025-07-01.csv\npython load_sales.py load.duckdb data/sales_2025-07-02.csv\npython load_sales.py load.duckdb data/sales_2025-07-02.csv\npython load_sales.py load.duckdb --pending\npython load_sales.py load.duckdb --report",
+            "lang": "bash",
+            "see": "The re-run reports 8 rows loaded, 8 replaced; --pending finds nothing; the report shows 370 rows."
+          },
+          {
+            "do": "Explain in two sentences what would go wrong without the transaction if the program crashed between the DELETE and the INSERT."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Every line of each extract is loaded; none is dropped.",
+            "look_for": [
+              "sales_2025-07-01.csv: 9 rows loaded",
+              "sales_2025-07-02.csv: 8 rows loaded, 0 replaced"
+            ]
+          },
+          {
+            "text": "Late-arriving customers get inferred members.",
+            "look_for": [
+              "1 inferred customers",
+              "inferred customers: 2"
+            ]
+          },
+          {
+            "text": "Re-running a file replaces its rows instead of duplicating them.",
+            "look_for": [
+              "8 rows loaded, 8 replaced",
+              "fact_sales: 370 rows, net 17741.81"
+            ]
+          },
+          {
+            "text": "Lines with an unknown store go to the unknown member.",
+            "look_for": [
+              "rows with an unknown store: 2"
+            ]
+          },
+          {
+            "text": "The load log records the files, so --pending skips them.",
+            "look_for": [
+              "Nothing to load",
+              "files in load_log: 2"
+            ]
+          }
+        ],
+        "submit": "Paste your INSERT_FACTS joins, add_inferred_customers and load_file, the output of the step 6 sequence, and your two sentences about the transaction.",
+        "files": [
+          {
+            "path": "load_sales.py",
+            "content": "\"\"\"Load nightly sales extracts into the co-op's star schema: incremental, idempotent and audited.\n\nUsage:\n    python load_sales.py shop.duckdb data/sales_2025-07-01.csv   # load (or reload) one file\n    python load_sales.py shop.duckdb --pending                    # load every file not loaded yet\n    python load_sales.py shop.duckdb --report                     # print the load report\n\"\"\"\nimport sys\nfrom pathlib import Path\n\nimport duckdb\n\nINSERT_FACTS = \"\"\"\nINSERT INTO fact_sales (date_key, store_key, product_key, customer_key, order_type_key, order_id, line_no,\n                        quantity, gross_amount, discount_amount, net_amount, source_file)\nSELECT CAST(strftime(x.order_date, '%Y%m%d') AS INTEGER),\n       s.store_key, p.product_key, c.customer_key, ot.order_type_key,\n       x.order_id, x.line_no, x.quantity,\n       CAST(x.quantity * x.unit_price AS DECIMAL(12, 2)),\n       CAST(x.quantity * x.unit_price * x.discount_pct / 100 AS DECIMAL(12, 2)),\n       CAST(x.quantity * x.unit_price * (100 - x.discount_pct) / 100 AS DECIMAL(12, 2)),\n       ?\nFROM stg_sales AS x\n-- TODO 1: these inner joins silently drop any line whose store, product, customer or order type\n-- isn't in its dimension. Make them LEFT JOINs and coalesce each missing key to -1, the unknown member.\nJOIN dim_store AS s ON s.store_id = x.store_id\nJOIN dim_product AS p ON p.product_id = x.product_id\nJOIN dim_customer AS c ON c.customer_id = x.customer_id\nJOIN dim_order_type AS ot ON ot.channel = x.channel AND ot.payment = x.payment\n\"\"\"\n\n\ndef prepare(con):\n    \"\"\"Add the audit column, the inferred flag, the load log and an unknown member in each dimension.\n    Every statement is safe to run again.\"\"\"\n    con.execute(\"ALTER TABLE fact_sales ADD COLUMN IF NOT EXISTS source_file VARCHAR DEFAULT 'initial load'\")\n    con.execute(\"ALTER TABLE dim_customer ADD COLUMN IF NOT EXISTS is_inferred BOOLEAN DEFAULT false\")\n    con.execute(\"CREATE TABLE IF NOT EXISTS load_log (file_name VARCHAR PRIMARY KEY, rows_loaded INTEGER, \"\n                \"loaded_at TIMESTAMP)\")\n    con.execute(\"INSERT INTO dim_store SELECT -1, -1, 'Unknown store', 'Unknown', 'Unknown', NULL \"\n                \"WHERE NOT EXISTS (SELECT 1 FROM dim_store WHERE store_key = -1)\")\n    con.execute(\"INSERT INTO dim_product SELECT -1, -1, 'UNKNOWN', 'Unknown product', 'Unknown', 'Unknown', NULL \"\n                \"WHERE NOT EXISTS (SELECT 1 FROM dim_product WHERE product_key = -1)\")\n    con.execute(\"INSERT INTO dim_customer SELECT -1, -1, 'Unknown customer', 'unknown', 'Unknown', 'Unknown', \"\n                \"NULL, false WHERE NOT EXISTS (SELECT 1 FROM dim_customer WHERE customer_key = -1)\")\n    con.execute(\"INSERT INTO dim_order_type SELECT -1, 'unknown', 'unknown' \"\n                \"WHERE NOT EXISTS (SELECT 1 FROM dim_order_type WHERE order_type_key = -1)\")\n\n\ndef add_inferred_customers(con):\n    \"\"\"A customer in the extract who isn't in dim_customer yet (a late-arriving dimension row)\n    gets an inferred member now; the customer extract fills in the details later.\"\"\"\n    # TODO 2: insert one inferred member row for each distinct customer_id in stg_sales that isn't in\n    # dim_customer: a new customer_key (the current max plus row_number()), the customer_id,\n    # full_name 'Inferred customer', email 'unknown', town and segment 'Unknown', joined NULL and\n    # is_inferred true. Return how many rows were inserted:  con.execute(...).fetchone()[0]\n    return 0\n\n\ndef load_file(con, path):\n    \"\"\"Load one extract inside a transaction: delete what an earlier run loaded from this file,\n    insert it again and record the load, so running it twice gives the same result.\"\"\"\n    path = Path(path)\n    con.execute(\"BEGIN TRANSACTION\")\n    try:\n        con.execute(\"CREATE OR REPLACE TEMP TABLE stg_sales AS SELECT * FROM read_csv(?, header = true)\",\n                    [str(path)])\n        inferred = add_inferred_customers(con)\n        # TODO 3: make a re-run safe. Before inserting, delete the fact rows an earlier run loaded from\n        # this file (source_file = path.name) and keep the count in replaced. After inserting, replace\n        # this file's row in load_log with (file name, rows loaded, current_timestamp).\n        replaced = 0\n        loaded = con.execute(INSERT_FACTS, [path.name]).fetchone()[0]\n        con.execute(\"COMMIT\")\n    except Exception:\n        con.execute(\"ROLLBACK\")\n        raise\n    print(f\"{path.name}: {loaded} rows loaded, {replaced} replaced, {inferred} inferred customers\")\n\n\ndef pending(con, folder):\n    \"\"\"The extracts in the folder that the load log hasn't recorded yet, oldest first.\"\"\"\n    done = {row[0] for row in con.execute(\"SELECT file_name FROM load_log\").fetchall()}\n    return [p for p in sorted(Path(folder).glob(\"sales_*.csv\")) if p.name not in done]\n\n\ndef report(con):\n    facts, net = con.execute(\"SELECT count(*), sum(net_amount) FROM fact_sales\").fetchone()\n    print(f\"fact_sales: {facts} rows, net {net}\")\n    for name, value in con.execute(\"\"\"\n        SELECT 'rows with an unknown store', count(*) FROM fact_sales WHERE store_key = -1\n        UNION ALL SELECT 'inferred customers', count(*) FROM dim_customer WHERE is_inferred\n        UNION ALL SELECT 'files in load_log', count(*) FROM load_log\"\"\").fetchall():\n        print(f\"{name}: {value}\")\n\n\ndef main():\n    if len(sys.argv) != 3:\n        sys.exit(__doc__)\n    con = duckdb.connect(sys.argv[1])\n    prepare(con)\n    if sys.argv[2] == \"--report\":\n        report(con)\n    elif sys.argv[2] == \"--pending\":\n        files = pending(con, \"data\")\n        if not files:\n            print(\"Nothing to load\")\n        for path in files:\n            load_file(con, path)\n    else:\n        load_file(con, sys.argv[2])\n    con.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "coalesce(s.store_key, -1) gives the unknown member's key when the LEFT JOIN finds no store.",
+          "DuckDB returns how many rows a DELETE or INSERT changed: con.execute(sql, params).fetchone()[0].",
+          "WHERE customer_id NOT IN (SELECT customer_id FROM dim_customer) finds the customers to infer.",
+          "Keep the DELETE, the INSERT and the load_log change between BEGIN TRANSACTION and COMMIT, so a failure halfway leaves the warehouse as it was."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Compare OLTP with OLAP, see how a warehouse is built and stored, and finish the module 1 lab in DuckDB.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Learn the four-step design process, fact and dimension design and conformed dimensions, then build the co-op's star schema.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Keep history with slowly changing dimensions, and finish the type 1 and type 2 lab.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Weigh star against snowflake, then build aggregates, a ROLLUP report and partitioned Parquet.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Write incremental, idempotent loads, place the warehouse in today's ELT and lakehouse stack, and finish the loader lab.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the clinic warehouse capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Build a medicine-supply warehouse for rural clinics",
+    "minutes": 540,
+    "brief": "A district health office wants to know which clinics are about to run out of essential medicines, how quickly suppliers deliver, and how dispensing changes over time. Design and build its warehouse in DuckDB (or PostgreSQL) from the extracts that make_clinic_data.py writes: clinics, medicines, suppliers, daily dispensing, weekly stock counts and purchase orders, plus a clinic change file dated 2025-04-01. Model three business processes with conformed clinic, medicine and date dimensions: dispensing as a transaction fact, stock on hand as a weekly periodic snapshot (a semi-additive measure), and purchase orders as an accumulating snapshot with ordered, shipped and received dates (a role-playing date dimension). Treat clinic_type as type 2 (Lowveld was upgraded to a health centre) and clinic_name and district as type 1 corrections. Load everything with scripts you can re-run from scratch, build at least one aggregate, prove every table reconciles with its source, answer the office's questions in SQL, and explain your design.",
+    "deliverables": [
+      "A bus matrix (business processes by dimensions) and a diagram or description of each star, with each fact table's grain stated in one sentence",
+      "DDL and load scripts (SQL or Python) that build every dimension and fact from the CSV files and can be re-run from scratch",
+      "Clinic history applied from clinic_changes_2025-04-01.csv, with dispensing facts pointing at the clinic version valid on each date",
+      "Reconciliation queries showing each fact's row count and quantity total match the source files, plus checks for a unique grain and orphan keys",
+      "An aggregate table, such as weekly dispensing by clinic and therapeutic class, that reconciles with its base fact",
+      "SQL answers, with results, to five questions: weekly dispensing by therapeutic class; closing stock on the last count date by clinic and medicine; average days from order to receipt by supplier; the purchase orders still open; and Lowveld's dispensing as it was and as it is",
+      "A design note of one to two pages explaining the grains, the SCD choices, how the stock snapshot must be summarised, and what you'd change for a much larger dataset"
+    ],
+    "rubric": [
+      {
+        "name": "Dimensional design",
+        "points": 25,
+        "description": "A clear bus matrix and stated grains; conformed clinic, medicine and date dimensions shared by all three facts; the right kind of fact table for each process; a role-playing date dimension for the purchase orders."
+      },
+      {
+        "name": "Working, repeatable loads",
+        "points": 20,
+        "description": "The scripts build the warehouse from the CSV files in one run and can be re-run without duplicates; surrogate keys and unknown members are handled."
+      },
+      {
+        "name": "History handled correctly",
+        "points": 15,
+        "description": "Type 1 and type 2 changes are applied as specified; facts point at the version valid on their date; one current row per clinic and no overlapping versions."
+      },
+      {
+        "name": "Correct measures and answers",
+        "points": 20,
+        "description": "The five answers are right; stock on hand is never summed across weeks; days to receipt come from the accumulating snapshot; open orders show their missing milestones."
+      },
+      {
+        "name": "Reconciliation and tests",
+        "points": 10,
+        "description": "Row counts and totals match the sources; grain and orphan-key checks pass; the aggregate matches its base fact."
+      },
+      {
+        "name": "Design note",
+        "points": 10,
+        "description": "Explains the choices and their trade-offs clearly, including what would change at scale, such as partitioning, incremental loads or a lakehouse table format."
+      }
+    ],
+    "submit": "Paste your bus matrix and grain statements, your scripts (or a link to a repository), the output of your reconciliation queries, the five queries with their results, and your design note.",
+    "files": [
+      {
+        "path": "make_clinic_data.py",
+        "content": "\"\"\"Write source data for the capstone: medicine supply at a district's rural clinics.\n\nWrites CSV files to clinic_data/. Only random.Random(7).random() is used, so every\ncomputer gets exactly the same rows.   Run:  python make_clinic_data.py\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\nfrom pathlib import Path\n\nOUT = Path(\"clinic_data\")\nSTART = date(2025, 1, 6)  # a Monday; the data covers 26 weeks\nEND = START + timedelta(weeks=25, days=4)  # the last day in the data, a Friday\nrng = random.Random(7)\n\n\ndef between(lo, hi):\n    return lo + int(rng.random() * (hi - lo + 1))\n\n\nCLINICS = [(1, \"Lowveld Health Post\", \"Lowveld\", \"health post\"),\n           (2, \"Riverbend Clinic\", \"Riverbend\", \"health centre\"),\n           (3, \"Hilltop Clinic\", \"Hilltop\", \"health centre\"),\n           (4, \"Saltpan Health Post\", \"Saltpan\", \"health post\"),\n           (5, \"District Hospital\", \"Central\", \"hospital\")]\nMEDICINES = [  # medicine_id, code, name, therapeutic class, form, units per pack\n    (1, \"AMX250\", \"Amoxicillin 250mg\", \"Antibiotic\", \"capsule\", 100),\n    (2, \"PCM500\", \"Paracetamol 500mg\", \"Analgesic\", \"tablet\", 100),\n    (3, \"ORS\", \"Oral rehydration salts\", \"Rehydration\", \"sachet\", 50),\n    (4, \"ZNC20\", \"Zinc 20mg\", \"Supplement\", \"tablet\", 100),\n    (5, \"MET500\", \"Metformin 500mg\", \"Diabetes\", \"tablet\", 60),\n    (6, \"AML5\", \"Amlodipine 5mg\", \"Hypertension\", \"tablet\", 30),\n    (7, \"SAL100\", \"Salbutamol inhaler\", \"Respiratory\", \"inhaler\", 1),\n    (8, \"IRF\", \"Iron and folic acid\", \"Supplement\", \"tablet\", 100)]\nSUPPLIERS = [(1, \"Central Medical Stores\"), (2, \"Valley Pharma Distributors\"), (3, \"Northern Health Supplies\")]\nSIZE = {\"health post\": 1, \"health centre\": 2, \"hospital\": 4}\n\n\ndef write(name, header, rows):\n    with open(OUT / name, \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow(header)\n        w.writerows(rows)\n    print(f\"{name}: {len(rows)} rows\")\n\n\ndef main():\n    OUT.mkdir(exist_ok=True)\n    dispensing, counts, orders = [], [], []\n    stock = {(c[0], m[0]): 400 * SIZE[c[3]] for c in CLINICS for m in MEDICINES}\n    for week in range(26):\n        monday = START + timedelta(weeks=week)\n        for c in CLINICS:\n            for m in MEDICINES:\n                key = (c[0], m[0])\n                for day in range(5):\n                    qty = between(0, 12) * SIZE[c[3]]\n                    if qty and stock[key] >= qty:\n                        stock[key] -= qty\n                        dispensing.append([len(dispensing) + 1, c[0], m[0],\n                                           (monday + timedelta(days=day)).isoformat(), qty])\n                counts.append([(monday + timedelta(days=4)).isoformat(), c[0], m[0], stock[key]])\n                if stock[key] < 150 * SIZE[c[3]] and rng.random() < 0.7:\n                    qty = 300 * SIZE[c[3]]\n                    shipped = monday + timedelta(days=between(2, 6))\n                    received = shipped + timedelta(days=between(1, 9))\n                    po = [5000 + len(orders) + 1, c[0], 1 + int(rng.random() * 3), m[0], qty,\n                          monday.isoformat(), shipped.isoformat(), received.isoformat()]\n                    if received <= END:\n                        stock[key] += qty\n                    else:  # still open when the data ends\n                        po[7] = \"\"\n                        if shipped > END:\n                            po[6] = \"\"\n                    orders.append(po)\n    last_monday = START + timedelta(weeks=25)\n    orders.append([5000 + len(orders) + 1, 3, 2, 7, 60, last_monday.isoformat(),\n                   (last_monday + timedelta(days=2)).isoformat(), \"\"])  # shipped, not yet received\n    orders.append([5000 + len(orders) + 1, 4, 1, 3, 300, last_monday.isoformat(), \"\", \"\"])  # not yet shipped\n    write(\"clinics.csv\", [\"clinic_id\", \"clinic_name\", \"district\", \"clinic_type\"], CLINICS)\n    write(\"clinic_changes_2025-04-01.csv\", [\"clinic_id\", \"clinic_name\", \"district\", \"clinic_type\"],\n          [(1, \"Lowveld Clinic\", \"Lowveld\", \"health centre\"), (4, \"Saltpan Health Post\", \"Saltpan East\",\n                                                                 \"health post\")])\n    write(\"medicines.csv\", [\"medicine_id\", \"code\", \"medicine_name\", \"therapeutic_class\", \"form\", \"pack_size\"],\n          MEDICINES)\n    write(\"suppliers.csv\", [\"supplier_id\", \"supplier_name\"], SUPPLIERS)\n    write(\"dispensing.csv\", [\"dispense_id\", \"clinic_id\", \"medicine_id\", \"dispensed_date\", \"quantity\"], dispensing)\n    write(\"stock_counts.csv\", [\"count_date\", \"clinic_id\", \"medicine_id\", \"quantity_on_hand\"], counts)\n    write(\"purchase_orders.csv\", [\"po_id\", \"clinic_id\", \"supplier_id\", \"medicine_id\", \"quantity\", \"ordered_date\",\n                                  \"shipped_date\", \"received_date\"], orders)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    ]
+  }
+}

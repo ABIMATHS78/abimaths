@@ -1,0 +1,1192 @@
+{
+  "slug": "system-design-fundamentals",
+  "title": "System Design Fundamentals: Scale, Caching and Load Balancing",
+  "subtitle": "Design systems that scale: estimate the load, then choose load balancers, caches, databases and queues, and defend every trade-off.",
+  "category": "Computer Science",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "chaiyapon-srisomboon",
+    "arjun-sharma"
+  ],
+  "skills": [
+    "System design",
+    "Capacity estimation",
+    "Load balancing",
+    "Caching strategies",
+    "Database replication and sharding",
+    "Consistent hashing",
+    "Rate limiting",
+    "Message queues",
+    "Idempotent APIs",
+    "Trade-off analysis"
+  ],
+  "tools": [
+    "Python",
+    "pytest",
+    "SQLite",
+    "Redis",
+    "curl"
+  ],
+  "outcomes": [
+    "Turn an open-ended brief into measurable requirements, an API and back-of-the-envelope estimates",
+    "Reason about latency with orders of magnitude, percentiles and Little's law",
+    "Choose load-balancing, rate-limiting, caching and CDN strategies, and explain how each one fails",
+    "Scale a database with indexes, read replicas and shards placed by consistent hashing",
+    "Make retries and redeliveries safe with idempotency keys, deduplicating consumers and the outbox pattern",
+    "Build and test a token-bucket limiter, an LRU cache and a consistent-hash ring in Python"
+  ],
+  "prerequisites": "Confident Python (functions, classes, dictionaries) and basic SQL: Python Programming with PyCharm and SQL for Data Analysis with DataGrip cover them, and Networking Fundamentals: How Networks and the Internet Work helps with HTTP and DNS. Install Python 3.10 or newer and pytest (python -m pip install pytest). Redis and curl are needed only for three walkthroughs.",
+  "description": "System design is the craft of turning a product idea into services, stores and queues that stay fast and correct as traffic grows. This course teaches it the way experienced engineers practise it: pin down the requirements, estimate the load with round numbers, sketch the simplest design that meets them, then go deep on the parts that will break first. You'll learn how load balancers spread traffic and how rate limits, timeouts and circuit breakers stop one failure becoming an outage; how caches and CDNs keep reads fast, and how they go stale; how replication and sharding scale a database; and how queues and idempotency keys make asynchronous work and retries safe. Worked designs of a URL shortener, a chat service and a news feed show the pieces working together.\n\nThe labs make the building blocks concrete: you'll write a capacity calculator, a token-bucket rate limiter, an LRU cache with TTLs, a consistent-hash ring and an idempotent payment API in Python, each with pytest tests and a simulation whose output you can check. The capstone asks you to design a live delivery-tracking service and prototype its core from those pieces. Afterwards, Distributed Systems: Replication, Consensus and Consistency goes deeper into replicated stores, Database Internals: Indexes, Transactions and Query Plans goes inside a single database, and Foundations of AI System Design applies the same thinking to machine learning systems.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Requirements, estimates and latency",
+      "summary": "Start every design the same way: pin down what the system must do and how well, estimate its traffic, storage and bandwidth with round numbers, and know each building block's latency to within an order of magnitude.",
+      "instructor": "arjun-sharma",
+      "lessons": [
+        {
+          "title": "From a vague brief to requirements",
+          "minutes": 12,
+          "objectives": [
+            "Separate functional from non-functional requirements in a design brief",
+            "State non-functional requirements as measurable targets",
+            "Work through a design in a repeatable order, from requirements to deep dives"
+          ],
+          "key_points": [
+            "Functional requirements say what the system does (shorten a URL, redirect a short link, report clicks); non-functional requirements say how well: availability, latency, throughput, durability, consistency and cost. Most design decisions are driven by the non-functional ones.",
+            "Write non-functional requirements as numbers someone could test, such as '99.9% of redirects succeed each month' or 'p99 redirect latency under 100 ms', never 'fast and reliable'. Each number should change a decision, such as adding a cache or a replica.",
+            "Find out which operations dominate and how skewed the traffic is. A read-heavy system (many redirects per new link) favours caches and read replicas; a write-heavy one (chat messages, location updates) favours partitioned, append-friendly storage.",
+            "Say which data may be stale, and for how long: a bank balance must never be, a like count can lag by seconds. Data that tolerates staleness can be cached and replicated asynchronously; data that doesn't needs a single source of truth.",
+            "Agree the scope and write down what is out of it (custom domains, user accounts, an admin console), so the design time goes on the parts that matter.",
+            "Then work in a fixed order: the API (operations, inputs and outputs), the data model, a high-level diagram, and deep dives on the riskiest parts. Go back to the requirements whenever a deep dive changes an assumption."
+          ]
+        },
+        {
+          "title": "Back-of-the-envelope estimates",
+          "minutes": 13,
+          "objectives": [
+            "Convert daily active users into average and peak requests per second",
+            "Estimate storage and bandwidth from object sizes, retention and copies",
+            "Translate an availability target into a downtime budget"
+          ],
+          "key_points": [
+            "A day has 86,400 seconds, roughly 10^5, so 1 million requests a day is about 12 a second on average. Multiply the average by a peak factor (often 2 to 10, depending on how bursty the traffic is) to size for the busiest period.",
+            "Use powers of two and ten together: 2^10 ≈ 10^3 (thousand, KB), 2^20 ≈ 10^6 (million, MB), 2^30 ≈ 10^9 (billion, GB) and 2^40 ≈ 10^12 (TB). So a billion 1 KB records is about 1 TB.",
+            "Storage = new objects per day × bytes per object × days retained × number of copies, plus room for indexes and growth. The aim is the right order of magnitude, not three significant figures.",
+            "Bandwidth = requests per second × bytes per response × 8 bits per byte. 1,000 requests a second of 500 KB images is 500 MB/s, or 4 Gbit/s, which points to a CDN rather than application servers.",
+            "Availability targets set a downtime budget: 99.9% allows about 8.8 hours a year (43 minutes a month) and 99.99% about 53 minutes a year. Parts in series multiply, so two 99.9% services that must both work give about 99.8%.",
+            "Write every assumption next to its estimate (users, actions per user, sizes, peak factor), so reviewers can challenge the inputs rather than redo the arithmetic."
+          ]
+        },
+        {
+          "title": "Latency numbers and tail latency",
+          "minutes": 13,
+          "objectives": [
+            "Recall the latency of common operations to within an order of magnitude",
+            "Explain why percentiles, not averages, describe what users experience",
+            "Use Little's law to relate throughput, latency and concurrency"
+          ],
+          "key_points": [
+            "Orders of magnitude to know: a CPU cache hit about 1 ns, a main-memory read about 100 ns, a random SSD read tens to hundreds of microseconds, a round trip within a data centre roughly 0.1 to 0.5 ms, a spinning-disk seek around 10 ms, and a round trip between continents 100 ms or more.",
+            "The ratios matter more than the exact values: memory is hundreds to thousands of times faster than a random SSD read, and one cross-continent round trip costs as much as hundreds of calls inside a data centre. Hence caches in memory, and few sequential round trips between regions.",
+            "Describe latency with percentiles: p50 is the typical request and p99 the slowest 1%. An average hides the tail: a few very slow requests pull the mean well above the median while most users see neither.",
+            "Fan-out amplifies the tail: if a page waits for 100 back-end calls and each is slower than its p99 1% of the time, about 63% of page loads (1 − 0.99^100) include at least one slow call.",
+            "Little's law: the average number of requests in a system equals the arrival rate times the average time each spends there (L = λW). At 2,000 requests a second and 50 ms each, about 100 are in flight, which sizes thread and connection pools.",
+            "Hedged requests (send a second copy if the first hasn't answered by about the p95) and tight timeouts trim the tail at the cost of extra load; use them only for idempotent reads."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Estimate capacity for a photo-sharing service",
+        "tool": "Python 3 and pytest",
+        "minutes": 45,
+        "goal": "Write the estimation functions a design review needs, test them, and produce a capacity report for a photo-sharing service: peak traffic, five years of storage, egress bandwidth, the CDN hit ratio the origin needs, availability in series and latency percentiles. Then model a new feature.",
+        "setup": [
+          "Python 3.10 or newer, and pytest: python -m pip install pytest",
+          "Download the lab files into a new folder: estimate.py and test_estimate.py"
+        ],
+        "steps": [
+          {
+            "do": "Open a terminal in the lab folder and run the tests before writing anything: every function is still a TODO.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "8 failed: each test reaches a NotImplementedError."
+          },
+          {
+            "do": "Implement average_qps and peak_qps. SECONDS_PER_DAY is 86,400.",
+            "code": "def average_qps(requests_per_day: float) -> float:\n    return requests_per_day / SECONDS_PER_DAY",
+            "lang": "python"
+          },
+          {
+            "do": "Implement storage_tb (objects × bytes × days × replicas, divided by 10**12) and bandwidth_gbit (requests per second × bytes × 8, divided by 10**9)."
+          },
+          {
+            "do": "Implement downtime_minutes_per_year from MINUTES_PER_YEAR, and serial_availability, which multiplies the availabilities of parts that must all work (math.prod does it)."
+          },
+          {
+            "do": "Implement in_flight with Little's law, and percentile with the nearest-rank method: sort the samples and take the value at rank ceil(p/100 × n), counting ranks from 1."
+          },
+          {
+            "do": "Run the tests again.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "8 passed"
+          },
+          {
+            "do": "Print the capacity report for the assumptions at the top of estimate.py.",
+            "code": "python estimate.py",
+            "lang": "bash",
+            "see": "Peak view QPS: 17,361 and Storage for 5 years with 3 replicas: 4,380 TB (4.38 PB), then the egress, CDN, availability and latency lines."
+          },
+          {
+            "do": "Read the CDN lines. Without a CDN the origin would serve 27.8 Gbit/s at peak; a 95% hit ratio leaves 868 requests a second, still above the fleet's 500, and the report says what hit ratio would be enough.",
+            "see": "CDN hit ratio needed to keep the origin under 500 QPS: 97.12%"
+          },
+          {
+            "do": "Read the latency line. The mean (55.3 ms) sits well above the median (41 ms), and the p99 is more than 16 times the median: a few very slow requests distort the mean, which is why targets are set on percentiles.",
+            "see": "Latency of 10,000 requests: mean 55.3 ms, p50 41 ms, p95 60 ms, p99 678 ms"
+          },
+          {
+            "do": "Model short videos: 10% of views now send 5 MB instead of 200 KB. Work out the average bytes per view (0.9 × 200,000 + 0.1 × 5,000,000), set view_bytes to it in ASSUMPTIONS and run the report again.",
+            "code": "python estimate.py",
+            "lang": "bash",
+            "see": "Peak egress: 94.4 Gbit/s"
+          },
+          {
+            "do": "Write three sentences of design notes: what the report says about serving media (CDN or not), about the size of the origin fleet, and which assumption you'd check first because the answer is most sensitive to it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The estimation functions pass their tests.",
+            "look_for": [
+              "8 passed"
+            ]
+          },
+          {
+            "text": "Peak traffic and storage are estimated correctly.",
+            "look_for": [
+              "Peak view QPS: 17,361",
+              "4,380 TB"
+            ]
+          },
+          {
+            "text": "Bandwidth, origin load after the CDN, and the hit ratio the origin needs are right.",
+            "look_for": [
+              "27.8 Gbit/s",
+              "after a 95% CDN hit ratio: 868",
+              "97.12%"
+            ]
+          },
+          {
+            "text": "The downtime budget at 99.95% and the availability of three parts in series are right.",
+            "look_for": [
+              "263 minutes",
+              "99.89%"
+            ]
+          },
+          {
+            "text": "Latency percentiles use the nearest-rank method.",
+            "look_for": [
+              "p50 41 ms",
+              "p99 678 ms"
+            ]
+          },
+          {
+            "text": "The video scenario is modelled: about 94 Gbit/s of peak egress.",
+            "look_for": [
+              "94.4 Gbit/s"
+            ]
+          }
+        ],
+        "submit": "Paste your estimate.py, the pytest summary line, both reports (before and after the video change) and your three sentences of design notes.",
+        "files": [
+          {
+            "path": "estimate.py",
+            "content": "\"\"\"Back-of-the-envelope estimates for a photo-sharing service.\n\nFill in each function marked TODO, run the tests with `python -m pytest -q`,\nthen run `python estimate.py` to print the capacity report.\n\"\"\"\nfrom __future__ import annotations\n\nimport math\nimport random\n\nSECONDS_PER_DAY = 86_400\nMINUTES_PER_YEAR = 365 * 24 * 60\n\nASSUMPTIONS = {\n    \"daily_active_users\": 10_000_000,\n    \"views_per_user_per_day\": 50,\n    \"uploads_per_user_per_day\": 0.2,\n    \"photo_bytes\": 400_000,        # each stored photo, after compression\n    \"view_bytes\": 200_000,         # the resized image sent for each view\n    \"peak_factor\": 3,              # busiest minute compared with the daily average\n    \"retention_days\": 5 * 365,     # plan storage for five years\n    \"replicas\": 3,\n    \"cdn_hit_ratio\": 0.95,\n    \"origin_latency_s\": 0.080,     # time an origin request spends in the service\n    \"origin_capacity_qps\": 500,    # what the current origin fleet can serve\n}\n\n\ndef average_qps(requests_per_day: float) -> float:\n    \"\"\"Average requests per second over a day.\"\"\"\n    raise NotImplementedError(\"TODO: divide by the seconds in a day\")\n\n\ndef peak_qps(average: float, peak_factor: float) -> float:\n    \"\"\"Requests per second in the busiest period.\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef storage_tb(objects_per_day: float, bytes_each: float, days: float, replicas: int = 1) -> float:\n    \"\"\"Total storage in terabytes (10**12 bytes), counting every replica.\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef bandwidth_gbit(requests_per_second: float, bytes_each: float) -> float:\n    \"\"\"Bandwidth in gigabits per second (10**9 bits; a byte is 8 bits).\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef downtime_minutes_per_year(availability: float) -> float:\n    \"\"\"Minutes of downtime a year that an availability target allows (0.999 -> 525.6).\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef serial_availability(*parts: float) -> float:\n    \"\"\"Availability of components that must all be up for a request to succeed.\"\"\"\n    raise NotImplementedError(\"TODO: components in series multiply\")\n\n\ndef in_flight(arrival_rate: float, seconds_in_system: float) -> float:\n    \"\"\"Little's law: requests in progress = arrival rate x time each spends in the system.\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef percentile(samples: list[float], p: float) -> float:\n    \"\"\"Nearest-rank percentile: the smallest sample with at least p% of the samples at or below it.\"\"\"\n    raise NotImplementedError(\"TODO: sort, then take the value at rank ceil(p/100 * n)\")\n\n\ndef sample_latencies(n: int = 10_000, seed: int = 42) -> list[int]:\n    \"\"\"Synthetic request latencies in ms: most are fast, about 3% are very slow.\"\"\"\n    rng = random.Random(seed)\n    return [rng.randint(200, 900) if rng.random() < 0.03 else rng.randint(20, 60) for _ in range(n)]\n\n\ndef report(a: dict = ASSUMPTIONS) -> None:\n    users = a[\"daily_active_users\"]\n    views = users * a[\"views_per_user_per_day\"]\n    uploads = users * a[\"uploads_per_user_per_day\"]\n    view_avg = average_qps(views)\n    view_peak = peak_qps(view_avg, a[\"peak_factor\"])\n    upload_peak = peak_qps(average_qps(uploads), a[\"peak_factor\"])\n    per_day = storage_tb(uploads, a[\"photo_bytes\"], 1)\n    total = storage_tb(uploads, a[\"photo_bytes\"], a[\"retention_days\"], a[\"replicas\"])\n    origin = view_peak * (1 - a[\"cdn_hit_ratio\"])\n    needed = 1 - a[\"origin_capacity_qps\"] / view_peak\n    print(f\"Views per day: {views:,.0f}\")\n    print(f\"Average view QPS: {view_avg:,.0f}\")\n    print(f\"Peak view QPS: {view_peak:,.0f}\")\n    print(f\"Peak upload QPS: {upload_peak:,.0f}\")\n    print(f\"New photo storage per day: {per_day:.2f} TB\")\n    print(f\"Storage for {a['retention_days'] // 365} years with {a['replicas']} replicas: \"\n          f\"{total:,.0f} TB ({total / 1000:.2f} PB)\")\n    print(f\"Peak egress: {bandwidth_gbit(view_peak, a['view_bytes']):.1f} Gbit/s\")\n    print(f\"Peak origin QPS after a {a['cdn_hit_ratio']:.0%} CDN hit ratio: {origin:,.0f}\")\n    print(f\"CDN hit ratio needed to keep the origin under {a['origin_capacity_qps']} QPS: {needed:.2%}\")\n    print(f\"Requests in flight at the origin (Little's law): {in_flight(origin, a['origin_latency_s']):.0f}\")\n    print(f\"Downtime allowed per year at 99.95%: {downtime_minutes_per_year(0.9995):.0f} minutes\")\n    chain = serial_availability(0.9999, 0.9995, 0.9995)\n    print(f\"Load balancer 99.99%, app 99.95% and database 99.95% in series: {chain:.2%}\")\n    lat = sample_latencies()\n    print(f\"Latency of {len(lat):,} requests: mean {sum(lat) / len(lat):.1f} ms, p50 {percentile(lat, 50)} ms, \"\n          f\"p95 {percentile(lat, 95)} ms, p99 {percentile(lat, 99)} ms\")\n    print(f\"A page that waits for 100 calls meets at least one slower than p99 in {1 - 0.99 ** 100:.1%} of loads\")\n\n\nif __name__ == \"__main__\":\n    report()\n"
+          },
+          {
+            "path": "test_estimate.py",
+            "content": "import math\n\nimport pytest\n\nfrom estimate import (average_qps, bandwidth_gbit, downtime_minutes_per_year, in_flight, peak_qps, percentile,\n                      serial_availability, storage_tb)\n\n\ndef test_average_qps():\n    assert average_qps(86_400) == pytest.approx(1)\n    assert average_qps(1_000_000) == pytest.approx(11.574, rel=1e-3)\n\n\ndef test_peak_qps():\n    assert peak_qps(100, 3) == pytest.approx(300)\n\n\ndef test_storage_tb():\n    # one million 1 MB objects a day for a year, stored three times\n    assert storage_tb(1_000_000, 1_000_000, 365, 3) == pytest.approx(1095)\n\n\ndef test_bandwidth_gbit():\n    assert bandwidth_gbit(1_000, 500_000) == pytest.approx(4.0)\n\n\ndef test_downtime():\n    assert downtime_minutes_per_year(0.999) == pytest.approx(525.6)\n    assert downtime_minutes_per_year(0.9999) == pytest.approx(52.56)\n\n\ndef test_serial_availability():\n    assert serial_availability(0.999, 0.999) == pytest.approx(0.998001)\n\n\ndef test_littles_law():\n    assert in_flight(2_000, 0.050) == pytest.approx(100)\n\n\ndef test_percentile_nearest_rank():\n    samples = list(range(1, 101))          # 1..100\n    assert percentile(samples, 50) == 50\n    assert percentile(samples, 99) == 99\n    assert percentile([5, 1, 3], 100) == 5\n    assert math.isclose(percentile([7.5], 1), 7.5)\n"
+          }
+        ],
+        "hints": [
+          "Keep units explicit: the functions take bytes and seconds and return TB, Gbit/s or minutes. Most wrong answers are a missing × 8 or a 1,000 versus 1,024 slip.",
+          "For the nearest-rank percentile of 1 to 100, p50 is the 50th value and p99 the 99th; a rank of 0 must become 1.",
+          "math.prod([0.999, 0.999]) returns 0.998001."
+        ]
+      }
+    },
+    {
+      "title": "Load balancing, rate limiting and resilience",
+      "summary": "Scale out behind load balancers, protect services with rate limits, and keep one slow dependency from taking everything down with timeouts, careful retries and circuit breakers.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Scaling out: stateless services and load balancers",
+          "minutes": 13,
+          "objectives": [
+            "Compare vertical and horizontal scaling",
+            "Explain what makes a service stateless and why load balancing needs it",
+            "Choose between layer 4 and layer 7 load balancing, and a balancing algorithm"
+          ],
+          "key_points": [
+            "Vertical scaling buys a bigger machine and hits a ceiling, and the machine stays a single point of failure; horizontal scaling adds machines behind a load balancer, which works only if servers are stateless, keeping sessions and uploads in shared stores such as a database, Redis or object storage.",
+            "A layer 4 load balancer forwards TCP or UDP connections by address and port without reading them; a layer 7 load balancer terminates HTTP (and usually TLS), so it can route by path, header or cookie and retry or rewrite requests, at more cost per request.",
+            "Round robin suits identical servers and similar requests; weighted round robin handles servers of different sizes; least connections or least outstanding requests adapt when request costs vary; 'power of two choices' (pick two servers at random, use the less loaded) gets most of the benefit cheaply.",
+            "Health checks take failing servers out of rotation: active checks call an endpoint such as /healthz on a schedule, passive checks watch real responses. Keep the check shallow, so one shared dependency's outage doesn't mark every server unhealthy at once.",
+            "Don't let the load balancer become the single point of failure: run a redundant pair or a managed service, and spread traffic across instances or regions with DNS or anycast. Drain a server's connections before removing it, so in-flight requests finish.",
+            "Sticky sessions pin a user to one server; they make stateful servers work but unbalance the load and lose the sessions when that server dies, so prefer state kept outside the servers."
+          ]
+        },
+        {
+          "title": "Timeouts, retries and circuit breakers",
+          "minutes": 12,
+          "objectives": [
+            "Set a timeout on every remote call",
+            "Retry safely with exponential backoff, jitter and a retry budget",
+            "Explain how circuit breakers, bulkheads and load shedding contain failures"
+          ],
+          "key_points": [
+            "Every network call needs a timeout; without one, a slow dependency ties up threads and connections until the caller fails too. Set it from the dependency's measured latency (a little above its p99) and within the whole request's deadline.",
+            "Retry only failures that may succeed next time (timeouts, 503 responses, reset connections) and only operations that are safe to repeat; a retried payment needs an idempotency key.",
+            "Exponential backoff with jitter spreads retries out, for example a random wait between 0 and min(cap, base × 2^attempt), so thousands of clients don't retry in lockstep and flatten a service that is trying to recover.",
+            "Retries multiply load: three attempts at each of three layers can turn one request into 27. Retry at one layer only, and cap retries with a budget, for example at most 10% extra requests.",
+            "A circuit breaker counts recent failures; past a threshold it opens and fails calls immediately for a cool-down, then lets a few trial calls through (half-open) and closes if they succeed. The dependency gets room to recover and the caller a fast fallback.",
+            "Bulkheads give each dependency its own pool of threads or connections, so a slow one exhausts only its own pool; load shedding rejects excess work early (HTTP 503) instead of queueing it until everything times out."
+          ]
+        },
+        {
+          "title": "Rate limiting algorithms",
+          "minutes": 14,
+          "objectives": [
+            "Compare token bucket, leaky bucket, fixed-window and sliding-window limiters",
+            "Decide where to enforce a limit and what to return when it is hit",
+            "Explain how to share one limit across many servers"
+          ],
+          "key_points": [
+            "A token bucket holds up to a capacity of tokens and refills at a steady rate; each request takes a token or is refused. It allows bursts up to the capacity while holding the long-run rate, and stores only two numbers per key: the token count and the time of the last refill.",
+            "A leaky bucket queues requests and releases them at a fixed rate, smoothing bursts instead of allowing them; requests that arrive when the queue is full are dropped.",
+            "A fixed-window counter (100 a minute, reset on the minute) is simple but lets up to twice the limit through around a window boundary. A sliding-window log stores every request time and is exact but costly; a sliding-window counter weights the previous window's count to approximate it cheaply.",
+            "Refuse with HTTP 429 Too Many Requests and a Retry-After header, and limit per API key or user rather than only per IP address, because many users can share one address behind NAT.",
+            "Enforce limits at the edge (an API gateway or load balancer) to protect everything behind it, and per service for expensive operations. With many gateway instances, keep counters in a shared store such as Redis and update them atomically.",
+            "Decide what happens if the limiter's store is down: failing open keeps the service up but unprotected, failing closed protects it but refuses good traffic. A local, per-instance limit is a common fallback."
+          ],
+          "walkthrough": {
+            "tool": "redis-cli",
+            "title": "Count requests per window in Redis",
+            "steps": [
+              {
+                "do": "Start a local Redis server: with Docker, or with Redis installed from your package manager or Homebrew.",
+                "code": "docker run --rm -p 6379:6379 redis:7\n# or, with Redis installed:\nredis-server",
+                "lang": "bash",
+                "see": "The server's log ends with a line saying it is ready to accept connections."
+              },
+              {
+                "do": "In a second terminal, open the Redis command line and check the connection.",
+                "code": "redis-cli\nPING",
+                "lang": "redis",
+                "see": "PONG"
+              },
+              {
+                "do": "Count a request from user 42 in the current one-minute window. The window is part of the key, so each minute gets its own counter.",
+                "code": "INCR rl:user42:1530",
+                "lang": "redis",
+                "see": "(integer) 1"
+              },
+              {
+                "do": "Give the counter a lifetime a little longer than its window, so old windows delete themselves, and check it.",
+                "code": "EXPIRE rl:user42:1530 90\nTTL rl:user42:1530",
+                "lang": "redis",
+                "see": "(integer) 1, then (integer) 90 or slightly less."
+              },
+              {
+                "do": "Count another request. The application compares each returned count with the limit and answers 429 with Retry-After once the count is over it.",
+                "code": "INCR rl:user42:1530",
+                "lang": "redis",
+                "see": "(integer) 2"
+              },
+              {
+                "do": "Make the increment and the expiry one atomic step, so a crash between them can't leave a counter that never expires. A Lua script run with EVAL executes without other commands interleaving; this one sets the expiry only on the window's first request.",
+                "code": "EVAL \"local n = redis.call('INCR', KEYS[1]) if n == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end return n\" 1 rl:user42:1531 90",
+                "lang": "redis",
+                "see": "(integer) 1 the first time, (integer) 2 the next, and TTL rl:user42:1531 shows the expiry."
+              },
+              {
+                "do": "A token bucket in Redis works the same way: one script reads the stored token count and refill time, refills, takes a token and writes both back atomically. Leave the CLI when you're done.",
+                "code": "QUIT",
+                "lang": "redis"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build a token-bucket rate limiter",
+        "tool": "Python 3 and pytest",
+        "minutes": 50,
+        "goal": "Implement a token bucket against a fake clock you control, test it, compare it with a fixed-window counter at a window boundary, and give each user their own bucket so one noisy client can't use up everyone else's capacity.",
+        "setup": [
+          "Python 3.10 or newer with pytest",
+          "Download the lab files into a new folder: ratelimit.py, test_ratelimit.py and simulate.py"
+        ],
+        "steps": [
+          {
+            "do": "Read ratelimit.py. FixedWindow is complete; TokenBucket and KeyedLimiter have TODOs. Every class takes a clock function, so the tests control time instead of sleeping."
+          },
+          {
+            "do": "Run the tests to see what's missing.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 failed, 1 passed: only the fixed-window test passes."
+          },
+          {
+            "do": "Implement _refill: add elapsed time × rate tokens, never more than capacity, and remember the time. Guard against a negative elapsed time.",
+            "code": "now = self.clock()\nelapsed = max(0.0, now - self.updated)\nself.tokens = min(self.capacity, self.tokens + elapsed * self.rate)\nself.updated = now",
+            "lang": "python"
+          },
+          {
+            "do": "Implement allow: refill, then take cost tokens and return True if there are enough; otherwise take nothing and return False."
+          },
+          {
+            "do": "Implement retry_after: refill, then return the missing tokens divided by the rate, or 0 if there are enough already."
+          },
+          {
+            "do": "Implement KeyedLimiter.allow: look up the key's bucket, create it on first use, and ask it."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Run the simulation.",
+            "code": "python simulate.py",
+            "lang": "bash",
+            "see": "Boundary burst of 20 requests in 0.125 s: fixed window allowed 20, then token bucket allowed 11."
+          },
+          {
+            "do": "Read the steady-overload line: the bucket starts full, so the first seconds allow more than 10, then it settles at the refill rate. Note the Retry-After value a 429 response would carry.",
+            "see": "allowed per second [16, 13, 10, 10], total 49 of 64; Next token in 0.0625 s, so the 429 response says Retry-After: 1"
+          },
+          {
+            "do": "Read the per-user lines: the noisy user is held to its own rate, and the quiet user is never refused.",
+            "see": "User noisy: sent 256, allowed 14 and User quiet: sent 8, allowed 8"
+          },
+          {
+            "do": "Explain in two or three sentences why the fixed window let 20 requests through in an eighth of a second, and what a sliding-window counter would have allowed instead."
+          },
+          {
+            "do": "Stretch: describe how you would keep these buckets in Redis for a fleet of gateways: which two values to store per key, what TTL to give them, and why the update must be a single atomic script."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The token bucket passes its tests.",
+            "look_for": [
+              "7 passed"
+            ]
+          },
+          {
+            "text": "At a window boundary the fixed window lets 20 requests through and the token bucket 11.",
+            "look_for": [
+              "fixed window allowed 20",
+              "token bucket allowed 11"
+            ]
+          },
+          {
+            "text": "Under steady overload the bucket allows its burst, then the refill rate.",
+            "look_for": [
+              "[16, 13, 10, 10]",
+              "total 49 of 64"
+            ]
+          },
+          {
+            "text": "Retry-After is worked out from the refill rate.",
+            "look_for": [
+              "0.0625 s",
+              "Retry-After: 1"
+            ]
+          },
+          {
+            "text": "Per-key buckets keep users apart.",
+            "look_for": [
+              "sent 256, allowed 14",
+              "sent 8, allowed 8"
+            ]
+          }
+        ],
+        "submit": "Paste your ratelimit.py, the pytest summary, everything simulate.py printed and your explanation of the boundary burst (and your Redis design if you did the stretch step).",
+        "files": [
+          {
+            "path": "ratelimit.py",
+            "content": "\"\"\"Rate limiters: a token bucket to build, and a fixed-window counter to compare it with.\n\nBoth take a `clock`: a function returning seconds. Real code uses time.monotonic, which never\njumps backwards when the system clock is corrected; the tests pass a fake clock instead.\n\"\"\"\nfrom __future__ import annotations\n\nimport math\nimport time\nfrom typing import Callable\n\nClock = Callable[[], float]\n\n\nclass TokenBucket:\n    \"\"\"Allows bursts of up to `capacity` requests and `rate` requests a second on average.\n\n    The bucket starts full. Tokens are added continuously, `rate` per second, but never beyond\n    `capacity`. A request costs `cost` tokens and is allowed only if that many are there.\n    \"\"\"\n\n    def __init__(self, capacity: float, rate: float, clock: Clock = time.monotonic):\n        if capacity <= 0 or rate <= 0:\n            raise ValueError(\"capacity and rate must be positive\")\n        self.capacity = capacity\n        self.rate = rate\n        self.clock = clock\n        self.tokens = float(capacity)\n        self.updated = clock()\n\n    def _refill(self) -> None:\n        \"\"\"Add the tokens earned since the last update, up to capacity.\"\"\"\n        raise NotImplementedError(\"TODO: elapsed time x rate, capped at capacity; then remember now\")\n\n    def allow(self, cost: float = 1) -> bool:\n        \"\"\"Take `cost` tokens and return True, or return False and take nothing.\"\"\"\n        raise NotImplementedError(\"TODO: refill, then take the tokens if there are enough\")\n\n    def retry_after(self, cost: float = 1) -> float:\n        \"\"\"Seconds until `cost` tokens will be available: 0 if they are now.\"\"\"\n        if cost > self.capacity:\n            raise ValueError(\"this request can never be allowed: cost exceeds capacity\")\n        raise NotImplementedError(\"TODO: refill, then (missing tokens) / rate, never below 0\")\n\n\nclass FixedWindow:\n    \"\"\"At most `limit` requests in each window of `window` seconds, counted from zero again on each new window.\"\"\"\n\n    def __init__(self, limit: int, window: float, clock: Clock = time.monotonic):\n        self.limit, self.window, self.clock = limit, window, clock\n        self.current, self.count = None, 0\n\n    def allow(self) -> bool:\n        index = math.floor(self.clock() / self.window)\n        if index != self.current:\n            self.current, self.count = index, 0\n        if self.count < self.limit:\n            self.count += 1\n            return True\n        return False\n\n\nclass KeyedLimiter:\n    \"\"\"One token bucket per key (a user, an API key), created the first time the key is seen.\"\"\"\n\n    def __init__(self, capacity: float, rate: float, clock: Clock = time.monotonic):\n        self.capacity, self.rate, self.clock = capacity, rate, clock\n        self.buckets: dict[str, TokenBucket] = {}\n\n    def allow(self, key: str, cost: float = 1) -> bool:\n        raise NotImplementedError(\"TODO: get or create this key's bucket, then ask it\")\n"
+          },
+          {
+            "path": "test_ratelimit.py",
+            "content": "import pytest\n\nfrom ratelimit import FixedWindow, KeyedLimiter, TokenBucket\n\n\nclass FakeClock:\n    \"\"\"A clock the test moves by hand. Times are multiples of 1/8 s, which floats store exactly.\"\"\"\n\n    def __init__(self, now: float = 0.0):\n        self.now = now\n\n    def __call__(self) -> float:\n        return self.now\n\n    def advance(self, seconds: float) -> None:\n        self.now += seconds\n\n\ndef test_starts_full_and_allows_a_burst():\n    bucket = TokenBucket(capacity=5, rate=1, clock=FakeClock())\n    assert [bucket.allow() for _ in range(6)] == [True] * 5 + [False]\n\n\ndef test_refills_at_the_rate():\n    clock = FakeClock()\n    bucket = TokenBucket(capacity=4, rate=4, clock=clock)\n    for _ in range(4):\n        bucket.allow()\n    clock.advance(0.5)                      # 0.5 s x 4 tokens/s = 2 tokens\n    assert [bucket.allow() for _ in range(3)] == [True, True, False]\n\n\ndef test_never_holds_more_than_capacity():\n    clock = FakeClock()\n    bucket = TokenBucket(capacity=3, rate=10, clock=clock)\n    clock.advance(100)\n    assert sum(bucket.allow() for _ in range(10)) == 3\n\n\ndef test_cost_takes_several_tokens_or_none():\n    bucket = TokenBucket(capacity=5, rate=1, clock=FakeClock())\n    assert bucket.allow(3) is True\n    assert bucket.allow(3) is False         # only 2 left, and a refused request takes nothing\n    assert bucket.allow(2) is True\n\n\ndef test_retry_after():\n    clock = FakeClock()\n    bucket = TokenBucket(capacity=2, rate=4, clock=clock)\n    assert bucket.retry_after() == 0\n    bucket.allow(2)\n    assert bucket.retry_after() == pytest.approx(0.25)\n    clock.advance(0.25)\n    assert bucket.allow() is True\n    with pytest.raises(ValueError):\n        bucket.retry_after(3)\n\n\ndef test_fixed_window_lets_twice_the_limit_through_at_a_boundary():\n    clock = FakeClock(0.875)\n    window = FixedWindow(limit=10, window=1.0, clock=clock)\n    first = sum(window.allow() for _ in range(10))\n    clock.advance(0.125)                    # t = 1.0: a new window starts\n    second = sum(window.allow() for _ in range(10))\n    assert first + second == 20\n\n\ndef test_keyed_limiter_keeps_keys_apart():\n    limiter = KeyedLimiter(capacity=2, rate=1, clock=FakeClock())\n    assert [limiter.allow(\"noisy\") for _ in range(3)] == [True, True, False]\n    assert limiter.allow(\"quiet\") is True\n    assert set(limiter.buckets) == {\"noisy\", \"quiet\"}\n"
+          },
+          {
+            "path": "simulate.py",
+            "content": "\"\"\"Compare a token bucket with a fixed window, then give each user their own bucket.\"\"\"\nimport math\n\nfrom ratelimit import FixedWindow, KeyedLimiter, TokenBucket\n\n\nclass FakeClock:\n    def __init__(self, now: float = 0.0):\n        self.now = now\n\n    def __call__(self) -> float:\n        return self.now\n\n\ndef boundary_burst() -> None:\n    \"\"\"Ten requests just before a window boundary and ten just after it.\"\"\"\n    for name in (\"fixed window\", \"token bucket\"):\n        clock = FakeClock(0.875)\n        limiter = FixedWindow(10, 1.0, clock) if name == \"fixed window\" else TokenBucket(10, 10, clock)\n        allowed = sum(limiter.allow() for _ in range(10))\n        clock.now = 1.0\n        allowed += sum(limiter.allow() for _ in range(10))\n        print(f\"Boundary burst of 20 requests in 0.125 s: {name} allowed {allowed}\")\n\n\ndef steady_overload() -> None:\n    \"\"\"A client sends 16 requests a second for 4 seconds to a limit of 10 a second, bursts of 10.\"\"\"\n    clock = FakeClock()\n    bucket = TokenBucket(capacity=10, rate=10, clock=clock)\n    per_second = [0, 0, 0, 0]\n    for i in range(64):\n        clock.now = i / 16\n        if bucket.allow():\n            per_second[i // 16] += 1\n    print(f\"Steady 16 requests/s against 10/s (burst 10): allowed per second {per_second}, \"\n          f\"total {sum(per_second)} of 64\")\n    wait = bucket.retry_after()\n    print(f\"Next token in {wait:.4f} s, so the 429 response says Retry-After: {math.ceil(wait)}\")\n\n\ndef per_user() -> None:\n    \"\"\"For 2 seconds one user sends 128 requests a second and another 4 a second.\n    Each user has their own bucket of 5 tokens, refilling at 5 a second.\"\"\"\n    clock = FakeClock()\n    limiter = KeyedLimiter(capacity=5, rate=5, clock=clock)\n    sent = {\"noisy\": 0, \"quiet\": 0}\n    allowed = {\"noisy\": 0, \"quiet\": 0}\n    for tick in range(256):                 # 2 seconds in steps of 1/128 s, which floats store exactly\n        clock.now = tick / 128\n        for user in [\"noisy\"] + ([\"quiet\"] if tick % 32 == 0 else []):\n            sent[user] += 1\n            allowed[user] += limiter.allow(user)\n    for user in (\"noisy\", \"quiet\"):\n        print(f\"User {user}: sent {sent[user]}, allowed {allowed[user]}\")\n\n\nif __name__ == \"__main__\":\n    boundary_burst()\n    steady_overload()\n    per_user()\n"
+          }
+        ],
+        "hints": [
+          "A request is allowed when tokens >= cost. The tests use times such as 0.125 s that floats store exactly, so no rounding tolerance is needed.",
+          "A refused request must not change the token count, or clients that retry quickly are punished twice.",
+          "retry_after can call _refill too: it keeps the count current and changes nothing else."
+        ]
+      }
+    },
+    {
+      "title": "Caching and CDNs",
+      "summary": "Keep hot data in memory close to where it's needed: choose where caches sit and how they're filled, keep them fresh enough, evict sensibly when they're full, and serve cacheable content from the edge.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Cache-aside and where caches live",
+          "minutes": 12,
+          "objectives": [
+            "Identify the layers where a system can cache data",
+            "Implement the cache-aside read and write paths",
+            "Estimate how the hit ratio changes average latency and database load"
+          ],
+          "key_points": [
+            "Caches sit at every layer: the browser or app, a CDN at the edge, a reverse proxy, an in-process cache in each server, a shared cache such as Redis or Memcached, and the database's own buffer cache. The closer to the user, the faster the hit and the harder the invalidation.",
+            "Cache-aside (lazy loading): on a read, look in the cache; on a miss, read the database, store the result with a TTL and return it. The application owns the logic, and the cache holds only data that someone has asked for.",
+            "On a write with cache-aside, update the database first and then delete the cached key rather than overwriting it, so the next read loads the current value. Deleting is idempotent and never stores a value computed from stale data.",
+            "Average latency = hit ratio × hit latency + (1 − hit ratio) × miss latency. With a 1 ms hit and a 20 ms miss, raising the hit ratio from 90% to 99% cuts the average from 2.9 ms to about 1.2 ms, and cuts database reads tenfold.",
+            "A shared cache gives every server the same view and survives server restarts; an in-process cache avoids the network hop but keeps a separate, possibly different, copy in each server, so give it a short TTL.",
+            "A cache holds copies, never the only copy: the system must stay correct, if slower, when the cache is empty, restarting or evicting."
+          ]
+        },
+        {
+          "title": "Write strategies, invalidation and stampedes",
+          "minutes": 14,
+          "objectives": [
+            "Compare write-through, write-behind and write-around caching",
+            "Choose an invalidation approach and explain the race it must survive",
+            "Protect a database from a cache stampede"
+          ],
+          "key_points": [
+            "Write-through writes to the cache and the database in the same operation, so reads after a write hit and the cache is never behind, at the cost of slower writes and of caching data that may never be read.",
+            "Write-behind (write-back) writes to the cache and flushes to the database later in batches: fast writes, but data is lost if the cache fails before the flush, so it suits counters and metrics more than orders. Write-around writes only to the database and lets reads fill the cache.",
+            "Ways to invalidate: a TTL bounds staleness even if everything else fails; deleting keys on write keeps data fresh; versioned keys (user:42:v7) make old entries unreachable; change-data-capture events from the database can drive deletes across services.",
+            "A classic race: a reader misses and reads the old value, a writer updates the database and deletes the key, then the reader stores the old value, which lasts until its TTL. Short TTLs, version checks or a second, delayed delete limit the damage.",
+            "A stampede (thundering herd) happens when a hot key expires and thousands of requests miss at once and hit the database. Let one request recompute while the others wait or get the stale value (request coalescing), refresh hot keys early, and add random jitter to TTLs.",
+            "Cache negative results (no such user) briefly, so repeated lookups of missing keys don't all reach the database, and watch for hot keys that overload a single cache node: replicate them or keep them in-process."
+          ]
+        },
+        {
+          "title": "Eviction: LRU, LFU and TTL",
+          "minutes": 12,
+          "objectives": [
+            "Compare LRU, LFU, FIFO and TTL-based expiry",
+            "Explain how an LRU cache gets O(1) get and put",
+            "Configure a memory limit and eviction policy in Redis"
+          ],
+          "key_points": [
+            "When a cache is full, its eviction policy decides what to drop. LRU drops the least recently used entry and suits most workloads, where recently used items tend to be used again; LFU drops the least frequently used and protects long-term favourites; FIFO ignores use altogether.",
+            "An LRU cache gets O(1) get and put from a hash map (key to node) plus a doubly linked list in order of use: a hit moves its node to the front, an insert adds at the front, and eviction removes from the back. Python's OrderedDict offers both, through move_to_end and popitem(last=False).",
+            "One scan of many keys used once can flush an LRU cache of its useful entries. LFU and segmented or two-queue designs resist this, which is why database buffer pools don't use plain LRU.",
+            "TTL expiry removes entries by age, whatever their use, and bounds staleness; eviction removes them by need, when memory runs out. Most caches use both.",
+            "Redis evicts only once maxmemory is set; maxmemory-policy chooses how, for example allkeys-lru, allkeys-lfu, volatile-lru (only keys with a TTL) or noeviction, which makes writes fail when memory is full. Redis approximates LRU and LFU by sampling keys rather than keeping an exact order.",
+            "Size a cache from the working set: when a small share of the keys gets most of the reads, caching that share gives most of the benefit. Measure the hit ratio in production, and grow the cache only while the hit ratio keeps rising."
+          ],
+          "walkthrough": {
+            "tool": "redis-cli",
+            "title": "Use Redis as a cache: TTLs, invalidation and eviction",
+            "steps": [
+              {
+                "do": "With a Redis server running (see the rate-limiting walkthrough), open redis-cli and cache a user record for five minutes. EX sets the TTL in seconds.",
+                "code": "SET user:42 '{\"name\":\"Ama\"}' EX 300",
+                "lang": "redis",
+                "see": "OK"
+              },
+              {
+                "do": "Read it back and see how long it has left.",
+                "code": "GET user:42\nTTL user:42",
+                "lang": "redis",
+                "see": "The JSON string, then (integer) 300 or a little less."
+              },
+              {
+                "do": "Ask for a key that isn't cached. In cache-aside, the application now reads the database and SETs the value with a TTL.",
+                "code": "GET user:43",
+                "lang": "redis",
+                "see": "(nil)"
+              },
+              {
+                "do": "Invalidate on write: after the database update, delete the key.",
+                "code": "DEL user:42\nEXISTS user:42",
+                "lang": "redis",
+                "see": "(integer) 1, then (integer) 0"
+              },
+              {
+                "do": "Check the memory limit. 0 means no limit, so Redis would never evict and would grow until the machine ran out of memory.",
+                "code": "CONFIG GET maxmemory",
+                "lang": "redis",
+                "see": "1) \"maxmemory\" 2) \"0\""
+              },
+              {
+                "do": "Cap the memory and choose a policy for a pure cache, where any key may be dropped.",
+                "code": "CONFIG SET maxmemory 100mb\nCONFIG SET maxmemory-policy allkeys-lru\nCONFIG GET maxmemory-policy",
+                "lang": "redis",
+                "see": "OK, OK, then 1) \"maxmemory-policy\" 2) \"allkeys-lru\""
+              },
+              {
+                "do": "Find the counters a hit ratio is calculated from.",
+                "code": "INFO stats",
+                "lang": "redis",
+                "see": "Lines including keyspace_hits and keyspace_misses."
+              },
+              {
+                "do": "CONFIG SET lasts until the server restarts; put maxmemory and maxmemory-policy in redis.conf to keep them. Leave the CLI.",
+                "code": "QUIT",
+                "lang": "redis"
+              }
+            ]
+          }
+        },
+        {
+          "title": "CDNs and HTTP caching",
+          "minutes": 13,
+          "objectives": [
+            "Explain how a CDN serves content from edge locations",
+            "Control caching with Cache-Control, ETag and versioned file names",
+            "Decide what to cache at the edge and how to invalidate it"
+          ],
+          "key_points": [
+            "A CDN keeps copies of responses at edge locations near users; a request that hits the edge avoids the long round trip to the origin, which serves only the misses. Static assets, images and video are the classic fit, and cacheable API responses can benefit too.",
+            "Cache-Control sets the rules: max-age=N lets any cache reuse a response for N seconds, s-maxage overrides it for shared caches such as CDNs, private keeps it to the browser, no-cache allows storing but requires revalidation before each reuse, and no-store forbids storing at all.",
+            "Revalidation saves bandwidth: the server sends an ETag (or Last-Modified); later the client sends it back in If-None-Match (or If-Modified-Since), and an unchanged resource gets 304 Not Modified with no body.",
+            "Put a version or content hash in static file names (app.3f9a1c.js) and give them a long max-age with immutable: a release changes the name, so nothing needs purging. Keep the HTML short-lived so it picks up the new names.",
+            "The cache key is usually the URL; Vary adds request headers to it (Vary: Accept-Encoding keeps compressed and uncompressed copies apart). Never let a shared cache store personalised responses: mark them private or no-store.",
+            "Remove edge copies with the CDN's purge API or short TTLs, and use an origin shield (a mid-tier cache) so that a purge or a burst of misses doesn't send every edge location to the origin at once."
+          ],
+          "walkthrough": {
+            "tool": "curl",
+            "title": "See Cache-Control, ETag and 304 responses with curl",
+            "steps": [
+              {
+                "do": "Save this server as cache_server.py. It serves the same script under a fixed name with a short max-age and under a versioned name with a long one, and answers If-None-Match with 304.",
+                "code": "\"\"\"Serve two files with HTTP caching headers, and answer revalidation with 304 Not Modified.\"\"\"\nimport hashlib\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n\nAPP = b\"console.log('app.js, release 1');\\n\"\nFILES = {\n    \"/app.js\": (APP, \"public, max-age=60\"),                             # a name that never changes\n    \"/app.3f9a1c.js\": (APP, \"public, max-age=31536000, immutable\"),     # a name that changes per release\n}\n\n\nclass Handler(BaseHTTPRequestHandler):\n    def do_GET(self):\n        if self.path not in FILES:\n            self.send_error(404)\n            return\n        body, cache_control = FILES[self.path]\n        etag = '\"' + hashlib.sha256(body).hexdigest()[:12] + '\"'\n        if self.headers.get(\"If-None-Match\") == etag:\n            self.send_response(304)                      # unchanged: no body\n        else:\n            self.send_response(200)\n            self.send_header(\"Content-Type\", \"text/javascript\")\n            self.send_header(\"Content-Length\", str(len(body)))\n        self.send_header(\"Cache-Control\", cache_control)\n        self.send_header(\"ETag\", etag)\n        self.end_headers()\n        if self.headers.get(\"If-None-Match\") != etag:\n            self.wfile.write(body)\n\n\nHTTPServer((\"127.0.0.1\", 8000), Handler).serve_forever()",
+                "lang": "python"
+              },
+              {
+                "do": "Start it.",
+                "code": "python cache_server.py",
+                "lang": "bash",
+                "see": "No output: it is listening on 127.0.0.1:8000."
+              },
+              {
+                "do": "In a second terminal, fetch the fixed-name file with its response headers. (On Windows, Git Bash or WSL keeps the quoting in these commands unchanged.)",
+                "code": "curl -i http://127.0.0.1:8000/app.js",
+                "lang": "bash",
+                "see": "HTTP/1.0 200 OK, Cache-Control: public, max-age=60 and ETag: \"616812ed4e0c\", then the body."
+              },
+              {
+                "do": "Revalidate: send the ETag back in If-None-Match, as a browser does once max-age has passed.",
+                "code": "curl -i -H 'If-None-Match: \"616812ed4e0c\"' http://127.0.0.1:8000/app.js",
+                "lang": "bash",
+                "see": "HTTP/1.0 304 Not Modified and no body: the client reuses the copy it has."
+              },
+              {
+                "do": "Fetch the versioned name. A year-long max-age with immutable is safe because the next release will have a different file name.",
+                "code": "curl -i http://127.0.0.1:8000/app.3f9a1c.js",
+                "lang": "bash",
+                "see": "Cache-Control: public, max-age=31536000, immutable"
+              },
+              {
+                "do": "Stop the server with Ctrl+C in its terminal."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build an LRU cache and measure cache-aside",
+        "tool": "Python 3 and pytest",
+        "minutes": 50,
+        "goal": "Build an LRU cache with O(1) get and put from a dictionary and a doubly linked list, add per-entry TTLs, then use it in a cache-aside simulation to see how hit ratio and latency change with cache size, and why writes must invalidate rather than rely on the TTL.",
+        "setup": [
+          "Python 3.10 or newer with pytest",
+          "Download the lab files into a new folder: lru.py, test_lru.py and simulate.py"
+        ],
+        "steps": [
+          {
+            "do": "Read lru.py: the dictionary maps keys to nodes, the list runs from the most recent entry (after head) to the least recent (before tail), and _unlink and _push_front are written for you."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 failed"
+          },
+          {
+            "do": "Implement get: a missing key is a miss; an expired entry is removed and is a miss; otherwise move the node to the front, count a hit and return the value.",
+            "code": "node = self.map.get(key)\nif node is None:\n    self.misses += 1\n    return default",
+            "lang": "python"
+          },
+          {
+            "do": "Implement put: for an existing key, replace its value and expiry and move it to the front; for a new key, evict the node before tail if the cache is full, then add the new node at the front."
+          },
+          {
+            "do": "Implement delete with self.map.pop(key, None), so deleting a missing key is harmless."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Run the simulation.",
+            "code": "python simulate.py",
+            "lang": "bash",
+            "see": "capacity  1000: hit ratio 0.674, database reads 16,296, average 7.19 ms"
+          },
+          {
+            "do": "Compare the cache sizes: room for 10% of the keys already gives a 67% hit ratio because popularity is skewed, and each further increase buys less.",
+            "see": "capacity   100: hit ratio 0.392 ... capacity  5000: hit ratio 0.852, database reads  7,423, average 3.82 ms"
+          },
+          {
+            "do": "Read the invalidation lines: with only a 60-second TTL, thousands of reads return an old version; deleting the key on each write removes them, and the TTL stays as the safety net.",
+            "see": "TTL only (60 s) stale reads: 7542, then delete on write + TTL stale reads: 0"
+          },
+          {
+            "do": "Add 10_000 to the capacities in size_experiment (room for every key) and run it again. Explain why the hit ratio still isn't 1.0.",
+            "code": "python simulate.py",
+            "lang": "bash",
+            "see": "capacity 10000: hit ratio 0.864, database reads  6,782"
+          },
+          {
+            "do": "Write two or three sentences: which capacity you'd choose for this workload and why, and what you'd monitor in production to know it was still right."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The LRU cache passes its tests.",
+            "look_for": [
+              "7 passed"
+            ]
+          },
+          {
+            "text": "Hit ratios and latencies match a correct LRU cache.",
+            "look_for": [
+              "hit ratio 0.392",
+              "hit ratio 0.674",
+              "average 3.82 ms"
+            ]
+          },
+          {
+            "text": "Deleting on write removes the stale reads that a TTL alone allows.",
+            "look_for": [
+              "stale reads: 7542",
+              "stale reads: 0"
+            ]
+          },
+          {
+            "text": "The run with room for every key is explained: the remaining misses are first requests (cold misses).",
+            "look_for": [
+              "hit ratio 0.864",
+              "6,782"
+            ]
+          }
+        ],
+        "submit": "Paste your lru.py, the pytest summary, everything simulate.py printed (including the capacity 10000 line), your explanation of the cold misses and your choice of capacity.",
+        "files": [
+          {
+            "path": "lru.py",
+            "content": "\"\"\"An LRU cache with optional per-entry TTLs: a dict for O(1) lookup plus a doubly linked list for recency.\n\nThe list runs from the most recently used entry (just after `head`) to the least recently used\n(just before `tail`). `head` and `tail` are sentinels, so no operation needs to check for None.\n\"\"\"\nfrom __future__ import annotations\n\nimport time\nfrom typing import Any, Callable, Hashable\n\n\nclass _Node:\n    __slots__ = (\"key\", \"value\", \"expires\", \"prev\", \"next\")\n\n    def __init__(self, key: Hashable = None, value: Any = None, expires: float | None = None):\n        self.key, self.value, self.expires = key, value, expires\n        self.prev: _Node | None = None\n        self.next: _Node | None = None\n\n\nclass LRUCache:\n    def __init__(self, capacity: int, clock: Callable[[], float] = time.monotonic):\n        if capacity < 1:\n            raise ValueError(\"capacity must be at least 1\")\n        self.capacity = capacity\n        self.clock = clock\n        self.map: dict[Hashable, _Node] = {}\n        self.head, self.tail = _Node(), _Node()\n        self.head.next, self.tail.prev = self.tail, self.head\n        self.hits = self.misses = self.evictions = 0\n\n    # The two list operations everything else is built from.\n    def _unlink(self, node: _Node) -> None:\n        node.prev.next, node.next.prev = node.next, node.prev\n\n    def _push_front(self, node: _Node) -> None:\n        node.prev, node.next = self.head, self.head.next\n        self.head.next.prev = node\n        self.head.next = node\n\n    def get(self, key: Hashable, default: Any = None) -> Any:\n        \"\"\"Return the value and mark it most recently used; count a hit or a miss.\n        An expired entry is removed and counts as a miss.\"\"\"\n        raise NotImplementedError(\"TODO\")\n\n    def put(self, key: Hashable, value: Any, ttl: float | None = None) -> None:\n        \"\"\"Insert or replace an entry as the most recently used; if that makes the cache too big,\n        evict the least recently used entry. `ttl` is in seconds; None means no expiry.\"\"\"\n        raise NotImplementedError(\"TODO\")\n\n    def delete(self, key: Hashable) -> bool:\n        \"\"\"Remove an entry; return whether it was there. Deleting twice is harmless.\"\"\"\n        raise NotImplementedError(\"TODO\")\n\n    def keys(self) -> list[Hashable]:\n        \"\"\"Keys from most to least recently used.\"\"\"\n        out, node = [], self.head.next\n        while node is not self.tail:\n            out.append(node.key)\n            node = node.next\n        return out\n\n    def __len__(self) -> int:\n        return len(self.map)\n\n    @property\n    def hit_ratio(self) -> float:\n        total = self.hits + self.misses\n        return self.hits / total if total else 0.0\n"
+          },
+          {
+            "path": "test_lru.py",
+            "content": "from lru import LRUCache\n\n\nclass FakeClock:\n    def __init__(self):\n        self.now = 0.0\n\n    def __call__(self):\n        return self.now\n\n\ndef test_get_and_put():\n    cache = LRUCache(2)\n    cache.put(\"a\", 1)\n    assert cache.get(\"a\") == 1\n    assert cache.get(\"missing\", \"default\") == \"default\"\n\n\ndef test_evicts_the_least_recently_used():\n    cache = LRUCache(2)\n    cache.put(\"a\", 1)\n    cache.put(\"b\", 2)\n    cache.get(\"a\")              # a is now more recent than b\n    cache.put(\"c\", 3)           # so b goes\n    assert cache.get(\"b\") is None\n    assert cache.keys() == [\"c\", \"a\"]\n    assert cache.evictions == 1\n\n\ndef test_replacing_a_key_refreshes_it_without_growing():\n    cache = LRUCache(2)\n    cache.put(\"a\", 1)\n    cache.put(\"b\", 2)\n    cache.put(\"a\", 10)\n    assert len(cache) == 2 and cache.keys() == [\"a\", \"b\"]\n    cache.put(\"c\", 3)\n    assert cache.get(\"a\") == 10 and cache.get(\"b\") is None\n\n\ndef test_capacity_one():\n    cache = LRUCache(1)\n    cache.put(\"a\", 1)\n    cache.put(\"b\", 2)\n    assert cache.keys() == [\"b\"]\n\n\ndef test_ttl_expiry_counts_as_a_miss():\n    clock = FakeClock()\n    cache = LRUCache(10, clock=clock)\n    cache.put(\"session\", \"xyz\", ttl=30)\n    clock.now = 29.5\n    assert cache.get(\"session\") == \"xyz\"\n    clock.now = 30.0\n    assert cache.get(\"session\") is None\n    assert len(cache) == 0\n    assert (cache.hits, cache.misses) == (1, 1)\n\n\ndef test_delete_is_idempotent():\n    cache = LRUCache(2)\n    cache.put(\"a\", 1)\n    assert cache.delete(\"a\") is True\n    assert cache.delete(\"a\") is False\n    assert cache.keys() == []\n\n\ndef test_hit_ratio():\n    cache = LRUCache(2)\n    cache.put(\"a\", 1)\n    for key in [\"a\", \"a\", \"a\", \"b\"]:\n        cache.get(key)\n    assert cache.hit_ratio == 0.75\n"
+          },
+          {
+            "path": "simulate.py",
+            "content": "\"\"\"Cache-aside in front of a slow database: how hit ratio and latency change with cache size,\nand why a write should delete the cached copy rather than rely on the TTL alone.\"\"\"\nimport random\n\nfrom lru import LRUCache\n\nHIT_MS, MISS_MS = 1, 20          # a cache read, and a cache miss followed by a database read\n\n\ndef zipf_keys(n_keys: int, n_requests: int, seed: int = 7) -> list[str]:\n    \"\"\"Popularity follows a Zipf-like curve: the key ranked r is requested in proportion to 1/r.\"\"\"\n    rng = random.Random(seed)\n    keys = [f\"user:{i}\" for i in range(n_keys)]\n    weights = [1 / rank for rank in range(1, n_keys + 1)]\n    return rng.choices(keys, weights=weights, k=n_requests)\n\n\nclass Database:\n    def __init__(self, n_keys: int):\n        self.rows = {f\"user:{i}\": 0 for i in range(n_keys)}   # value = version of the row\n        self.reads = 0\n\n    def read(self, key: str) -> int:\n        self.reads += 1\n        return self.rows[key]\n\n\ndef get_user(cache: LRUCache, db: Database, key: str, ttl: float | None = None) -> tuple[int, int]:\n    \"\"\"Cache-aside read. Returns (value, cost in ms).\"\"\"\n    value = cache.get(key)\n    if value is not None:\n        return value, HIT_MS\n    value = db.read(key)\n    cache.put(key, value, ttl=ttl)\n    return value, MISS_MS\n\n\ndef size_experiment() -> None:\n    requests = zipf_keys(10_000, 50_000)\n    print(\"Cache-aside, 50,000 reads over 10,000 keys:\")\n    for capacity in (100, 1_000, 2_000, 5_000):\n        cache, db = LRUCache(capacity), Database(10_000)\n        cost = sum(get_user(cache, db, key)[1] for key in requests)\n        print(f\"  capacity {capacity:>5}: hit ratio {cache.hit_ratio:.3f}, database reads {db.reads:>6,}, \"\n              f\"average {cost / len(requests):.2f} ms\")\n\n\nclass Clock:\n    def __init__(self):\n        self.now = 0.0\n\n    def __call__(self) -> float:\n        return self.now\n\n\ndef invalidation_experiment() -> None:\n    \"\"\"One operation per 10 ms for 200 s; 2% are writes. Count reads that return an old version.\"\"\"\n    requests = zipf_keys(1_000, 20_000, seed=3)\n    for strategy in (\"TTL only (60 s)\", \"delete on write + TTL\"):\n        rng = random.Random(11)                            # the same writes for both strategies\n        clock = Clock()\n        cache, db = LRUCache(500, clock=clock), Database(1_000)\n        stale = 0\n        for i, key in enumerate(requests):\n            clock.now = i * 0.01\n            if rng.random() < 0.02:                        # a write: update the database first...\n                db.rows[key] += 1\n                if strategy.startswith(\"delete\"):\n                    cache.delete(key)                      # ...then delete the cached copy\n            else:\n                value, _ = get_user(cache, db, key, ttl=60)\n                stale += value != db.rows[key]\n        print(f\"  {strategy:<22} stale reads: {stale}\")\n\n\nif __name__ == \"__main__\":\n    size_experiment()\n    print(\"Invalidation, 20,000 operations, 2% writes:\")\n    invalidation_experiment()\n"
+          }
+        ],
+        "hints": [
+          "Every move to the front is _unlink(node) followed by _push_front(node); the eviction victim is self.tail.prev.",
+          "Delete the evicted key from the dictionary as well, or len() and the list drift apart.",
+          "In get, compare self.clock() >= node.expires only when expires isn't None."
+        ]
+      }
+    },
+    {
+      "title": "Databases: replication, sharding and consistent hashing",
+      "summary": "Choose a data store from the access patterns, then scale it: indexes for fast reads, replicas for read capacity and failover, shards for data and write volume, and consistent hashing to place keys. A worked URL shortener puts it together.",
+      "instructor": "arjun-sharma",
+      "lessons": [
+        {
+          "title": "SQL or NoSQL, chosen by access pattern",
+          "minutes": 13,
+          "objectives": [
+            "Compare relational, key-value, document, wide-column and graph databases",
+            "Choose a data store from a system's access patterns and consistency needs",
+            "Identify the indexes a design's main queries need"
+          ],
+          "key_points": [
+            "Relational databases (PostgreSQL, MySQL) keep rows in tables with a schema, joins and multi-row ACID transactions. They fit data with relationships and invariants, such as orders, payments and stock, and with indexes and replicas they scale further than is often assumed.",
+            "Key-value stores (Redis, DynamoDB) fetch items by key very fast; document stores (MongoDB) keep a whole aggregate, such as a user with their addresses, as one JSON-like document; wide-column stores (Cassandra) partition rows by key for huge, write-heavy, time-ordered data; graph databases answer many-hop questions.",
+            "Choose from the access patterns: list the main queries with their rates and latency targets first. Data read together should be stored together, and a store that can't serve the main query by key or index forces full scans or joins in application code.",
+            "'NoSQL scales and SQL doesn't' is a myth: what scales is partitioning by a key that spreads the load, which both can do. Many NoSQL stores give up joins, multi-key transactions or ad hoc queries to make partitioning easy.",
+            "An index turns a scan of every row into a search of a sorted structure, so give each frequent query an index matching its filter and sort order. Every index also slows writes and takes space, so don't index columns no query uses.",
+            "Using several stores is normal: a relational database for orders, Redis for sessions and counters, object storage for images and a search engine for text, each holding the data it serves best."
+          ]
+        },
+        {
+          "title": "Replication and read replicas",
+          "minutes": 13,
+          "objectives": [
+            "Explain leader-follower replication and replication lag",
+            "Send reads to replicas without breaking read-your-writes",
+            "Describe what can go wrong during failover"
+          ],
+          "key_points": [
+            "With leader-follower replication, every write goes to the leader, which streams its changes to the followers. Reads can go to followers, which multiplies read capacity and keeps copies ready for failover.",
+            "Asynchronous replication keeps writes fast, but followers lag: by milliseconds normally, by seconds or more under load. Synchronous replication to at least one follower means a committed write survives the leader's loss, at the cost of write latency.",
+            "Lag breaks read-your-writes: a user saves their profile and the next page, read from a lagging replica, shows the old one. Fixes: read a user's own data from the leader, read from the leader for a short time after a write, or wait until the replica has applied the write's log position.",
+            "Failover promotes a follower when the leader dies. With asynchronous replication, writes the old leader hadn't sent are lost, and if it comes back still believing it leads, two leaders (split brain) can accept conflicting writes, so the old leader must be fenced off.",
+            "Replicas add read capacity, not write capacity: every write still goes through the leader and is applied on every replica. When writes or data outgrow one leader, the next step is sharding.",
+            "Replication isn't a backup: a mistaken DELETE reaches every copy within moments. Keep point-in-time backups as well, and test restoring them."
+          ]
+        },
+        {
+          "title": "Sharding and consistent hashing",
+          "minutes": 14,
+          "objectives": [
+            "Compare range, hash and directory-based sharding",
+            "Choose a shard key that spreads load and keeps queries on one shard",
+            "Explain how consistent hashing limits data movement when shards change"
+          ],
+          "key_points": [
+            "Sharding splits data across databases by a shard key, so each shard holds part of the data and takes part of the writes. Range sharding keeps keys in order (good for range scans, prone to hot spots on new keys); hash sharding spreads keys evenly but loses order; a directory maps keys to shards explicitly.",
+            "A good shard key has many distinct values, spreads reads and writes evenly, and appears in almost every query, such as a user ID for a user's data. Queries without it must ask every shard (scatter-gather), and transactions across shards need extra machinery.",
+            "hash(key) mod N moves almost every key when N changes: going from 4 to 5 shards leaves only about 1 key in 5 where it was. Consistent hashing places shards and keys on a ring and stores each key on the next shard clockwise, so adding a shard moves only about 1/N of the keys, all to the new shard.",
+            "Each shard owns many points on the ring (virtual nodes), which evens out the load and lets a bigger machine take more points. With one point per shard, some shards own far more of the ring than others.",
+            "Hot keys (a celebrity's profile) can overload one shard under any scheme: cache them, split one logical key over several physical keys with a suffix, or give them dedicated capacity.",
+            "Rendezvous (highest random weight) hashing is an alternative: score every node with hash(node, key) and pick the highest. It also moves only the changed node's keys, and needs no ring."
+          ]
+        },
+        {
+          "title": "Worked design: a URL shortener",
+          "minutes": 14,
+          "objectives": [
+            "Estimate the load and storage of a URL shortener",
+            "Compare ways to generate short codes",
+            "Design a fast, highly available redirect path"
+          ],
+          "key_points": [
+            "Requirements: create a short code for a long URL, redirect quickly and reliably, and optionally expire links and count clicks. Redirects far outnumber new links (100 to 1 is a common assumption), so the read path drives the design.",
+            "Code length follows from the key space: seven base62 characters (a-z, A-Z, 0-9) give 62^7, about 3.5 trillion codes, enough for 100 million new links a day for over 90 years.",
+            "Ways to make codes: base62-encoding a unique counter gives short codes without collisions but they're guessable and need ID ranges handed to each server; hashing the URL and keeping 7 characters needs collision checks; random codes checked for uniqueness on insert are simple and hard to guess.",
+            "Store code → long URL in a table keyed by the code, which is also a natural shard key, and cache hot codes in Redis or in-process, because a small share of links gets most of the clicks.",
+            "301 Moved Permanently lets browsers cache the redirect (fewer requests, but those clicks go uncounted); 302 Found or 307 Temporary Redirect sends every click through the service, so clicks can be counted and the target changed.",
+            "Count clicks asynchronously: publish a click event to a queue and aggregate it later, so analytics can never slow down or break a redirect."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Route short links to shards with a consistent-hash ring",
+        "tool": "Python 3 and pytest",
+        "minutes": 50,
+        "goal": "Generate short codes with base62, build a consistent-hash ring with virtual nodes, and measure what happens when a fifth shard is added: how many keys move compared with hash mod N, where they go, and how virtual nodes even out the load.",
+        "setup": [
+          "Python 3.10 or newer with pytest",
+          "Download the lab files into a new folder: base62.py, ring.py, test_ring.py and experiment.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the tests first. Most fail, and the tests that need keys stop with errors until base62 works.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "2 failed, 2 passed, 5 errors"
+          },
+          {
+            "do": "Implement base62.encode with repeated divmod by 62, collecting digits from the least significant and reversing them (0 encodes as '0'). Then decode: multiply the running total by 62 and add each character's index.",
+            "code": "digits = []\nwhile n:\n    n, r = divmod(n, BASE)\n    digits.append(ALPHABET[r])\nreturn \"\".join(reversed(digits))",
+            "lang": "python"
+          },
+          {
+            "do": "Implement HashRing.add: for each virtual node i, hash f\"{node}#{i}\" with stable_hash, insert the point in order with bisect.insort, and record its owner."
+          },
+          {
+            "do": "Implement node_for: find the first point at or after the key's hash with bisect.bisect_left, wrap round to index 0 past the end, and return that point's owner. Then implement remove."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "9 passed"
+          },
+          {
+            "do": "Run the experiment.",
+            "code": "python experiment.py",
+            "lang": "bash",
+            "see": "100,000 short codes, from 4c92 to 4C9V, then the movement and balance lines."
+          },
+          {
+            "do": "Compare the movement lines. Mod N moves about 4 keys in 5; the ring moves close to the ideal 1 in 5 (the new shard's share), and only to the new shard.",
+            "see": "hash mod N, 4 -> 5 shards: 79.8% of keys move; consistent hashing, 4 -> 5 shards: 18.8% of keys move, all of them to ['db-e']"
+          },
+          {
+            "do": "Read the balance lines: with one point per shard the busiest holds 1.59 times the average; with 1,000 points it's within a few per cent. More points cost memory and a longer ring to search.",
+            "see": "vnodes=   1: busiest shard holds 1.59x the average ... vnodes=1000: busiest shard holds 1.04x"
+          },
+          {
+            "do": "Give HashRing.add an optional weight that multiplies the number of points, add a sixth shard 'db-big' with weight 2 to the five-shard ring, and print each shard's share of the 100,000 codes. db-big should hold about twice the share of the others."
+          },
+          {
+            "do": "Write a short note on the shard key for the URL shortener: why the short code works well, and which query would need a scatter-gather across shards (for example, listing every link one user created) and how you'd serve it instead."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Base62 and the ring pass their tests.",
+            "look_for": [
+              "9 passed"
+            ]
+          },
+          {
+            "text": "Short codes are base62-encoded IDs.",
+            "look_for": [
+              "from 4c92 to 4C9V"
+            ]
+          },
+          {
+            "text": "Mod-N hashing moves most keys; the ring moves about a fifth, all to the new shard.",
+            "look_for": [
+              "79.8%",
+              "18.8%",
+              "['db-e']"
+            ]
+          },
+          {
+            "text": "Virtual nodes even out the load.",
+            "look_for": [
+              "1.59x",
+              "1.04x"
+            ]
+          },
+          {
+            "text": "A weighted shard is added and its share of the codes reported.",
+            "look_for": [
+              "db-big"
+            ]
+          }
+        ],
+        "submit": "Paste base62.py and ring.py, the pytest summary, everything experiment.py printed (with your weighted-shard lines) and your note on the shard key.",
+        "files": [
+          {
+            "path": "base62.py",
+            "content": "\"\"\"Short codes for a URL shortener: a non-negative integer ID written in base 62.\"\"\"\n\nALPHABET = \"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\"\nBASE = len(ALPHABET)\nINDEX = {ch: i for i, ch in enumerate(ALPHABET)}\n\n\ndef encode(n: int) -> str:\n    \"\"\"encode(0) == '0', encode(61) == 'Z', encode(62) == '10'.\"\"\"\n    if n < 0:\n        raise ValueError(\"IDs are non-negative\")\n    raise NotImplementedError(\"TODO: repeated divmod by 62, most significant digit first\")\n\n\ndef decode(code: str) -> int:\n    raise NotImplementedError(\"TODO: the reverse of encode\")\n"
+          },
+          {
+            "path": "ring.py",
+            "content": "\"\"\"A consistent-hash ring with virtual nodes, and plain modulo hashing to compare it with.\"\"\"\nfrom __future__ import annotations\n\nimport bisect\nimport hashlib\n\n\ndef stable_hash(text: str) -> int:\n    \"\"\"A 64-bit hash that is the same in every process and on every machine.\n    (Python's built-in hash() of a str changes between runs, so it can't place data.)\"\"\"\n    return int.from_bytes(hashlib.md5(text.encode(\"utf-8\")).digest()[:8], \"big\")\n\n\ndef modulo_node(key: str, nodes: list[str]) -> str:\n    return nodes[stable_hash(key) % len(nodes)]\n\n\nclass HashRing:\n    \"\"\"Each node owns `vnodes` points on a ring of 2**64 positions. A key belongs to the node that\n    owns the first point at or after the key's own position, wrapping round past the top.\"\"\"\n\n    def __init__(self, nodes: tuple[str, ...] | list[str] = (), vnodes: int = 100):\n        self.vnodes = vnodes\n        self._points: list[int] = []        # sorted positions\n        self._owner: dict[int, str] = {}    # position -> node\n        for node in nodes:\n            self.add(node)\n\n    def add(self, node: str) -> None:\n        \"\"\"Give the node `vnodes` points, at stable_hash(f\"{node}#{i}\") for i in range(vnodes).\"\"\"\n        raise NotImplementedError(\"TODO: hash each virtual node, insert it in order, record its owner\")\n\n    def remove(self, node: str) -> None:\n        raise NotImplementedError(\"TODO: drop every point the node owns\")\n\n    def node_for(self, key: str) -> str:\n        if not self._points:\n            raise LookupError(\"the ring has no nodes\")\n        raise NotImplementedError(\"TODO: bisect_left for the key's position; wrap to 0 past the end\")\n\n    def nodes(self) -> list[str]:\n        return sorted(set(self._owner.values()))\n"
+          },
+          {
+            "path": "test_ring.py",
+            "content": "from collections import Counter\n\nimport pytest\n\nimport base62\nfrom ring import HashRing, modulo_node, stable_hash\n\n\n\n@pytest.fixture(scope=\"module\")\ndef keys():\n    return [base62.encode(1_000_000 + i) for i in range(10_000)]\n\n\ndef test_base62_known_values():\n    assert [base62.encode(n) for n in (0, 9, 10, 61, 62, 3843, 3844)] == [\"0\", \"9\", \"a\", \"Z\", \"10\", \"ZZ\", \"100\"]\n\n\ndef test_base62_round_trip():\n    for n in (0, 1, 61, 62, 12_345_678_901, 62 ** 7 - 1):\n        assert base62.decode(base62.encode(n)) == n\n    assert len(base62.encode(62 ** 7 - 1)) == 7\n\n\ndef test_stable_hash_is_stable():\n    assert stable_hash(\"abc\") == 10376663631224000432\n\n\ndef test_empty_ring():\n    with pytest.raises(LookupError):\n        HashRing().node_for(\"x\")\n\n\ndef test_every_key_finds_a_node_and_the_answer_never_changes(keys):\n    ring = HashRing([\"db-a\", \"db-b\", \"db-c\"])\n    first = [ring.node_for(k) for k in keys]\n    assert set(first) == {\"db-a\", \"db-b\", \"db-c\"}\n    other = HashRing([\"db-c\", \"db-a\", \"db-b\"])               # the order nodes are added in doesn't matter\n    assert first == [other.node_for(k) for k in keys]\n\n\ndef test_adding_a_node_only_moves_keys_to_it(keys):\n    ring = HashRing([\"db-a\", \"db-b\", \"db-c\", \"db-d\"])\n    before = {k: ring.node_for(k) for k in keys}\n    ring.add(\"db-e\")\n    moved = {k: ring.node_for(k) for k in keys if ring.node_for(k) != before[k]}\n    assert set(moved.values()) == {\"db-e\"}\n    assert 0.12 < len(moved) / len(keys) < 0.28          # about 1/5\n\n\ndef test_removing_a_node_only_moves_its_keys(keys):\n    ring = HashRing([\"db-a\", \"db-b\", \"db-c\", \"db-d\"])\n    before = {k: ring.node_for(k) for k in keys}\n    ring.remove(\"db-b\")\n    for k in keys:\n        if before[k] != \"db-b\":\n            assert ring.node_for(k) == before[k]\n    assert \"db-b\" not in ring.nodes()\n\n\ndef test_modulo_moves_most_keys(keys):\n    four = [\"db-a\", \"db-b\", \"db-c\", \"db-d\"]\n    moved = sum(modulo_node(k, four) != modulo_node(k, four + [\"db-e\"]) for k in keys)\n    assert moved / len(keys) > 0.7\n\n\ndef test_virtual_nodes_balance_the_load(keys):\n    ring = HashRing([f\"db-{i}\" for i in range(5)], vnodes=1000)\n    counts = Counter(ring.node_for(k) for k in keys)\n    assert max(counts.values()) / (len(keys) / 5) < 1.15\n"
+          },
+          {
+            "path": "experiment.py",
+            "content": "\"\"\"How many keys move when a fifth shard is added, and how virtual nodes even out the load.\"\"\"\nfrom collections import Counter\n\nimport base62\nfrom ring import HashRing, modulo_node\n\nIDS = range(1_000_000, 1_100_000)                  # 100,000 links\nCODES = [base62.encode(i) for i in IDS]\nFOUR = [\"db-a\", \"db-b\", \"db-c\", \"db-d\"]\n\nprint(f\"{len(CODES):,} short codes, from {CODES[0]} to {CODES[-1]}\")\n\nmoved = sum(modulo_node(c, FOUR) != modulo_node(c, FOUR + [\"db-e\"]) for c in CODES)\nprint(f\"hash mod N, 4 -> 5 shards: {moved / len(CODES):.1%} of keys move\")\n\nring = HashRing(FOUR, vnodes=100)\nbefore = [ring.node_for(c) for c in CODES]\nring.add(\"db-e\")\nafter = [ring.node_for(c) for c in CODES]\nmoved = [(b, a) for b, a in zip(before, after) if a != b]\nprint(f\"consistent hashing, 4 -> 5 shards: {len(moved) / len(CODES):.1%} of keys move, \"\n      f\"all of them to {sorted({a for _, a in moved})}\")\n\nfor vnodes in (1, 10, 100, 1000):\n    ring = HashRing([f\"db-{i}\" for i in range(5)], vnodes=vnodes)\n    counts = Counter(ring.node_for(c) for c in CODES)\n    mean = len(CODES) / 5\n    print(f\"vnodes={vnodes:>4}: busiest shard holds {max(counts.values()) / mean:.2f}x the average, \"\n          f\"quietest {min(counts.values()) / mean:.2f}x\")\n"
+          }
+        ],
+        "hints": [
+          "Use stable_hash, never hash(): Python randomises the hash of a str for each process, so keys would move to other shards after every restart.",
+          "bisect_left returns len(points) for a key above the last point; that key wraps round to the first point.",
+          "If the removal test fails, check that remove leaves the other nodes' points untouched."
+        ]
+      }
+    },
+    {
+      "title": "Queues, idempotency and worked designs",
+      "summary": "Move slow work off the request path with queues, make retries and redeliveries safe with idempotency keys and the outbox pattern, and combine everything in two worked designs: a chat service and a news feed.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Message queues and asynchronous processing",
+          "minutes": 13,
+          "objectives": [
+            "Decide which work belongs off the request path",
+            "Compare work queues with publish-subscribe logs",
+            "Handle failures with acknowledgements, retries and dead-letter queues"
+          ],
+          "key_points": [
+            "Move work the user needn't wait for (sending email, resizing images, updating a search index, counting clicks) onto a queue: the request returns once the job is queued, and workers process jobs at their own pace, absorbing bursts.",
+            "A work queue (RabbitMQ, Amazon SQS) gives each message to one consumer and removes it once acknowledged; a log (Apache Kafka) keeps messages in ordered, partitioned logs that many consumer groups read independently and can replay.",
+            "Order is kept at most within one queue or partition, never globally: send all events for one entity (an order, a conversation) to the same partition by keying on its ID, and accept that different entities interleave.",
+            "Delivery is usually at-least-once: a consumer that crashes after doing the work but before acknowledging gets the message again (after a visibility timeout in SQS, or a rebalance in Kafka), so consumers must cope with duplicates.",
+            "Retry failed messages with backoff and, after a few attempts, move them to a dead-letter queue for inspection, so one bad message can't block or loop forever. Watch the queue's depth and the age of its oldest message: growth means consumers can't keep up.",
+            "Use back-pressure: when consumers fall behind, a bounded queue should push back on producers (refuse, slow them down or shed low-priority work) instead of growing until it runs out of memory or its messages are too old to matter."
+          ]
+        },
+        {
+          "title": "Idempotency and safe retries",
+          "minutes": 12,
+          "objectives": [
+            "Explain why client retries and at-least-once delivery need idempotent operations",
+            "Implement idempotency keys for an API",
+            "Publish events reliably with the transactional outbox pattern"
+          ],
+          "key_points": [
+            "An operation is idempotent if doing it twice has the same effect as doing it once. Setting a status to 'shipped' or deleting a record are naturally idempotent; adding £10 or appending a message are not, and need deduplication.",
+            "With idempotency keys, the client makes a unique key (a UUID) for each logical operation and sends it with every retry. The server stores the key, a hash of the request and the response in the same transaction as the effect, replays the stored response for a repeat, and refuses a key reused for a different request.",
+            "Make the duplicate check atomic: a UNIQUE constraint on the key, or a single insert-if-absent, stops two concurrent retries from both passing a 'have I seen this?' check. Expire stored keys after a window longer than any client retries for.",
+            "Consumers of an at-least-once queue deduplicate the same way: record each processed message ID in the transaction that applies its effect, or make the update conditional, for example applying an event only if its version is newer than the stored one.",
+            "Writing to a database and publishing an event touch two systems, so one can succeed without the other. The transactional outbox writes the event to an outbox table in the same transaction as the change, and a relay publishes it afterwards: at least once, with consumers deduplicating."
+          ]
+        },
+        {
+          "title": "Worked design: a chat service",
+          "minutes": 14,
+          "objectives": [
+            "Design real-time message delivery over persistent connections",
+            "Order and store messages per conversation",
+            "Handle offline users, group chats and presence"
+          ],
+          "key_points": [
+            "Clients keep a persistent connection (a WebSocket) to a gateway server, and a session service records which gateway each online user is connected to, so a message can be routed to the recipient's gateway and pushed down their connection.",
+            "Store a message durably before acknowledging it to the sender, then deliver it. Partition messages by conversation ID and order them by a per-conversation sequence number, which suits a wide-column store and gives every member the same order.",
+            "The sender attaches a client-generated message ID, so a retried send isn't stored twice; a client that reconnects asks for every message after the last sequence number it holds.",
+            "Offline recipients get a push notification through the platform's service (Apple Push Notification service or Firebase Cloud Messaging) and fetch stored messages when they return; delivery and read receipts are small messages flowing back.",
+            "A group message fans out to every member's connection; for big groups, fan out through a queue so the sender doesn't wait for hundreds of deliveries. Presence (online, last seen) comes from heartbeats with a timeout and is cached, because it changes often and needn't be exact."
+          ]
+        },
+        {
+          "title": "Worked design: a news feed",
+          "minutes": 14,
+          "objectives": [
+            "Compare fan-out on write with fan-out on read",
+            "Design a hybrid feed that copes with accounts that have millions of followers",
+            "Store, cache and paginate feeds"
+          ],
+          "key_points": [
+            "Fan-out on write (push): when someone posts, add the post's ID to each follower's precomputed feed, so reading a feed is a cheap lookup; but a post from an account with 10 million followers means 10 million writes.",
+            "Fan-out on read (pull): build the feed when it's read by fetching recent posts from everyone the user follows and merging them. Posting is cheap, but every feed read is expensive, and feeds are read far more often than posts are written.",
+            "The usual answer is a hybrid: push posts from ordinary accounts into followers' feeds and pull posts from the few very large accounts at read time, merging the two; feeds of inactive users can be rebuilt only when they return.",
+            "Store each feed as a list of post IDs with a timestamp or score, for example in a Redis sorted set trimmed to the latest few hundred, and fetch the post bodies in one batch from a post cache, so an edited post shows correctly everywhere.",
+            "Paginate with a cursor (the score or ID of the last item seen), not an offset, so new posts arriving at the top don't shift the pages and cause duplicates or gaps. Ranking can reorder the candidates once they're gathered.",
+            "Run the fan-out asynchronously through a queue: the post request returns once the post is stored, and workers update followers' feeds, so the requirements must accept a short delay before followers see a post."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Make a payment API safe to retry",
+        "tool": "Python 3, SQLite and pytest",
+        "minutes": 50,
+        "goal": "See on a simulated flaky network how retries double-charge a naive payment API, then make the charge idempotent with a key stored in the same SQLite transaction as the charge, and make a queue consumer skip redelivered messages.",
+        "setup": [
+          "Python 3.10 or newer with pytest (sqlite3 comes with Python; the upsert in step 4 needs SQLite 3.24 or newer, which current Python releases include)",
+          "Download the lab files into a new folder: payments.py, test_payments.py and retry_demo.py"
+        ],
+        "steps": [
+          {
+            "do": "Read payments.py. naive_charge works but takes the money on every call; charge and handle_order_paid are TODOs. BEGIN IMMEDIATE takes SQLite's write lock as the transaction starts, so two retries of the same payment can't interleave."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "5 failed, 2 passed"
+          },
+          {
+            "do": "Implement charge. Look the key up; if it's there, compare the stored request hash (raise ValueError on a mismatch), COMMIT and return the stored response. If not, call _apply_charge, insert the key, the request hash and the JSON response, and COMMIT.",
+            "code": "row = conn.execute(\"SELECT request_hash, response FROM idempotency_keys WHERE key = ?\",\n                   (idempotency_key,)).fetchone()",
+            "lang": "python"
+          },
+          {
+            "do": "Implement handle_order_paid. Insert the message ID into processed_messages first: if that raises sqlite3.IntegrityError the message was handled before, so roll back and return False. Otherwise add one point per pound with an upsert, commit and return True.",
+            "code": "INSERT INTO loyalty_points (account_id, points) VALUES (?, ?)\nON CONFLICT (account_id) DO UPDATE SET points = points + excluded.points",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Run the demo.",
+            "code": "python retry_demo.py",
+            "lang": "bash",
+            "see": "naive: 100 payments, 136 attempts, 114 charges, balance 943,000 pence"
+          },
+          {
+            "do": "Explain the naive line: 14 responses were lost after the server had charged, the client retried, and each retry charged again. The idempotent line makes the same 136 attempts but exactly 100 charges.",
+            "see": "idempotent: 100 payments, 136 attempts, 100 charges, balance 950,000 pence"
+          },
+          {
+            "do": "Read the queue line: 66 deliveries of 50 messages, because the consumer 'crashed' before acknowledging some of them; processed_messages makes the extra deliveries harmless.",
+            "see": "queue: 50 messages, 66 deliveries, 50 applied, 500 points awarded"
+          },
+          {
+            "do": "Break it on purpose: make handle_order_paid commit the points in one transaction and record the message ID in a second. Explain in a sentence what a crash between the two would do, then put it back."
+          },
+          {
+            "do": "Describe the outbox version in a few sentences: which table charge would also write to, in the same transaction, so a 'payment succeeded' event is always published, and what the relay does and how its consumers handle duplicates."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The idempotent charge and the consumer pass their tests.",
+            "look_for": [
+              "7 passed"
+            ]
+          },
+          {
+            "text": "Retries double-charge the naive API.",
+            "look_for": [
+              "114 charges",
+              "943,000"
+            ]
+          },
+          {
+            "text": "With idempotency keys the same retries charge exactly once per payment.",
+            "look_for": [
+              "136 attempts, 100 charges",
+              "950,000"
+            ]
+          },
+          {
+            "text": "Redelivered messages are skipped.",
+            "look_for": [
+              "66 deliveries, 50 applied, 500 points"
+            ]
+          },
+          {
+            "text": "The split-transaction failure and the transactional outbox are explained.",
+            "look_for": [
+              "outbox"
+            ]
+          }
+        ],
+        "submit": "Paste payments.py, the pytest summary, everything retry_demo.py printed, your sentence on the split transaction and your description of the outbox version.",
+        "files": [
+          {
+            "path": "payments.py",
+            "content": "\"\"\"A tiny payment service on SQLite: a naive charge, and a charge that is safe to retry.\"\"\"\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport sqlite3\n\nSCHEMA = \"\"\"\nCREATE TABLE IF NOT EXISTS accounts (\n    id TEXT PRIMARY KEY,\n    balance_pence INTEGER NOT NULL CHECK (balance_pence >= 0)\n);\nCREATE TABLE IF NOT EXISTS charges (\n    id INTEGER PRIMARY KEY,\n    account_id TEXT NOT NULL REFERENCES accounts(id),\n    amount_pence INTEGER NOT NULL\n);\nCREATE TABLE IF NOT EXISTS idempotency_keys (\n    key TEXT PRIMARY KEY,               -- the UNIQUE guard: a key can be stored once\n    request_hash TEXT NOT NULL,         -- what the key was first used for\n    response TEXT NOT NULL              -- the JSON response to replay\n);\nCREATE TABLE IF NOT EXISTS processed_messages (\n    message_id TEXT PRIMARY KEY\n);\nCREATE TABLE IF NOT EXISTS loyalty_points (\n    account_id TEXT PRIMARY KEY,\n    points INTEGER NOT NULL\n);\n\"\"\"\n\n\ndef connect(path: str = \":memory:\") -> sqlite3.Connection:\n    conn = sqlite3.connect(path, isolation_level=None)     # autocommit: we write BEGIN and COMMIT ourselves\n    conn.executescript(SCHEMA)\n    return conn\n\n\ndef open_account(conn: sqlite3.Connection, account_id: str, balance_pence: int) -> None:\n    conn.execute(\"INSERT INTO accounts (id, balance_pence) VALUES (?, ?)\", (account_id, balance_pence))\n\n\ndef balance(conn: sqlite3.Connection, account_id: str) -> int:\n    return conn.execute(\"SELECT balance_pence FROM accounts WHERE id = ?\", (account_id,)).fetchone()[0]\n\n\ndef charge_count(conn: sqlite3.Connection) -> int:\n    return conn.execute(\"SELECT count(*) FROM charges\").fetchone()[0]\n\n\ndef _apply_charge(conn: sqlite3.Connection, account_id: str, amount_pence: int) -> dict:\n    \"\"\"Inside an open transaction: take the money and record the charge, or decline.\"\"\"\n    if balance(conn, account_id) < amount_pence:\n        return {\"status\": \"declined\", \"reason\": \"insufficient funds\"}\n    conn.execute(\"UPDATE accounts SET balance_pence = balance_pence - ? WHERE id = ?\", (amount_pence, account_id))\n    cur = conn.execute(\"INSERT INTO charges (account_id, amount_pence) VALUES (?, ?)\", (account_id, amount_pence))\n    return {\"status\": \"charged\", \"charge_id\": cur.lastrowid, \"amount_pence\": amount_pence}\n\n\ndef naive_charge(conn: sqlite3.Connection, account_id: str, amount_pence: int) -> dict:\n    \"\"\"Every call takes the money, including a client's retry of a request that had already succeeded.\"\"\"\n    conn.execute(\"BEGIN IMMEDIATE\")\n    try:\n        response = _apply_charge(conn, account_id, amount_pence)\n        conn.execute(\"COMMIT\")\n        return response\n    except BaseException:\n        conn.execute(\"ROLLBACK\")\n        raise\n\n\ndef request_hash(account_id: str, amount_pence: int) -> str:\n    return hashlib.sha256(f\"{account_id}|{amount_pence}\".encode()).hexdigest()\n\n\ndef charge(conn: sqlite3.Connection, account_id: str, amount_pence: int, idempotency_key: str) -> dict:\n    \"\"\"Charge at most once per idempotency key.\n\n    In ONE transaction: if the key is stored, check it was used for the same request (raise\n    ValueError if not) and return the stored response; otherwise apply the charge and store the key\n    with the request hash and the response. Declines are stored too, so a retry gets the same answer.\n    \"\"\"\n    conn.execute(\"BEGIN IMMEDIATE\")          # take the write lock now, so two retries can't interleave\n    try:\n        raise NotImplementedError(\"TODO: look up the key; replay or apply-and-store; then COMMIT\")\n    except BaseException:\n        conn.execute(\"ROLLBACK\")\n        raise\n\n\ndef handle_order_paid(conn: sqlite3.Connection, message: dict) -> bool:\n    \"\"\"Queue consumer: add 1 loyalty point per pound for an 'order paid' event, at most once per message.\n\n    Record message[\"id\"] in processed_messages in the SAME transaction as the points, so a redelivered\n    message is skipped. Return True if the message was applied, False if it was a duplicate.\n    \"\"\"\n    conn.execute(\"BEGIN IMMEDIATE\")\n    try:\n        raise NotImplementedError(\"TODO: insert the message id (a duplicate raises IntegrityError), then add points\")\n    except BaseException:\n        if conn.in_transaction:\n            conn.execute(\"ROLLBACK\")\n        raise\n"
+          },
+          {
+            "path": "test_payments.py",
+            "content": "import sqlite3\n\nimport pytest\n\nimport payments as p\n\n\n@pytest.fixture\ndef conn():\n    c = p.connect()\n    p.open_account(c, \"acct-1\", 10_000)\n    return c\n\n\ndef test_naive_charge_takes_money_every_time(conn):\n    p.naive_charge(conn, \"acct-1\", 2_500)\n    p.naive_charge(conn, \"acct-1\", 2_500)\n    assert p.balance(conn, \"acct-1\") == 5_000\n\n\ndef test_a_retry_with_the_same_key_charges_once(conn):\n    first = p.charge(conn, \"acct-1\", 2_500, \"key-1\")\n    again = p.charge(conn, \"acct-1\", 2_500, \"key-1\")\n    assert first == again and first[\"status\"] == \"charged\"\n    assert p.balance(conn, \"acct-1\") == 7_500\n    assert p.charge_count(conn) == 1\n\n\ndef test_different_keys_are_different_payments(conn):\n    p.charge(conn, \"acct-1\", 1_000, \"key-1\")\n    p.charge(conn, \"acct-1\", 1_000, \"key-2\")\n    assert p.balance(conn, \"acct-1\") == 8_000\n\n\ndef test_a_reused_key_with_other_parameters_is_rejected(conn):\n    p.charge(conn, \"acct-1\", 1_000, \"key-1\")\n    with pytest.raises(ValueError):\n        p.charge(conn, \"acct-1\", 9_000, \"key-1\")\n    assert p.balance(conn, \"acct-1\") == 9_000\n    assert not conn.in_transaction\n\n\ndef test_a_decline_is_replayed_too(conn):\n    assert p.charge(conn, \"acct-1\", 50_000, \"key-big\")[\"status\"] == \"declined\"\n    conn.execute(\"UPDATE accounts SET balance_pence = 100000\")\n    assert p.charge(conn, \"acct-1\", 50_000, \"key-big\")[\"status\"] == \"declined\"\n\n\ndef test_the_unique_constraint_is_the_real_guard(conn):\n    conn.execute(\"INSERT INTO idempotency_keys VALUES ('k', 'h', '{}')\")\n    with pytest.raises(sqlite3.IntegrityError):\n        conn.execute(\"INSERT INTO idempotency_keys VALUES ('k', 'h', '{}')\")\n\n\ndef test_consumer_skips_redelivered_messages(conn):\n    msg = {\"id\": \"m-1\", \"account_id\": \"acct-1\", \"amount_pence\": 4_250}\n    assert p.handle_order_paid(conn, msg) is True\n    assert p.handle_order_paid(conn, msg) is False\n    points = conn.execute(\"SELECT points FROM loyalty_points WHERE account_id = 'acct-1'\").fetchone()[0]\n    assert points == 42\n"
+          },
+          {
+            "path": "retry_demo.py",
+            "content": "\"\"\"A flaky network loses some requests on the way in and some responses on the way back.\nThe client can't tell which, so it retries until it gets an answer.\"\"\"\nimport random\nimport uuid\n\nimport payments as p\n\n\nclass LostResponse(Exception):\n    pass\n\n\ndef flaky(rng: random.Random, call, loss: float = 0.3):\n    \"\"\"Lose the request (the server never sees it) or the response (the server did the work).\"\"\"\n    if rng.random() < loss / 2:\n        raise LostResponse(\"request lost\")\n    result = call()\n    if rng.random() < loss / 2:\n        raise LostResponse(\"response lost\")\n    return result\n\n\ndef run(strategy: str, seed: int = 2024) -> None:\n    rng = random.Random(seed)\n    conn = p.connect()\n    p.open_account(conn, \"acct-1\", 1_000_000)\n    attempts = 0\n    for _ in range(100):                                    # 100 payments of £5\n        key = str(uuid.UUID(int=rng.getrandbits(128), version=4))   # one key per payment, reused by its retries\n        while True:\n            attempts += 1\n            try:\n                if strategy == \"naive\":\n                    flaky(rng, lambda: p.naive_charge(conn, \"acct-1\", 500))\n                else:\n                    flaky(rng, lambda: p.charge(conn, \"acct-1\", 500, key))\n                break\n            except LostResponse:\n                continue\n    print(f\"{strategy}: 100 payments, {attempts} attempts, {p.charge_count(conn)} charges, \"\n          f\"balance {p.balance(conn, 'acct-1'):,} pence\")\n\n\ndef redeliveries(seed: int = 7) -> None:\n    \"\"\"At-least-once delivery: a consumer that crashes before acknowledging gets the message again.\"\"\"\n    rng = random.Random(seed)\n    conn = p.connect()\n    queue = [{\"id\": f\"order-{i}\", \"account_id\": f\"acct-{i % 5}\", \"amount_pence\": 1_000} for i in range(50)]\n    deliveries = applied = 0\n    while queue:\n        msg = queue.pop(0)\n        deliveries += 1\n        applied += p.handle_order_paid(conn, msg)\n        if rng.random() < 0.2:                              # crashed after processing, before the ack\n            queue.append(msg)                               # so the broker delivers it again later\n    total = conn.execute(\"SELECT sum(points) FROM loyalty_points\").fetchone()[0]\n    print(f\"queue: 50 messages, {deliveries} deliveries, {applied} applied, {total} points awarded\")\n\n\nif __name__ == \"__main__\":\n    run(\"naive\")\n    run(\"idempotent\")\n    redeliveries()\n"
+          }
+        ],
+        "hints": [
+          "Store the key and response before COMMIT, in the same transaction as the charge: if they were separate, a crash between them would leave a charge with no key, and the retry would charge again.",
+          "json.dumps the response to store it and json.loads it to replay it. Compare request hashes, not only keys, so a key reused with another amount is refused.",
+          "The except branch rolls back for you; an early return has to COMMIT or ROLLBACK itself."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Turn briefs into measurable requirements, practise estimates and latency arithmetic, and finish the capacity-estimation lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Learn how load balancers, timeouts, retries and rate limits keep services up, and build the token-bucket limiter.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Study cache-aside, invalidation, eviction and CDNs, and build the LRU cache and its cache-aside simulation.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Choose and scale databases with replicas and shards, build the consistent-hash ring, and work through the URL shortener design.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Use queues and idempotency keys safely, make the payment API retry-proof, and study the chat and news feed designs.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Design and prototype the delivery-tracking capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Design and prototype live delivery tracking",
+    "minutes": 480,
+    "brief": "A food-delivery company wants customers to watch their courier approach on a map, updated every few seconds. At the evening peak 50,000 couriers are on shift, each phone sending a GPS update every 4 seconds, and 200,000 customers have a tracking page open. A position older than 30 seconds is useless to a customer, but the company keeps 30 days of history for disputes and route analysis. Write a design document from design_template.md: requirements as numbers, estimates, the API, the data model, a high-level design, and deep dives on ingestion (rate limits, duplicates, out-of-order updates), the latest-position cache, sharding and delivery to viewers, with failure modes and trade-offs. Then prototype the ingestion path in Python from your lab code. make_updates.py writes ten minutes of realistic updates from 200 couriers, with retried duplicates, delayed updates and one misconfigured phone sending every half second; it prints 31,729 rows, 679 duplicates and 228 late updates. Process the rows in arrival order: rate-limit each courier with your token bucket, drop duplicates and stale updates by their per-courier sequence numbers, keep each courier's latest position in your LRU cache with a TTL, and assign couriers to 8 shards with your hash ring. Print the accepted, rate-limited, duplicate and stale counts and the couriers per shard, and test the rules with pytest.",
+    "deliverables": [
+      "A design document following design_template.md, with the assumptions behind every estimate",
+      "A high-level diagram from the courier's phone to the customer's map, with a paragraph per component",
+      "Deep dives on ingestion, the latest-position cache, sharding and delivery to viewers, each naming a rejected alternative",
+      "track.py, which processes updates.csv with your token bucket, LRU cache and hash ring and prints its counts",
+      "pytest tests for the duplicate, stale-update, rate-limit and TTL rules, using a fake clock",
+      "A failure-modes table: what happens when each component is slow or down, and the response"
+    ],
+    "rubric": [
+      {
+        "name": "Requirements and estimates",
+        "points": 20,
+        "description": "Non-functional requirements are numbers; the update rate, read rate, storage and bandwidth are right to an order of magnitude and show their assumptions."
+      },
+      {
+        "name": "Architecture and data model",
+        "points": 20,
+        "description": "Components, keys, shard keys and TTLs fit the access patterns, and the diagram and the text agree."
+      },
+      {
+        "name": "Deep dives and trade-offs",
+        "points": 20,
+        "description": "Each deep dive explains how the mechanism works, how it fails and why it beats the named alternative for this system."
+      },
+      {
+        "name": "Prototype correctness",
+        "points": 20,
+        "description": "The prototype runs on the generated data, drops duplicates and stale updates by sequence number, rate-limits the misconfigured phone, and its counts add up to the rows read."
+      },
+      {
+        "name": "Tests",
+        "points": 10,
+        "description": "Tests cover duplicates, out-of-order updates, rate limiting and cache expiry with a fake clock, and they pass."
+      },
+      {
+        "name": "Failure modes and operations",
+        "points": 10,
+        "description": "Failure modes are specific (a cache restart, a shard down, a burst after a network outage), each has a response, and the metrics to watch are named."
+      }
+    ],
+    "submit": "Paste your design document, track.py and what it printed, your tests and the pytest summary, and the line make_updates.py printed.",
+    "files": [
+      {
+        "path": "make_updates.py",
+        "content": "\"\"\"Write updates.csv: ten minutes of courier GPS updates, in the order the service receives them.\n\nCouriers send an update every 4 seconds with a per-courier sequence number. The stream is realistic\nrather than clean: about 2% of updates arrive twice (client retries), network delays reorder some\nupdates, and one courier's app is misconfigured and sends every half second. Same output every run.\n\"\"\"\nimport csv\nimport random\n\nSEED = 314\nCOURIERS = 200\nMINUTES = 10\nNORMAL_INTERVAL_MS = 4_000\nFAST_COURIER, FAST_INTERVAL_MS = \"c-042\", 500\n\n\ndef main() -> None:\n    rng = random.Random(SEED)\n    rows = []\n    for c in range(COURIERS):\n        courier = f\"c-{c:03d}\"\n        interval = FAST_INTERVAL_MS if courier == FAST_COURIER else NORMAL_INTERVAL_MS\n        lat, lon = 13.70 + rng.random() * 0.1, 100.45 + rng.random() * 0.1\n        start = rng.randint(0, interval - 1)\n        for seq, sent in enumerate(range(start, MINUTES * 60_000, interval), start=1):\n            lat += rng.uniform(-0.0004, 0.0004)\n            lon += rng.uniform(-0.0004, 0.0004)\n            received = sent + rng.randint(40, 400) + (rng.randint(2_000, 9_000) if rng.random() < 0.01 else 0)\n            rows.append([received, courier, seq, sent, round(lat, 6), round(lon, 6)])\n            if rng.random() < 0.02:                       # a retry: the same update again, a little later\n                rows.append([received + rng.randint(500, 3_000), courier, seq, sent, round(lat, 6), round(lon, 6)])\n    rows.sort(key=lambda r: (r[0], r[1], r[2]))\n    with open(\"updates.csv\", \"w\", newline=\"\") as f:\n        w = csv.writer(f)\n        w.writerow([\"received_ms\", \"courier_id\", \"seq\", \"sent_ms\", \"lat\", \"lon\"])\n        w.writerows(rows)\n    seen, dupes, late, newest = set(), 0, 0, {}\n    for _, courier, seq, *_ in rows:\n        if (courier, seq) in seen:\n            dupes += 1\n        elif seq < newest.get(courier, 0):\n            late += 1\n        seen.add((courier, seq))\n        newest[courier] = max(newest.get(courier, 0), seq)\n    print(f\"Wrote updates.csv: {len(rows):,} rows from {COURIERS} couriers; \"\n          f\"{dupes} duplicates and {late} that arrive after a newer update from the same courier\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+        "path": "design_template.md",
+        "content": "# Live delivery tracking: design document\n\n## 1. Requirements\nFunctional requirements, non-functional requirements as numbers (availability, freshness, latency\npercentiles, retention), and what is out of scope.\n\n## 2. Estimates\nUpdate rate (average and peak), viewers, read rate, storage per day and for the retention period,\nbandwidth in and out. State every assumption.\n\n## 3. API\nCourier app -> service, customer app -> service: endpoints or messages, inputs, outputs, errors\n(including 429 with Retry-After).\n\n## 4. Data model\nLatest position, position history, the order-to-courier mapping. Keys, shard keys and TTLs.\n\n## 5. High-level design\nA diagram (ASCII is fine) from the courier's phone to the customer's map, and one paragraph per component.\n\n## 6. Deep dives\n- Ingestion: rate limiting, duplicates and out-of-order updates\n- Latest positions: cache, TTL, eviction, what happens when the cache restarts\n- Sharding: shard key, consistent hashing, hot spots, adding a shard\n- Delivering updates to viewers: polling or WebSockets, fan-out, back-pressure\n\n## 7. Failure modes\nFor each component: what happens when it is slow or down, and how the design copes.\n\n## 8. Trade-offs and alternatives\nAt least three decisions, each with the alternative you rejected and why.\n\n## 9. Prototype results\nWhat your prototype printed, and what it tells you about the design.\n"
+      }
+    ]
+  }
+}

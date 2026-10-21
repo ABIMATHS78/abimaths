@@ -1,0 +1,1000 @@
+{
+ "slug": "foundation-models-engineering",
+ "title": "Engineering with Foundation Models",
+ "subtitle": "Choose, understand, evaluate and steer foundation models like an engineer: scale and serving arithmetic, transformer internals, rigorous model and system evaluation, LLM judges in CI, and prompt optimisation.",
+ "category": "Generative AI",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "dariusz-wojciechowski",
+  "chloe-tremblay"
+ ],
+ "skills": [
+  "Foundation model selection",
+  "Scaling laws",
+  "Transformer internals",
+  "Quantisation",
+  "LLM evaluation",
+  "LLM-as-a-judge",
+  "Evaluation in CI/CD",
+  "Prompt optimisation",
+  "Statistical testing"
+ ],
+ "tools": [
+  "Python 3",
+  "NumPy",
+  "scikit-learn",
+  "SciPy",
+  "statsmodels",
+  "NLTK",
+  "pytest",
+  "Anthropic Python SDK"
+ ],
+ "outcomes": [
+  "Explain what makes a foundation model, how scale drives its abilities, and estimate training, inference and memory costs",
+  "Explain self-attention, tokenisation, context windows and the KV cache, and what quantisation trades away",
+  "Compare and select foundation models against an application's requirements",
+  "Evaluate models with benchmarks, reference metrics and human ratings, with agreement and confidence intervals",
+  "Build and validate AI-as-a-judge pipelines and run them as quality gates in CI/CD",
+  "Optimise prompts with held-out evaluation, and choose between prompting, retrieval and fine-tuning"
+ ],
+ "prerequisites": "Applied Machine Learning with TensorFlow, or experience training and evaluating models in Python; Transformers and Large Language Models helps with module 2, and Prompting and LLM Application Design with modules 4 and 5. Install Python 3.10+ and pip install numpy scipy scikit-learn statsmodels nltk pydantic pytest anthropic. Labs run without an API key; the capstone needs a Claude Console API key with credit and CLAUDE_MODEL set to a current model ID.",
+ "description": "Foundation models are general-purpose engines: trained once on broad data, then adapted to thousands of tasks. Engineering with them means making decisions that hold up under scrutiny: which model to use and where to run it, what its context window and memory footprint really cost, how to tell whether it's good enough, and how to keep it good as prompts, models and data change. This course works through those decisions. You'll start with what scale does and doesn't buy, and how to shortlist models against requirements; go inside the transformer to see what attention, tokenisers, the KV cache and quantisation mean for cost and quality; then spend two modules on evaluation, from benchmarks, BLEU and ROUGE and properly run human ratings to AI-as-a-judge pipelines that are validated against people and run as quality gates in CI/CD. The last module treats prompt engineering as experimentation, and sets it beside retrieval and fine-tuning.\n\nEvery module has a hands-on Python lab that runs on an ordinary laptop without an API key: scaling arithmetic and a model shortlist, attention, byte-pair encoding and quantisation in NumPy, metrics against human ratings, judge validation with a pytest quality gate, and prompt selection with paired statistical tests. The capstone is an automated evaluation pipeline for a customer support chatbot, with your own rubric, test set and judge.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Introduction to Foundation Models",
+   "summary": "What foundation models are, how they're trained and adapted, what scaling laws and emergent abilities tell an engineer, and how to shortlist models for an application.",
+   "instructor": "chloe-tremblay",
+   "lessons": [
+    {
+     "title": "What makes a model a foundation model",
+     "minutes": 12,
+     "objectives": [
+      "Define foundation models and self-supervised pretraining",
+      "Describe the ways a pretrained model is adapted to a task"
+     ],
+     "key_points": [
+      "The term foundation model was popularised by a 2021 report from Stanford's Center for Research on Foundation Models, for models trained on broad data, usually with self-supervision at scale, that can be adapted to a wide range of downstream tasks.",
+      "Self-supervised pretraining needs no human labels: the training signal comes from the data itself, such as predicting the next token of text or a hidden patch of an image, which is what makes training on vast unlabelled collections possible.",
+      "One pretrained model can be adapted in several ways: prompting with instructions and examples, retrieving relevant data at query time, fine-tuning on task data, or connecting tools. Most applications start with prompting and retrieval before considering fine-tuning.",
+      "Foundation models now cover text, code, images, audio and video, and many are multimodal, accepting several kinds of input in one model.",
+      "Because many applications are built on a few models, those models' strengths, biases and failure modes spread to everything built on them, which the report called homogenisation: evaluate each application, not only the model."
+     ]
+    },
+    {
+     "title": "Scale: parameters, data and compute",
+     "minutes": 14,
+     "objectives": [
+      "Explain what scaling laws say about loss, parameters, data and compute",
+      "Estimate training and inference compute with standard approximations"
+     ],
+     "key_points": [
+      "Scaling-law studies found that a language model's loss falls smoothly, roughly as a power law, as parameters, training data and compute grow, provided none of them is the bottleneck (Kaplan and colleagues, 2020).",
+      "Training a dense transformer takes about 6 × N × D floating-point operations for N parameters and D training tokens, and generating takes about 2 × N per token; these approximations let you compare costs before running anything.",
+      "The 2022 Chinchilla study (Hoffmann and colleagues) found that, for a fixed compute budget, parameters and training tokens should grow in roughly equal proportion, about 20 tokens per parameter, and that earlier large models were undertrained by that measure.",
+      "Many recent models are trained on far more tokens than compute-optimal, because a smaller model trained for longer is cheaper to serve, and serving costs dominate for a model that many people use.",
+      "Scale improves average performance, not everything at once: some tasks plateau, and smaller models trained on well-chosen data can beat larger ones on particular tasks, so measure on your own task."
+     ]
+    },
+    {
+     "title": "Emergent abilities, and the debate about them",
+     "minutes": 10,
+     "objectives": [
+      "Describe in-context learning and emergent abilities",
+      "Explain why the evidence for sudden emergence is debated, and what it means for model choice"
+     ],
+     "key_points": [
+      "In-context learning, doing a new task from instructions and a few examples in the prompt without any weight updates, was the headline finding of the 2020 GPT-3 paper (Brown and colleagues), and it improved markedly with model size.",
+      "Wei and colleagues (2022) described emergent abilities: abilities near chance in smaller models that appear well above chance only past a certain scale, such as some multi-step arithmetic and reasoning tasks.",
+      "Schaeffer and colleagues (2023) argued that many apparent jumps come from all-or-nothing metrics such as exact match, and that smoother metrics, such as per-token accuracy, often show gradual improvement.",
+      "Either way, the practical lesson is the same: abilities can differ sharply between model sizes, so don't assume a smaller or cheaper model can do what a larger one does; test it on your task with the metric you care about."
+     ]
+    },
+    {
+     "title": "Choosing a foundation model",
+     "minutes": 14,
+     "objectives": [
+      "Turn an application's requirements into filters and weighted criteria",
+      "Compare API and open-weight models, including licensing and operations"
+     ],
+     "key_points": [
+      "Start from requirements, not leaderboards: the task and its quality bar, input and output lengths, languages, modalities, latency and throughput targets, cost per request, and constraints on data, deployment and licensing.",
+      "API models are quick to adopt and are run and updated by the provider; open-weight models can run on your own infrastructure, which helps with data control and customisation but makes you responsible for serving, scaling and updates.",
+      "Open-weight licences vary: some are permissive, such as Apache 2.0, while others restrict commercial use or add conditions, so read the licence before choosing a model.",
+      "Treat must-haves, such as a minimum context window or data staying in a region, as filters; then compare what's left on quality measured with your own evaluation set, cost and latency, and choose the smallest model that meets the bar.",
+      "Model versions change and are retired, so pin the version you evaluated, keep the evaluation set for testing replacements, and design your code so the model can be swapped."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Scaling arithmetic and a model shortlist",
+    "tool": "Python",
+    "minutes": 45,
+    "goal": "Estimate compute-optimal training data, training and inference compute and weight memory, fit a power law to made-up training runs, then shortlist candidate models with requirement filters and a weighted score, and test how sensitive the choice is to the weights.",
+    "setup": [
+     "Python 3.10 or newer with NumPy (pip install numpy)",
+     "Download scale.py, choose_model.py and candidates.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Open scale.py. Complete TODO 1 and TODO 2: the 6 × N × D training estimate and about 20 tokens per parameter for compute-optimal training."
+     },
+     {
+      "do": "Complete TODO 3, fit_power_law(): a straight-line fit in log-log space.",
+      "code": "slope, intercept = np.polyfit(np.log10(compute), np.log10(loss), 1)\nreturn 10 ** intercept, -slope",
+      "lang": "python"
+     },
+     {
+      "do": "Run scale.py.",
+      "code": "python scale.py",
+      "lang": "bash",
+      "see": "8B: compute-optimal tokens 1.6e+11, training 7.7e+21 FLOPs ...; the 15T-token run is 1875 tokens per parameter; Fitted: loss = 39.7 x C^-0.070."
+     },
+     {
+      "do": "Open choose_model.py and candidates.csv. Complete TODO 1, reasons_to_reject(): one reason for each requirement a model fails."
+     },
+     {
+      "do": "Complete TODO 2 in scores(): weight the normalised accuracy, cost and latency and rank the models."
+     },
+     {
+      "do": "Run choose_model.py.",
+      "code": "python choose_model.py",
+      "lang": "bash",
+      "see": "Three models ruled out, then two rankings: api-medium leads with the first weights, open-8b-ft with the second."
+     },
+     {
+      "do": "Write a line that starts Choice: saying which model you'd pick, what the ranking's sensitivity to the weights tells you, and what you'd test before committing (for example, the fine-tuned model's Vietnamese quality and its 32k context)."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The scaling estimates are right: compute-optimal tokens and training FLOPs for 8B, and the 70B model's bf16 weights.",
+      "look_for": [
+       "1.6e+11",
+       "7.7e+21",
+       "140 GB"
+      ]
+     },
+     {
+      "text": "The power law is fitted in log-log space and extrapolated.",
+      "look_for": [
+       "C^-0.070",
+       "0.986"
+      ]
+     },
+     {
+      "text": "Requirements rule out api-large, api-small and open-8b, with reasons.",
+      "look_for": [
+       "api-large (p95 latency 4.8 s > 3.0)",
+       "api-small (accuracy 79 < 84)",
+       "Vietnamese support partial"
+      ]
+     },
+     {
+      "text": "The weighted scores match for both sets of weights.",
+      "look_for": [
+       "api-medium 0.556, open-8b-ft 0.500, open-70b 0.219",
+       "open-8b-ft 0.700"
+      ]
+     },
+     {
+      "text": "A Choice: line picks a model, explains the sensitivity to weights and names what to test next.",
+      "look_for": [
+       "Choice:"
+      ]
+     }
+    ],
+    "submit": "Paste your completed functions, the output of both scripts, and your Choice: line.",
+    "files": [
+     {
+      "path": "scale.py",
+      "content": "\"\"\"Back-of-the-envelope scaling arithmetic, and a power law fitted to (made-up) training runs.\n\nRun: python scale.py\n\"\"\"\n\nimport numpy as np\n\n\ndef training_flops(params, tokens):\n    \"\"\"Approximate training compute of a dense transformer: about 6 x parameters x training tokens.\"\"\"\n    # TODO 1: return the 6 x N x D approximation\n    raise NotImplementedError\n\n\ndef compute_optimal_tokens(params):\n    \"\"\"The Chinchilla rule of thumb: about 20 training tokens per parameter.\"\"\"\n    # TODO 2: return about 20 tokens per parameter\n    raise NotImplementedError\n\n\ndef inference_flops_per_token(params):\n    \"\"\"About 2 x parameters for each generated token (a multiply and an add per weight).\"\"\"\n    return 2 * params\n\n\ndef weight_memory_gb(params, bytes_per_param):\n    return params * bytes_per_param / 1e9\n\n\ndef fit_power_law(compute, loss):\n    \"\"\"Fit loss = a * compute ** -alpha as a straight line in log-log space. Returns (a, alpha).\"\"\"\n    # TODO 3: fit a line to log10(compute) and log10(loss) with np.polyfit(..., 1);\n    #         a is 10 ** intercept and alpha is minus the slope\n    raise NotImplementedError\n\n\ndef main():\n    for name, n in ((\"1B\", 1e9), (\"8B\", 8e9), (\"70B\", 70e9)):\n        d = compute_optimal_tokens(n)\n        print(f\"{name}: compute-optimal tokens {d:.1e}, training {training_flops(n, d):.1e} FLOPs, \"\n              f\"{inference_flops_per_token(n):.1e} FLOPs per generated token, bf16 weights {weight_memory_gb(n, 2):.0f} GB\")\n    print(f\"An 8B model trained on 15T tokens: {15e12 / 8e9:.0f} tokens per parameter, \"\n          f\"{training_flops(8e9, 15e12):.1e} FLOPs\")\n    rng = np.random.default_rng(0)\n    compute = np.logspace(18, 22, 9)  # nine made-up training runs, 1e18 to 1e22 FLOPs\n    loss = 40 * compute ** -0.07 * np.exp(rng.normal(0, 0.01, compute.size))\n    a, alpha = fit_power_law(compute, loss)\n    print(f\"Fitted: loss = {a:.1f} x C^-{alpha:.3f}\")\n    print(f\"Predicted loss at 1e23 FLOPs: {a * 1e23 ** -alpha:.3f} (an extrapolation: confirm it before you spend the compute)\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "choose_model.py",
+      "content": "\"\"\"Shortlist foundation models: requirements as filters, then a weighted score on what's left.\n\nThe candidates are made up; accuracy is each one's score on your own evaluation set, and cost_per_1k is\nan example cost per thousand requests. Run: python choose_model.py\n\"\"\"\n\nimport csv\n\nREQUIREMENTS = {\"context_k\": 32, \"p95_latency_s\": 3.0, \"accuracy\": 84}\n\n\ndef load(path=\"candidates.csv\"):\n    with open(path, newline=\"\") as f:\n        rows = list(csv.DictReader(f))\n    for r in rows:\n        for key in (\"context_k\", \"accuracy\", \"p95_latency_s\", \"cost_per_1k\"):\n            r[key] = float(r[key])\n    return rows\n\n\ndef reasons_to_reject(m):\n    \"\"\"Every requirement the model fails, as text (an empty list means it passes).\"\"\"\n    reasons = []\n    # TODO 1: check context_k >= 32, p95_latency_s <= 3.0, accuracy >= 84 and vietnamese == \"yes\",\n    #         adding a reason such as \"accuracy 79 < 84\" for each one it fails\n    pass\n    return reasons\n\n\ndef scores(models, weights):\n    \"\"\"Min-max normalise accuracy (higher is better), cost and latency (lower is better), then weight them.\"\"\"\n    def norm(key, higher_is_better):\n        values = [m[key] for m in models]\n        lo, hi = min(values), max(values)\n        return [((v - lo) if higher_is_better else (hi - v)) / (hi - lo) for v in values]\n\n    acc, cost, lat = norm(\"accuracy\", True), norm(\"cost_per_1k\", False), norm(\"p95_latency_s\", False)\n    # TODO 2: combine the three normalised lists with weights[\"accuracy\"], weights[\"cost\"] and\n    #         weights[\"latency\"], and return (model name, score) pairs, best first\n    return []\n\n\ndef main():\n    models = load()\n    passed = [m for m in models if not reasons_to_reject(m)]\n    print(\"Ruled out: \" + \"; \".join(f\"{m['model']} ({', '.join(reasons_to_reject(m))})\"\n                                    for m in models if reasons_to_reject(m)))\n    for w in ({\"accuracy\": 0.5, \"cost\": 0.3, \"latency\": 0.2}, {\"accuracy\": 0.3, \"cost\": 0.5, \"latency\": 0.2}):\n        ranked = \", \".join(f\"{name} {s:.3f}\" for name, s in scores(passed, w))\n        print(f\"Weights {w['accuracy']}/{w['cost']}/{w['latency']} (accuracy/cost/latency): {ranked}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "candidates.csv",
+      "content": "model,hosting,context_k,vietnamese,accuracy,p95_latency_s,cost_per_1k\napi-large,api,200,yes,91,4.8,9.00\napi-medium,api,200,yes,88,2.1,3.00\napi-small,api,200,yes,79,0.9,0.60\nopen-70b,self-hosted,128,yes,85,2.6,2.20\nopen-8b,self-hosted,128,partial,72,0.8,0.40\nopen-8b-ft,self-hosted,32,yes,84,0.8,0.45\n"
+     }
+    ],
+    "hints": [
+     "np.polyfit(x, y, 1) returns the slope first, then the intercept.",
+     "Min-max normalisation divides by the range of the models that passed the filters, so the scores change if the filters change.",
+     "The extrapolated loss is only as good as the assumption that the trend continues: say so in your answer."
+    ]
+   }
+  },
+  {
+   "title": "Inside Foundation Models",
+   "summary": "The parts of the transformer that decide what models cost and how they behave: attention, tokenisation, pretraining and context windows, the KV cache, and the basics of serving and quantisation.",
+   "instructor": "dariusz-wojciechowski",
+   "lessons": [
+    {
+     "title": "Self-attention for engineers",
+     "minutes": 14,
+     "objectives": [
+      "Explain how scaled dot-product attention and causal masking work",
+      "Explain why attention's cost grows with the square of the sequence length"
+     ],
+     "key_points": [
+      "Self-attention computes, for each token, a weighted average of value vectors from the tokens it can see; the weights are the softmax of its query's dot products with their keys, divided by the square root of the key dimension: softmax(QKᵀ/√d)V.",
+      "Decoder-only models, used for most generative LLMs, apply a causal mask so each token attends only to itself and earlier tokens, which is what lets them generate left to right. Encoder models such as BERT attend in both directions and suit embeddings and classification.",
+      "Multi-head attention runs several attention operations in parallel on smaller projections and concatenates the results, so different heads can track different relationships.",
+      "The matrix of attention scores has an entry for every pair of tokens, so its compute and memory grow with the square of the sequence length: doubling the context quadruples it, one reason long contexts cost more.",
+      "A transformer block wraps attention with a feed-forward network, residual connections and normalisation, and models stack dozens of blocks; position information comes from positional encodings such as rotary embeddings (RoPE)."
+     ]
+    },
+    {
+     "title": "Tokenisation and what it costs",
+     "minutes": 12,
+     "objectives": [
+      "Explain how byte-pair encoding builds a vocabulary",
+      "Explain how tokenisation affects cost, context use and some model failures"
+     ],
+     "key_points": [
+      "Most LLMs use subword tokenisers, such as byte-pair encoding (BPE), WordPiece or SentencePiece's unigram model, which keep common words whole and split rare ones into pieces, so any text can be encoded with a fixed vocabulary.",
+      "BPE starts from characters or bytes and repeatedly merges the most frequent adjacent pair into a new token until the vocabulary reaches its target size; byte-level BPE can encode any input without unknown tokens.",
+      "A larger vocabulary shortens sequences, saving context and compute, but enlarges the embedding and output layers; languages and scripts under-represented in the tokeniser's training data split into more tokens, so they cost more to process.",
+      "Token counts are model-specific: limits and prices are in that model's tokens, so count with the provider's own tool, such as the Claude API's token-counting endpoint, rather than another model's tokeniser.",
+      "Tokenisation explains some odd failures: models can struggle to count letters or reverse words because they see tokens rather than characters, and numbers split inconsistently, which can hurt arithmetic."
+     ],
+     "walkthrough": {
+      "tool": "Python",
+      "title": "Count tokens with the Claude API",
+      "steps": [
+       {
+        "do": "Count the tokens in the same sentence in English and in Vietnamese with the token-counting endpoint (it's free to call, but needs ANTHROPIC_API_KEY and CLAUDE_MODEL).",
+        "code": "import os\n\nimport anthropic\n\nclient = anthropic.Anthropic()\nfor text in [\"The front desk is staffed from 8:30 to 17:30.\",\n             \"Quầy lễ tân có nhân viên trực từ 8:30 đến 17:30.\"]:\n    count = client.messages.count_tokens(model=os.environ[\"CLAUDE_MODEL\"],\n                                         messages=[{\"role\": \"user\", \"content\": text}])\n    print(count.input_tokens, \"tokens for\", len(text), \"characters:\", text)",
+        "lang": "python",
+        "see": "Two token counts, each including a small fixed overhead for the message format."
+       },
+       {
+        "do": "Compare tokens per character for the two languages, and for a line of code and a long number of your own.",
+        "see": "Text with many diacritics, code and long numbers usually use more tokens per character than plain English."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Pretraining, context windows and the KV cache",
+     "minutes": 12,
+     "objectives": [
+      "Explain the pretraining objective and perplexity",
+      "Explain context windows, long-context limitations and the KV cache"
+     ],
+     "key_points": [
+      "Pretraining minimises the cross-entropy of next-token predictions over a huge corpus; perplexity, the exponential of the average cross-entropy, measures how well a model predicts held-out text, and lower is better.",
+      "The context window is the maximum number of tokens, prompt and output together, the model can attend to in one request; anything longer must be truncated, summarised or retrieved selectively.",
+      "A long window isn't used evenly: 'Lost in the Middle' (Liu and colleagues, 2023) found that models used information at the start and end of long inputs more reliably than information in the middle.",
+      "During generation, the keys and values of earlier tokens are kept in a KV cache so each new token needs only its own projections; the cache grows linearly with length, at about 2 × layers × KV heads × head dimension × tokens × bytes per value.",
+      "Grouped-query attention shares keys and values across groups of query heads to shrink the KV cache, and prefix caching reuses the cached keys and values of a repeated prompt prefix, saving compute on repeated prompts."
+     ]
+    },
+    {
+     "title": "Serving and quantisation basics",
+     "minutes": 14,
+     "objectives": [
+      "Estimate the memory a model needs at different precisions",
+      "Explain how quantisation works and what it trades away",
+      "Name the measurements that matter when serving a model"
+     ],
+     "key_points": [
+      "Weights need about parameters × bytes per parameter: 4 bytes in fp32, 2 in fp16 or bf16, 1 in int8 and half a byte in 4-bit formats, so a 7-billion-parameter model needs about 14 GB in bf16 before the KV cache and activations.",
+      "Quantisation stores weights in fewer bits plus scale factors: absmax int8 divides each group of weights by its largest absolute value over 127 and rounds. Smaller groups, such as one scale per row, keep errors lower, especially when a few outlier weights would otherwise set the scale.",
+      "Lower precision saves memory and often speeds up inference, at a cost in quality that grows as bits shrink and varies by task, so evaluate a quantised model on your own tasks. GPTQ and AWQ are common methods, and GGUF is the format llama.cpp uses.",
+      "Serving engines such as vLLM and SGLang batch requests continuously and manage the KV cache efficiently to raise throughput; Ollama and llama.cpp run quantised models on a laptop.",
+      "Measure serving with time to first token, time per output token, throughput in tokens per second and tail latency under realistic concurrency, because batching raises throughput but can slow each request."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Attention, tokens and quantisation by hand",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Implement causal scaled dot-product attention and multi-head reshaping in NumPy, train a tiny BPE tokeniser, and work out weight and KV-cache memory before quantising a weight matrix with an outlier to int8 and int4, per tensor and per row.",
+    "setup": [
+     "Python 3.10 or newer with NumPy",
+     "Download attention.py, bpe.py and quantise.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 and TODO 2 in attention.py: the scaled scores, and the causal mask that sets scores above the diagonal to -inf.",
+      "code": "scores = Q @ K.swapaxes(-1, -2) / np.sqrt(d)\nmask = np.triu(np.ones((n, n), dtype=bool), k=1)\nscores = np.where(mask, -np.inf, scores)",
+      "lang": "python"
+     },
+     {
+      "do": "Run attention.py.",
+      "code": "python attention.py",
+      "lang": "bash",
+      "see": "A lower-triangular weight matrix whose first row is 1.00 then zeros, both checks True, the shapes, and the score counts growing four times for each doubling."
+     },
+     {
+      "do": "Complete TODO 1 in bpe.py: pick the most frequent pair, breaking ties by the pair that sorts first, and merge it.",
+      "code": "best = min(counts, key=lambda p: (-counts[p], p))",
+      "lang": "python"
+     },
+     {
+      "do": "Run bpe.py.",
+      "code": "python bpe.py",
+      "lang": "bash",
+      "see": "Merges in order: e+s, es+t, est+</w>, l+o, lo+w, ... and slowest -> ['s', 'low', 'est</w>']."
+     },
+     {
+      "do": "Complete TODO 1 in quantise.py: absmax scales per tensor or per row, then round and clip."
+     },
+     {
+      "do": "Run quantise.py.",
+      "code": "python quantise.py",
+      "lang": "bash",
+      "see": "Weight memory tables, the KV cache at 1.00 GiB with 8 KV heads and 4.00 GiB with 32, and four error lines in which int4 per tensor is far worse than the rest."
+     },
+     {
+      "do": "Write a line that starts Memory: estimating how much GPU memory you'd need to serve a 70B model in int4 with eight 8,192-token conversations in flight, assuming the same KV cache settings as the script, and saying what else uses memory."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Causal attention is right: rows sum to 1 and nothing above the diagonal gets weight.",
+      "look_for": [
+       "Rows sum to 1: True",
+       "nothing above the diagonal: True",
+       "0.40 0.60 0.00"
+      ]
+     },
+     {
+      "text": "Multi-head reshaping gives two heads of six tokens by four dimensions, and the score count quadruples when the length doubles.",
+      "look_for": [
+       "(2, 6, 4)",
+       "4,194,304"
+      ]
+     },
+     {
+      "text": "BPE learns the expected merges and tokenises unseen words with them.",
+      "look_for": [
+       "e+s, es+t, est+</w>, l+o, lo+w",
+       "['s', 'low', 'est</w>']"
+      ]
+     },
+     {
+      "text": "Memory estimates are right for weights and the KV cache.",
+      "look_for": [
+       "bf16 14.0 GB",
+       "1.00 GiB with 8 KV heads",
+       "4.00 GiB with 32"
+      ]
+     },
+     {
+      "text": "Per-row scales cut the error, and the outlier ruins int4 per-tensor quantisation.",
+      "look_for": [
+       "0.0089",
+       "0.9823"
+      ]
+     },
+     {
+      "text": "A Memory: line estimates about 35 GB of int4 weights plus about 8 GiB of KV cache, and mentions activations and serving overhead.",
+      "look_for": [
+       "Memory:"
+      ]
+     }
+    ],
+    "submit": "Paste your completed TODOs, the output of all three scripts, and your Memory: line.",
+    "files": [
+     {
+      "path": "attention.py",
+      "content": "\"\"\"Scaled dot-product attention with a causal mask, in NumPy, on a six-token toy sequence.\n\nRun: python attention.py\n\"\"\"\n\nimport numpy as np\n\nTOKENS = [\"The\", \"room\", \"is\", \"booked\", \"until\", \"noon\"]\n\n\ndef softmax(x, axis=-1):\n    x = x - x.max(axis=axis, keepdims=True)\n    e = np.exp(x)\n    return e / e.sum(axis=axis, keepdims=True)\n\n\ndef attention(Q, K, V, causal=True):\n    \"\"\"softmax(Q K^T / sqrt(d)) V. With causal=True each position sees only itself and earlier positions.\"\"\"\n    d = Q.shape[-1]\n    # TODO 1: compute the scores Q @ K^T divided by sqrt(d) (K.swapaxes(-1, -2) transposes the last two axes)\n    scores = np.zeros((Q.shape[-2], K.shape[-2]))\n    if causal:\n        # TODO 2: set the scores above the diagonal to -inf (np.triu(np.ones((n, n), dtype=bool), k=1)\n        #         marks them), so the softmax gives them zero weight\n        pass\n    weights = softmax(scores)\n    return weights @ V, weights\n\n\ndef main():\n    rng = np.random.default_rng(0)\n    d_model, n_heads = 8, 2\n    X = rng.normal(size=(len(TOKENS), d_model))  # one (made-up) embedding per token\n    Wq, Wk, Wv = (rng.normal(size=(d_model, d_model)) / np.sqrt(d_model) for _ in range(3))\n    out, w = attention(X @ Wq, X @ Wk, X @ Wv)\n    print(\"Attention weights (row = query token, column = key token):\")\n    for token, row in zip(TOKENS, w):\n        print(f\"  {token:<7}\" + \" \".join(f\"{v:4.2f}\" for v in row))\n    print(\"Rows sum to 1:\", bool(np.allclose(w.sum(axis=1), 1)), \"| nothing above the diagonal:\",\n          bool(np.all(np.triu(w, k=1) == 0)))\n    # Multi-head: split the 8 dimensions into 2 heads of 4, attend in each, and join the results.\n    split = lambda M: M.reshape(len(TOKENS), n_heads, d_model // n_heads).transpose(1, 0, 2)\n    heads, _ = attention(split(X @ Wq), split(X @ Wk), split(X @ Wv))\n    joined = heads.transpose(1, 0, 2).reshape(len(TOKENS), d_model)\n    print(\"Output shape:\", out.shape, \"| per-head output shape:\", heads.shape, \"| joined:\", joined.shape)\n    for n in (1024, 2048, 4096):\n        print(f\"{n} tokens: {n * n:,} attention scores per head per layer\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "bpe.py",
+      "content": "\"\"\"Train a tiny byte-pair encoding (BPE) tokeniser and use it on new words.\n\nThe word counts are the classic toy example used to explain BPE. Run: python bpe.py\n\"\"\"\n\nfrom collections import Counter\n\nCORPUS = {\"low\": 5, \"lower\": 2, \"newest\": 6, \"widest\": 3}\n\n\ndef pair_counts(vocab):\n    \"\"\"How often each adjacent pair of symbols occurs, weighted by word frequency.\"\"\"\n    counts = Counter()\n    for symbols, freq in vocab.items():\n        for a, b in zip(symbols, symbols[1:]):\n            counts[a, b] += freq\n    return counts\n\n\ndef merge(vocab, pair):\n    \"\"\"Replace every occurrence of the pair with one merged symbol.\"\"\"\n    out = {}\n    for symbols, freq in vocab.items():\n        merged, i = [], 0\n        while i < len(symbols):\n            if i < len(symbols) - 1 and (symbols[i], symbols[i + 1]) == pair:\n                merged.append(symbols[i] + symbols[i + 1])\n                i += 2\n            else:\n                merged.append(symbols[i])\n                i += 1\n        out[tuple(merged)] = freq\n    return out\n\n\ndef train(corpus, num_merges):\n    vocab = {tuple(word) + (\"</w>\",): freq for word, freq in corpus.items()}\n    merges = []\n    for _ in range(num_merges):\n        counts = pair_counts(vocab)\n        if not counts:\n            break\n        # TODO 1: pick the most frequent pair (on a tie, the one that sorts first), record it in merges,\n        #         and merge it everywhere in vocab\n        break\n    return merges\n\n\ndef tokenise(word, merges):\n    \"\"\"Apply the learned merges, in the order they were learned.\"\"\"\n    symbols = tuple(word) + (\"</w>\",)\n    for pair in merges:\n        symbols = tuple(merge({symbols: 1}, pair))[0]\n    return list(symbols)\n\n\ndef main():\n    merges = train(CORPUS, 10)\n    print(\"Merges in order:\", \", \".join(a + \"+\" + b for a, b in merges))\n    for word in (\"lowest\", \"newer\", \"wider\", \"slowest\"):\n        print(f\"{word:<8} -> {tokenise(word, merges)}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "quantise.py",
+      "content": "\"\"\"Memory arithmetic and absmax quantisation of a weight matrix, per tensor and per row.\n\nRun: python quantise.py\n\"\"\"\n\nimport numpy as np\n\nBYTES = {\"fp32\": 4, \"bf16\": 2, \"int8\": 1, \"int4\": 0.5}\n\n\ndef weights_gb(params, fmt):\n    return params * BYTES[fmt] / 1e9\n\n\ndef kv_cache_bytes(layers, kv_heads, head_dim, tokens, bytes_per_value=2):\n    \"\"\"Keys and values (the 2) for every layer, KV head, dimension and token.\"\"\"\n    return 2 * layers * kv_heads * head_dim * tokens * bytes_per_value\n\n\ndef quantise(W, bits, per_row):\n    \"\"\"Symmetric absmax quantisation: scale = max|w| / qmax, q = round(w / scale), clipped to +-qmax.\"\"\"\n    qmax = 2 ** (bits - 1) - 1  # 127 for int8, 7 for int4\n    # TODO 1: compute the scale from the largest absolute value, over each row (axis=1, keepdims=True)\n    #         when per_row is True or over the whole matrix otherwise, then round and clip\n    raise NotImplementedError\n    return q.astype(np.int8), scale\n\n\ndef relative_error(a, b):\n    return float(np.linalg.norm(a - b) / np.linalg.norm(a))\n\n\ndef main():\n    for name, n in ((\"7B\", 7e9), (\"70B\", 70e9)):\n        print(f\"{name} weights: \" + \", \".join(f\"{fmt} {weights_gb(n, fmt):.1f} GB\" for fmt in BYTES))\n    gqa = kv_cache_bytes(layers=32, kv_heads=8, head_dim=128, tokens=8192)\n    full = kv_cache_bytes(layers=32, kv_heads=32, head_dim=128, tokens=8192)\n    print(f\"KV cache for 8,192 tokens, 32 layers, head size 128, bf16: {gqa / 2**30:.2f} GiB with 8 KV heads, \"\n          f\"{full / 2**30:.2f} GiB with 32\")\n    rng = np.random.default_rng(42)\n    W = rng.normal(0, 0.02, size=(256, 256))\n    W[3, 7] = 0.9  # a single outlier weight, as real models often have\n    x = rng.normal(size=256)\n    for bits in (8, 4):\n        for per_row in (False, True):\n            q, scale = quantise(W, bits, per_row)\n            W_hat = q * scale\n            label = \"per row   \" if per_row else \"per tensor\"\n            print(f\"int{bits} {label}: weight error {relative_error(W, W_hat):.4f}, \"\n                  f\"output error {relative_error(W @ x, W_hat @ x):.4f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "np.exp(-np.inf) is 0, which is why masking with -inf gives masked positions zero weight.",
+     "If your BPE merges differ, check the tie-break: equal counts must go to the pair that sorts first.",
+     "In quantise(), np.abs(W).max(axis=1, keepdims=True) keeps one scale per row in a shape that broadcasts against W."
+    ]
+   }
+  },
+  {
+   "title": "Model Evaluation",
+   "summary": "Why evaluating generation is hard, what benchmarks can and can't tell you, where BLEU and ROUGE mislead, and how to run human evaluation with agreement measures and confidence intervals.",
+   "instructor": "chloe-tremblay",
+   "lessons": [
+    {
+     "title": "Why evaluating generation is hard",
+     "minutes": 12,
+     "objectives": [
+      "Explain why generative outputs are harder to evaluate than classifications",
+      "Turn open-ended tasks into checkable ones, including pass@k for code"
+     ],
+     "key_points": [
+      "A classifier's output is right or wrong, but a generated answer can be correct in many wordings and wrong in subtle ways, so there's rarely a single reference to compare with.",
+      "Quality has several dimensions, such as correctness, faithfulness to sources, completeness, helpfulness, style and safety, which can conflict and need separate measures.",
+      "Outputs vary between runs, so evaluate over many cases, repeat important comparisons, and report uncertainty rather than a single number.",
+      "Where you can, make open tasks checkable: multiple-choice questions, exact match on an extracted final answer, unit tests for generated code, or schema checks for structured output.",
+      "For code, pass@k estimates the chance that at least one of k samples passes the tests; with n samples of which c pass, the unbiased estimate is 1 − C(n−c, k) / C(n, k)."
+     ]
+    },
+    {
+     "title": "Benchmarks: what MMLU and others tell you",
+     "minutes": 12,
+     "objectives": [
+      "Describe common benchmarks and what they measure",
+      "Explain contamination, saturation and set-up sensitivity"
+     ],
+     "key_points": [
+      "Benchmarks give a common yardstick: MMLU tests knowledge with multiple-choice questions across 57 subjects, GSM8K tests grade-school maths word problems, and HumanEval tests Python functions against unit tests.",
+      "Contamination, where test items or close copies appear in training data, inflates scores; and as models improve, benchmarks saturate near their ceiling and stop separating them, so harder successors such as MMLU-Pro appear.",
+      "Scores depend on the set-up, such as the number of examples in the prompt, the prompt format, how answers are extracted and whether reasoning is allowed, so compare only numbers measured the same way.",
+      "A benchmark measures its own tasks, not yours: use public results to build a shortlist, and an evaluation set built from your real inputs to decide."
+     ]
+    },
+    {
+     "title": "Reference-based metrics: BLEU, ROUGE and their limits",
+     "minutes": 12,
+     "objectives": [
+      "Explain how BLEU and ROUGE are computed",
+      "Recognise when overlap metrics mislead"
+     ],
+     "key_points": [
+      "BLEU, designed in 2002 for machine translation, combines modified n-gram precisions for 1- to 4-grams by geometric mean, with a brevity penalty for short outputs; it was meant for a whole test set, and single sentences need smoothing.",
+      "ROUGE, designed for summarisation, measures n-gram overlap with references with an emphasis on recall: ROUGE-1 and ROUGE-2 count unigrams and bigrams, and ROUGE-L uses the longest common subsequence.",
+      "Overlap metrics reward surface similarity: they penalise correct paraphrases, and they can score an answer highly when one changed word, such as a date or a 'not', makes it wrong.",
+      "Embedding-based metrics such as BERTScore capture paraphrase better than n-grams, but none of these checks facts, so use them to track regressions on narrow tasks with good references, alongside checks that do."
+     ]
+    },
+    {
+     "title": "Human evaluation done properly",
+     "minutes": 12,
+     "objectives": [
+      "Design a human evaluation with a rubric, blinding and several raters",
+      "Measure inter-rater agreement and the uncertainty of a comparison"
+     ],
+     "key_points": [
+      "Human judgement is the reference standard for qualities like helpfulness and tone, but it's slow and expensive, so use it to validate automatic measures and for decisions that matter.",
+      "Give raters a rubric with anchored levels and examples, hide which system produced each output, randomise the order, and have several raters score at least part of the data.",
+      "Pairwise comparisons, asking which of two outputs is better, are often more reliable than absolute scores, and many pairwise votes can be turned into a ranking with an Elo or Bradley-Terry model, as public chatbot leaderboards do.",
+      "Measure inter-rater agreement: Cohen's kappa corrects two raters' agreement for chance, and a weighted kappa gives partial credit on ordinal scales; low agreement means the rubric or the task needs work before the scores can be trusted.",
+      "Report uncertainty: a bootstrap confidence interval, from resampling the cases with replacement, shows whether a difference between systems is larger than the noise."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Metrics against human ratings",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Implement ROUGE-1 and ROUGE-L, compute BLEU with NLTK, and compare all three with two raters' scores of two summarisation systems, then measure rater agreement, a bootstrap confidence interval and pass@k.",
+    "setup": [
+     "Python 3.10 or newer with pip install numpy scipy scikit-learn nltk (BLEU needs no NLTK data download)",
+     "Download metrics.py and summaries.json into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read summaries.json: system A copies the reference's wording but often changes a fact, and system B paraphrases."
+     },
+     {
+      "do": "Complete TODO 1, rouge1(): clipped unigram overlap, then F1.",
+      "code": "overlap = sum((Counter(c) & Counter(r)).values())",
+      "lang": "python"
+     },
+     {
+      "do": "Complete TODO 2 in lcs_length(), the dynamic-programming step for the longest common subsequence."
+     },
+     {
+      "do": "Complete TODO 3, bootstrap_ci(): resample the paired differences 10,000 times with the seeded generator and take the 2.5th and 97.5th percentiles."
+     },
+     {
+      "do": "Run metrics.py.",
+      "code": "python metrics.py",
+      "lang": "bash",
+      "see": "A table where A scores far higher than B on every overlap metric, while the humans prefer B, then the correlation, the two kappas, the interval and pass@k."
+     },
+     {
+      "do": "Write a line that starts Metrics: explaining the negative correlation and the gap between the two kappas, and saying when you would still use ROUGE."
+     }
+    ],
+    "checks": [
+     {
+      "text": "ROUGE-L and human scores are averaged for each system.",
+      "look_for": [
+       "mean ROUGE-L 0.89, mean human score 2.33",
+       "mean ROUGE-L 0.43, mean human score 4.50"
+      ]
+     },
+     {
+      "text": "ROUGE-L correlates negatively with the human scores on this data.",
+      "look_for": [
+       "-0.30"
+      ]
+     },
+     {
+      "text": "Both kappas are computed: low exact agreement, high weighted agreement.",
+      "look_for": [
+       "0.36 unweighted, 0.89 quadratic-weighted"
+      ]
+     },
+     {
+      "text": "The bootstrap interval for B minus A excludes zero.",
+      "look_for": [
+       "0.92 to 3.17"
+      ]
+     },
+     {
+      "text": "pass@k is computed with the unbiased estimator.",
+      "look_for": [
+       "pass@1 = 0.300",
+       "pass@5 = 0.917"
+      ]
+     },
+     {
+      "text": "A Metrics: line explains that overlap rewards copied wording even when a fact changes, that raters rarely gave identical scores but did rank outputs alike, and when ROUGE is still useful.",
+      "look_for": [
+       "Metrics:"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed functions, the script's output, and your Metrics: line.",
+    "files": [
+     {
+      "path": "metrics.py",
+      "content": "\"\"\"Reference-based metrics against human ratings: ROUGE-1, ROUGE-L and BLEU, rater agreement, a bootstrap\nconfidence interval and pass@k.\n\nRun: python metrics.py   (needs pip install nltk scipy scikit-learn numpy)\n\"\"\"\n\nimport json\nimport re\nfrom math import comb\n\nimport numpy as np\nfrom nltk.translate.bleu_score import SmoothingFunction, sentence_bleu\nfrom scipy.stats import spearmanr\nfrom sklearn.metrics import cohen_kappa_score\n\n\ndef words(text):\n    return re.findall(r\"\\w+\", text.lower())\n\n\ndef f1(overlap, n_candidate, n_reference):\n    if overlap == 0:\n        return 0.0\n    precision, recall = overlap / n_candidate, overlap / n_reference\n    return 2 * precision * recall / (precision + recall)\n\n\ndef rouge1(candidate, reference):\n    \"\"\"Unigram overlap F1 (each word counted at most as often as it appears in both).\"\"\"\n    c, r = words(candidate), words(reference)\n    # TODO 1: count the overlapping words: for each distinct word, the smaller of its counts in c and r\n    #         (collections.Counter's & operator does this), then return f1(overlap, len(c), len(r))\n    raise NotImplementedError\n\n\ndef lcs_length(a, b):\n    \"\"\"Length of the longest common subsequence of two word lists (dynamic programming).\"\"\"\n    table = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]\n    for i, x in enumerate(a, 1):\n        for j, y in enumerate(b, 1):\n            # TODO 2: if the words match, extend the diagonal (table[i-1][j-1] + 1); otherwise take the larger\n            #         of table[i-1][j] and table[i][j-1]\n            pass\n    return table[-1][-1]\n\n\ndef rouge_l(candidate, reference):\n    c, r = words(candidate), words(reference)\n    return f1(lcs_length(c, r), len(c), len(r))\n\n\ndef bleu(candidate, reference):\n    \"\"\"Sentence BLEU (1- to 4-grams) with smoothing, which single sentences need.\"\"\"\n    return sentence_bleu([words(reference)], words(candidate), smoothing_function=SmoothingFunction().method1)\n\n\ndef pass_at_k(n, c, k):\n    \"\"\"Unbiased pass@k: the chance that at least one of k samples, from n with c correct, passes.\"\"\"\n    if n - c < k:\n        return 1.0\n    return 1 - comb(n - c, k) / comb(n, k)\n\n\ndef bootstrap_ci(diffs, n_resamples=10_000, seed=0):\n    \"\"\"95% percentile bootstrap interval for the mean of paired differences.\"\"\"\n    rng = np.random.default_rng(seed)\n    diffs = np.asarray(diffs, dtype=float)\n    # TODO 3: draw n_resamples samples of len(diffs) indices with replacement (rng.integers), take the\n    #         mean of each resample, and return the 2.5th and 97.5th percentiles\n    return (0.0, 0.0)\n\n\ndef main():\n    with open(\"summaries.json\", encoding=\"utf-8\") as f:\n        items = json.load(f)[\"items\"]\n    metric_l, human, r1, r2 = [], [], [], []\n    print(f\"{'item':<5}{'sys':<4}{'ROUGE-1':>8}{'ROUGE-L':>8}{'BLEU':>7}{'human':>7}\")\n    for it in items:\n        for system in (\"A\", \"B\"):\n            text = it[system]\n            mean_human = (it[\"rater1\"][system] + it[\"rater2\"][system]) / 2\n            metric_l.append(rouge_l(text, it[\"reference\"]))\n            human.append(mean_human)\n            r1.append(it[\"rater1\"][system])\n            r2.append(it[\"rater2\"][system])\n            print(f\"{it['id']:<5}{system:<4}{rouge1(text, it['reference']):>8.2f}{metric_l[-1]:>8.2f}\"\n                  f\"{bleu(text, it['reference']):>7.2f}{mean_human:>7.1f}\")\n    for system, offset in ((\"A\", 0), (\"B\", 1)):\n        print(f\"System {system}: mean ROUGE-L {np.mean(metric_l[offset::2]):.2f}, mean human score {np.mean(human[offset::2]):.2f}\")\n    rho, _ = spearmanr(metric_l, human)\n    print(f\"Spearman correlation of ROUGE-L with human scores: {rho:.2f}\")\n    print(f\"Cohen's kappa between raters: {cohen_kappa_score(r1, r2):.2f} unweighted, \"\n          f\"{cohen_kappa_score(r1, r2, weights='quadratic'):.2f} quadratic-weighted\")\n    diffs = [h_b - h_a for h_a, h_b in zip(human[0::2], human[1::2])]\n    low, high = bootstrap_ci(diffs)\n    print(f\"Human score, B minus A: mean {np.mean(diffs):.2f}, 95% bootstrap CI {low:.2f} to {high:.2f}\")\n    print(f\"pass@1 = {pass_at_k(10, 3, 1):.3f}, pass@5 = {pass_at_k(10, 3, 5):.3f} (10 samples, 3 pass the tests)\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "summaries.json",
+      "content": "{\n \"_note\": \"Reference summaries of support calls, two systems' summaries and two raters' scores (1 = poor, 5 = excellent), all written for this lab.\",\n \"items\": [\n  {\"id\": \"s1\", \"reference\": \"The customer's broadband has dropped every evening since Monday; an engineer visit is booked for Thursday morning.\",\n   \"A\": \"The customer's broadband has dropped every evening since Tuesday; an engineer visit is booked for Thursday morning.\",\n   \"B\": \"Connection cuts out each evening since Monday, so a technician will come on Thursday morning.\",\n   \"rater1\": {\"A\": 2, \"B\": 5}, \"rater2\": {\"A\": 2, \"B\": 4}},\n  {\"id\": \"s2\", \"reference\": \"The customer was charged twice for March and will be refunded within five working days.\",\n   \"A\": \"The customer was charged twice for March and will not be refunded.\",\n   \"B\": \"A duplicate March payment will be returned to the customer within five working days.\",\n   \"rater1\": {\"A\": 1, \"B\": 5}, \"rater2\": {\"A\": 1, \"B\": 5}},\n  {\"id\": \"s3\", \"reference\": \"The customer wants to move to the 500 Mbps plan from next month and keep the same router.\",\n   \"A\": \"The customer wants to move to the 500 Mbps plan from next month and keep the same router.\",\n   \"B\": \"Upgrade to 500 Mbps requested from next month, keeping the existing router.\",\n   \"rater1\": {\"A\": 5, \"B\": 4}, \"rater2\": {\"A\": 5, \"B\": 5}},\n  {\"id\": \"s4\", \"reference\": \"The router's lights are off after a power cut; the customer will try a different socket and call back.\",\n   \"A\": \"The router's lights are off after a power cut; the customer will call back.\",\n   \"B\": \"After a power cut the router shows no lights; the customer will test another socket and ring back.\",\n   \"rater1\": {\"A\": 3, \"B\": 5}, \"rater2\": {\"A\": 3, \"B\": 4}},\n  {\"id\": \"s5\", \"reference\": \"The customer is moving house on 14 June and needs the service transferred to the new address.\",\n   \"A\": \"The customer is moving house on 4 June and needs the service transferred to the new address.\",\n   \"B\": \"Service transfer needed for a house move on 14 June.\",\n   \"rater1\": {\"A\": 2, \"B\": 4}, \"rater2\": {\"A\": 1, \"B\": 4}},\n  {\"id\": \"s6\", \"reference\": \"The customer reported slow wifi upstairs and was advised to add a mesh extender.\",\n   \"A\": \"The customer reported slow wifi upstairs and was advised to buy a new laptop.\",\n   \"B\": \"Wifi is slow upstairs; a mesh extender was suggested.\",\n   \"rater1\": {\"A\": 1, \"B\": 5}, \"rater2\": {\"A\": 2, \"B\": 4}}\n ]\n}\n"
+     }
+    ],
+    "hints": [
+     "Counter(c) & Counter(r) keeps each word with the smaller of its two counts.",
+     "If BLEU fails to import, pip install nltk: the bleu_score module doesn't need any downloaded corpora.",
+     "Your interval matches only with seed 0 and 10,000 resamples drawn in one call to rng.integers."
+    ]
+   }
+  },
+  {
+   "title": "System Evaluation",
+   "summary": "Evaluate the whole application, not just the model: realistic test sets, component checks, AI-as-a-judge pipelines validated against human labels and tested for bias, and evaluation as an automated gate in CI/CD.",
+   "instructor": "dariusz-wojciechowski",
+   "lessons": [
+    {
+     "title": "From model evaluation to system evaluation",
+     "minutes": 12,
+     "objectives": [
+      "Explain why an application needs end-to-end and component-level evaluation",
+      "Build an evaluation set from real usage and slice its results"
+     ],
+     "key_points": [
+      "Users experience a system, not a model: prompts, retrieval, tools, business rules and the interface all shape each result, so evaluate the system end to end on realistic inputs.",
+      "Evaluate components too, so failures can be located: retrieval recall, tool-call correctness, parsing success and guardrail decisions each have their own checks.",
+      "Build the evaluation set from real usage where you can, with consent and personal data removed, plus edge cases, adversarial inputs and past incidents, and record what a good response must do for each.",
+      "Slice results by segment, such as intent, language or customer type, because an average can hide a segment that fails; and keep a held-out set that isn't used while tuning.",
+      "Track cost and latency alongside quality for every version, because a change that improves quality may be too slow or too expensive to ship."
+     ]
+    },
+    {
+     "title": "AI-as-a-judge: design",
+     "minutes": 12,
+     "objectives": [
+      "Design pointwise, pairwise and reference-guided LLM judges",
+      "Write judging criteria and structured verdicts that can be audited"
+     ],
+     "key_points": [
+      "An LLM judge evaluates outputs against written criteria: pointwise (score one output), pairwise (choose the better of two) or reference-guided (compare with a gold answer).",
+      "Write criteria a person could apply consistently: define each one, such as accuracy against the knowledge base, tone and helpfulness, with what passes and what fails and an example of each.",
+      "Pass or fail judgements on one criterion at a time are more reliable than one overall score out of 10; give the judge the material it needs, such as the article and the customer's question.",
+      "Ask for a short reason before the verdict, and return the verdict as structured output with a fixed schema, so it can be parsed and audited.",
+      "Use a strong model as the judge, ideally from a different family from the model being judged, and keep the judge's model version and prompt fixed while comparing systems."
+     ]
+    },
+    {
+     "title": "Validating and de-biasing the judge",
+     "minutes": 12,
+     "objectives": [
+      "Validate an LLM judge against human labels",
+      "Detect and counter position and verbosity bias"
+     ],
+     "key_points": [
+      "Before trusting a judge, compare its verdicts with careful human labels on a sample of a few dozen or more outputs: report agreement, Cohen's kappa and the confusion matrix for each criterion.",
+      "Known biases include position bias (preferring the first or second answer in a pair), verbosity bias (preferring longer answers) and self-preference (favouring outputs like its own); Zheng and colleagues documented them in 2023 when introducing MT-Bench.",
+      "Counter position bias by judging each pair in both orders and counting only consistent verdicts; counter verbosity bias with criteria that penalise padding and by comparing answers of similar length.",
+      "Read the disagreements: they show which criteria the judge misreads, which you fix in its prompt or rubric before validating again.",
+      "Validate again whenever the judge's model, its prompt or the kind of output changes, and keep a small human-labelled set for regular spot checks."
+     ]
+    },
+    {
+     "title": "Automating evaluation in CI/CD",
+     "minutes": 12,
+     "objectives": [
+      "Run evaluations as automated tests with thresholds",
+      "Detect regressions without failing on noise"
+     ],
+     "key_points": [
+      "Treat evaluations as tests: run them automatically when prompts, models, retrieval settings or code change, and block a release that falls below agreed thresholds.",
+      "Use tiers: fast deterministic checks on every commit, a larger judged suite on pull requests or nightly, and human review for releases or high-risk changes.",
+      "Compare with a stored baseline as well as an absolute bar, and flag a regression only when the drop is larger than run-to-run noise, using a significance test, confidence intervals or repeated runs.",
+      "Store each run's results with the versions of the prompt, model, data and judge, so any score can be reproduced and explained.",
+      "Keep API keys in the CI system's secrets, cache model outputs keyed by their exact inputs to save cost, and set a spending budget for each run."
+     ],
+     "walkthrough": {
+      "tool": "GitHub Actions",
+      "title": "Run the quality gate on every pull request",
+      "steps": [
+       {
+        "do": "Add a requirements.txt listing the packages your tests need, and commit test_quality_gate.py with the code it imports."
+       },
+       {
+        "do": "Create .github/workflows/llm-evals.yml with a job that installs the requirements and runs pytest, passing the key from the repository's secrets and the model ID from its variables.",
+        "code": "name: llm-evals\non: [pull_request]\njobs:\n  evals:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n      - run: pip install -r requirements.txt\n      - run: pytest -q\n        env:\n          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}",
+        "lang": "yaml"
+       },
+       {
+        "do": "In the repository's Settings, add ANTHROPIC_API_KEY under Secrets and variables | Actions | Secrets, and CLAUDE_MODEL under Variables.",
+        "see": "The key is masked in logs and isn't available to workflows from forks by default."
+       },
+       {
+        "do": "Open a pull request.",
+        "see": "An llm-evals check on the pull request, which fails, and can be made required in branch protection, when any test in the quality gate fails."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Validate an LLM judge and gate a release",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Measure how well an accuracy judge agrees with human labels, find its blind spots, test a pairwise judge for position bias, and write the regression test in a pytest quality gate.",
+    "setup": [
+     "Python 3.10 or newer with pip install pydantic scikit-learn statsmodels pytest (and anthropic to try call_judge)",
+     "Download judge.py, test_quality_gate.py and judge_data.json into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read JUDGE_PROMPT, Verdict and the rubric in judge_data.json: one criterion per call, the reason before the verdict, and a fixed schema."
+     },
+     {
+      "do": "Complete TODO 1, judge_vs_human(): agreement, Cohen's kappa and the confusion matrix."
+     },
+     {
+      "do": "Complete TODO 2, position_bias(): count consistent pairs, and verdicts that chose the answer shown first."
+     },
+     {
+      "do": "Run judge.py.",
+      "code": "python judge.py",
+      "lang": "bash",
+      "see": "Agreement 0.85 and kappa 0.62, the confusion matrix, the two answers the judge wrongly passed, and the pairwise results."
+     },
+     {
+      "do": "Read the reasons the judge gave for r05 and r14. Write a line that starts Judge: describing its blind spot and the rubric change that would fix it."
+     },
+     {
+      "do": "Complete TODO 1 in test_quality_gate.py: a one-sided two-proportion z-test that fails only if the candidate is significantly worse than the baseline.",
+      "code": "_, p = proportions_ztest([c[\"passed\"], b[\"passed\"]], [c[\"total\"], b[\"total\"]], alternative=\"smaller\")",
+      "lang": "python"
+     },
+     {
+      "do": "Run the gate.",
+      "code": "pytest -q",
+      "lang": "bash",
+      "see": "3 passed"
+     },
+     {
+      "do": "Optional, with a key: call call_judge() on one of your own answers and article, and check the structured verdict it returns."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The judge's agreement with human labels is measured with chance-corrected kappa.",
+      "look_for": [
+       "agreement 0.85, Cohen's kappa 0.62"
+      ]
+     },
+     {
+      "text": "The confusion matrix is right, and the answers the judge wrongly passed are listed.",
+      "look_for": [
+       "[[13, 1], [2, 4]]",
+       "r05, r14"
+      ]
+     },
+     {
+      "text": "The pairwise judge is tested in both orders, showing position bias.",
+      "look_for": [
+       "consistent in both orders 7/10",
+       "13 of 20 verdicts (0.65)"
+      ]
+     },
+     {
+      "text": "The quality gate passes, with a one-sided regression test.",
+      "look_for": [
+       "3 passed",
+       "alternative="
+      ]
+     },
+     {
+      "text": "A Judge: line identifies that the judge rewards plausible, confident answers it can't verify, and proposes a fix, such as requiring every fact to be found in the article.",
+      "look_for": [
+       "Judge:"
+      ]
+     }
+    ],
+    "submit": "Paste your completed functions and test, the output of judge.py and pytest -q, and your Judge: line.",
+    "files": [
+     {
+      "path": "judge.py",
+      "content": "\"\"\"An LLM judge for a support chatbot: the prompt, a structured verdict, and validation against human labels,\nincluding a position-bias test for pairwise judging.\n\nOffline it reads recorded verdicts from judge_data.json. call_judge() shows how to get a verdict from the API.\nRun: python judge.py\n\"\"\"\n\nimport json\nfrom typing import Literal\n\nfrom pydantic import BaseModel\nfrom sklearn.metrics import cohen_kappa_score, confusion_matrix\n\nJUDGE_PROMPT = \"\"\"You are grading one answer from a broadband provider's support chatbot on a single criterion.\n<criterion name=\"{name}\">{definition}</criterion>\n<article>{article}</article>\n<question>{question}</question>\n<answer>{answer}</answer>\nThink about the criterion only. Give a one-sentence reason first, then the verdict: pass or fail.\"\"\"\n\n\nclass Verdict(BaseModel):\n    reason: str  # first, so the verdict follows the reasoning\n    verdict: Literal[\"pass\", \"fail\"]\n\n\ndef load(path=\"judge_data.json\"):\n    with open(path, encoding=\"utf-8\") as f:\n        return json.load(f)\n\n\ndef judge_vs_human(items):\n    \"\"\"Agreement, Cohen's kappa and the confusion matrix (rows: human pass/fail; columns: judge pass/fail).\"\"\"\n    human = [it[\"human\"] for it in items]\n    judge = [Verdict.model_validate_json(it[\"judge\"]).verdict for it in items]\n    # TODO 1: return the share of items where the two agree, cohen_kappa_score(human, judge), and\n    #         confusion_matrix(human, judge, labels=[\"pass\", \"fail\"])\n    raise NotImplementedError\n\n\ndef position_bias(pairs):\n    \"\"\"Each pair was judged twice: with A shown first ('ab') and with B shown first ('ba'). The verdict names\n    the answer chosen. Returns (consistent pairs, verdicts that chose whichever answer was shown first).\"\"\"\n    # TODO 2: count the pairs whose two verdicts agree, and the verdicts that chose the first-shown\n    #         answer (A in the 'ab' order, B in the 'ba' order)\n    raise NotImplementedError\n\n\ndef call_judge(name, definition, article, question, answer):\n    \"\"\"The only function that talks to the API: one criterion, structured output.\"\"\"\n    import os\n\n    import anthropic\n\n    client = anthropic.Anthropic()\n    prompt = JUDGE_PROMPT.format(name=name, definition=definition, article=article, question=question, answer=answer)\n    response = client.messages.parse(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=1024,\n                                     messages=[{\"role\": \"user\", \"content\": prompt}], output_format=Verdict)\n    return response.parsed_output\n\n\ndef main():\n    data = load()\n    agreement, kappa, matrix = judge_vs_human(data[\"items\"])\n    print(f\"Accuracy judge vs human labels: agreement {agreement:.2f}, Cohen's kappa {kappa:.2f}\")\n    print(f\"Confusion matrix (rows human pass/fail, columns judge pass/fail): {matrix.tolist()}\")\n    lenient = [it[\"id\"] for it in data[\"items\"]\n               if it[\"human\"] == \"fail\" and Verdict.model_validate_json(it[\"judge\"]).verdict == \"pass\"]\n    print(\"Judge passed answers the human failed:\", \", \".join(lenient))\n    consistent, first = position_bias(data[\"pairs\"])\n    n = len(data[\"pairs\"])\n    print(f\"Pairwise: consistent in both orders {consistent}/{n}; chose the first-shown answer in {first} of \"\n          f\"{2 * n} verdicts ({first / (2 * n):.2f})\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "test_quality_gate.py",
+      "content": "\"\"\"The quality gate a CI pipeline runs before a prompt or model change ships. Run: pytest -q\"\"\"\n\nfrom statsmodels.stats.proportion import proportions_ztest\n\nfrom judge import judge_vs_human, load\n\nDATA = load()\n\n\ndef test_judge_agrees_with_humans():\n    \"\"\"Only trust the judge's scores if it agrees with human labels well beyond chance.\"\"\"\n    _, kappa, _ = judge_vs_human(DATA[\"items\"])\n    assert kappa >= 0.6\n\n\ndef test_candidate_meets_the_bar():\n    c = DATA[\"release\"][\"candidate\"]\n    assert c[\"passed\"] / c[\"total\"] >= 0.8\n\n\ndef test_no_significant_regression():\n    \"\"\"Fail only if the candidate is significantly worse than the baseline, not on every dip from noise.\"\"\"\n    b, c = DATA[\"release\"][\"baseline\"], DATA[\"release\"][\"candidate\"]\n    # TODO 1: run a one-sided two-proportion z-test of \"candidate < baseline\": proportions_ztest with\n    #         counts [candidate, baseline], totals in the same order and alternative=\"smaller\"; assert p >= 0.05\n    assert False, \"write the regression test\"\n"
+     },
+     {
+      "path": "judge_data.json",
+      "content": "{\n \"_note\": \"A support chatbot's answers with a careful human label and a recorded judge verdict for accuracy, plus pairwise verdicts in both orders. Written for this lab.\",\n \"rubric\": {\"accuracy\": \"Every fact in the answer agrees with the knowledge-base article; nothing important is wrong or invented.\",\n            \"tone\": \"Polite, calm and plain; no blame, jargon or over-familiarity.\",\n            \"helpfulness\": \"Gives the customer a clear next step that solves or progresses their problem.\"},\n \"items\": [\n  {\"id\": \"r01\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Matches the article.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r02\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct refund period.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r03\", \"human\": \"fail\", \"judge\": \"{\\\"reason\\\": \\\"Says 10 days; the article says 5.\\\", \\\"verdict\\\": \\\"fail\\\"}\"},\n  {\"id\": \"r04\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Accurate steps.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r05\", \"human\": \"fail\", \"judge\": \"{\\\"reason\\\": \\\"Plausible advice.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r06\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r07\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct router reset steps.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r08\", \"human\": \"fail\", \"judge\": \"{\\\"reason\\\": \\\"Invents a fee.\\\", \\\"verdict\\\": \\\"fail\\\"}\"},\n  {\"id\": \"r09\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Omits the speed test but nothing wrong.\\\", \\\"verdict\\\": \\\"fail\\\"}\"},\n  {\"id\": \"r10\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r11\", \"human\": \"fail\", \"judge\": \"{\\\"reason\\\": \\\"Wrong cancellation notice period.\\\", \\\"verdict\\\": \\\"fail\\\"}\"},\n  {\"id\": \"r12\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r13\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r14\", \"human\": \"fail\", \"judge\": \"{\\\"reason\\\": \\\"Detailed and confident.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r15\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r16\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r17\", \"human\": \"fail\", \"judge\": \"{\\\"reason\\\": \\\"Contradicts the article on data caps.\\\", \\\"verdict\\\": \\\"fail\\\"}\"},\n  {\"id\": \"r18\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r19\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"},\n  {\"id\": \"r20\", \"human\": \"pass\", \"judge\": \"{\\\"reason\\\": \\\"Correct.\\\", \\\"verdict\\\": \\\"pass\\\"}\"}\n ],\n \"pairs\": [\n  {\"id\": \"p01\", \"ab\": \"A\", \"ba\": \"A\"}, {\"id\": \"p02\", \"ab\": \"B\", \"ba\": \"B\"}, {\"id\": \"p03\", \"ab\": \"A\", \"ba\": \"B\"},\n  {\"id\": \"p04\", \"ab\": \"A\", \"ba\": \"A\"}, {\"id\": \"p05\", \"ab\": \"B\", \"ba\": \"B\"}, {\"id\": \"p06\", \"ab\": \"A\", \"ba\": \"B\"},\n  {\"id\": \"p07\", \"ab\": \"B\", \"ba\": \"B\"}, {\"id\": \"p08\", \"ab\": \"A\", \"ba\": \"A\"}, {\"id\": \"p09\", \"ab\": \"A\", \"ba\": \"B\"},\n  {\"id\": \"p10\", \"ab\": \"A\", \"ba\": \"A\"}\n ],\n \"release\": {\"baseline\": {\"passed\": 41, \"total\": 50}, \"candidate\": {\"passed\": 44, \"total\": 50}}\n}\n"
+     }
+    ],
+    "hints": [
+     "confusion_matrix(human, judge, labels=['pass', 'fail']) puts human labels in rows and the judge's in columns.",
+     "With alternative='smaller', proportions_ztest tests whether the first proportion is smaller than the second.",
+     "Run pytest from the folder that holds judge.py, so test_quality_gate.py can import it."
+    ]
+   }
+  },
+  {
+   "title": "Advanced Prompt Engineering",
+   "summary": "Prompting as engineering: reasoning on demand, examples and system prompts at scale, designs that reduce hallucination, prompt optimisation that survives held-out testing, and when to retrieve or fine-tune instead.",
+   "instructor": "dariusz-wojciechowski",
+   "lessons": [
+    {
+     "title": "Reasoning on demand: chain-of-thought and thinking modes",
+     "minutes": 12,
+     "objectives": [
+      "Decide when to ask for reasoning and how to evaluate it",
+      "Weigh the accuracy, cost and latency of reasoning settings"
+     ],
+     "key_points": [
+      "Chain-of-thought prompting has the model write out its reasoning before answering, which improves multi-step problems; it's easiest to evaluate when the final answer goes in a separate, parseable field.",
+      "Models with built-in reasoning, such as Claude's extended thinking, reason before replying without being asked; prompting for steps then adds less, and high-level guidance about what to consider tends to work better than prescribing the steps.",
+      "Reasoning costs output tokens and time, so treat its depth as a setting to tune: compare accuracy, cost and latency at different levels on your evaluation set.",
+      "Reasoning text can be unfaithful, leaving out what actually drove the answer (Turpin and colleagues, 2023), so judge outputs by their results, not by how plausible the reasoning sounds."
+     ]
+    },
+    {
+     "title": "Examples and system prompts at scale",
+     "minutes": 12,
+     "objectives": [
+      "Use many-shot prompting and example selection deliberately",
+      "Keep system prompts stable, cacheable and testable"
+     ],
+     "key_points": [
+      "With long context windows, many-shot prompting, with dozens or hundreds of examples, can keep improving results on some tasks (Agarwal and colleagues, 2024), at an input-token cost that prompt caching can reduce.",
+      "The choice and order of examples can change results noticeably (Lu and colleagues, 2022), so select examples systematically, for instance by similarity to the input, and test the effect of their order.",
+      "System prompts set the persona and constraints that apply to every turn; keep them stable, so they can be cached and versioned, and put per-request details in the user turn.",
+      "Instruction-following weakens when a prompt piles up many constraints, some of them conflicting: test each important constraint with its own checks, and remove rules no case needs."
+     ]
+    },
+    {
+     "title": "Reducing hallucinations by design",
+     "minutes": 12,
+     "objectives": [
+      "Design prompts and pipelines that reduce unsupported claims",
+      "Measure hallucination with evaluation cases built for it"
+     ],
+     "key_points": [
+      "Hallucinations fall when answers are grounded in supplied sources, the model is told it may say it doesn't know, and claims must be backed by a quote or citation.",
+      "Chain-of-verification (Dhuliawala and colleagues, 2023) drafts an answer, plans verification questions, answers them independently and revises the draft, which reduced hallucinated facts in their experiments.",
+      "Sampling-based checks such as SelfCheckGPT (Manakul and colleagues, 2023) flag claims that vary between independent samples, because facts a model knows tend to be stated consistently.",
+      "Constrain outputs where you can, with enums, schemas and tool lookups, and measure the hallucination rate on an evaluation set with known answers and questions that can't be answered."
+     ]
+    },
+    {
+     "title": "Prompt optimisation, and when to fine-tune instead",
+     "minutes": 14,
+     "objectives": [
+      "Run prompt optimisation as a controlled experiment with held-out testing",
+      "Choose between prompting, retrieval and fine-tuning for a gap in performance"
+     ],
+     "key_points": [
+      "Optimise prompts like any experiment: fix the evaluation set and metric, change one thing at a time, run the whole set, and keep a change only if the improvement is larger than the noise.",
+      "Tuning on the cases you report overfits the prompt to them: tune on a development set, confirm once on a held-out test set, and compare versions with paired tests such as McNemar's or a paired bootstrap.",
+      "Prompt optimisation can be automated, with a model proposing revisions from the failures or frameworks such as DSPy compiling prompts and examples against a metric, but the result still needs held-out testing.",
+      "Match the adaptation to the gap: prompting for behaviour you can describe, retrieval for knowledge that changes or must be cited, and fine-tuning for consistent format, style or domain behaviour at scale, or to let a smaller, cheaper model do the job.",
+      "Fine-tuning isn't a reliable way to add facts, and it needs labelled data, evaluation and hosting; parameter-efficient methods such as LoRA cut its cost, as Fine-Tuning Open Language Models with LoRA covers in depth."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Choose a prompt version without fooling yourself",
+    "tool": "Python",
+    "minutes": 50,
+    "goal": "Compare four prompt versions' recorded runs on development and test splits, with paired bootstrap intervals, McNemar's test and the cost and latency of each, and see how tuning on the development set misleads.",
+    "setup": [
+     "Python 3.10 or newer with pip install numpy statsmodels",
+     "Download optimise.py and runs.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read the docstring of optimise.py: v3 added rules written while looking at the development failures."
+     },
+     {
+      "do": "Complete TODO 1, mcnemar_p(): the 2 × 2 table of paired outcomes and the exact test.",
+      "code": "table = [[both, only_a], [only_b, neither]]\nreturn float(mcnemar(table, exact=True).pvalue)",
+      "lang": "python"
+     },
+     {
+      "do": "Run optimise.py.",
+      "code": "python optimise.py",
+      "lang": "bash",
+      "see": "A table of dev and test accuracy, tokens, example cost and seconds per version, 'Best on dev: v3', and three test comparisons with v0."
+     },
+     {
+      "do": "Compare v3's development and test accuracy, then look at the three intervals and p-values."
+     },
+     {
+      "do": "Work out roughly how many test cases you'd need for a 7.5-point gain to be detectable, using what you learned about power analysis, or by trying bigger made-up samples."
+     },
+     {
+      "do": "Write a line that starts Choice: saying which version you'd ship now (or what you'd do before choosing), citing the held-out results, the uncertainty and the cost."
+     }
+    ],
+    "checks": [
+     {
+      "text": "v3 is best on the development set but not on the test set.",
+      "look_for": [
+       "Best on dev: v3",
+       "0.88"
+      ]
+     },
+     {
+      "text": "Paired comparisons on the test set use a bootstrap interval and McNemar's test.",
+      "look_for": [
+       "-0.075 to +0.250",
+       "McNemar p = 0.549",
+       "McNemar p = 0.774"
+      ]
+     },
+     {
+      "text": "Cost and latency are reported for each version.",
+      "look_for": [
+       "$/1k req",
+       "seconds"
+      ]
+     },
+     {
+      "text": "A Choice: line recognises that no version is significantly better than v0 on 40 test cases, warns against v3's development score, and weighs v1's extra cost.",
+      "look_for": [
+       "Choice:"
+      ]
+     }
+    ],
+    "submit": "Paste your mcnemar_p(), the script's output, your estimate of the test-set size needed, and your Choice: line.",
+    "files": [
+     {
+      "path": "optimise.py",
+      "content": "\"\"\"Pick a prompt version from recorded evaluation runs without fooling yourself: development and test splits,\npaired comparisons with a bootstrap interval and McNemar's test, and the cost of each version.\n\nruns.csv holds, for each case and prompt version, whether the answer was correct and its output tokens\n(made-up runs). v0 is the baseline, v1 adds chain-of-thought, v2 adds few-shot examples, and v3 adds both plus\nrules written while looking at the development failures. Run: python optimise.py\n\"\"\"\n\nimport csv\nfrom collections import defaultdict\n\nimport numpy as np\nfrom statsmodels.stats.contingency_tables import mcnemar\n\nEXAMPLE_OUTPUT_RATE = 5.00  # dollars per million output tokens: an EXAMPLE rate, not a real price\nEXAMPLE_TOKENS_PER_S = 50  # an EXAMPLE generation speed\n\n\ndef load(path=\"runs.csv\"):\n    runs = defaultdict(dict)  # (split, variant) -> {case: (correct, tokens)}\n    with open(path, newline=\"\") as f:\n        for r in csv.DictReader(f):\n            runs[r[\"split\"], r[\"variant\"]][r[\"case\"]] = (int(r[\"correct\"]), int(r[\"output_tokens\"]))\n    return runs\n\n\ndef accuracy(results):\n    return float(np.mean([c for c, _ in results.values()]))\n\n\ndef paired_bootstrap(a, b, n_resamples=10_000, seed=0):\n    \"\"\"95% interval for accuracy(b) - accuracy(a), resampling cases (the same cases for both).\"\"\"\n    cases = sorted(a)\n    diff = np.array([b[c][0] - a[c][0] for c in cases], dtype=float)\n    rng = np.random.default_rng(seed)\n    means = diff[rng.integers(0, len(diff), size=(n_resamples, len(diff)))].mean(axis=1)\n    return tuple(np.percentile(means, [2.5, 97.5]))\n\n\ndef mcnemar_p(a, b):\n    \"\"\"McNemar's exact test on the cases where exactly one of the two versions is correct.\"\"\"\n    cases = sorted(a)\n    # TODO 1: build the 2x2 table [[both right, only a right], [only b right, both wrong]] and return\n    #         mcnemar(table, exact=True).pvalue\n    return 1.0\n\n\ndef main():\n    runs = load()\n    variants = sorted({v for _, v in runs})\n    print(f\"{'version':<8}{'dev':>6}{'test':>6}{'tokens':>8}{'$/1k req':>10}{'seconds':>9}\")\n    for v in variants:\n        tokens = np.mean([t for _, t in runs[\"test\", v].values()])\n        print(f\"{v:<8}{accuracy(runs['dev', v]):>6.2f}{accuracy(runs['test', v]):>6.2f}{tokens:>8.0f}\"\n              f\"{tokens * 1000 / 1e6 * EXAMPLE_OUTPUT_RATE:>10.2f}{tokens / EXAMPLE_TOKENS_PER_S:>9.1f}\")\n    best_dev = max(variants, key=lambda v: accuracy(runs[\"dev\", v]))\n    print(f\"Best on dev: {best_dev}\")\n    for v in variants[1:]:\n        low, high = paired_bootstrap(runs[\"test\", \"v0\"], runs[\"test\", v])\n        print(f\"test, {v} vs v0: difference {accuracy(runs['test', v]) - accuracy(runs['test', 'v0']):+.3f}, \"\n              f\"95% CI {low:+.3f} to {high:+.3f}, McNemar p = {mcnemar_p(runs['test', 'v0'], runs['test', v]):.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "runs.csv",
+      "content": "case,split,variant,correct,output_tokens\ndev-01,dev,v0,1,105\ndev-02,dev,v0,1,89\ndev-03,dev,v0,1,122\ndev-04,dev,v0,0,130\ndev-05,dev,v0,1,107\ndev-06,dev,v0,0,145\ndev-07,dev,v0,1,135\ndev-08,dev,v0,1,131\ndev-09,dev,v0,0,127\ndev-10,dev,v0,1,137\ndev-11,dev,v0,1,96\ndev-12,dev,v0,1,131\ndev-13,dev,v0,0,131\ndev-14,dev,v0,1,88\ndev-15,dev,v0,1,126\ndev-16,dev,v0,1,115\ndev-17,dev,v0,0,134\ndev-18,dev,v0,1,112\ndev-19,dev,v0,1,120\ndev-20,dev,v0,1,126\ndev-21,dev,v0,0,104\ndev-22,dev,v0,1,131\ndev-23,dev,v0,1,118\ndev-24,dev,v0,1,129\ndev-25,dev,v0,0,111\ndev-26,dev,v0,1,140\ndev-27,dev,v0,1,131\ndev-28,dev,v0,0,117\ndev-29,dev,v0,0,131\ndev-30,dev,v0,0,143\ndev-31,dev,v0,1,152\ndev-32,dev,v0,1,92\ndev-33,dev,v0,1,136\ndev-34,dev,v0,1,128\ndev-35,dev,v0,1,118\ndev-36,dev,v0,1,102\ndev-37,dev,v0,0,143\ndev-38,dev,v0,1,97\ndev-39,dev,v0,0,130\ndev-40,dev,v0,1,143\ndev-01,dev,v1,1,495\ndev-02,dev,v1,1,279\ndev-03,dev,v1,1,347\ndev-04,dev,v1,1,420\ndev-05,dev,v1,1,470\ndev-06,dev,v1,0,404\ndev-07,dev,v1,1,337\ndev-08,dev,v1,1,397\ndev-09,dev,v1,0,379\ndev-10,dev,v1,0,368\ndev-11,dev,v1,1,338\ndev-12,dev,v1,1,402\ndev-13,dev,v1,0,398\ndev-14,dev,v1,1,375\ndev-15,dev,v1,1,367\ndev-16,dev,v1,1,307\ndev-17,dev,v1,1,352\ndev-18,dev,v1,0,449\ndev-19,dev,v1,0,369\ndev-20,dev,v1,1,298\ndev-21,dev,v1,0,456\ndev-22,dev,v1,1,410\ndev-23,dev,v1,1,500\ndev-24,dev,v1,1,384\ndev-25,dev,v1,1,354\ndev-26,dev,v1,1,297\ndev-27,dev,v1,1,455\ndev-28,dev,v1,0,526\ndev-29,dev,v1,1,333\ndev-30,dev,v1,1,343\ndev-31,dev,v1,1,414\ndev-32,dev,v1,1,333\ndev-33,dev,v1,1,365\ndev-34,dev,v1,1,360\ndev-35,dev,v1,1,391\ndev-36,dev,v1,1,442\ndev-37,dev,v1,1,381\ndev-38,dev,v1,1,432\ndev-39,dev,v1,0,356\ndev-40,dev,v1,1,399\ndev-01,dev,v2,0,146\ndev-02,dev,v2,1,162\ndev-03,dev,v2,1,151\ndev-04,dev,v2,1,156\ndev-05,dev,v2,1,133\ndev-06,dev,v2,0,121\ndev-07,dev,v2,1,120\ndev-08,dev,v2,1,125\ndev-09,dev,v2,0,112\ndev-10,dev,v2,1,124\ndev-11,dev,v2,1,133\ndev-12,dev,v2,1,140\ndev-13,dev,v2,1,128\ndev-14,dev,v2,1,96\ndev-15,dev,v2,1,134\ndev-16,dev,v2,0,140\ndev-17,dev,v2,1,157\ndev-18,dev,v2,1,147\ndev-19,dev,v2,0,122\ndev-20,dev,v2,1,120\ndev-21,dev,v2,1,176\ndev-22,dev,v2,1,150\ndev-23,dev,v2,1,172\ndev-24,dev,v2,1,178\ndev-25,dev,v2,0,118\ndev-26,dev,v2,1,143\ndev-27,dev,v2,1,144\ndev-28,dev,v2,0,146\ndev-29,dev,v2,1,146\ndev-30,dev,v2,1,139\ndev-31,dev,v2,1,139\ndev-32,dev,v2,1,105\ndev-33,dev,v2,0,132\ndev-34,dev,v2,0,120\ndev-35,dev,v2,1,138\ndev-36,dev,v2,1,126\ndev-37,dev,v2,0,148\ndev-38,dev,v2,1,152\ndev-39,dev,v2,1,141\ndev-40,dev,v2,1,141\ndev-01,dev,v3,0,403\ndev-02,dev,v3,1,434\ndev-03,dev,v3,1,411\ndev-04,dev,v3,1,446\ndev-05,dev,v3,1,328\ndev-06,dev,v3,0,465\ndev-07,dev,v3,1,363\ndev-08,dev,v3,1,365\ndev-09,dev,v3,1,398\ndev-10,dev,v3,1,375\ndev-11,dev,v3,1,428\ndev-12,dev,v3,1,375\ndev-13,dev,v3,1,344\ndev-14,dev,v3,1,358\ndev-15,dev,v3,1,491\ndev-16,dev,v3,1,413\ndev-17,dev,v3,1,338\ndev-18,dev,v3,0,411\ndev-19,dev,v3,1,314\ndev-20,dev,v3,1,520\ndev-21,dev,v3,1,316\ndev-22,dev,v3,1,439\ndev-23,dev,v3,1,443\ndev-24,dev,v3,1,321\ndev-25,dev,v3,1,428\ndev-26,dev,v3,0,471\ndev-27,dev,v3,1,439\ndev-28,dev,v3,1,426\ndev-29,dev,v3,1,468\ndev-30,dev,v3,1,420\ndev-31,dev,v3,1,431\ndev-32,dev,v3,1,402\ndev-33,dev,v3,1,449\ndev-34,dev,v3,0,352\ndev-35,dev,v3,1,459\ndev-36,dev,v3,1,379\ndev-37,dev,v3,1,343\ndev-38,dev,v3,1,432\ndev-39,dev,v3,1,514\ndev-40,dev,v3,1,469\ntest-01,test,v0,1,143\ntest-02,test,v0,1,127\ntest-03,test,v0,1,110\ntest-04,test,v0,1,148\ntest-05,test,v0,1,98\ntest-06,test,v0,0,129\ntest-07,test,v0,0,120\ntest-08,test,v0,1,99\ntest-09,test,v0,1,142\ntest-10,test,v0,0,126\ntest-11,test,v0,0,99\ntest-12,test,v0,1,131\ntest-13,test,v0,1,112\ntest-14,test,v0,1,86\ntest-15,test,v0,1,108\ntest-16,test,v0,0,125\ntest-17,test,v0,1,131\ntest-18,test,v0,1,123\ntest-19,test,v0,1,121\ntest-20,test,v0,0,128\ntest-21,test,v0,1,116\ntest-22,test,v0,1,141\ntest-23,test,v0,1,123\ntest-24,test,v0,1,125\ntest-25,test,v0,0,130\ntest-26,test,v0,0,101\ntest-27,test,v0,1,107\ntest-28,test,v0,1,148\ntest-29,test,v0,0,126\ntest-30,test,v0,1,115\ntest-31,test,v0,1,126\ntest-32,test,v0,1,111\ntest-33,test,v0,1,125\ntest-34,test,v0,0,108\ntest-35,test,v0,0,125\ntest-36,test,v0,1,92\ntest-37,test,v0,0,144\ntest-38,test,v0,1,111\ntest-39,test,v0,1,92\ntest-40,test,v0,1,116\ntest-01,test,v1,1,307\ntest-02,test,v1,1,399\ntest-03,test,v1,1,362\ntest-04,test,v1,1,391\ntest-05,test,v1,1,277\ntest-06,test,v1,0,314\ntest-07,test,v1,0,406\ntest-08,test,v1,0,378\ntest-09,test,v1,1,473\ntest-10,test,v1,1,340\ntest-11,test,v1,1,390\ntest-12,test,v1,0,546\ntest-13,test,v1,1,336\ntest-14,test,v1,0,328\ntest-15,test,v1,1,378\ntest-16,test,v1,1,377\ntest-17,test,v1,1,428\ntest-18,test,v1,1,387\ntest-19,test,v1,1,337\ntest-20,test,v1,1,392\ntest-21,test,v1,1,530\ntest-22,test,v1,1,452\ntest-23,test,v1,1,221\ntest-24,test,v1,1,372\ntest-25,test,v1,0,330\ntest-26,test,v1,1,415\ntest-27,test,v1,1,370\ntest-28,test,v1,1,490\ntest-29,test,v1,0,433\ntest-30,test,v1,1,431\ntest-31,test,v1,1,391\ntest-32,test,v1,1,378\ntest-33,test,v1,1,399\ntest-34,test,v1,1,454\ntest-35,test,v1,1,410\ntest-36,test,v1,1,360\ntest-37,test,v1,0,453\ntest-38,test,v1,0,391\ntest-39,test,v1,1,376\ntest-40,test,v1,1,335\ntest-01,test,v2,1,146\ntest-02,test,v2,1,131\ntest-03,test,v2,1,156\ntest-04,test,v2,1,144\ntest-05,test,v2,1,143\ntest-06,test,v2,0,85\ntest-07,test,v2,1,130\ntest-08,test,v2,1,146\ntest-09,test,v2,1,168\ntest-10,test,v2,1,172\ntest-11,test,v2,0,164\ntest-12,test,v2,1,111\ntest-13,test,v2,1,90\ntest-14,test,v2,1,147\ntest-15,test,v2,1,136\ntest-16,test,v2,0,154\ntest-17,test,v2,1,132\ntest-18,test,v2,1,139\ntest-19,test,v2,1,105\ntest-20,test,v2,0,144\ntest-21,test,v2,1,126\ntest-22,test,v2,1,142\ntest-23,test,v2,1,144\ntest-24,test,v2,1,133\ntest-25,test,v2,0,141\ntest-26,test,v2,1,135\ntest-27,test,v2,1,150\ntest-28,test,v2,0,145\ntest-29,test,v2,0,124\ntest-30,test,v2,0,123\ntest-31,test,v2,0,170\ntest-32,test,v2,1,133\ntest-33,test,v2,1,155\ntest-34,test,v2,1,143\ntest-35,test,v2,0,124\ntest-36,test,v2,1,120\ntest-37,test,v2,1,137\ntest-38,test,v2,0,140\ntest-39,test,v2,1,147\ntest-40,test,v2,1,109\ntest-01,test,v3,1,377\ntest-02,test,v3,1,437\ntest-03,test,v3,1,380\ntest-04,test,v3,1,432\ntest-05,test,v3,1,506\ntest-06,test,v3,0,432\ntest-07,test,v3,0,437\ntest-08,test,v3,0,433\ntest-09,test,v3,1,364\ntest-10,test,v3,1,443\ntest-11,test,v3,0,397\ntest-12,test,v3,1,360\ntest-13,test,v3,1,408\ntest-14,test,v3,1,396\ntest-15,test,v3,1,456\ntest-16,test,v3,1,407\ntest-17,test,v3,0,377\ntest-18,test,v3,1,500\ntest-19,test,v3,1,471\ntest-20,test,v3,1,488\ntest-21,test,v3,1,447\ntest-22,test,v3,1,403\ntest-23,test,v3,0,384\ntest-24,test,v3,1,393\ntest-25,test,v3,0,468\ntest-26,test,v3,0,417\ntest-27,test,v3,1,319\ntest-28,test,v3,1,408\ntest-29,test,v3,1,323\ntest-30,test,v3,1,420\ntest-31,test,v3,0,336\ntest-32,test,v3,1,332\ntest-33,test,v3,1,417\ntest-34,test,v3,1,405\ntest-35,test,v3,1,308\ntest-36,test,v3,1,456\ntest-37,test,v3,1,543\ntest-38,test,v3,0,319\ntest-39,test,v3,1,522\ntest-40,test,v3,1,368\n"
+     }
+    ],
+    "hints": [
+     "McNemar's test uses only the discordant cases, where exactly one version was right.",
+     "A paired bootstrap resamples cases, keeping each case's two outcomes together.",
+     "With 40 cases, one case is 2.5 points of accuracy."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Foundation model basics: pretraining, adaptation, scaling laws, emergence and model choice; finish the scaling and shortlist lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Inside the transformer: attention, tokenisation, context windows, the KV cache, serving and quantisation; finish the by-hand lab.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Model evaluation: benchmarks, BLEU and ROUGE, and human ratings with agreement and confidence intervals; finish the metrics lab.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "System evaluation: test sets, AI-as-a-judge design and validation, and quality gates in CI/CD; finish the judge lab.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Advanced prompt engineering, hallucination by design, prompt optimisation and adaptation choices; finish the prompt-selection lab.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the evaluation pipeline capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Automated evaluation pipeline for a customer support chatbot",
+  "minutes": 600,
+  "brief": "Bluebell Broadband, a fictional provider, has a retrieval-augmented support chatbot (chatbot.py) built on eight knowledge-base articles. Before it goes live, build the pipeline that decides whether it's good enough and catches regressions afterwards. Define a rubric for accuracy, tone and helpfulness with pass and fail examples for each; grow the eight seed queries into a test set of at least 30 that covers every article, edge cases, questions the articles don't answer, and awkward or upset customers; and write an AI-as-a-judge that uses a strong Claude model with structured output, one criterion per call, given the same articles as the chatbot. Validate the judge against your own labels for at least 20 answers, with agreement and Cohen's kappa, and test it for position or verbosity bias where it applies. Then run the chatbot over the test set, produce a report with pass rates, bootstrap confidence intervals, results by category and the failures that matter, make one improvement to the chatbot, and show its effect with a paired comparison. Finally, wrap the pipeline in a pytest quality gate that could run in CI. eval_pipeline.py --demo shows the report format on recorded results.",
+  "deliverables": [
+   "rubric.md: the three criteria, each with pass and fail definitions and examples",
+   "A test set of at least 30 queries, with categories and the facts a correct answer needs",
+   "The judge code, with its single model-calling function and structured verdicts",
+   "Judge validation: your labels for at least 20 answers, agreement, kappa, and a bias test",
+   "report.md: pass rates with confidence intervals, results by category, the main failures, and the before-and-after comparison for your improvement",
+   "test_quality_gate.py and a README explaining how to run everything and what each threshold means"
+  ],
+  "rubric": [
+   {
+    "name": "Rubric and test set",
+    "points": 20,
+    "description": "Criteria are precise, with examples; the test set covers every article, edge cases, unanswerable and difficult-customer queries, with expected facts."
+   },
+   {
+    "name": "Judge design",
+    "points": 20,
+    "description": "One criterion per call, the same evidence the chatbot saw, a reason before each verdict, and structured output; the model call is isolated in one function."
+   },
+   {
+    "name": "Judge validation",
+    "points": 20,
+    "description": "Agreement and kappa against at least 20 human labels, disagreements analysed, and a bias test with its result acted on."
+   },
+   {
+    "name": "Report and statistics",
+    "points": 20,
+    "description": "Pass rates with bootstrap intervals, category breakdowns, and a paired before-and-after comparison interpreted correctly."
+   },
+   {
+    "name": "Automation and code quality",
+    "points": 20,
+    "description": "A working pytest gate with sensible thresholds, readable code, and a README that lets someone else run the pipeline."
+   }
+  ],
+  "submit": "Paste rubric.md, your test set, the judge code, your validation results, report.md, test_quality_gate.py with the output of pytest -q, and your README.",
+  "files": [
+   {
+    "path": "chatbot.py",
+    "content": "\"\"\"The system under test: a small retrieval-augmented support chatbot for Bluebell Broadband (fictional).\n\npython chatbot.py --demo shows what retrieval finds for the seed queries (no API key needed).\npython chatbot.py \"your question\" answers it (needs ANTHROPIC_API_KEY and CLAUDE_MODEL).\n\"\"\"\n\nimport json\nimport sys\n\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.metrics.pairwise import cosine_similarity\n\nSYSTEM = (\"You are Bluebell Broadband's support assistant. Answer only from the articles provided, in at most three \"\n          \"short sentences, politely and plainly, and give the customer a clear next step. If the articles don't \"\n          \"cover the question, say you can't help with that here and suggest contacting the support team.\")\n\nwith open(\"kb.json\", encoding=\"utf-8\") as f:\n    KB = json.load(f)\nVECTORIZER = TfidfVectorizer(stop_words=\"english\")\nMATRIX = VECTORIZER.fit_transform(a[\"title\"] + \". \" + a[\"text\"] for a in KB)\n\n\ndef retrieve(question, k=2):\n    scores = cosine_similarity(VECTORIZER.transform([question]), MATRIX)[0]\n    ranked = sorted(range(len(KB)), key=lambda i: (-scores[i], i))[:k]\n    return [KB[i] for i in ranked if scores[i] > 0]\n\n\ndef build_prompt(question, articles):\n    body = \"\\n\".join(f'<article id=\"{a[\"id\"]}\">{a[\"text\"]}</article>' for a in articles) or \"(no articles found)\"\n    return f\"<articles>\\n{body}\\n</articles>\\n\\n<question>{question}</question>\"\n\n\ndef call_model(system, prompt):\n    \"\"\"The only function that talks to the API.\"\"\"\n    import os\n\n    import anthropic\n\n    client = anthropic.Anthropic()\n    reply = client.messages.create(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=1024, system=system,\n                                   messages=[{\"role\": \"user\", \"content\": prompt}])\n    return \"\".join(b.text for b in reply.content if b.type == \"text\")\n\n\ndef answer(question):\n    \"\"\"Returns (answer, ids of the articles it was given), so the judge can see the same articles.\"\"\"\n    articles = retrieve(question)\n    return call_model(SYSTEM, build_prompt(question, articles)), [a[\"id\"] for a in articles]\n\n\nif __name__ == \"__main__\":\n    if len(sys.argv) > 1 and sys.argv[1] != \"--demo\":\n        print(answer(\" \".join(sys.argv[1:]))[0])\n    else:\n        with open(\"seed_queries.json\", encoding=\"utf-8\") as f:\n            for q in json.load(f)[\"queries\"]:\n                print(f\"{q['id']} {q['question'][:50]:<50} -> {[a['id'] for a in retrieve(q['question'])]}\")\n"
+   },
+   {
+    "path": "eval_pipeline.py",
+    "content": "\"\"\"Skeleton of the evaluation pipeline: judge each answer on each criterion, check the judge against human\nlabels, aggregate with confidence intervals, and write a Markdown report.\n\npython eval_pipeline.py --demo runs the aggregation and report on sample_results.json (no API key needed).\nYour job in the capstone: write judge_answer() (structured output, one criterion per call), run the chatbot over\nyour full test set, and extend the report.\n\"\"\"\n\nimport json\nimport sys\n\nimport numpy as np\n\nCRITERIA = {\n    \"accuracy\": \"Every fact agrees with the articles provided; nothing important is wrong or invented.\",\n    \"tone\": \"Polite, calm and plain; no blame, jargon or over-familiarity.\",\n    \"helpfulness\": \"Gives a clear next step that solves or progresses the customer's problem.\",\n}\n\n\ndef judge_answer(criterion, definition, articles, question, answer):\n    \"\"\"TODO (capstone): one API call per criterion with client.messages.parse(..., output_format=Verdict),\n    returning \"pass\" or \"fail\". Keep the call in this one function.\"\"\"\n    raise NotImplementedError(\"write the judge for the capstone\")\n\n\ndef bootstrap_ci(values, n_resamples=10_000, seed=0):\n    values = np.asarray(values, dtype=float)\n    rng = np.random.default_rng(seed)\n    means = values[rng.integers(0, len(values), size=(n_resamples, len(values)))].mean(axis=1)\n    return np.percentile(means, [2.5, 97.5])\n\n\ndef report(results):\n    lines = [\"# Evaluation report\", \"\", \"| Criterion | Pass rate | 95% CI |\", \"|---|---|---|\"]\n    for name in CRITERIA:\n        passed = [r[\"verdicts\"][name] == \"pass\" for r in results]\n        low, high = bootstrap_ci(passed)\n        lines.append(f\"| {name} | {np.mean(passed):.2f} | {low:.2f} to {high:.2f} |\")\n    labelled = [r for r in results if \"human_accuracy\" in r]\n    agree = np.mean([r[\"human_accuracy\"] == r[\"verdicts\"][\"accuracy\"] for r in labelled])\n    lines += [\"\", f\"Judge vs human labels on accuracy: {agree:.2f} agreement on {len(labelled)} answers.\", \"\",\n              \"## Failures\", \"\"]\n    for r in results:\n        failed = [name for name in CRITERIA if r[\"verdicts\"][name] == \"fail\"]\n        if failed:\n            lines.append(f\"- {r['id']}: failed {', '.join(failed)}. Answer: {r['answer']}\")\n    return \"\\n\".join(lines) + \"\\n\"\n\n\nif __name__ == \"__main__\":\n    if \"--demo\" not in sys.argv:\n        sys.exit(\"Write judge_answer() and the run over your test set first; try --demo meanwhile.\")\n    with open(\"sample_results.json\", encoding=\"utf-8\") as f:\n        text = report(json.load(f)[\"results\"])\n    with open(\"report.md\", \"w\", encoding=\"utf-8\") as f:\n        f.write(text)\n    print(text)\n"
+   },
+   {
+    "path": "kb.json",
+    "content": "[\n {\"id\": \"billing-errors\", \"title\": \"Charged twice or the wrong amount\", \"text\": \"If you're charged twice or charged the wrong amount, we refund the difference to your original payment method within 5 working days of you reporting it. Report billing errors in the app or by phone.\"},\n {\"id\": \"cancelling\", \"title\": \"Cancelling your contract\", \"text\": \"Contracts have a 12-month minimum term. You can cancel at any time with 30 days' notice; cancelling within the minimum term costs an early cancellation fee, shown in your account before you confirm.\"},\n {\"id\": \"connection-drops\", \"title\": \"If your connection keeps dropping\", \"text\": \"Restart the router: switch it off at the wall, wait 30 seconds, switch it on and allow 5 minutes for the light to turn white. If the light stays red, report a fault in the app and we'll run a remote line check.\"},\n {\"id\": \"engineer-visits\", \"title\": \"Engineer visits\", \"text\": \"If a remote line check finds a fault, we book an engineer visit, usually within 3 working days. Visits are in a morning slot (8:00 to 12:00) or an afternoon slot (12:00 to 17:00), and someone aged 18 or over must be at home.\"},\n {\"id\": \"plans-and-speeds\", \"title\": \"Plans and speeds\", \"text\": \"There are three plans: Bluebell 150, Bluebell 500 and Bluebell 900, named after their speeds in Mbps. Wifi speeds are usually lower than speeds over a cable. You can change plan once a month: upgrades start the next day and downgrades at your next bill.\"},\n {\"id\": \"moving-house\", \"title\": \"Moving house\", \"text\": \"Tell us your new address at least 14 days before you move. If we already serve the new address, your service moves on your moving day at no charge; if not, we check availability and tell you your options.\"},\n {\"id\": \"data-usage\", \"title\": \"Data allowances\", \"text\": \"All plans include unlimited data, with no data caps or traffic limits.\"},\n {\"id\": \"wifi-coverage\", \"title\": \"Weak wifi in parts of your home\", \"text\": \"Place the router centrally, off the floor and away from metal objects. If wifi is still weak upstairs or far from the router, add a mesh extender to your plan in the app.\"}\n]\n"
+   },
+   {
+    "path": "seed_queries.json",
+    "content": "{\n \"_note\": \"Eight seed test queries for Bluebell Broadband, a fictional provider. Extend the set to at least 30 for the capstone.\",\n \"queries\": [\n  {\"id\": \"q1\", \"category\": \"billing\", \"question\": \"I've been charged twice this month. When will I get my money back?\", \"facts\": [\"5 working days\"]},\n  {\"id\": \"q2\", \"category\": \"account\", \"question\": \"How much notice do I need to give to cancel?\", \"facts\": [\"30 days\"]},\n  {\"id\": \"q3\", \"category\": \"fault\", \"question\": \"My internet keeps dropping. What should I do?\", \"facts\": [\"30 seconds\"]},\n  {\"id\": \"q4\", \"category\": \"fault\", \"question\": \"Can the engineer come in the evening after work?\", \"facts\": [\"17:00\"]},\n  {\"id\": \"q5\", \"category\": \"account\", \"question\": \"If I upgrade to Bluebell 900 today, when does it start?\", \"facts\": [\"next day\"]},\n  {\"id\": \"q6\", \"category\": \"account\", \"question\": \"I'm moving house next week. Can you move my broadband?\", \"facts\": [\"14 days\"]},\n  {\"id\": \"q7\", \"category\": \"billing\", \"question\": \"Is there a data cap on Bluebell 150?\", \"facts\": [\"unlimited\"]},\n  {\"id\": \"q8\", \"category\": \"out of scope\", \"question\": \"Can you recommend a good laptop?\", \"facts\": []}\n ]\n}\n"
+   },
+   {
+    "path": "sample_results.json",
+    "content": "{\n \"_note\": \"Recorded answers and judge verdicts for the seed queries, written to demonstrate eval_pipeline.py --demo.\",\n \"results\": [\n  {\"id\": \"q1\", \"answer\": \"Sorry about that. We'll refund the extra payment to your original payment method within 5 working days of you reporting it, so please report it in the app.\", \"human_accuracy\": \"pass\",\n   \"verdicts\": {\"accuracy\": \"pass\", \"tone\": \"pass\", \"helpfulness\": \"pass\"}},\n  {\"id\": \"q2\", \"answer\": \"You need to give 14 days' notice to cancel.\", \"human_accuracy\": \"fail\",\n   \"verdicts\": {\"accuracy\": \"fail\", \"tone\": \"pass\", \"helpfulness\": \"fail\"}},\n  {\"id\": \"q3\", \"answer\": \"Switch the router off at the wall, wait 30 seconds, switch it on and give it 5 minutes. If the light stays red, report a fault in the app.\", \"human_accuracy\": \"pass\",\n   \"verdicts\": {\"accuracy\": \"pass\", \"tone\": \"pass\", \"helpfulness\": \"pass\"}},\n  {\"id\": \"q4\", \"answer\": \"Engineers can visit until 20:00 on weekdays.\", \"human_accuracy\": \"fail\",\n   \"verdicts\": {\"accuracy\": \"pass\", \"tone\": \"pass\", \"helpfulness\": \"pass\"}},\n  {\"id\": \"q5\", \"answer\": \"Upgrades start the next day.\", \"human_accuracy\": \"pass\",\n   \"verdicts\": {\"accuracy\": \"pass\", \"tone\": \"pass\", \"helpfulness\": \"fail\"}},\n  {\"id\": \"q6\", \"answer\": \"Please tell us your new address at least 14 days before you move. As your move is next week, contact us today and we'll check whether we serve your new address.\", \"human_accuracy\": \"pass\",\n   \"verdicts\": {\"accuracy\": \"pass\", \"tone\": \"pass\", \"helpfulness\": \"pass\"}},\n  {\"id\": \"q7\", \"answer\": \"No, all our plans have unlimited data.\", \"human_accuracy\": \"pass\",\n   \"verdicts\": {\"accuracy\": \"pass\", \"tone\": \"pass\", \"helpfulness\": \"pass\"}},\n  {\"id\": \"q8\", \"answer\": \"Obviously you should just buy the most expensive one.\", \"human_accuracy\": \"fail\",\n   \"verdicts\": {\"accuracy\": \"fail\", \"tone\": \"fail\", \"helpfulness\": \"fail\"}}\n ]\n}\n"
+   }
+  ]
+ }
+}

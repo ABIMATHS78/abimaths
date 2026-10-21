@@ -276,6 +276,7 @@ def get_course(slug: str, user: dict = User):
     return _summary(c, st, people, counts, ratings) | {
         "description": c.description, "outcomes": c.outcomes, "prerequisites": c.prerequisites,
         "notices": c.notices(), "syllabus": modules, "project": project, "requirements": requirements, "next": next_key,
+        "study_plan": c.plan(), "mock_exam": {"questions": learning.COURSE_EXAM_QUESTIONS, "minutes": learning.COURSE_EXAM_MINUTES},
         "instructors": [people[s] | {"courses": taught[s]} for s in c.instructors if s in people],
         "certificate": cert["code"] if cert else None, "my_rating": mine["stars"] if mine else None,
     }

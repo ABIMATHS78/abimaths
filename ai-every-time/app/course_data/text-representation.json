@@ -1,0 +1,917 @@
+{
+ "slug": "text-representation",
+ "title": "Text Representation: From Vectors to Context",
+ "subtitle": "Represent text as numbers, from one-hot vectors, bags of words and TF-IDF to word2vec, fastText and the contextual embeddings of transformers, and learn to visualise and question what they encode.",
+ "category": "Machine Learning",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "amiraa-hassan",
+  "aroha-ngata"
+ ],
+ "skills": [
+  "Text vectorisation",
+  "TF-IDF",
+  "Sparse matrices",
+  "Word embeddings",
+  "word2vec",
+  "fastText",
+  "Contextual embeddings",
+  "Dimensionality reduction",
+  "Embedding evaluation",
+  "Bias in embeddings"
+ ],
+ "tools": [
+  "Python 3",
+  "scikit-learn",
+  "PyTorch",
+  "gensim",
+  "Hugging Face Transformers",
+  "Matplotlib",
+  "NLTK"
+ ],
+ "outcomes": [
+  "Compare one-hot, bag-of-words, TF-IDF and hashed representations, and reproduce scikit-learn's TF-IDF by hand",
+  "Implement skip-gram with negative sampling, and train and evaluate word2vec and fastText embeddings with gensim",
+  "Handle out-of-vocabulary words with character n-gram embeddings, and build document-level representations",
+  "Explain how static and contextual embeddings differ, and use a transformer's contextual vectors to separate word senses",
+  "Visualise embedding spaces with PCA and t-SNE, and interpret similarities, analogies and bias with care"
+ ],
+ "prerequisites": "NLP Foundations with Python and Corpora, or the same skills: Python, NLTK corpora, tokenisation and subword ideas; Statistical NLP: Models, Parsing and Information Retrieval helps but isn't required. You need Python 3.10 or later with scikit-learn, PyTorch (CPU is fine), gensim, transformers 4.46 or later and Matplotlib. The labs download the Brown corpus, GloVe vectors (66 MB) and DistilBERT (about 270 MB), with the commands given.",
+ "description": "Every NLP system has to turn text into numbers, and the choice of representation decides much of what it can learn. This course follows that choice from the simplest vectors to the contextual ones inside today's language models. You'll start with one-hot vectors and see why they can't express similarity, build bags of words and n-gram features, store them sparsely and reproduce scikit-learn's TF-IDF by hand. Then you'll learn dense embeddings by prediction: you'll write skip-gram with negative sampling in PyTorch, train word2vec with gensim and compare it with pre-trained GloVe vectors.\n\nNext you'll handle the words a model has never seen with fastText's character n-grams, and move from words to documents with averaged vectors and Doc2Vec. You'll open up a transformer encoder, learning the idea of self-attention and why positions must be added, and use DistilBERT's contextual vectors to tell the river bank from the high-street bank. Finally you'll map embedding spaces with PCA and t-SNE, test analogies and see where they mislead, and probe the social biases embeddings absorb. Every module has a lab with exact expected output, and the capstone trains word2vec and fastText on financial news and explores what they learned. It builds on NLP Foundations with Python and Corpora and prepares you for Transformers and Large Language Models.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Vector space and basic vectorisation",
+   "summary": "Turn text into vectors a model can use: one-hot word vectors and why they fail, bags of words and n-grams, sparse storage, TF-IDF exactly as scikit-learn computes it, and feature hashing.",
+   "instructor": "aroha-ngata",
+   "lessons": [
+    {
+     "title": "One-hot vectors and their limits",
+     "minutes": 10,
+     "objectives": [
+      "Build one-hot vectors from a vocabulary",
+      "Explain why one-hot vectors can't express similarity"
+     ],
+     "key_points": [
+      "A one-hot vector represents word number i of a vocabulary of size V as V zeros with a single 1 at position i, so its length grows with the vocabulary.",
+      "Every pair of different one-hot vectors is orthogonal, with a dot product and cosine of 0, so 'bread' is exactly as far from 'loaf' as from 'bike', and nothing learned about one word carries over to another.",
+      "A word outside the vocabulary has no one-hot vector at all; systems either drop it or map it to a shared unknown token.",
+      "Multiplying a one-hot vector by a V × d matrix just selects one row of the matrix, which is why an embedding layer is a lookup table: dense representations replace the one-hot vector with that row."
+     ]
+    },
+    {
+     "title": "Bags of words and n-gram features",
+     "minutes": 12,
+     "objectives": [
+      "Represent documents as bags of words with CountVectorizer",
+      "Add n-grams and control the size of the vocabulary"
+     ],
+     "key_points": [
+      "A bag of words represents a document by how often each vocabulary word occurs in it and ignores order, so 'dog bites man' and 'man bites dog' get the same vector.",
+      "CountVectorizer learns the vocabulary in fit() and counts words in transform(); its vocabulary_ attribute maps each word to its column, and words not seen in fitting are ignored.",
+      "ngram_range=(1, 2) adds bigrams such as 'olive oil', which keep a little order and capture phrases and negations such as 'not good', but the feature count grows fast: in the lab's 30 notes, from 208 unigrams to 507 with bigrams and 792 with trigrams.",
+      "min_df and max_df drop words found in too few or too many documents, max_features keeps only the most frequent, and binary=True records whether a word occurs rather than how often.",
+      "Bags of words work well for topic and sentiment classification with linear models, but they can't relate synonyms or represent words they've never seen."
+     ]
+    },
+    {
+     "title": "Sparsity and sparse matrices",
+     "minutes": 12,
+     "objectives": [
+      "Measure how sparse a document-term matrix is",
+      "Store and use sparse matrices without making them dense"
+     ],
+     "key_points": [
+      "Each document uses a tiny share of the vocabulary, so a document-term matrix is mostly zeros: the lab's 30 notes fill 329 of 6,240 cells, 5.3%, and real corpora are far sparser.",
+      "SciPy's CSR (compressed sparse row) format stores only the non-zero values and their column indices, plus one pointer per row, so memory grows with the non-zeros, not with rows × columns: 4,072 bytes instead of 49,920 for the lab's matrix.",
+      "Calling .toarray() on a large sparse matrix can exhaust memory, and so can operations that fill in the zeros, such as subtracting each column's mean, which is why StandardScaler needs with_mean=False for sparse input.",
+      "Linear models, Naive Bayes, nearest neighbours with cosine distance and TruncatedSVD in scikit-learn all accept sparse input directly.",
+      "Sparsity is a modelling problem too: in a small corpus most word pairs never occur together, so similarities estimated from sparse counts are noisy, which dense embeddings help with."
+     ]
+    },
+    {
+     "title": "TF-IDF as a document representation",
+     "minutes": 12,
+     "objectives": [
+      "Reproduce scikit-learn's TF-IDF values by hand",
+      "Choose TF-IDF settings for a task, and hash features when the vocabulary is unbounded"
+     ],
+     "key_points": [
+      "scikit-learn's TfidfVectorizer multiplies each raw count by idf = ln((1 + n) / (1 + df)) + 1 by default (smooth_idf=True), where n is the number of documents, then scales every row to length 1 (norm='l2').",
+      "This differs from the textbook log(N / df): the smoothing acts as if one extra document contained every word, and the + 1 keeps words that occur in every document from getting a weight of 0.",
+      "Because rows have length 1, the dot product of two TF-IDF rows is their cosine similarity; sublinear_tf=True replaces a count c with 1 + ln(c), damping words that repeat.",
+      "Fit the vectoriser on the training documents only and reuse it for new ones; fitting on test documents leaks their document frequencies into the model.",
+      "HashingVectorizer maps each word to a column with a hash function, so it stores no vocabulary and suits streams, but different words can collide and columns can't be traced back to words: 24 of the lab's 208 words share a column when hashed into 1,024."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Vectorise a corpus four ways",
+    "tool": "Python 3 and scikit-learn",
+    "minutes": 40,
+    "goal": "Represent 30 short notes on cooking, cycling and gardening as one-hot word vectors, bags of words with n-grams, TF-IDF vectors and hashed features; measure sparsity, reproduce scikit-learn's TF-IDF by hand and see which representation puts notes on the same topic together.",
+    "setup": [
+     "Python 3.10 or later with NumPy, SciPy and scikit-learn (pip install scikit-learn)",
+     "The starter files vectorise.py and notes.tsv, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Write one_hot() (TODO 1) and run the script.",
+      "code": "python vectorise.py",
+      "lang": "bash",
+      "see": "30 notes, vocabulary 208 words; One-hot: 208 dimensions; cosine(bread, loaf) = 0.0, cosine(bread, bike) = 0.0; then 208, 507 and 792 features for n-grams up to 1, 2 and 3."
+     },
+     {
+      "do": "Work out the memory each format needs (TODO 2).",
+      "see": "Bag of words: shape (30, 208), 329 non-zero (5.3%); dense 49920 bytes, CSR 4072 bytes"
+     },
+     {
+      "do": "Compute the idf and TF-IDF value of 'soup' in note 3 by hand (TODO 3) and compare them with scikit-learn's.",
+      "see": "idf(soup): df=3, by hand 3.0477, scikit-learn 3.0477; tf-idf of soup in note 3: by hand 0.2769, scikit-learn 0.2769; row lengths [1. 1. 1.]"
+     },
+     {
+      "do": "Write neighbour_agreement() (TODO 4).",
+      "see": "Nearest-neighbour topic agreement: counts 0.400, tf-idf 0.533, and note 0's closest notes are 7, 4 and 12."
+     },
+     {
+      "do": "Count the hashing collisions (TODO 5).",
+      "see": "Hashing 208 words into 1024 buckets: 196 buckets used, 24 words share a bucket"
+     },
+     {
+      "do": "Try sublinear_tf=True, ngram_range=(1, 2) and stop_words='english' in the TF-IDF vectoriser, one at a time. Write two or three sentences starting Findings: on how the agreement changes and why one-hot vectors can't help here."
+     }
+    ],
+    "checks": [
+     {
+      "text": "One-hot vectors are as long as the vocabulary and orthogonal.",
+      "look_for": [
+       "208 dimensions",
+       "cosine(bread, loaf) = 0.0"
+      ]
+     },
+     {
+      "text": "n-grams make the feature count grow.",
+      "look_for": [
+       "507 features",
+       "792 features"
+      ]
+     },
+     {
+      "text": "Sparsity and memory are measured.",
+      "look_for": [
+       "329 non-zero (5.3%)",
+       "CSR 4072 bytes"
+      ]
+     },
+     {
+      "text": "TF-IDF is reproduced by hand.",
+      "look_for": [
+       "by hand 3.0477, scikit-learn 3.0477",
+       "by hand 0.2769, scikit-learn 0.2769"
+      ]
+     },
+     {
+      "text": "Representations are compared by nearest-neighbour topic agreement, and hashing collisions counted.",
+      "look_for": [
+       "counts 0.400, tf-idf 0.533",
+       "24 words share a bucket"
+      ]
+     },
+     {
+      "text": "The experiments are reported.",
+      "look_for": [
+       "Findings:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished vectorise.py, everything it printed, and your Findings:.",
+    "files": [
+     {
+      "path": "vectorise.py",
+      "content": "\"\"\"Represent 30 short notes four ways: one-hot word vectors, bag of words, TF-IDF and hashed features.\"\"\"\n\nimport math\nfrom collections import Counter\n\nimport numpy as np\nfrom sklearn.feature_extraction.text import CountVectorizer, HashingVectorizer, TfidfVectorizer\nfrom sklearn.metrics.pairwise import cosine_similarity\n\n\ndef load(path=\"notes.tsv\"):\n    rows = [line.rstrip(\"\\n\").split(\"\\t\") for line in open(path, encoding=\"utf-8\")]\n    return [text for _, text in rows], [topic for topic, _ in rows]\n\n\ndef one_hot(word, vocabulary):\n    # TODO 1: a vector of len(vocabulary) zeros with a 1 at the word's column, vocabulary[word]\n    pass\n\n\ndef neighbour_agreement(matrix, topics):\n    \"\"\"Share of documents whose most similar other document has the same topic.\"\"\"\n    # TODO 4: cosine_similarity(matrix) for every pair, set the diagonal to -1 so a note isn't its own\n    #         neighbour, take each row's argmax, and return the share whose neighbour has the same topic\n    return 0.0\n\n\ndef main():\n    texts, topics = load()\n    bow = CountVectorizer()\n    X = bow.fit_transform(texts)\n    vocab = bow.vocabulary_\n    print(f\"{len(texts)} notes, vocabulary {len(vocab)} words\")\n\n    bread, loaf, bike = (one_hot(w, vocab) for w in (\"bread\", \"loaf\", \"bike\"))\n    print(f\"One-hot: {len(bread)} dimensions; cosine(bread, loaf) = {bread @ loaf:.1f}, cosine(bread, bike) = {bread @ bike:.1f}\")\n\n    for n in (1, 2, 3):\n        size = len(CountVectorizer(ngram_range=(1, n)).fit(texts).vocabulary_)\n        print(f\"n-grams up to {n}: {size} features\")\n\n    density = X.nnz / (X.shape[0] * X.shape[1])\n    # TODO 2: bytes for a dense float64 matrix of this shape (8 per cell), and for the CSR matrix\n    #         (X.data.nbytes + X.indices.nbytes + X.indptr.nbytes)\n    dense_bytes = sparse_bytes = 0\n    print(f\"Bag of words: shape {X.shape}, {X.nnz} non-zero ({density:.1%}); dense {dense_bytes} bytes, CSR {sparse_bytes} bytes\")\n\n    tfidf = TfidfVectorizer()\n    T = tfidf.fit_transform(texts)\n    doc, word = 3, \"soup\"\n    analyse = tfidf.build_analyzer()  # the same lowercasing and tokenising the vectoriser uses\n    # TODO 3: df = how many notes contain the word (use analyse(t)); idf = ln((1 + n) / (1 + df)) + 1;\n    #         then count the words of note doc, weight each count by its idf (tfidf.idf_[tfidf.vocabulary_[w]]),\n    #         and divide the word's weight by the length of the whole row (L2 normalisation)\n    df, idf, by_hand = 0, 0.0, 0.0\n    print(f\"idf(soup): df={df}, by hand {idf:.4f}, scikit-learn {tfidf.idf_[tfidf.vocabulary_[word]]:.4f}\")\n    print(f\"tf-idf of soup in note {doc}: by hand {by_hand:.4f}, scikit-learn {T[doc, tfidf.vocabulary_[word]]:.4f}\")\n    print(f\"Row lengths after L2 normalisation: {np.round(np.sqrt(T.multiply(T).sum(axis=1)).A.ravel()[:3], 6)}\")\n\n    print(f\"Nearest-neighbour topic agreement: counts {neighbour_agreement(X, topics):.3f}, \"\n          f\"tf-idf {neighbour_agreement(T, topics):.3f}\")\n    sims = cosine_similarity(T[0], T).ravel()\n    order = [i for i in np.argsort(-sims, kind=\"stable\") if i != 0][:3]\n    print(\"Closest to note 0:\", [(int(i), topics[i], round(float(sims[i]), 3)) for i in order])\n\n    hasher = HashingVectorizer(n_features=2 ** 10, alternate_sign=False, norm=None)\n    # TODO 5: hash each vocabulary word on its own (hasher.transform([w]).indices[0] is its column),\n    #         count how many words land in each bucket, and add up the words in buckets holding more than one\n    buckets, shared = Counter(), 0\n    print(f\"Hashing {len(vocab)} words into 1024 buckets: {len(buckets)} buckets used, {shared} words share a bucket\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "notes.tsv",
+      "content": "cooking\tKnead the bread dough for ten minutes, then leave it to rise in a warm kitchen.\ncooking\tA good loaf needs strong flour, water, salt and a little yeast.\ncooking\tRoast the tomatoes in a hot oven before you blend them into soup.\ncooking\tThis lentil soup is thick, warming and cheap to make in winter.\ncooking\tBake the bread on the middle shelf of the oven until the crust is dark.\ncooking\tFry the onions slowly in butter until they are soft and sweet.\ncooking\tFor a quick pasta sauce, cook tomatoes with garlic and olive oil.\ncooking\tRest the dough overnight in the fridge for a deeper flavour.\ncooking\tSeason the soup with salt and pepper just before you serve it.\ncooking\tA cast iron pan keeps its heat, so the steak cooks evenly.\ncycling\tPump the tyres to the right pressure before every long ride.\ncycling\tThe chain needs oil after a wet ride, or it will rust.\ncycling\tShift to a lower gear before the hill, not halfway up it.\ncycling\tA good helmet and bright lights make winter cycling safer.\ncycling\tCheck the brake pads if the bike takes longer to stop.\ncycling\tOur club ride leaves the town square at nine on Sundays.\ncycling\tFix a puncture by finding the hole, patching the tube and pumping the tyre.\ncycling\tClean the chain and the gears with a brush and warm soapy water.\ncycling\tRiding in a group saves energy because you shelter from the wind.\ncycling\tA light bike climbs the hill faster, but a heavy bike is steadier in the wind.\ngardening\tSow tomato seeds indoors in spring and plant them out after the last frost.\ngardening\tWater the tomato plants at the base, never on the leaves.\ngardening\tDig compost into the soil before you plant potatoes.\ngardening\tLettuce seeds need light to germinate, so sow them on the surface.\ngardening\tPrune the apple tree in winter while it is dormant.\ngardening\tSlugs eat young lettuce, so check the beds after rain.\ngardening\tMulch the beds with straw to keep the soil moist in summer.\ngardening\tRotate your crops so the same family never grows in one bed two years running.\ngardening\tPick the beans often and the plants will keep producing.\ngardening\tA warm greenhouse lets the seeds germinate weeks earlier.\n"
+     }
+    ],
+    "hints": [
+     "vocabulary is CountVectorizer's vocabulary_, a dict from word to column number.",
+     "analyse = tfidf.build_analyzer() lowercases and tokenises exactly as the vectoriser does, so use it for df and for the counts of note 3.",
+     "The L2 length of a row is the square root of the sum of its squared weights, over every word in the note, not just 'soup'."
+    ]
+   }
+  },
+  {
+   "title": "Word embeddings",
+   "summary": "Learn dense word vectors by prediction: word2vec's skip-gram and CBOW models, the negative sampling that makes them fast, and GloVe's global co-occurrence objective, trained from scratch and with gensim.",
+   "instructor": "amiraa-hassan",
+   "lessons": [
+    {
+     "title": "From counts to learned embeddings",
+     "minutes": 12,
+     "objectives": [
+      "Explain what a dense word embedding is",
+      "Contrast count-based and prediction-based embeddings"
+     ],
+     "key_points": [
+      "A word embedding is a dense vector of typically 50 to 300 real numbers per word, learned so that words used in similar contexts get similar vectors: the distributional hypothesis put to work.",
+      "Count-based methods build a co-occurrence matrix and reduce it, as PPMI with SVD does; prediction-based methods such as word2vec learn vectors by training a model to predict words from their neighbours.",
+      "Training is self-supervised: the signal comes from raw text, so embeddings can be trained on any large corpus without labels.",
+      "These are static embeddings: each word type gets one vector whatever its context, so the senses of 'bank' are blended into a single point.",
+      "Corpus size matters: trained on the 1 million words of the Brown corpus, word2vec gives 'violin' meaningless neighbours, while GloVe vectors trained on 6 billion tokens give 'cello', 'piano' and 'harpsichord'."
+     ]
+    },
+    {
+     "title": "word2vec: skip-gram and CBOW",
+     "minutes": 12,
+     "objectives": [
+      "Describe the skip-gram and CBOW training tasks",
+      "Choose window size, dimensions and other word2vec settings"
+     ],
+     "key_points": [
+      "Skip-gram predicts each context word from the centre word, so every (centre, context) pair within the window is a training example; CBOW, the continuous bag of words, predicts the centre word from the average of its context vectors.",
+      "Each word has two vectors, one as a centre word and one as a context word, and usually only the centre (input) vectors are kept as the embeddings.",
+      "CBOW trains faster, while skip-gram usually represents rarer words better: on the Brown corpus, gensim's skip-gram gives 'tuesday' the other weekdays as neighbours, where CBOW's neighbours are mostly unrelated.",
+      "The window size changes what similarity means: small windows (2 to 5) favour words that can replace each other, larger ones words from the same topic.",
+      "Frequent words are subsampled, each occurrence dropped with a probability that grows with the word's frequency, which speeds training and helps rarer words; words below min_count are dropped entirely."
+     ]
+    },
+    {
+     "title": "Negative sampling",
+     "minutes": 14,
+     "objectives": [
+      "Explain why a full softmax over the vocabulary is expensive",
+      "Write the skip-gram negative sampling objective"
+     ],
+     "key_points": [
+      "A full softmax needs a score for every vocabulary word at every training step, which is costly with hundreds of thousands of words; negative sampling replaces it with a few binary classifications.",
+      "For each true (word, context) pair, skip-gram with negative sampling (SGNS) maximises log σ(c · w) + Σ log σ(-n_i · w) over k negative words n_i drawn at random, pulling true contexts closer and pushing random words away.",
+      "Negatives are drawn from the unigram distribution raised to the power 0.75, which picks rare words more often than their frequency alone would; the word2vec paper suggests k of 5 to 20 for small datasets and 2 to 5 for large ones.",
+      "If the context vectors start at zero, every score is σ(0) = 0.5, so the loss for one positive and five negatives starts at 6 ln 2 ≈ 4.1589, a handy check that an implementation is wired correctly.",
+      "SGNS was later shown to implicitly factorise a word-context PMI matrix shifted by log k (Levy and Goldberg, 2014), linking it to the count-based methods."
+     ],
+     "walkthrough": {
+      "tool": "Python and gensim",
+      "title": "Train word2vec in a few lines",
+      "steps": [
+       {
+        "do": "Install gensim and get the Brown corpus.",
+        "code": "pip install gensim nltk\npython -c \"import nltk; nltk.download('brown')\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Train skip-gram with negative sampling, repeatably.",
+        "code": "from gensim.models import Word2Vec\nfrom nltk.corpus import brown\n\nsents = [[w.lower() for w in s if w.isalpha()] for s in brown.sents()]\nmodel = Word2Vec(sents, vector_size=100, window=5, min_count=5, sg=1, negative=5,\n                 epochs=5, workers=1, seed=42)\nlen(model.wv)",
+        "lang": "python",
+        "see": "13366: the words seen at least five times."
+       },
+       {
+        "do": "Ask for neighbours and similarities.",
+        "code": "model.wv.most_similar('tuesday', topn=5)\nmodel.wv.similarity('tuesday', 'monday')",
+        "lang": "python",
+        "see": "Weekdays at the top. Start Python with PYTHONHASHSEED=0 if you want the same numbers on every run."
+       }
+      ]
+     }
+    },
+    {
+     "title": "GloVe: global co-occurrence statistics",
+     "minutes": 12,
+     "objectives": [
+      "Describe GloVe's training objective",
+      "Use pre-trained embeddings, and judge when to train your own"
+     ],
+     "key_points": [
+      "GloVe (Global Vectors; Pennington, Socher and Manning, 2014) fits word vectors so that the dot product of two words' vectors, plus two biases, approximates the logarithm of how often they co-occur across the whole corpus.",
+      "It minimises a weighted least-squares loss, Σ f(X_ij)(w_i · w̃_j + b_i + b̃_j - log X_ij)², where f(x) = (x / x_max)^0.75 below x_max = 100 and 1 above it, so very frequent pairs don't dominate and pairs that never co-occur are ignored.",
+      "The idea behind it is that ratios of co-occurrence probabilities carry meaning: 'solid' occurs far more often with 'ice' than with 'steam', while 'water' occurs with both, so the ratio separates the two.",
+      "Pre-trained GloVe vectors, such as the 400,000-word, 50-dimensional set trained on Wikipedia and Gigaword, load in one line with gensim.downloader.load('glove-wiki-gigaword-50').",
+      "Train your own embeddings when your domain's language differs from general text, as legal, medical or financial writing does, and you have enough of it; word2vec and GloVe give vectors of similar quality in practice."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Train word2vec from scratch and with gensim",
+    "tool": "Python 3, PyTorch and gensim",
+    "minutes": 60,
+    "goal": "Implement skip-gram with negative sampling in PyTorch and train it on the news section of the Brown corpus, then train gensim's skip-gram and CBOW on the whole corpus and compare them with pre-trained GloVe vectors.",
+    "setup": [
+     "Python 3.10 or later with PyTorch (the CPU version is enough), gensim and NLTK: pip install torch gensim nltk",
+     "The Brown corpus: python -c \"import nltk; nltk.download('brown')\"; word2vec.py downloads GloVe (66 MB) on its first run",
+     "The starter files sgns.py and word2vec.py",
+     "gensim's results repeat only with workers=1 and a fixed hash seed set before Python starts: PYTHONHASHSEED=0 python script.py on macOS and Linux, or $env:PYTHONHASHSEED=0 first in PowerShell"
+    ],
+    "steps": [
+     {
+      "do": "Read build() in sgns.py: it numbers the vocabulary in sorted order and makes (centre, context) pairs up to two words apart."
+     },
+     {
+      "do": "Write forward() (TODO): the negative sampling loss for a batch, using logsigmoid on the positive scores and on the negated negative scores. Run it.",
+      "code": "python sgns.py",
+      "lang": "bash",
+      "see": "Vocabulary 2377 words, 250200 (centre, context) pairs; Loss before training: 4.1589 (6 x ln 2 = 4.1589)"
+     },
+     {
+      "do": "Let it train for three epochs, about a minute on a laptop.",
+      "see": "Mean losses of about 2.66, 2.43 and 2.31; monday's neighbours include friday, saturday and yesterday, and president's include manager, treasurer and secretary. Other PyTorch versions can give slightly different numbers."
+     },
+     {
+      "do": "Run word2vec.py with a fixed hash seed.",
+      "code": "PYTHONHASHSEED=0 python word2vec.py",
+      "lang": "bash",
+      "see": "981716 tokens; skip-gram and CBOW, each with vocabulary 13366; skip-gram's tuesday: ['monday', 'sunday', 'friday', 'wednesday', 'thursday']"
+     },
+     {
+      "do": "Compare the three models' neighbours.",
+      "see": "CBOW's neighbours for tuesday are mostly unrelated; for violin both Brown models give nonsense, while GloVe gives ['cello', 'piano', 'harpsichord', 'clarinet', 'concerto']."
+     },
+     {
+      "do": "Change one setting of the skip-gram model (window=2, vector_size=50 or negative=15) and rerun. Write two or three sentences starting Comparison: on what corpus size, CBOW against skip-gram, and your setting changed."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The skip-gram pairs and vocabulary are built.",
+      "look_for": [
+       "Vocabulary 2377 words, 250200 (centre, context) pairs"
+      ]
+     },
+     {
+      "text": "The negative sampling loss is right before training.",
+      "look_for": [
+       "Loss before training: 4.1589"
+      ]
+     },
+     {
+      "text": "The from-scratch model trains for three epochs.",
+      "look_for": [
+       "Epoch 3: mean loss"
+      ]
+     },
+     {
+      "text": "gensim's models are trained on the whole Brown corpus.",
+      "look_for": [
+       "981716 tokens",
+       "vocabulary 13366"
+      ]
+     },
+     {
+      "text": "Pre-trained GloVe is compared.",
+      "look_for": [
+       "['cello', 'piano', 'harpsichord', 'clarinet', 'concerto']"
+      ]
+     },
+     {
+      "text": "The comparison explains the differences.",
+      "look_for": [
+       "Comparison:"
+      ]
+     }
+    ],
+    "submit": "Paste your forward() method, everything both scripts printed, the setting you changed with its results, and your Comparison:.",
+    "files": [
+     {
+      "path": "sgns.py",
+      "content": "\"\"\"Skip-gram with negative sampling, written in PyTorch and trained on the news section of the Brown corpus.\n\nFirst, once:  python -c \"import nltk; nltk.download('brown')\"\n\"\"\"\n\nfrom collections import Counter\n\nimport torch\nfrom nltk.corpus import brown\nfrom torch import nn\n\nWINDOW, DIM, NEGATIVES, EPOCHS, BATCH = 2, 50, 5, 3, 512\n\n\ndef build(min_count=5):\n    sents = [[w.lower() for w in s if w.isalpha()] for s in brown.sents(categories=\"news\")]\n    freq = Counter(w for s in sents for w in s)\n    vocab = sorted(w for w, c in freq.items() if c >= min_count)  # sorted, so every run numbers words the same way\n    index = {w: i for i, w in enumerate(vocab)}\n    pairs = []\n    for s in sents:\n        ids = [index[w] for w in s if w in index]\n        for i, centre in enumerate(ids):\n            for j in range(max(0, i - WINDOW), min(len(ids), i + WINDOW + 1)):\n                if j != i:\n                    pairs.append((centre, ids[j]))\n    noise = torch.tensor([freq[w] for w in vocab], dtype=torch.float) ** 0.75  # unigram counts to the power 0.75\n    return vocab, index, torch.tensor(pairs), noise / noise.sum()\n\n\nclass SkipGram(nn.Module):\n    def __init__(self, n_words, dim):\n        super().__init__()\n        self.words = nn.Embedding(n_words, dim)  # the vectors we keep\n        self.contexts = nn.Embedding(n_words, dim)  # a second set, for words used as context\n        nn.init.uniform_(self.words.weight, -0.5 / dim, 0.5 / dim)\n        nn.init.zeros_(self.contexts.weight)\n\n    def forward(self, centre, context, negatives):\n        w = self.words(centre)  # (batch, dim)\n        c = self.contexts(context)  # (batch, dim)\n        n = self.contexts(negatives)  # (batch, k, dim)\n        # TODO: the skip-gram negative sampling loss, averaged over the batch:\n        #   -[ log σ(c · w) + Σ over the k negatives of log σ(-n · w) ]\n        # nn.functional.logsigmoid gives log σ; (n @ w.unsqueeze(-1)).squeeze(-1) gives the (batch, k) scores n · w\n        raise NotImplementedError(\"write the loss\")\n\n\ndef neighbours(model, vocab, index, word, k=5):\n    vectors = nn.functional.normalize(model.words.weight.detach(), dim=1)\n    sims = vectors @ vectors[index[word]]\n    sims[index[word]] = -1\n    return [vocab[i] for i in sims.topk(k).indices.tolist()]\n\n\ndef main():\n    torch.manual_seed(0)\n    vocab, index, pairs, noise = build()\n    print(f\"Vocabulary {len(vocab)} words, {len(pairs)} (centre, context) pairs\")\n    model = SkipGram(len(vocab), DIM)\n    optimiser = torch.optim.Adam(model.parameters(), lr=0.01)\n    with torch.no_grad():\n        first = model(pairs[:BATCH, 0], pairs[:BATCH, 1], torch.multinomial(noise, BATCH * NEGATIVES, True).view(BATCH, -1))\n    print(f\"Loss before training: {first.item():.4f} (6 x ln 2 = 4.1589)\")\n    for epoch in range(1, EPOCHS + 1):\n        order = torch.randperm(len(pairs))\n        total, batches = 0.0, 0\n        for start in range(0, len(pairs), BATCH):\n            batch = pairs[order[start:start + BATCH]]\n            negatives = torch.multinomial(noise, len(batch) * NEGATIVES, replacement=True).view(len(batch), -1)\n            loss = model(batch[:, 0], batch[:, 1], negatives)\n            optimiser.zero_grad()\n            loss.backward()\n            optimiser.step()\n            total, batches = total + loss.item(), batches + 1\n        print(f\"Epoch {epoch}: mean loss {total / batches:.3f}\")\n    for word in [\"monday\", \"president\", \"million\"]:\n        print(f\"{word}: {neighbours(model, vocab, index, word)}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "word2vec.py",
+      "content": "\"\"\"word2vec with gensim on the Brown corpus, skip-gram and CBOW, compared with pre-trained GloVe vectors.\n\nRun it with a fixed hash seed so gensim's results repeat:\n  macOS/Linux:  PYTHONHASHSEED=0 python word2vec.py\n  PowerShell:   $env:PYTHONHASHSEED=0; python word2vec.py\nThe first run downloads GloVe (66 MB) into ~/gensim-data.\n\"\"\"\n\nimport time\n\nimport gensim.downloader as api\nfrom gensim.models import Word2Vec\nfrom nltk.corpus import brown\n\nPROBES = [\"tuesday\", \"week\", \"wife\", \"violin\"]\n\n\ndef main():\n    sents = [[w.lower() for w in s if w.isalpha()] for s in brown.sents()]\n    print(f\"{len(sents)} sentences, {sum(map(len, sents))} tokens\")\n    for name, sg in ((\"skip-gram\", 1), (\"CBOW\", 0)):\n        start = time.time()\n        model = Word2Vec(sents, vector_size=100, window=5, min_count=5, sg=sg, negative=5, epochs=5,\n                         workers=1, seed=42)\n        print(f\"{name}: vocabulary {len(model.wv)}, {model.wv.vector_size} dimensions, \"\n              f\"trained in {time.time() - start:.0f} s\")\n        for word in PROBES:\n            print(f\"  {word}: {[w for w, _ in model.wv.most_similar(word, topn=5)]}\")\n        if sg:\n            model.save(\"brown_skipgram.model\")\n\n    glove = api.load(\"glove-wiki-gigaword-50\")\n    print(f\"GloVe (6 billion tokens of Wikipedia and Gigaword): {len(glove)} words, {glove.vector_size} dimensions\")\n    for word in PROBES:\n        print(f\"  {word}: {[w for w, _ in glove.most_similar(word, topn=5)]}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "(n @ w.unsqueeze(-1)).squeeze(-1) gives each example's k negative scores as a (batch, k) tensor.",
+     "If the first loss isn't 4.1589, check the signs: the positive term uses +score, the negative terms -score, and the loss is minus their mean.",
+     "If gensim's neighbours change between runs, the hash seed wasn't set before Python started, or workers isn't 1."
+    ]
+   }
+  },
+  {
+   "title": "Beyond words and universal representations",
+   "summary": "Handle words a model has never seen with subword embeddings, the fastText approach, then move from words to whole documents with averaged vectors, Doc2Vec and pre-trained sentence encoders.",
+   "instructor": "amiraa-hassan",
+   "lessons": [
+    {
+     "title": "The out-of-vocabulary problem",
+     "minutes": 10,
+     "objectives": [
+      "Explain why static word models fail on unseen words",
+      "Compare ways of handling out-of-vocabulary words"
+     ],
+     "key_points": [
+      "A word2vec or GloVe model has vectors only for the words in its training vocabulary, so a misspelling, a new name or a rare inflected form raises a KeyError or is mapped to one shared unknown vector.",
+      "Rare words inside the vocabulary suffer too: a word seen a handful of times gets a poorly trained vector, and min_count drops the rarest words altogether.",
+      "Morphologically rich languages such as Arabic, Turkish and Finnish have so many word forms that a large share of the words in any new text never appeared in training.",
+      "The remedies split words into smaller units, such as characters, character n-grams (fastText) or learned subword vocabularies (BPE, WordPiece), so a model can build a vector for any string."
+     ]
+    },
+    {
+     "title": "Character n-grams and fastText",
+     "minutes": 14,
+     "objectives": [
+      "List the character n-grams fastText uses for a word",
+      "Explain how fastText builds vectors for unseen words, and where it misleads"
+     ],
+     "key_points": [
+      "fastText (Bojanowski and colleagues, 2017) represents a word by its character n-grams, of lengths 3 to 6 by default, with < and > marking the start and end, plus the whole word: the 3-grams of 'where' are '<wh', 'whe', 'her', 'ere' and 're>'.",
+      "A word's vector is the sum of its n-gram vectors and its own vector, trained with skip-gram or CBOW and negative sampling as in word2vec, so pieces shared by related words, such as prefixes and suffixes, are learned once.",
+      "To save memory, n-grams are hashed into a fixed number of buckets, 2 million by default, so distinct n-grams can share one; in gensim the bucket count times the dimensions sets most of the model's memory.",
+      "A word never seen in training still gets a vector from its n-grams: trained on Brown, fastText gives 'goverment' a cosine of 0.957 with 'government' and 'replayed' the neighbour 'played', where word2vec has no vector at all.",
+      "Shared n-grams also mislead: the same model ranks 'abandonment' above 'government' as the neighbour of 'goverment', because the '-ment' n-grams dominate the sum.",
+      "fastText helps most with morphology and typos, and not at all for words whose meaning isn't in their spelling, such as names; the separate fastText library also offers fast supervised text classification."
+     ]
+    },
+    {
+     "title": "Document vectors: averages, SIF and Doc2Vec",
+     "minutes": 12,
+     "objectives": [
+      "Build document vectors by averaging word vectors",
+      "Explain how Doc2Vec learns paragraph vectors"
+     ],
+     "key_points": [
+      "The simplest document vector is the average of its word vectors: cheap and a strong baseline, but it ignores word order and lets frequent, uninformative words pull the average.",
+      "Weighted averages fix part of this: weighting by TF-IDF, or the SIF method (Arora, Liang and Ma, 2017), which weights each word by a / (a + p(w)) and removes the direction all sentences share.",
+      "Doc2Vec (Le and Mikolov, 2014) learns a vector for each document: in PV-DM it joins context word vectors to predict a missing word, and in PV-DBOW it alone predicts words sampled from the document.",
+      "A new document's vector must be inferred by gradient steps with the trained weights frozen (infer_vector in gensim), so it changes a little from one call to the next.",
+      "In the lab, the share of Brown documents whose nearest neighbour shares their category is 0.294 with TF-IDF, 0.348 with Doc2Vec and 0.376 with averaged fastText vectors: simple averages are hard to beat."
+     ]
+    },
+    {
+     "title": "Universal sentence representations",
+     "minutes": 10,
+     "objectives": [
+      "Describe pre-trained sentence encoders and when to use them"
+     ],
+     "key_points": [
+      "A universal sentence representation is a fixed-size vector from a pre-trained encoder that works across many tasks without retraining, for similarity, clustering, retrieval or as features for a classifier.",
+      "Early examples learned from supervised tasks: InferSent from natural language inference data, and the Universal Sentence Encoder from several tasks at once.",
+      "Most sentence embeddings now come from transformer encoders fine-tuned for similarity, such as Sentence-BERT models trained on pairs of sentences; the next module explains the contextual vectors they're built from.",
+      "Choose by testing on your task: averaged static vectors are fast and need no GPU, while transformer encoders capture word order and context. Vector Databases and Semantic Search shows how to search millions of such vectors."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "fastText, unseen words and document vectors",
+    "tool": "Python 3 and gensim",
+    "minutes": 50,
+    "goal": "List fastText's character n-grams, train fastText on the Brown corpus and test it on words it never saw, then compare TF-IDF, averaged word vectors and Doc2Vec as document representations.",
+    "setup": [
+     "Python 3.10 or later with gensim, scikit-learn and NLTK, and the Brown corpus (from module 2)",
+     "The starter file subwords.py",
+     "gensim's results repeat only with workers=1 and a fixed hash seed set before Python starts: PYTHONHASHSEED=0 python script.py on macOS and Linux, or $env:PYTHONHASHSEED=0 first in PowerShell"
+    ],
+    "steps": [
+     {
+      "do": "Write char_ngrams() (TODO 1) and run the script; training takes about half a minute.",
+      "code": "PYTHONHASHSEED=0 python subwords.py",
+      "lang": "bash",
+      "see": "3-grams of where: ['<wh', 'whe', 'her', 'ere', 're>'], then 14 n-grams of 3 to 6 characters, plus <where> itself, and fastText: vocabulary 13366."
+     },
+     {
+      "do": "Read the out-of-vocabulary results.",
+      "see": "goverment: in vocabulary False, neighbours ['abandonment', 'government', 'commitment', 'punishment']; replayed: ['delayed', 'played', 'prayed', 'calmed']; similarity(goverment, government) = 0.957"
+     },
+     {
+      "do": "Write agreement() (TODO 2) and run it again.",
+      "see": "500 Brown documents in 15 categories; TF-IDF 0.294, averaged fastText vectors 0.376, Doc2Vec PV-DBOW 0.348"
+     },
+     {
+      "do": "Call d2v.infer_vector() twice on the same text and compare the two vectors' cosine. Then try three unseen words of your own: a typo, a new compound and a name."
+     },
+     {
+      "do": "Write two or three sentences starting Subwords: on when character n-grams help, when they mislead, and which document representation you'd choose for a search feature."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Character n-grams are generated with boundary markers.",
+      "look_for": [
+       "['<wh', 'whe', 'her', 'ere', 're>']"
+      ]
+     },
+     {
+      "text": "fastText builds vectors for words it never saw.",
+      "look_for": [
+       "goverment: in vocabulary False",
+       "similarity(goverment, government) = 0.957"
+      ]
+     },
+     {
+      "text": "Document representations are compared by nearest-neighbour category agreement.",
+      "look_for": [
+       "TF-IDF 0.294",
+       "averaged fastText vectors 0.376",
+       "Doc2Vec PV-DBOW 0.348"
+      ]
+     },
+     {
+      "text": "Unseen words are tested and the trade-offs explained.",
+      "look_for": [
+       "Subwords:"
+      ]
+     }
+    ],
+    "submit": "Paste your char_ngrams() and agreement(), everything the script printed, your own unseen words with their neighbours, and your Subwords: answer.",
+    "files": [
+     {
+      "path": "subwords.py",
+      "content": "\"\"\"fastText's character n-grams, vectors for out-of-vocabulary words, and three kinds of document vector.\n\nRun it with a fixed hash seed so gensim's results repeat:  PYTHONHASHSEED=0 python subwords.py\n\"\"\"\n\nimport time\n\nimport numpy as np\nfrom gensim.models import FastText\nfrom gensim.models.doc2vec import Doc2Vec, TaggedDocument\nfrom nltk.corpus import brown\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.metrics.pairwise import cosine_similarity\n\nOOV = [\"goverment\", \"unfriendliness\", \"replayed\"]\n\n\ndef char_ngrams(word, n_min=3, n_max=6):\n    \"\"\"The character n-grams fastText uses, with < and > marking the start and end of the word.\"\"\"\n    # TODO 1: add < and > around the word, then list every substring of length n_min to n_max, shorter ones first\n    return []\n\n\ndef agreement(vectors, labels):\n    \"\"\"Share of documents whose most similar other document has the same Brown category.\"\"\"\n    # TODO 2: as in module 1's lab: cosine similarities, the diagonal set to -1, each row's argmax,\n    #         and the share of documents whose nearest neighbour has the same label\n    return 0.0\n\n\ndef main():\n    print(\"3-grams of where:\", char_ngrams(\"where\", 3, 3))\n    print(f\"3- to 6-grams of where: {len(char_ngrams('where'))}, plus the word itself, <where>\")\n\n    sents = [[w.lower() for w in s if w.isalpha()] for s in brown.sents()]\n    start = time.time()\n    ft = FastText(sents, vector_size=100, window=5, min_count=5, sg=1, min_n=3, max_n=6, bucket=200_000, epochs=5,\n                  workers=1, seed=42)\n    print(f\"fastText: vocabulary {len(ft.wv)}, trained in {time.time() - start:.0f} s\")\n    for word in OOV:\n        print(f\"  {word}: in vocabulary {word in ft.wv.key_to_index}, \"\n              f\"neighbours {[w for w, _ in ft.wv.most_similar(word, topn=4)]}\")\n    print(f\"  similarity(goverment, government) = {ft.wv.similarity('goverment', 'government'):.3f}\")\n\n    files = brown.fileids()\n    labels = [brown.categories(fileids=f)[0] for f in files]\n    docs = [[w.lower() for w in brown.words(fileids=f) if w.isalpha()] for f in files]\n    tfidf = TfidfVectorizer(analyzer=lambda tokens: tokens, min_df=2).fit_transform(docs)\n    averaged = np.array([np.mean([ft.wv[w] for w in d if w in ft.wv.key_to_index], axis=0) for d in docs])\n    d2v = Doc2Vec([TaggedDocument(d, [i]) for i, d in enumerate(docs)], dm=0, vector_size=100, min_count=5,\n                  epochs=20, workers=1, seed=42)\n    paragraph = np.array([d2v.dv[i] for i in range(len(docs))])\n    print(f\"{len(docs)} Brown documents in {len(set(labels))} categories; nearest neighbour in the same category:\")\n    print(f\"  TF-IDF {agreement(tfidf, labels):.3f}, averaged fastText vectors {agreement(averaged, labels):.3f}, \"\n          f\"Doc2Vec PV-DBOW {agreement(paragraph, labels):.3f}\")\n    new = d2v.infer_vector(docs[0][:200], epochs=50)\n    print(f\"An inferred vector for a new text has {len(new)} numbers; most similar training document: \"\n          f\"{labels[d2v.dv.most_similar([new], topn=1)[0][0]]}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "With < and > added, 'where' is 7 characters long, so it has 5 3-grams, 4 4-grams, 3 5-grams and 2 6-grams.",
+     "bucket=200_000 keeps the model to about 80 MB; gensim's default of 2,000,000 buckets needs about ten times as much memory.",
+     "infer_vector() starts from random values and runs gradient steps, so two calls give similar but not identical vectors."
+    ]
+   }
+  },
+  {
+   "title": "Transformer anatomy for contextual embeddings",
+   "summary": "See how transformers give every token a vector that depends on its sentence: the idea of self-attention, why positions must be added, how layers refine meaning, and how contextual vectors tell the senses of a word apart.",
+   "instructor": "amiraa-hassan",
+   "lessons": [
+    {
+     "title": "Static versus contextual embeddings",
+     "minutes": 12,
+     "objectives": [
+      "Explain how static and contextual embeddings differ",
+      "Get contextual vectors for words from a pre-trained encoder"
+     ],
+     "key_points": [
+      "A static embedding gives a word type one vector; a contextual embedding gives each occurrence its own vector, computed from the whole sentence, so 'bank' in 'river bank' and in 'bank account' gets different vectors.",
+      "Early contextual models such as ELMo (2018) used bidirectional LSTMs; transformer encoders such as BERT and its smaller distilled version, DistilBERT, now produce them, one vector per token from every layer.",
+      "Transformer tokenisers split rare words into subword pieces, so DistilBERT reads 'riverbank' as 'river' and '##bank'; for one vector per word, average its pieces or take the first.",
+      "With Hugging Face Transformers, AutoTokenizer.from_pretrained and AutoModel.from_pretrained load a checkpoint, and output_hidden_states=True returns every layer's vectors, from the embedding layer (index 0) to the last.",
+      "A model has a fixed maximum input (512 positions for BERT and DistilBERT), and its vectors aren't interchangeable with another model's, so compare vectors only from the same model and layer."
+     ]
+    },
+    {
+     "title": "Self-attention, intuitively",
+     "minutes": 12,
+     "objectives": [
+      "Describe in words how self-attention mixes information between tokens"
+     ],
+     "key_points": [
+      "Self-attention lets every token look at every other token in the input and build its new vector as a weighted average of theirs, with the weights saying how relevant each one is.",
+      "The weights come from comparing a query computed from the current token with a key computed from each token, and the vectors averaged, the values, are a third projection of the tokens; the maths is covered in Transformers and Large Language Models.",
+      "In 'The animal didn't cross the street because it was too tired', attention lets 'it' draw on 'animal', so the vector for 'it' carries information about what it refers to.",
+      "Several attention heads run in parallel, each free to track a different kind of relation, and stacked layers let later layers combine what earlier ones gathered.",
+      "Because every token attends to every other, the cost grows with the square of the input length, one reason models have a maximum length."
+     ]
+    },
+    {
+     "title": "Positional encodings",
+     "minutes": 10,
+     "objectives": [
+      "Explain why transformers need positional information",
+      "Compare learned and fixed position encodings"
+     ],
+     "key_points": [
+      "Attention by itself ignores order: shuffle the words and each token gets the same weighted average as before, just in a different place, so 'dog bites man' and 'man bites dog' would look alike.",
+      "Transformers therefore add a position vector to each token's embedding before the first layer, so the same word at different positions starts from different vectors.",
+      "BERT and DistilBERT learn one position embedding for each of their 512 positions; the original transformer used fixed sine and cosine waves of different frequencies, and many recent models encode relative positions instead, for example with rotary embeddings.",
+      "Because the embedding layer already includes position, the layer-0 vectors of 'bank' in different sentences aren't identical: in the lab their cosines are about 0.96, whatever the sense."
+     ]
+    },
+    {
+     "title": "Resolving polysemy with contextual vectors",
+     "minutes": 12,
+     "objectives": [
+      "Measure how well contextual vectors separate word senses",
+      "Disambiguate a word by comparing it with sense centroids"
+     ],
+     "key_points": [
+      "Polysemy, one word with several senses, is where contextual vectors shine: in DistilBERT's last layer, occurrences of 'bank' in the same sense have an average cosine of 0.850 against 0.627 across senses, while at the embedding layer both are about 0.96.",
+      "A simple word-sense disambiguator averages the vectors of a few labelled examples of each sense into centroids, and gives a new occurrence the sense of the nearest centroid; the lab's version gets both of its new sentences right.",
+      "Layers differ: lower layers stay close to the word and its position while higher layers carry more context, so test several layers rather than assuming the last is best.",
+      "Contextual vectors tend to crowd into a narrow cone, so even unrelated tokens have fairly high cosines; compare similarities with each other, or centre the vectors first, rather than reading absolute values.",
+      "A static vector leans towards a word's commonest sense: GloVe's single vector for 'bank' has 'banks', 'securities' and 'banking' as nearest neighbours, with no trace of rivers."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Contextual vectors for an ambiguous word",
+    "tool": "Python 3, PyTorch and Hugging Face Transformers",
+    "minutes": 50,
+    "goal": "Extract DistilBERT's vectors for 'bank' in six sentences, compare how well the embedding layer and the last layer separate its two senses, disambiguate new sentences with sense centroids, and contrast GloVe's single static vector.",
+    "setup": [
+     "Python 3.10 or later with PyTorch, transformers 4.46 or later, gensim and NumPy: pip install torch transformers gensim",
+     "Internet access on the first run: the script downloads DistilBERT (about 270 MB) from Hugging Face and GloVe (66 MB)",
+     "The starter file contextual.py"
+    ],
+    "steps": [
+     {
+      "do": "Run the starter to download the model and see the tokeniser at work; it stops at TODO 1.",
+      "code": "python contextual.py",
+      "lang": "bash",
+      "see": "Pieces: ['the', 'river', '##bank', 'was', 'un', '##bel', '##ie', '##va', '##bly', 'muddy', '.'] and 6 layers, 768 dimensions, at most 512 positions. A report or warning about unused vocab_ weights is normal: they belong to the masked language modelling head, which AutoModel leaves out."
+     },
+     {
+      "do": "Write bank_vectors() (TODO 1): tokenise, run the model with output_hidden_states=True under torch.no_grad(), find the position of the token 'bank', and return its vector from every layer."
+     },
+     {
+      "do": "Run it again.",
+      "see": "Layer 0: same sense 0.961, different senses 0.962; Layer 6: same sense 0.850, different senses 0.627"
+     },
+     {
+      "do": "Write the nearest-centroid step (TODO 2) and run it.",
+      "see": "'They walked along the bank looking for herons.' -> river {'river': 0.933, 'money': 0.72} and 'The bank froze my savings account.' -> money {'river': 0.651, 'money': 0.933}"
+     },
+     {
+      "do": "Compare the static vector.",
+      "see": "GloVe's single vector for bank is nearest to: ['banks', 'securities', 'banking', 'investment', 'exchange', 'financial']"
+     },
+     {
+      "do": "Try layers 2 and 4, and a sentence whose sense is unclear, such as 'They sat by the bank all afternoon.' Write two or three sentences starting Senses: on which layers separate the senses best and what your sentence got."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The tokeniser's subword pieces and the model's size are shown.",
+      "look_for": [
+       "'##bank'",
+       "6 layers, 768 dimensions"
+      ]
+     },
+     {
+      "text": "Vectors for 'bank' are taken from every layer.",
+      "look_for": [
+       "Layer 0: same sense 0.961, different senses 0.962"
+      ]
+     },
+     {
+      "text": "The last layer separates the senses.",
+      "look_for": [
+       "Layer 6: same sense 0.850, different senses 0.627"
+      ]
+     },
+     {
+      "text": "Nearest-centroid disambiguation labels both new sentences correctly.",
+      "look_for": [
+       "-> river {'river': 0.933",
+       "-> money {'river': 0.651, 'money': 0.933}"
+      ]
+     },
+     {
+      "text": "The static GloVe vector is contrasted and the layer experiment reported.",
+      "look_for": [
+       "'securities'",
+       "Senses:"
+      ]
+     }
+    ],
+    "submit": "Paste your bank_vectors() and centroid code, everything the script printed, your layer results and your Senses: answer.",
+    "files": [
+     {
+      "path": "contextual.py",
+      "content": "\"\"\"Static versus contextual vectors for the ambiguous word 'bank'.\n\nFirst run downloads DistilBERT (about 270 MB) from Hugging Face and GloVe (66 MB) with gensim.\n\"\"\"\n\nimport numpy as np\nimport torch\nimport gensim.downloader as api\nfrom transformers import AutoModel, AutoTokenizer\n\nCHECKPOINT = \"distilbert/distilbert-base-uncased\"\nSENSES = {\n    \"river\": [\"We had a picnic on the bank of the river.\",\n              \"The boat drifted towards the muddy bank.\",\n              \"Fishermen lined the grassy bank at dawn.\"],\n    \"money\": [\"She paid the cheque into her bank account.\",\n              \"The bank raised its interest rates again.\",\n              \"He asked the bank for a small loan.\"],\n}\nNEW = [\"They walked along the bank looking for herons.\", \"The bank froze my savings account.\"]\n\n\ndef cosine(a, b):\n    return float(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)))\n\n\ndef bank_vectors(tokenizer, model, sentence):\n    \"\"\"The vector for 'bank' in every layer: index 0 is the embedding layer, the last index the final layer.\"\"\"\n    # TODO 1: tokenise the sentence (return_tensors=\"pt\"), run the model with output_hidden_states=True inside\n    #         torch.no_grad(), find the position of the id of \"bank\" in enc[\"input_ids\"][0], and return\n    #         [h[0, position].numpy() for h in out.hidden_states]\n    raise NotImplementedError(\"write bank_vectors\")\n\n\ndef main():\n    tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT)\n    model = AutoModel.from_pretrained(CHECKPOINT).eval()\n    print(\"Pieces:\", tokenizer.tokenize(\"The riverbank was unbelievably muddy.\"))\n    print(f\"{model.config.n_layers} layers, {model.config.dim} dimensions, at most \"\n          f\"{model.config.max_position_embeddings} positions\")\n\n    labels = [s for s, sents in SENSES.items() for _ in sents]\n    layers = [bank_vectors(tokenizer, model, s) for sents in SENSES.values() for s in sents]\n    for layer in (0, len(layers[0]) - 1):\n        vecs = [v[layer] for v in layers]\n        same = [cosine(vecs[i], vecs[j]) for i in range(6) for j in range(i + 1, 6) if labels[i] == labels[j]]\n        diff = [cosine(vecs[i], vecs[j]) for i in range(6) for j in range(i + 1, 6) if labels[i] != labels[j]]\n        print(f\"Layer {layer}: same sense {np.mean(same):.3f}, different senses {np.mean(diff):.3f}\")\n\n    last = len(layers[0]) - 1\n    centroids = {s: np.mean([v[last] for v, l in zip(layers, labels) if l == s], axis=0) for s in SENSES}\n    for sentence in NEW:\n        # TODO 2: take the last layer's vector for bank in the sentence, compute its cosine with each centroid\n        #         (rounded to 3 places), and print  f\"{sentence!r} -> {best sense} {scores}\"\n        pass\n\n    glove = api.load(\"glove-wiki-gigaword-50\")\n    print(\"GloVe's single vector for bank is nearest to:\", [w for w, _ in glove.most_similar(\"bank\", topn=6)])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "tokenizer.convert_tokens_to_ids('bank') gives the token's id; find its position in enc['input_ids'][0].tolist().",
+     "out.hidden_states is a tuple of (batch, tokens, 768) tensors: the embedding layer plus one per transformer layer, seven in all for DistilBERT.",
+     "Other library versions or hardware can change the third decimal place; the pattern is what matters."
+    ]
+   }
+  },
+  {
+   "title": "Visualising and interpreting embeddings",
+   "summary": "Look inside embedding spaces with care: project them to two dimensions with PCA and t-SNE, measure similarity, test analogies and their pitfalls, and probe embeddings for social bias.",
+   "instructor": "aroha-ngata",
+   "lessons": [
+    {
+     "title": "Principal component analysis",
+     "minutes": 12,
+     "objectives": [
+      "Project embeddings to two dimensions with PCA",
+      "Interpret explained variance and a PCA map"
+     ],
+     "key_points": [
+      "PCA finds the orthogonal directions along which the data varies most; projecting onto the first two gives a 2-D map that keeps as much of the variance as any linear projection can.",
+      "explained_variance_ratio_ says how much each component keeps: for 33 GloVe words from five groups (days, months, countries, colours and animals), two components keep 47.5% of the variance, so the map hides more than half.",
+      "PCA is linear, deterministic apart from the sign of each axis, and preserves large distances, so it shows global structure, such as which groups lie far apart, better than fine neighbourhoods.",
+      "scikit-learn's PCA centres the data itself; plot labelled points coloured by group, and check anything you conclude from the map against similarities in the full space."
+     ]
+    },
+    {
+     "title": "t-SNE and the limits of maps",
+     "minutes": 12,
+     "objectives": [
+      "Make a t-SNE map of an embedding space",
+      "Avoid the common misreadings of t-SNE maps"
+     ],
+     "key_points": [
+      "t-SNE (van der Maaten and Hinton, 2008) places points in 2-D so that each point's near neighbours in the full space stay near it, matching neighbour probabilities with a heavy-tailed t distribution in the map.",
+      "Perplexity, roughly how many neighbours each point considers, is usually between 5 and 50 and must be smaller than the number of points; different values can give quite different pictures, so try several.",
+      "t-SNE is random: fix random_state for repeatable maps; init='pca', scikit-learn's default since version 1.2, gives steadier layouts, and in version 1.5 and later the iteration count is set with max_iter (it was n_iter).",
+      "The sizes of clusters and the distances between them in a t-SNE map mean little; only which points sit together is reliable. UMAP is a faster alternative with similar caveats."
+     ]
+    },
+    {
+     "title": "Similarity, analogies and their pitfalls",
+     "minutes": 14,
+     "objectives": [
+      "Measure similarity with cosine in dense spaces",
+      "Solve and evaluate word analogies, and recognise their pitfalls"
+     ],
+     "key_points": [
+      "In a good space related words have high cosines: in GloVe, cosine(tuesday, wednesday) is 0.998 and cosine(cat, dog) 0.922, but tuesday and france still score 0.531, so unrelated words rarely come out near 0.",
+      "Analogies are solved with vector offsets: for a : b :: c : ?, find the word nearest to b - a + c. In GloVe, paris - france + italy gives rome.",
+      "The vector nearest to king - man + woman is king itself; the classic answer, queen, appears only because the method leaves out the input words, as gensim's most_similar does.",
+      "Analogy test sets such as Google's 19,544 questions measure accuracy by section, and gensim's evaluate_word_analogies scores a file in that format: on the lab's 146 questions GloVe gets 76.7%, with 53 of 56 capitals but only 14 of 30 past tenses.",
+      "Offsets work well for regular relations and poorly for others, and good analogy scores don't guarantee good results on a real task, so evaluate on the task as well."
+     ]
+    },
+    {
+     "title": "Bias in embeddings and responsible use",
+     "minutes": 12,
+     "objectives": [
+      "Probe an embedding space for social bias",
+      "Explain the limits of debiasing, and use embeddings responsibly"
+     ],
+     "key_points": [
+      "Embeddings learn the associations in their training text, stereotypes included: Bolukbasi and colleagues (2016) found analogies such as man : computer programmer :: woman : homemaker in word2vec vectors trained on news.",
+      "A simple probe projects words onto a direction such as he - she: of ten occupations in GloVe, 'nurse' and 'receptionist' lie furthest towards 'she' and 'engineer' furthest towards 'he'.",
+      "The Word Embedding Association Test (Caliskan, Bryson and Narayanan, 2017) measures bias statistically, comparing how strongly two sets of target words associate with two sets of attribute words.",
+      "Removing a bias direction reduces what such probes detect, but much of the bias remains in the geometry, for example in which words cluster together (Gonen and Goldberg, 2019), so debiasing isn't a full fix.",
+      "Use embeddings responsibly: record the training data and its date, test for the biases that matter in your use, and respect communities' rights over text in their languages, as Māori data sovereignty principles set out."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Map and probe an embedding space",
+    "tool": "Python 3, gensim, scikit-learn and Matplotlib",
+    "minutes": 50,
+    "goal": "Map 33 words from five groups in GloVe with PCA and t-SNE, measure similarities, solve and evaluate 146 analogy questions, and probe ten occupation words along a gender direction.",
+    "setup": [
+     "Python 3.10 or later with gensim, scikit-learn and Matplotlib: pip install gensim scikit-learn matplotlib",
+     "GloVe (66 MB), which gensim downloads on the first run, as in module 2",
+     "The starter files explore.py and analogies.txt, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Run the starter: it loads GloVe and draws the PCA map.",
+      "code": "python explore.py",
+      "lang": "bash",
+      "see": "33 words; PCA keeps 47.5% of the variance in 2 dimensions, and pca.png."
+     },
+     {
+      "do": "Add the t-SNE map (TODO 1) and open both images.",
+      "see": "Saved pca.png and tsne.png; t-SNE separates the five groups more cleanly than PCA."
+     },
+     {
+      "do": "Compute the analogies (TODO 2), with the input words allowed and then excluded.",
+      "see": "paris - france + italy: ['rome', 'milan', 'turin']; king - man + woman, inputs allowed: ['king', 'queen', 'daughter']; inputs excluded: ['queen', 'throne', 'prince']"
+     },
+     {
+      "do": "Read the evaluation of analogies.txt.",
+      "see": "capital-country: 53/56, plural: 18/30, past-tense: 14/30, comparative: 27/30, then Analogy accuracy: 0.767"
+     },
+     {
+      "do": "Write the gender-direction probe (TODO 3).",
+      "see": "Towards 'she' first: [('nurse', -0.381), ('receptionist', -0.37), ..., ('engineer', 0.125)]"
+     },
+     {
+      "do": "Write three or four sentences starting Interpretation: on what the maps show and hide, why past-tense analogies are hard, and what the probe does and doesn't tell you about bias."
+     }
+    ],
+    "checks": [
+     {
+      "text": "PCA is applied and its explained variance reported.",
+      "look_for": [
+       "PCA keeps 47.5% of the variance"
+      ]
+     },
+     {
+      "text": "Both maps are saved.",
+      "look_for": [
+       "Saved pca.png and tsne.png"
+      ]
+     },
+     {
+      "text": "Analogies are solved with and without the input words.",
+      "look_for": [
+       "['rome', 'milan', 'turin']",
+       "inputs allowed: ['king', 'queen', 'daughter']"
+      ]
+     },
+     {
+      "text": "The analogy file is evaluated by section.",
+      "look_for": [
+       "capital-country: 53/56",
+       "Analogy accuracy: 0.767"
+      ]
+     },
+     {
+      "text": "The probe ranks the occupations, and the results are interpreted.",
+      "look_for": [
+       "('nurse', -0.381)",
+       "Interpretation:"
+      ]
+     }
+    ],
+    "submit": "Paste your finished explore.py, everything it printed, a description of your two maps (or the images) and your Interpretation:.",
+    "files": [
+     {
+      "path": "explore.py",
+      "content": "\"\"\"Map and probe an embedding space: PCA, t-SNE, cosine similarity, analogies and a gender-direction probe.\n\nUses pre-trained GloVe vectors (66 MB, downloaded by gensim on the first run).\n\"\"\"\n\nimport matplotlib\nmatplotlib.use(\"Agg\")  # write image files; no window needed\nimport matplotlib.pyplot as plt\nimport numpy as np\nimport gensim.downloader as api\nfrom sklearn.decomposition import PCA\nfrom sklearn.manifold import TSNE\n\nGROUPS = {\n    \"days\": [\"monday\", \"tuesday\", \"wednesday\", \"thursday\", \"friday\", \"saturday\", \"sunday\"],\n    \"months\": [\"january\", \"march\", \"may\", \"july\", \"september\", \"november\"],\n    \"countries\": [\"france\", \"germany\", \"italy\", \"spain\", \"japan\", \"china\", \"kenya\", \"egypt\"],\n    \"colours\": [\"red\", \"green\", \"blue\", \"yellow\", \"purple\", \"orange\"],\n    \"animals\": [\"dog\", \"cat\", \"horse\", \"cow\", \"sheep\", \"lion\"],\n}\nOCCUPATIONS = [\"nurse\", \"receptionist\", \"teacher\", \"librarian\", \"doctor\", \"lawyer\", \"engineer\", \"carpenter\",\n               \"pilot\", \"programmer\"]\n\n\ndef plot(points, words, labels, title, path):\n    fig, ax = plt.subplots(figsize=(8, 6))\n    for group in GROUPS:\n        idx = [i for i, l in enumerate(labels) if l == group]\n        ax.scatter(points[idx, 0], points[idx, 1], label=group)\n        for i in idx:\n            ax.annotate(words[i], points[i], fontsize=8)\n    ax.set_title(title)\n    ax.legend()\n    fig.savefig(path, dpi=120, bbox_inches=\"tight\")\n    plt.close(fig)\n\n\ndef main():\n    kv = api.load(\"glove-wiki-gigaword-50\")\n    words = [w for ws in GROUPS.values() for w in ws]\n    labels = [g for g, ws in GROUPS.items() for _ in ws]\n    X = np.array([kv[w] for w in words])\n\n    pca = PCA(n_components=2)\n    plot(pca.fit_transform(X), words, labels, \"GloVe, PCA\", \"pca.png\")\n    print(f\"{len(words)} words; PCA keeps {pca.explained_variance_ratio_.sum():.1%} of the variance in 2 dimensions\")\n    # TODO 1: a TSNE with n_components=2, perplexity=5, init=\"pca\" and random_state=0, plotted to tsne.png;\n    #         then print \"Saved pca.png and tsne.png\"\n\n    for a, b in [(\"tuesday\", \"wednesday\"), (\"tuesday\", \"france\"), (\"cat\", \"dog\"), (\"cat\", \"purple\")]:\n        print(f\"cosine({a}, {b}) = {kv.similarity(a, b):.3f}\")\n\n    # TODO 2: print the top 3 words for paris - france + italy with kv.most_similar(positive=..., negative=...);\n    #         then for king - man + woman print the top 3 of kv.similar_by_vector(kv[\"king\"] - kv[\"man\"] + kv[\"woman\"])\n    #         (\"inputs allowed\") and of kv.most_similar (\"inputs excluded\")\n\n    overall, sections = kv.evaluate_word_analogies(\"analogies.txt\")\n    for s in sections:\n        if s[\"section\"] != \"Total accuracy\":\n            n_right, n_wrong = len(s[\"correct\"]), len(s[\"incorrect\"])\n            print(f\"  {s['section']}: {n_right}/{n_right + n_wrong}\")\n    print(f\"Analogy accuracy: {overall:.3f}\")\n\n    # TODO 3: direction = kv[\"he\"] - kv[\"she\"], scaled to length 1; for each occupation, the cosine of its vector\n    #         with the direction; print the occupations sorted from most negative (towards 'she'), with scores\n    #         rounded to 3 places, after \"Towards 'she' first:\"\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "analogies.txt",
+      "content": ": capital-country\nparis france rome italy\nparis france madrid spain\nparis france berlin germany\nparis france tokyo japan\nparis france cairo egypt\nparis france nairobi kenya\nparis france ottawa canada\nrome italy paris france\nrome italy madrid spain\nrome italy berlin germany\nrome italy tokyo japan\nrome italy cairo egypt\nrome italy nairobi kenya\nrome italy ottawa canada\nmadrid spain paris france\nmadrid spain rome italy\nmadrid spain berlin germany\nmadrid spain tokyo japan\nmadrid spain cairo egypt\nmadrid spain nairobi kenya\nmadrid spain ottawa canada\nberlin germany paris france\nberlin germany rome italy\nberlin germany madrid spain\nberlin germany tokyo japan\nberlin germany cairo egypt\nberlin germany nairobi kenya\nberlin germany ottawa canada\ntokyo japan paris france\ntokyo japan rome italy\ntokyo japan madrid spain\ntokyo japan berlin germany\ntokyo japan cairo egypt\ntokyo japan nairobi kenya\ntokyo japan ottawa canada\ncairo egypt paris france\ncairo egypt rome italy\ncairo egypt madrid spain\ncairo egypt berlin germany\ncairo egypt tokyo japan\ncairo egypt nairobi kenya\ncairo egypt ottawa canada\nnairobi kenya paris france\nnairobi kenya rome italy\nnairobi kenya madrid spain\nnairobi kenya berlin germany\nnairobi kenya tokyo japan\nnairobi kenya cairo egypt\nnairobi kenya ottawa canada\nottawa canada paris france\nottawa canada rome italy\nottawa canada madrid spain\nottawa canada berlin germany\nottawa canada tokyo japan\nottawa canada cairo egypt\nottawa canada nairobi kenya\n: plural\ncar cars house houses\ncar cars child children\ncar cars mouse mice\ncar cars woman women\ncar cars city cities\nhouse houses car cars\nhouse houses child children\nhouse houses mouse mice\nhouse houses woman women\nhouse houses city cities\nchild children car cars\nchild children house houses\nchild children mouse mice\nchild children woman women\nchild children city cities\nmouse mice car cars\nmouse mice house houses\nmouse mice child children\nmouse mice woman women\nmouse mice city cities\nwoman women car cars\nwoman women house houses\nwoman women child children\nwoman women mouse mice\nwoman women city cities\ncity cities car cars\ncity cities house houses\ncity cities child children\ncity cities mouse mice\ncity cities woman women\n: past-tense\ngo went see saw\ngo went take took\ngo went run ran\ngo went write wrote\ngo went eat ate\nsee saw go went\nsee saw take took\nsee saw run ran\nsee saw write wrote\nsee saw eat ate\ntake took go went\ntake took see saw\ntake took run ran\ntake took write wrote\ntake took eat ate\nrun ran go went\nrun ran see saw\nrun ran take took\nrun ran write wrote\nrun ran eat ate\nwrite wrote go went\nwrite wrote see saw\nwrite wrote take took\nwrite wrote run ran\nwrite wrote eat ate\neat ate go went\neat ate see saw\neat ate take took\neat ate run ran\neat ate write wrote\n: comparative\ngood better bad worse\ngood better big bigger\ngood better small smaller\ngood better fast faster\ngood better strong stronger\nbad worse good better\nbad worse big bigger\nbad worse small smaller\nbad worse fast faster\nbad worse strong stronger\nbig bigger good better\nbig bigger bad worse\nbig bigger small smaller\nbig bigger fast faster\nbig bigger strong stronger\nsmall smaller good better\nsmall smaller bad worse\nsmall smaller big bigger\nsmall smaller fast faster\nsmall smaller strong stronger\nfast faster good better\nfast faster bad worse\nfast faster big bigger\nfast faster small smaller\nfast faster strong stronger\nstrong stronger good better\nstrong stronger bad worse\nstrong stronger big bigger\nstrong stronger small smaller\nstrong stronger fast faster\n"
+     }
+    ],
+    "hints": [
+     "kv.similar_by_vector(vector, topn=3) excludes nothing, while kv.most_similar(positive=[...], negative=[...]) leaves out the words you give it.",
+     "TSNE's perplexity must be smaller than the number of points; with 33 words, try values from 3 to 15.",
+     "Dividing by both vectors' lengths makes the projection a cosine with the direction: negative values lean towards 'she'."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Represent text as one-hot vectors, bags of words, TF-IDF and hashed features, and reproduce TF-IDF by hand.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Write skip-gram with negative sampling, train word2vec with gensim and compare it with GloVe.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Build vectors for unseen words with fastText, compare document vectors, and download the Reuters corpus for the capstone.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Extract contextual vectors from DistilBERT and use them to tell a word's senses apart.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Map and probe embedding spaces, build and submit the embedding space explorer, and review with the mock exam and the flashcards.",
+   "modules": [
+    5
+   ]
+  }
+ ],
+ "project": {
+  "title": "Embedding space explorer",
+  "minutes": 480,
+  "brief": "Explore how well static embeddings capture a specialised domain: financial news. Train a word2vec model and a fastText model, both skip-gram with negative sampling, on NLTK's Reuters corpus (nltk.download('reuters'), about 1.3 million words), with the same settings so the comparison is fair. Evaluate both on the starter file reuters_analogies.txt, 184 questions in four sections (country and currency, plurals, past tenses and comparatives), and add a section of at least 20 questions of your own from the domain. Show how fastText handles words it never saw, such as the misspellings 'governmnet', 'tradeing' and 'comapny', and where its character n-grams mislead. Then visualise the space with t-SNE and PCA maps of at least five domain clusters, such as currencies, commodities, countries, months and verbs of rising and falling, with notes on what they show and hide. In a reference run with 100 dimensions, a window of 5 and 5 epochs, fastText answered about 37% of the starter questions and word2vec about 27%, with the biggest gap on comparatives; explain the differences you find.",
+  "deliverables": [
+   "train.py: preparing the Reuters sentences and training both models with fixed seeds, workers=1 and PYTHONHASHSEED set, saving both models",
+   "An evaluation table of accuracy per analogy section for both models, including your own section, with the questions each gets wrong examined",
+   "An out-of-vocabulary demonstration: at least six unseen words with fastText's nearest neighbours, failures included, and what word2vec does with the same words",
+   "At least two maps, t-SNE and PCA, of at least five labelled domain clusters, with the settings used",
+   "A two-page report: what each model captures, how and why they differ, what the maps show, and one risk or bias you'd check before using these vectors in a product"
+  ],
+  "rubric": [
+   {
+    "name": "Training setup",
+    "points": 15,
+    "description": "Both models are trained on the same prepared corpus with matching, documented settings and fixed seeds, and the code runs end to end."
+   },
+   {
+    "name": "Analogy evaluation",
+    "points": 25,
+    "description": "Accuracy is reported per section for both models, the new section is sensible and within the vocabulary, and errors are analysed with examples."
+   },
+   {
+    "name": "Out-of-vocabulary handling",
+    "points": 20,
+    "description": "Unseen words are demonstrated with fastText's neighbours, failures as well as successes are explained in terms of character n-grams, and word2vec's lack of vectors is shown."
+   },
+   {
+    "name": "Visualisation",
+    "points": 20,
+    "description": "The maps are clear and labelled, the t-SNE perplexity is chosen and justified, and the notes don't over-read cluster sizes or distances."
+   },
+   {
+    "name": "Report",
+    "points": 20,
+    "description": "The report compares the models with evidence, explains the differences, and discusses a realistic risk or bias in the domain."
+   }
+  ],
+  "submit": "Paste train.py and your evaluation code (or a repository link), the evaluation table, the out-of-vocabulary output, your maps (images or descriptions) and your report.",
+  "files": [
+   {
+    "path": "reuters_analogies.txt",
+    "content": ": currency\njapan yen britain sterling\njapan yen france franc\njapan yen germany mark\njapan yen italy lira\njapan yen canada dollar\njapan yen sweden crown\njapan yen spain peseta\nbritain sterling japan yen\nbritain sterling france franc\nbritain sterling germany mark\nbritain sterling italy lira\nbritain sterling canada dollar\nbritain sterling sweden crown\nbritain sterling spain peseta\nfrance franc japan yen\nfrance franc britain sterling\nfrance franc germany mark\nfrance franc italy lira\nfrance franc canada dollar\nfrance franc sweden crown\nfrance franc spain peseta\ngermany mark japan yen\ngermany mark britain sterling\ngermany mark france franc\ngermany mark italy lira\ngermany mark canada dollar\ngermany mark sweden crown\ngermany mark spain peseta\nitaly lira japan yen\nitaly lira britain sterling\nitaly lira france franc\nitaly lira germany mark\nitaly lira canada dollar\nitaly lira sweden crown\nitaly lira spain peseta\ncanada dollar japan yen\ncanada dollar britain sterling\ncanada dollar france franc\ncanada dollar germany mark\ncanada dollar italy lira\ncanada dollar sweden crown\ncanada dollar spain peseta\nsweden crown japan yen\nsweden crown britain sterling\nsweden crown france franc\nsweden crown germany mark\nsweden crown italy lira\nsweden crown canada dollar\nsweden crown spain peseta\nspain peseta japan yen\nspain peseta britain sterling\nspain peseta france franc\nspain peseta germany mark\nspain peseta italy lira\nspain peseta canada dollar\nspain peseta sweden crown\n: plural\nshare shares company companies\nshare shares bank banks\nshare shares price prices\nshare shares export exports\nshare shares contract contracts\nshare shares loss losses\nshare shares rate rates\ncompany companies share shares\ncompany companies bank banks\ncompany companies price prices\ncompany companies export exports\ncompany companies contract contracts\ncompany companies loss losses\ncompany companies rate rates\nbank banks share shares\nbank banks company companies\nbank banks price prices\nbank banks export exports\nbank banks contract contracts\nbank banks loss losses\nbank banks rate rates\nprice prices share shares\nprice prices company companies\nprice prices bank banks\nprice prices export exports\nprice prices contract contracts\nprice prices loss losses\nprice prices rate rates\nexport exports share shares\nexport exports company companies\nexport exports bank banks\nexport exports price prices\nexport exports contract contracts\nexport exports loss losses\nexport exports rate rates\ncontract contracts share shares\ncontract contracts company companies\ncontract contracts bank banks\ncontract contracts price prices\ncontract contracts export exports\ncontract contracts loss losses\ncontract contracts rate rates\nloss losses share shares\nloss losses company companies\nloss losses bank banks\nloss losses price prices\nloss losses export exports\nloss losses contract contracts\nloss losses rate rates\nrate rates share shares\nrate rates company companies\nrate rates bank banks\nrate rates price prices\nrate rates export exports\nrate rates contract contracts\nrate rates loss losses\n: past-tense\nrise rose fall fell\nrise rose say said\nrise rose buy bought\nrise rose sell sold\nrise rose pay paid\nrise rose grow grew\nfall fell rise rose\nfall fell say said\nfall fell buy bought\nfall fell sell sold\nfall fell pay paid\nfall fell grow grew\nsay said rise rose\nsay said fall fell\nsay said buy bought\nsay said sell sold\nsay said pay paid\nsay said grow grew\nbuy bought rise rose\nbuy bought fall fell\nbuy bought say said\nbuy bought sell sold\nbuy bought pay paid\nbuy bought grow grew\nsell sold rise rose\nsell sold fall fell\nsell sold say said\nsell sold buy bought\nsell sold pay paid\nsell sold grow grew\npay paid rise rose\npay paid fall fell\npay paid say said\npay paid buy bought\npay paid sell sold\npay paid grow grew\ngrow grew rise rose\ngrow grew fall fell\ngrow grew say said\ngrow grew buy bought\ngrow grew sell sold\ngrow grew pay paid\n: comparative\nhigh higher low lower\nhigh higher strong stronger\nhigh higher weak weaker\nhigh higher large larger\nhigh higher small smaller\nlow lower high higher\nlow lower strong stronger\nlow lower weak weaker\nlow lower large larger\nlow lower small smaller\nstrong stronger high higher\nstrong stronger low lower\nstrong stronger weak weaker\nstrong stronger large larger\nstrong stronger small smaller\nweak weaker high higher\nweak weaker low lower\nweak weaker strong stronger\nweak weaker large larger\nweak weaker small smaller\nlarge larger high higher\nlarge larger low lower\nlarge larger strong stronger\nlarge larger weak weaker\nlarge larger small smaller\nsmall smaller high higher\nsmall smaller low lower\nsmall smaller strong stronger\nsmall smaller weak weaker\nsmall smaller large larger\n"
+   }
+  ]
+ }
+}

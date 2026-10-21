@@ -1,0 +1,964 @@
+{
+  "slug": "enterprise-data-ml-platforms",
+  "title": "Enterprise Data and ML Platforms",
+  "subtitle": "Architect data lakes, lakehouses, streaming pipelines, hybrid cloud deployments and governed MLOps for an enterprise, and build working miniatures of each on your laptop.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "ismaile-rahimovi",
+    "catalina-ionescu"
+  ],
+  "skills": [
+    "Data lake design",
+    "Lakehouse architecture",
+    "Delta Lake and Iceberg",
+    "Stream processing",
+    "Event-time windowing",
+    "Real-time features",
+    "Hybrid cloud architecture",
+    "Data governance",
+    "MLOps maturity",
+    "Model governance"
+  ],
+  "tools": [
+    "Python 3",
+    "DuckDB",
+    "SQLite",
+    "pandas",
+    "scikit-learn",
+    "Parquet",
+    "Delta Lake"
+  ],
+  "outcomes": [
+    "Architect a scalable, zoned data lake with incremental, idempotent ingestion",
+    "Design lakehouse tables with ACID transactions, time travel and query optimisation, and explain how Delta Lake and Apache Iceberg work",
+    "Design streaming pipelines with event-time windows, watermarks, state and real-time features for ML",
+    "Construct hybrid cloud ML systems with reliable synchronisation, portable deployment, security and compliance",
+    "Establish enterprise MLOps with maturity assessments, continuous training and governed model promotion"
+  ],
+  "prerequisites": "Python, SQL and the ML workflow from training to deployment; Foundations of AI System Design and Data Engineering Foundations: Batch and Streaming Pipelines are good preparation. Install Python 3.10 or newer, then: pip install pandas numpy scikit-learn duckdb pyarrow. The optional Delta Lake steps add pip install deltalake. Everything runs locally on sample data: no cloud account is needed.",
+  "description": "Enterprises rarely struggle to train a model; they struggle to give it trustworthy data at the right speed, run it in the places their data and rules allow, and prove later what it did and why. This course is about the platforms that make that possible. You'll learn why organisations modernise from scattered databases and warehouses, how a zoned data lake is organised and fed, how lakehouse table formats such as Delta Lake and Apache Iceberg add ACID transactions and time travel to files in object storage, how stream processors handle late and duplicated events with event-time windows and watermarks, how hybrid architectures keep data and models consistent across on-premises sites and clouds under residency and privacy rules, and how enterprise MLOps automates retraining while keeping humans accountable.\n\nThe labs follow a hydropower company's turbine data, and each builds a working miniature of a platform component on your laptop with Python, DuckDB and SQLite: a raw, clean and curated lake with incremental ingestion and late corrections; a small table format with a transaction log, optimistic concurrency, time travel, data skipping, compaction and vacuum, compared with a real Delta Lake log; a stream processor with watermarks and a real-time feature checked against batch SQL; cross-environment synchronisation with reconciliation, pseudonymisation and policy checks; and a governed retraining gate with a registry and audit log. The capstone is a cloud-agnostic lakehouse and MLOps architecture, documented with a diagram and decision records and backed by a runnable walking skeleton.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Modernisation Strategy and Data Lakes",
+      "summary": "Why organisations modernise their data platforms, how a zoned data lake is organised, how to design its storage layer, and how data gets in: full, incremental, change data capture and streaming ingestion.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "Why organisations modernise their data platforms",
+          "minutes": 12,
+          "objectives": [
+            "Identify the drivers of data platform modernisation",
+            "Plan an incremental migration with measurable outcomes"
+          ],
+          "key_points": [
+            "Common drivers are data locked in departmental databases, warehouses that can't hold semi-structured or high-volume data cheaply, batch reports that arrive too late for operational decisions, and ML teams copying extracts by hand.",
+            "Modernise incrementally: move the highest-value use cases first and run old and new side by side, retiring the old piece by piece (the strangler fig approach), rather than one big-bang migration.",
+            "Separate storage from compute: open formats on object storage (Amazon S3, Azure Data Lake Storage, Google Cloud Storage or an S3-compatible store on site) let several engines share one copy of the data and scale independently.",
+            "Make the case with measurable outcomes: time from event to insight, manual extracts retired, data quality incidents, and the cost of running each pipeline.",
+            "Plan the operating model as well as the technology: who owns each dataset, what the platform team provides, and how governance works. Data mesh, for example, makes domains own their data as products on a shared self-service platform."
+          ]
+        },
+        {
+          "title": "Data lake architecture and zones",
+          "minutes": 12,
+          "objectives": [
+            "Describe a zoned (medallion) data lake",
+            "Explain what keeps a lake from becoming a swamp"
+          ],
+          "key_points": [
+            "A data lake stores raw and processed data of any kind as files in scalable object storage, applying a schema when data is read (schema-on-read) rather than when it is loaded.",
+            "Zones separate trust levels: raw (bronze) keeps data as received, append-only, for replay and audit; clean (silver) is typed, deduplicated and validated; curated (gold) holds aggregates and features. This layering is often called the medallion architecture.",
+            "Quarantine records that fail validation instead of dropping them silently, so they can be inspected, fixed at the source and replayed.",
+            "A catalog, such as Hive Metastore, AWS Glue Data Catalog, Unity Catalog or an Apache Iceberg REST catalog, records each table's schema, location, owner and access rules, so data can be found and governed.",
+            "Without ownership, a catalog, quality checks and retention rules, a lake becomes a data swamp: files nobody can find, trust or safely delete."
+          ]
+        },
+        {
+          "title": "Designing the storage layer",
+          "minutes": 12,
+          "objectives": [
+            "Choose formats, layout and partitioning for a lake",
+            "Plan retention, lifecycle and access by zone"
+          ],
+          "key_points": [
+            "Use open columnar formats such as Parquet for analytics, with compression; keep raw copies in the format received when replaying them matters.",
+            "Partition by what most queries filter on, often a date, at a grain that keeps files large: every small file costs a request and metadata work, so compact small files into bigger ones.",
+            "Object stores aren't file systems: listing large prefixes is slow and many lack an atomic rename, so a correct table shouldn't depend on directory listings; that's part of why table formats exist.",
+            "Lay out paths predictably (zone, domain, table, partition=value) and record them in the catalog; use lifecycle rules to move old data to cheaper storage classes and delete what retention allows.",
+            "Encrypt data at rest and grant access by zone and table: far fewer people need raw data than curated data."
+          ]
+        },
+        {
+          "title": "Ingestion strategies",
+          "minutes": 13,
+          "objectives": [
+            "Compare full, incremental, change data capture and streaming ingestion",
+            "Make ingestion idempotent"
+          ],
+          "key_points": [
+            "Full snapshot ingestion copies the whole source table each time: simple and robust, but expensive for large tables, and it can't tell what changed.",
+            "Incremental ingestion copies rows changed since a high-watermark, such as the largest updated_at already loaded; it is cheap, but it misses hard deletes and trusts the watermark column completely.",
+            "Change data capture (CDC) reads the database's own change log, for example with Debezium, and emits every insert, update and delete in order, with little load on the source.",
+            "Make ingestion idempotent: write each batch as an immutable file named by its range, and advance the watermark only after the write succeeds, so a retry never loses or duplicates data.",
+            "Streaming ingestion lands events continuously from a log such as Apache Kafka. Batch and streaming usually coexist, with the raw zone as their shared landing place."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a zoned data lake with incremental ingestion",
+        "tool": "Python 3, SQLite and DuckDB",
+        "minutes": 90,
+        "goal": "Ingest a plant's turbine readings from an operational database into raw, clean and curated zones on your disk, incrementally and idempotently, including late corrections and sensor glitches.",
+        "setup": [
+          "Python 3.10 or newer, then: pip install pandas numpy duckdb",
+          "Download the lab files into a new folder: make_plant_db.py and lake.py"
+        ],
+        "steps": [
+          {
+            "do": "Create the source database: three days of readings from four turbines.",
+            "code": "python make_plant_db.py",
+            "lang": "bash",
+            "see": "plant.db readings: (576, '2025-06-03 23:35:00')"
+          },
+          {
+            "do": "Read lake.py, then run it. It lands a raw batch, builds the clean and curated zones and queries one day.",
+            "code": "python lake.py",
+            "lang": "bash",
+            "see": "576 rows land in one raw batch; clean keeps 573 and quarantines 3 sensor glitches; curated has 12 turbine-days; one day's query reads 192 rows from its own partition."
+          },
+          {
+            "do": "Run lake.py again: with no saved watermark it re-reads and rewrites all 576 rows. Finish the TODO in ingest_raw(), delete the lake folder, and run lake.py twice.",
+            "see": "The second run prints Raw: no rows changed since 2025-06-03 23:35:00; nothing written"
+          },
+          {
+            "do": "Add day 4: 192 new readings, plus corrections to three readings from day 1.",
+            "code": "python make_plant_db.py --day4\npython lake.py",
+            "lang": "bash",
+            "see": "Raw: 195 rows changed since 2025-06-03 23:35:00, landed as a second batch."
+          },
+          {
+            "do": "Finish the QUALIFY clause in build_clean() so each reading keeps only its latest version, and run lake.py once more.",
+            "see": "Clean: 771 raw rows -> 764 clean rows, 4 quarantined, 3 older versions dropped; curated now has 16 turbine-days, and T4's 2025-06-01 mean rises from 3.881 to 3.892 with the corrections."
+          },
+          {
+            "do": "Write a short note on the design: why raw keeps both versions of a corrected reading, why the watermark is saved after the write, and what this ingestion would miss if the plant deleted a row."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The first load lands 576 rows and validation quarantines the 3 glitches.",
+            "look_for": [
+              "573 clean rows",
+              "3 quarantined"
+            ]
+          },
+          {
+            "text": "A rerun with no changes writes nothing.",
+            "look_for": [
+              "nothing written"
+            ]
+          },
+          {
+            "text": "The second batch carries the new day and the corrections.",
+            "look_for": [
+              "195 rows changed"
+            ]
+          },
+          {
+            "text": "Clean keeps the latest version of each reading.",
+            "look_for": [
+              "764 clean rows",
+              "3 older versions dropped",
+              "3.892"
+            ]
+          },
+          {
+            "text": "The note explains replay from raw, the order of write and watermark, and that hard deletes are invisible to a watermark.",
+            "look_for": [
+              "watermark",
+              "delete"
+            ]
+          }
+        ],
+        "submit": "Paste your lake.py, the output of each run, and your design note.",
+        "files": [
+          {
+            "path": "make_plant_db.py",
+            "content": "\"\"\"Create plant.db, a SQLite stand-in for a hydropower plant's operational database.\n\npython make_plant_db.py         three days of turbine readings (with a few sensor glitches)\npython make_plant_db.py --day4  add the fourth day's readings and correct three earlier ones\nFixed seed: everyone gets the same rows.\"\"\"\n\nimport sqlite3\nimport sys\nfrom datetime import datetime, timedelta\n\nimport numpy as np\n\nSTART = datetime(2025, 6, 1)\n\n\ndef readings(rng, first_day, days):\n    rows = []\n    for d in range(first_day, first_day + days):\n        for slot in range(48):                                  # every 30 minutes\n            t = START + timedelta(days=d, minutes=30 * slot)\n            for turbine in [\"T1\", \"T2\", \"T3\", \"T4\"]:\n                vibration = round(float(rng.normal(3.0 + (0.8 if turbine == \"T4\" else 0), 0.4)), 2)\n                if rng.rand() < 0.004:\n                    vibration = 999.0                           # a sensor glitch\n                rows.append((turbine, t.isoformat(sep=\" \"), vibration, round(float(rng.normal(55, 4)), 1),\n                             round(float(rng.uniform(40, 60)), 1), (t + timedelta(minutes=5)).isoformat(sep=\" \")))\n    return rows\n\n\ndef main():\n    con = sqlite3.connect(\"plant.db\")\n    if \"--day4\" in sys.argv:\n        rng = np.random.RandomState(2)\n        con.executemany(\"INSERT INTO readings (turbine_id, reading_time, vibration_mm_s, temperature_c, power_mw, \"\n                        \"updated_at) VALUES (?, ?, ?, ?, ?, ?)\", readings(rng, 3, 1))\n        for reading_id in (10, 20, 30):                         # late corrections to day 1\n            con.execute(\"UPDATE readings SET vibration_mm_s = vibration_mm_s + 0.5, \"\n                        \"updated_at = '2025-06-04 23:00:00' WHERE reading_id = ?\", (reading_id,))\n    else:\n        con.execute(\"DROP TABLE IF EXISTS readings\")\n        con.execute(\"CREATE TABLE readings (reading_id INTEGER PRIMARY KEY, turbine_id TEXT, reading_time TEXT, \"\n                    \"vibration_mm_s REAL, temperature_c REAL, power_mw REAL, updated_at TEXT)\")\n        con.executemany(\"INSERT INTO readings (turbine_id, reading_time, vibration_mm_s, temperature_c, power_mw, \"\n                        \"updated_at) VALUES (?, ?, ?, ?, ?, ?)\", readings(np.random.RandomState(1), 0, 3))\n    con.commit()\n    print(\"plant.db readings:\", con.execute(\"SELECT count(*), max(updated_at) FROM readings\").fetchone())\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "lake.py",
+            "content": "\"\"\"Lab 1: a zoned data lake on your disk. Raw keeps what arrived, clean is typed, deduplicated and validated,\ncurated holds features. Ingestion is incremental (a high-watermark) and idempotent.\"\"\"\n\nimport json\nimport shutil\nimport sqlite3\nfrom pathlib import Path\n\nimport duckdb\nimport pandas as pd\n\nLAKE = Path(\"lake\")\nSTATE = LAKE / \"_state\" / \"watermark.json\"\n\n\ndef ingest_raw(con):\n    \"\"\"Copy rows changed since the last watermark into the raw zone, as one immutable batch file.\"\"\"\n    watermark = json.loads(STATE.read_text())[\"updated_at\"] if STATE.exists() else \"1970-01-01 00:00:00\"\n    with sqlite3.connect(\"plant.db\") as source:\n        batch = pd.read_sql_query(\"SELECT * FROM readings WHERE updated_at > ? ORDER BY updated_at\",\n                                  source, params=(watermark,))\n    if batch.empty:\n        print(f\"Raw: no rows changed since {watermark}; nothing written\")\n        return\n    high = batch[\"updated_at\"].max()\n    folder = LAKE / \"raw\" / f\"ingest_date={high[:10]}\"\n    folder.mkdir(parents=True, exist_ok=True)\n    name = folder / f\"batch_{high.replace(' ', 'T').replace(':', '')}.parquet\"\n    con.sql(\"SELECT * FROM batch\").write_parquet(str(name))\n    # TODO: only now, after the batch file is safely written, save the new watermark:\n    #       STATE.parent.mkdir(parents=True, exist_ok=True); STATE.write_text(json.dumps({\"updated_at\": high}))\n    #       Why must this come after the write and not before?\n    print(f\"Raw: {len(batch)} rows changed since {watermark} -> {name.relative_to(LAKE)}\")\n\n\ndef build_clean(con):\n    \"\"\"Rebuild the clean zone from raw: typed, latest version of each reading, validated, partitioned by day.\"\"\"\n    con.execute(f\"\"\"\n        CREATE OR REPLACE TABLE latest AS\n        SELECT reading_id, turbine_id, CAST(reading_time AS TIMESTAMP) AS reading_time,\n               vibration_mm_s, temperature_c, power_mw, CAST(updated_at AS TIMESTAMP) AS updated_at,\n               CAST(reading_time AS DATE) AS reading_date\n        FROM read_parquet('{LAKE}/raw/*/*.parquet')\n        -- TODO: keep only the latest version of each reading_id:\n        --       QUALIFY row_number() OVER (PARTITION BY reading_id ORDER BY updated_at DESC) = 1\n        \"\"\")\n    valid = \"vibration_mm_s BETWEEN 0 AND 50 AND temperature_c BETWEEN -20 AND 120\"\n    for zone in (\"clean\", \"quarantine\"):\n        shutil.rmtree(LAKE / zone, ignore_errors=True)\n    con.execute(f\"COPY (SELECT * FROM latest WHERE {valid}) TO '{LAKE}/clean' \"\n                \"(FORMAT parquet, PARTITION_BY (reading_date))\")\n    (LAKE / \"quarantine\").mkdir()\n    con.execute(f\"COPY (SELECT * FROM latest WHERE NOT ({valid})) TO '{LAKE}/quarantine/rejected.parquet' \"\n                \"(FORMAT parquet)\")\n    raw = con.sql(f\"SELECT count(*) FROM read_parquet('{LAKE}/raw/*/*.parquet')\").fetchone()[0]\n    kept = con.sql(f\"SELECT count(*) FROM read_parquet('{LAKE}/clean/*/*.parquet')\").fetchone()[0]\n    rejected = con.sql(f\"SELECT count(*) FROM '{LAKE}/quarantine/rejected.parquet'\").fetchone()[0]\n    print(f\"Clean: {raw} raw rows -> {kept} clean rows, {rejected} quarantined, \"\n          f\"{raw - kept - rejected} older versions dropped\")\n\n\ndef build_curated(con):\n    con.execute(f\"\"\"\n        COPY (SELECT turbine_id, reading_date, round(avg(vibration_mm_s), 3) AS vibration_mean,\n                     max(temperature_c) AS temperature_max, round(sum(power_mw) * 0.5, 1) AS energy_mwh\n              FROM read_parquet('{LAKE}/clean/*/*.parquet', hive_partitioning=true)\n              GROUP BY ALL ORDER BY ALL) TO '{LAKE}/curated_turbine_daily.parquet' (FORMAT parquet)\"\"\")\n    print(\"Curated:\", con.sql(f\"SELECT count(*) FROM '{LAKE}/curated_turbine_daily.parquet'\").fetchone()[0],\n          \"turbine-days;\", con.sql(f\"\"\"SELECT turbine_id, vibration_mean FROM '{LAKE}/curated_turbine_daily.parquet'\n                                    WHERE reading_date = DATE '2025-06-01' AND turbine_id = 'T4'\"\"\").fetchone())\n\n\ndef one_day(con, day):\n    files = sorted((LAKE / \"clean\" / f\"reading_date={day}\").glob(\"*.parquet\"))\n    rows = con.sql(f\"SELECT count(*) FROM read_parquet('{LAKE}/clean/*/*.parquet', hive_partitioning=true) \"\n                   f\"WHERE reading_date = DATE '{day}'\").fetchone()[0]\n    print(f\"Query for {day}: {rows} rows, from the {len(files)} file(s) in its partition\")\n\n\nif __name__ == \"__main__\":\n    con = duckdb.connect()\n    ingest_raw(con)\n    build_clean(con)\n    build_curated(con)\n    one_day(con, \"2025-06-02\")\n"
+          }
+        ],
+        "hints": [
+          "If the watermark were saved first and the write then failed, the next run would skip rows that never landed.",
+          "QUALIFY filters on a window function's result, like HAVING does for GROUP BY."
+        ]
+      }
+    },
+    {
+      "title": "Lakehouse Architecture",
+      "summary": "Combine the lake's open storage with a warehouse's guarantees: lakehouse concepts, how Delta Lake and Apache Iceberg work, ACID transactions through a transaction log, and query optimisation.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "Lakehouse concepts",
+          "minutes": 12,
+          "objectives": [
+            "Explain what a lakehouse adds to a data lake",
+            "Weigh a lakehouse against a separate lake and warehouse"
+          ],
+          "key_points": [
+            "A lakehouse adds warehouse features to a data lake: ACID transactions, schema enforcement and evolution, time travel and fast SQL, directly on open files in object storage.",
+            "The key component is an open table format, Delta Lake, Apache Iceberg or Apache Hudi: a metadata layer over Parquet files that defines exactly which files make up each version of a table.",
+            "One copy of the data can serve BI, data science and ML through several engines, such as Spark, Trino, Flink, DuckDB and cloud warehouses, instead of copying data from a lake into a warehouse.",
+            "The medallion layers carry over: bronze, silver and gold become transactional tables rather than folders of loose files.",
+            "Table maintenance (compaction, vacuum, statistics) becomes the platform's job, and engines differ in which table-format features they support, so check support before committing to one."
+          ]
+        },
+        {
+          "title": "Delta Lake and Apache Iceberg",
+          "minutes": 13,
+          "objectives": [
+            "Describe how Delta Lake and Apache Iceberg track table versions",
+            "Compare their partitioning, updates and time travel"
+          ],
+          "key_points": [
+            "Delta Lake keeps a transaction log in a _delta_log folder: numbered JSON commits listing the data files added and removed, plus Parquet checkpoints (every 10 commits by default) so readers needn't replay the whole log.",
+            "Apache Iceberg keeps metadata as a tree: each table version's metadata file points to a manifest list, which points to manifests listing data files and their column statistics; a catalog holds the pointer to the current metadata file.",
+            "Iceberg's hidden partitioning derives partition values from columns with transforms such as day(ts) or bucket(16, id), so queries filter on the column itself and the scheme can evolve without rewriting old data.",
+            "Both offer time travel, schema evolution and copy-on-write updates; merge-on-read (delete files in Iceberg, deletion vectors in Delta Lake) makes small updates cheaper at some cost to reads.",
+            "Apache Hudi, the third major format, focuses on upserts and incremental processing, with copy-on-write and merge-on-read table types."
+          ],
+          "walkthrough": {
+            "tool": "Python and the deltalake package",
+            "title": "Look inside a real Delta Lake table",
+            "steps": [
+              {
+                "do": "Install the deltalake package (delta-rs, which needs no Spark or Java) and run delta_check.py from the module 2 lab files.",
+                "code": "pip install deltalake\npython delta_check.py",
+                "lang": "bash",
+                "see": "version 2 rows 6, then after delete: version 3 rows 5, and time travel to version 2: 6 rows."
+              },
+              {
+                "do": "List the transaction log.",
+                "code": "import os\nsorted(os.listdir(\"delta_turbines/_delta_log\"))",
+                "lang": "python",
+                "see": "Four commits, 00000000000000000000.json to 00000000000000000003.json: three appends and a delete."
+              },
+              {
+                "do": "Read the action types in the first and last commits; each line of a commit is one action.",
+                "code": "import json\nfor n in [0, 3]:\n    lines = open(f\"delta_turbines/_delta_log/{n:020d}.json\").read().splitlines()\n    print(n, [next(iter(json.loads(l))) for l in lines])",
+                "lang": "python",
+                "see": "0 ['commitInfo', 'protocol', 'metaData', 'add'] and 3 ['commitInfo', 'add', 'remove']: the delete rewrote a file, adding the new one and removing the old in a single commit."
+              },
+              {
+                "do": "Read the table's history, newest first.",
+                "code": "from deltalake import DeltaTable\n[h[\"operation\"] for h in DeltaTable(\"delta_turbines\").history()]",
+                "lang": "python",
+                "see": "['DELETE', 'WRITE', 'WRITE', 'WRITE']"
+              }
+            ]
+          }
+        },
+        {
+          "title": "ACID transactions on a data lake",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a transaction log gives atomicity and isolation",
+            "Describe optimistic concurrency and its storage requirement"
+          ],
+          "key_points": [
+            "Atomicity: a commit is one new log entry. Data files are written first and become visible only when the commit lands, so readers see all of a commit's changes or none of them.",
+            "Isolation comes from optimistic concurrency: writers read a version, do their work and try to create the next log entry; if another writer got there first the commit fails, and is retried or aborted after a conflict check.",
+            "The log needs an atomic create-if-absent (put-if-absent) or a catalog that serialises commits; on storage without one, table formats rely on a catalog or locking service for safe concurrent writers.",
+            "A failed or conflicting job leaves only unreferenced data files, which readers never see and vacuum deletes later; nothing half-written is ever part of a version.",
+            "Snapshots make time travel cheap: reading an old version replays the log to that point, and the retention period of vacuum decides how far back you can go."
+          ]
+        },
+        {
+          "title": "Query optimisation on lakehouse tables",
+          "minutes": 12,
+          "objectives": [
+            "Use pruning, skipping, clustering and compaction to read less data",
+            "Read a query plan to check what a query scans"
+          ],
+          "key_points": [
+            "Partition pruning skips partitions a filter rules out; data skipping uses each file's min and max column statistics, kept in the table metadata, to skip files whose range can't match.",
+            "Clustering puts related rows in the same files so skipping works on more columns: sorting, Z-ordering (Delta Lake's OPTIMIZE ... ZORDER BY), or Delta Lake's newer liquid clustering.",
+            "Compaction rewrites many small files into fewer large ones (OPTIMIZE in Delta Lake, rewrite_data_files in Iceberg); streaming writes in particular create small files.",
+            "Parquet readers prune columns and push filters down to row groups, so selecting only the columns a query needs and filtering early cuts the bytes read.",
+            "Check plans with EXPLAIN or EXPLAIN ANALYZE and keep statistics fresh: the cheapest query is the one that reads the least data."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a table format in miniature",
+        "tool": "Python 3 and DuckDB",
+        "minutes": 120,
+        "goal": "Implement the core of a lakehouse table format: immutable Parquet files, a numbered JSON transaction log, atomic commits with optimistic concurrency, copy-on-write deletes, time travel, data skipping, compaction and vacuum. Then compare with the real Delta Lake log.",
+        "setup": [
+          "Python 3.10 or newer with pandas and duckdb installed",
+          "Download the lab files into a new folder: mini_table.py and delta_check.py",
+          "Optional, for the last step: pip install deltalake"
+        ],
+        "steps": [
+          {
+            "do": "Run mini_table.py as it is. The placeholders work for a single writer, but notice the two writers at the end: writer B silently overwrites writer A's commit.",
+            "code": "python mini_table.py",
+            "lang": "bash"
+          },
+          {
+            "do": "Make commit() atomic: create the next log file with os.open(..., os.O_WRONLY | os.O_CREAT | os.O_EXCL), and raise CommitConflict when it already exists.",
+            "see": "Writer B: conflict (version 4 was committed by someone else); both were appends, so B rereads and retries; then v4 by writer A, v5 by writer B; 15 rows."
+          },
+          {
+            "do": "Complete delete() as copy-on-write: for each file with matching rows, remove it and add a rewritten file without them, all in one commit.",
+            "see": "v3: deleted one reading; 11 rows now, 12 rows at v2 (time travel)"
+          },
+          {
+            "do": "Complete files_for_day() to skip files using the min_day and max_day statistics in the log.",
+            "see": "Data skipping for 2025-06-03: read 1 file, skipped 2"
+          },
+          {
+            "do": "Run the whole script and read the end of the output.",
+            "see": "v6: optimize 5 files into 1; still 15 rows. Vacuum keeping v6 onwards deleted 7 unreferenced files: one more than the six replaced files, because writer B's failed attempt left an orphan data file."
+          },
+          {
+            "do": "Optional: install deltalake and run delta_check.py, then compare its _delta_log with your _log.",
+            "code": "pip install deltalake\npython delta_check.py",
+            "lang": "bash",
+            "see": "version 2 rows 6, after delete: version 3 rows 5, time travel to version 2: 6 rows, and history ['DELETE', 'WRITE', 'WRITE', 'WRITE']."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Commits are atomic and a concurrent writer gets a conflict instead of overwriting.",
+            "look_for": [
+              "O_EXCL",
+              "conflict (version 4 was committed by someone else)"
+            ]
+          },
+          {
+            "text": "Deletes are copy-on-write and earlier versions stay readable.",
+            "look_for": [
+              "11 rows now, 12 rows at v2"
+            ]
+          },
+          {
+            "text": "Data skipping uses file statistics from the log.",
+            "look_for": [
+              "read 1 file, skipped 2"
+            ]
+          },
+          {
+            "text": "Compaction keeps the rows and vacuum removes unreferenced files, including the orphan from the failed commit.",
+            "look_for": [
+              "optimize 5 files into 1",
+              "deleted 7 unreferenced files"
+            ]
+          },
+          {
+            "text": "The submission explains why vacuum ends time travel to versions before its retention point.",
+            "look_for": [
+              "vacuum",
+              "time travel"
+            ]
+          }
+        ],
+        "submit": "Paste your mini_table.py, its full output, and a paragraph comparing your log with Delta Lake's (or with the walkthrough's output) and explaining what vacuum costs.",
+        "files": [
+          {
+            "path": "mini_table.py",
+            "content": "\"\"\"Lab 2: a table format in miniature. Data lives in immutable Parquet files; a transaction log of numbered JSON\ncommits says which files make up each version. That log is what gives a lake ACID tables and time travel.\"\"\"\n\nimport json\nimport os\nimport shutil\nimport uuid\nfrom pathlib import Path\n\nimport duckdb\nimport pandas as pd\n\n\nclass CommitConflict(Exception):\n    pass\n\n\nclass MiniTable:\n    def __init__(self, path):\n        self.path = Path(path)\n        self.log = self.path / \"_log\"\n        self.log.mkdir(parents=True, exist_ok=True)\n        self.con = duckdb.connect()\n\n    # ---------------------------------------------------------------- the log\n    def version(self):\n        commits = sorted(self.log.glob(\"*.json\"))\n        return int(commits[-1].stem) if commits else -1\n\n    def commit(self, actions, read_version, operation):\n        \"\"\"Atomically claim the next version number. Opening with O_CREAT | O_EXCL fails if another writer\n        already created that file, which is how concurrent writers are detected (optimistic concurrency).\"\"\"\n        target = self.log / f\"{read_version + 1:020d}.json\"\n        # TODO: open target with os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL); if it raises\n        #       FileExistsError, raise CommitConflict(f\"version {read_version + 1} was committed by someone else\").\n        #       Then write {\"operation\": operation, \"actions\": actions} as JSON through os.fdopen(fd, \"w\").\n        target.write_text(json.dumps({\"operation\": operation, \"actions\": actions}))   # unsafe placeholder\n        return read_version + 1\n\n    def files(self, version=None):\n        \"\"\"Replay the log up to a version: the set of data files that make up that snapshot.\"\"\"\n        version = self.version() if version is None else version\n        active = {}\n        for n in range(version + 1):\n            for action in json.loads((self.log / f\"{n:020d}.json\").read_text())[\"actions\"]:\n                if \"add\" in action:\n                    active[action[\"add\"][\"path\"]] = action[\"add\"]\n                else:\n                    active.pop(action[\"remove\"][\"path\"])\n        return active\n\n    def history(self):\n        return [(n, json.loads((self.log / f\"{n:020d}.json\").read_text())[\"operation\"])\n                for n in range(self.version() + 1)]\n\n    # ---------------------------------------------------------------- reading\n    def read(self, version=None, where=\"TRUE\"):\n        files = self.files(version)\n        if not files:\n            return pd.DataFrame()\n        paths = \", \".join(f\"'{self.path / p}'\" for p in sorted(files))\n        return self.con.sql(f\"SELECT * FROM read_parquet([{paths}]) WHERE {where}\").df()\n\n    def files_for_day(self, day):\n        \"\"\"Data skipping: use each file's min/max statistics from the log to avoid opening files that can't match.\"\"\"\n        files = self.files()\n        keep = list(files)     # TODO: keep only files whose min_day <= day <= max_day\n        return keep, len(files) - len(keep)\n\n    # ---------------------------------------------------------------- writing\n    def _write_file(self, df):\n        name = f\"part-{uuid.uuid4().hex[:12]}.parquet\"\n        self.con.sql(\"SELECT * FROM df\").write_parquet(str(self.path / name))\n        return {\"add\": {\"path\": name, \"rows\": len(df), \"min_day\": str(df[\"reading_date\"].min()),\n                        \"max_day\": str(df[\"reading_date\"].max())}}\n\n    def append(self, df, read_version=None):\n        read_version = self.version() if read_version is None else read_version\n        return self.commit([self._write_file(df)], read_version, \"append\")\n\n    def delete(self, where):\n        \"\"\"Copy-on-write delete: rewrite each affected file without the deleted rows, then swap them in one commit.\"\"\"\n        read_version = self.version()\n        actions = []\n        for path in sorted(self.files(read_version)):\n            df = self.con.sql(f\"SELECT * FROM '{self.path / path}'\").df()\n            hit = self.con.sql(f\"SELECT count(*) FROM df WHERE {where}\").fetchone()[0]\n            # TODO: if the file has matching rows, add a {\"remove\": {\"path\": path}} action, and, if any rows\n            #       remain (SELECT * FROM df WHERE NOT (<where>)), write them to a new file with self._write_file()\n        return self.commit(actions, read_version, f\"delete where {where}\")\n\n    def optimize(self):\n        \"\"\"Compaction: replace many small files with one, without changing the rows.\"\"\"\n        read_version = self.version()\n        files = self.files(read_version)\n        everything = self.read(read_version)\n        actions = [{\"remove\": {\"path\": p}} for p in sorted(files)] + [self._write_file(everything)]\n        return self.commit(actions, read_version, f\"optimize {len(files)} files into 1\")\n\n    def vacuum(self, keep_from_version):\n        \"\"\"Delete data files no version from keep_from_version onwards refers to. Time travel to older\n        versions stops working, which is why vacuuming keeps a retention period.\"\"\"\n        needed = set()\n        for v in range(keep_from_version, self.version() + 1):\n            needed |= set(self.files(v))\n        removed = [p for p in self.path.glob(\"part-*.parquet\") if p.name not in needed]\n        for p in removed:\n            p.unlink()\n        return len(removed)\n\n\ndef day_batch(day, turbines=(\"T1\", \"T2\", \"T3\", \"T4\")):\n    return pd.DataFrame({\"turbine_id\": list(turbines),\n                         \"reading_date\": pd.to_datetime([day] * len(turbines)).date,\n                         \"vibration_mm_s\": [{\"T1\": 3.1, \"T2\": 2.9, \"T3\": 3.0, \"T4\": 3.9}[t] for t in turbines]})\n\n\ndef main():\n    shutil.rmtree(\"turbine_table\", ignore_errors=True)\n    table = MiniTable(\"turbine_table\")\n    for day in [\"2025-06-01\", \"2025-06-02\", \"2025-06-03\"]:\n        v = table.append(day_batch(day))\n        print(f\"v{v}: appended {day}; {len(table.read())} rows in {len(table.files())} files\")\n\n    v = table.delete(\"turbine_id = 'T3' AND reading_date = DATE '2025-06-02'\")\n    print(f\"v{v}: deleted one reading; {len(table.read())} rows now, {len(table.read(version=2))} rows at v2 (time travel)\")\n\n    keep, skipped = table.files_for_day(\"2025-06-03\")\n    print(f\"Data skipping for 2025-06-03: read {len(keep)} file, skipped {skipped}\")\n\n    # two writers both start from the current version; the second to commit must notice\n    start = table.version()\n    first = table.append(day_batch(\"2025-06-04\", [\"T1\", \"T2\"]), read_version=start)\n    try:\n        table.append(day_batch(\"2025-06-04\", [\"T3\", \"T4\"]), read_version=start)\n    except CommitConflict as e:\n        print(f\"Writer B: conflict ({e}); both were appends, so B rereads and retries\")\n        second = table.append(day_batch(\"2025-06-04\", [\"T3\", \"T4\"]))\n        print(f\"v{first} by writer A, v{second} by writer B; {len(table.read())} rows\")\n\n    v = table.optimize()\n    print(f\"v{v}: {table.history()[-1][1]}; still {len(table.read())} rows\")\n    print(f\"Vacuum keeping v{v} onwards: deleted {table.vacuum(v)} unreferenced files\")\n    print(\"History:\", table.history())\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "delta_check.py",
+            "content": "import shutil, pandas as pd\nfrom deltalake import DeltaTable, write_deltalake\nshutil.rmtree(\"delta_turbines\", ignore_errors=True)\nfor day in [\"2025-06-01\", \"2025-06-02\", \"2025-06-03\"]:\n    write_deltalake(\"delta_turbines\", pd.DataFrame({\"turbine_id\": [\"T1\", \"T2\"], \"reading_date\": [day, day], \"vibration_mm_s\": [3.1, 2.9]}), mode=\"append\")\ndt = DeltaTable(\"delta_turbines\")\nprint(\"version\", dt.version(), \"rows\", len(dt.to_pandas()))\ndt.delete(\"turbine_id = 'T2' AND reading_date = '2025-06-02'\")\nprint(\"after delete: version\", dt.version(), \"rows\", len(dt.to_pandas()))\nprint(\"time travel to version 2:\", len(DeltaTable(\"delta_turbines\", version=2).to_pandas()), \"rows\")\nprint([h[\"operation\"] for h in dt.history()])\nimport os; print(sorted(os.listdir(\"delta_turbines/_delta_log\")))\n"
+          }
+        ],
+        "hints": [
+          "os.open returns a file descriptor; os.fdopen(fd, \"w\") turns it into a file object for json.dump.",
+          "A file can be skipped when the day is outside [min_day, max_day]; ISO dates compare correctly as strings."
+        ]
+      }
+    },
+    {
+      "title": "Streaming Data Patterns",
+      "summary": "Process events as they happen: stream processing engines and delivery guarantees, event-driven architectures, event-time windows with watermarks and state, and real-time features for ML.",
+      "instructor": "ismaile-rahimovi",
+      "lessons": [
+        {
+          "title": "Stream processing engines",
+          "minutes": 12,
+          "objectives": [
+            "Compare Flink, Spark Structured Streaming, Kafka Streams and Beam",
+            "Explain at-most-once, at-least-once and exactly-once processing"
+          ],
+          "key_points": [
+            "A stream processor runs continuous queries over unbounded event streams, usually reading from a durable log such as Apache Kafka, Amazon Kinesis or Apache Pulsar.",
+            "Apache Flink processes events one at a time with event-time semantics, managed state and checkpoints; Spark Structured Streaming runs a series of micro-batches with Spark's batch APIs; Kafka Streams is a library inside your own application.",
+            "Apache Beam is a programming model rather than an engine: the same pipeline runs on runners such as Flink, Spark and Google Cloud Dataflow.",
+            "At-most-once delivery can lose events and at-least-once can repeat them; exactly-once results need checkpointed state plus idempotent or transactional writes to the sink.",
+            "The Lambda architecture keeps a batch layer and a speed layer; the Kappa architecture, described by Jay Kreps in 2014, processes everything as streams and recomputes by replaying the log."
+          ]
+        },
+        {
+          "title": "Event-driven architectures",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish event notification, event-carried state transfer and event sourcing",
+            "Design events as contracts that can evolve"
+          ],
+          "key_points": [
+            "In an event-driven architecture, services publish events, facts that something happened such as ReadingRecorded, and others react, so producers don't need to know who consumes them.",
+            "Event notification sends a small message that something changed; event-carried state transfer includes the data consumers need; event sourcing makes the event log the system of record and rebuilds state by replaying it.",
+            "Treat events as contracts: a schema registry with Avro, Protobuf or JSON Schema, and compatibility rules, lets producers evolve events without breaking consumers.",
+            "Partition streams by a key, such as turbine ID, to keep each key's events in order; there is no ordering across keys.",
+            "Expect duplicates and replays: give events unique IDs and make consumers idempotent, and use the outbox pattern to publish events reliably when a database changes."
+          ]
+        },
+        {
+          "title": "Windowing, watermarks and state",
+          "minutes": 13,
+          "objectives": [
+            "Choose between tumbling, sliding and session windows",
+            "Explain how watermarks decide when a window is complete",
+            "Manage keyed state and late events"
+          ],
+          "key_points": [
+            "Event time is when something happened; processing time is when the system sees it. Networks and outages deliver events late and out of order, so results that matter should use event time.",
+            "Tumbling windows are fixed and don't overlap (every 5 minutes); sliding or hopping windows overlap (10 minutes, every minute); session windows close after a gap with no events.",
+            "A watermark is the processor's estimate that no older events are still coming, typically the newest event time seen minus an allowed delay; a window is emitted when the watermark passes its end.",
+            "Events arriving after their window has been emitted are late: drop them, send them to a side output, or allow updates for a set lateness, trading completeness against latency.",
+            "Keyed state, such as counts or recent readings per turbine, lives in the processor (in memory or an embedded store such as RocksDB) and is checkpointed; give it a time-to-live so it can't grow forever."
+          ]
+        },
+        {
+          "title": "Real-time feature engineering",
+          "minutes": 12,
+          "objectives": [
+            "Design a streaming feature that matches its batch definition",
+            "Decide when a feature is worth computing in real time"
+          ],
+          "key_points": [
+            "Real-time features summarise recent events, such as high-vibration readings in the last 10 minutes; a streaming job computes them and writes them to an online store for low-latency lookups.",
+            "Define each feature once and compute it the same way in streaming and in batch training jobs; compare the two regularly, because late events and separate code paths make them diverge.",
+            "Point-in-time correctness still applies: training rows need the value the model would have seen at prediction time, which the streaming job's log of emitted values can provide.",
+            "Deduplicate by event ID before aggregating, because at-least-once delivery repeats events.",
+            "Streaming features add infrastructure and on-call work: use them where freshness measurably improves decisions, and compute slower-changing features in batch."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Event-time windows, watermarks and a real-time feature",
+        "tool": "Python 3 and DuckDB",
+        "minutes": 100,
+        "goal": "Process an hour of turbine readings in arrival order, with duplicates and late events, using event-time tumbling windows and a watermark, compute a real-time feature with keyed state, and check it against the same feature in batch SQL.",
+        "setup": [
+          "Python 3.10 or newer with pandas, numpy and duckdb installed",
+          "Download the lab file streaming.py into a new folder"
+        ],
+        "steps": [
+          {
+            "do": "Run streaming.py as it is. Without a watermark nothing is ever emitted, and the state never shrinks.",
+            "code": "python streaming.py",
+            "lang": "bash",
+            "see": "T4: no windows emitted, and 736 readings held in state."
+          },
+          {
+            "do": "In process(), drop duplicates by event_id and advance the watermark to the newest event time minus LATENESS.",
+            "see": "Events delivered: 736, duplicates dropped: 16."
+          },
+          {
+            "do": "Drop events whose window has already been emitted, and count them.",
+            "see": "late but accepted: 12  too late, dropped: 11"
+          },
+          {
+            "do": "Evict readings older than 10 minutes from each turbine's deque, and run the script.",
+            "see": "Windows emitted: 66, still open at the end: 6; T4's window mean climbs from 3.12 to 4.53; state holds 127 readings across 6 turbines."
+          },
+          {
+            "do": "Read batch_feature(): the same feature as a DuckDB window over event time. Compare.",
+            "see": "Real-time feature matches batch SQL for 681 of 709 scored events; 28 differ."
+          },
+          {
+            "do": "Change LATENESS to 5 minutes and rerun. What happens to the late events, the matches and the delay before each window is emitted? Write down the trade-off."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Duplicates from at-least-once delivery are removed.",
+            "look_for": [
+              "duplicates dropped: 16"
+            ]
+          },
+          {
+            "text": "The watermark accepts late events within the allowed lateness and drops the rest.",
+            "look_for": [
+              "late but accepted: 12",
+              "too late, dropped: 11"
+            ]
+          },
+          {
+            "text": "Windows are emitted as the watermark passes them, and state stays bounded.",
+            "look_for": [
+              "Windows emitted: 66",
+              "127 readings"
+            ]
+          },
+          {
+            "text": "The streaming feature is checked against batch SQL.",
+            "look_for": [
+              "681 of 709"
+            ]
+          },
+          {
+            "text": "The lateness experiment explains the completeness-latency trade-off.",
+            "look_for": [
+              "latency",
+              "late"
+            ]
+          }
+        ],
+        "submit": "Paste your process() method, the full output with 60 seconds and with 5 minutes of lateness, and your trade-off note.",
+        "files": [
+          {
+            "path": "streaming.py",
+            "content": "\"\"\"Lab 3: a stream processor in miniature: event time, watermarks, tumbling windows, keyed state and a real-time\nfeature, checked against the same feature computed in batch with SQL.\"\"\"\n\nfrom collections import defaultdict, deque\nfrom datetime import datetime, timedelta\n\nimport duckdb\nimport numpy as np\nimport pandas as pd\n\nWINDOW = timedelta(minutes=5)          # tumbling windows for the dashboard\nLATENESS = timedelta(seconds=60)       # how far behind the newest event the watermark trails\nFEATURE_SPAN = timedelta(minutes=10)   # real-time feature: high-vibration readings in the last 10 minutes\nHIGH = 4.0\n\n\ndef make_events():\n    \"\"\"One hour of readings from six turbines, every 30 s, as they arrive: some late, a few duplicated.\"\"\"\n    rng = np.random.RandomState(4)\n    start = datetime(2025, 6, 1, 8, 0)\n    rows = []\n    for k in range(120):\n        for t in [\"T1\", \"T2\", \"T3\", \"T4\", \"T5\", \"T6\"]:\n            event_time = start + timedelta(seconds=30 * k)\n            base = 3.0 + (1.6 * k / 120 if t == \"T4\" else 0)        # T4 develops a fault\n            delay = rng.choice([rng.uniform(0, 5), rng.uniform(20, 55), rng.uniform(240, 300)], p=[0.93, 0.05, 0.02])\n            rows.append({\"event_id\": f\"{t}-{k:03d}\", \"turbine_id\": t, \"event_time\": event_time,\n                         \"arrival_time\": event_time + timedelta(seconds=float(delay)),\n                         \"vibration\": round(float(rng.normal(base, 0.4)), 2)})\n            if rng.rand() < 0.02:                                     # at-least-once delivery: a redelivery\n                rows.append(dict(rows[-1], arrival_time=rows[-1][\"arrival_time\"] + timedelta(seconds=7)))\n    return pd.DataFrame(rows).sort_values(\"arrival_time\", kind=\"stable\").reset_index(drop=True)\n\n\nclass Processor:\n    def __init__(self):\n        self.seen = set()                                  # event ids already processed (for de-duplication)\n        self.watermark = datetime.min\n        self.windows = defaultdict(lambda: [0, 0.0])        # (turbine, window start) -> [count, sum]\n        self.recent = defaultdict(deque)                    # turbine -> (event_time, is_high) in the feature span\n        self.closed, self.features = [], {}\n        self.duplicates = self.too_late = self.late_accepted = 0\n\n    def process(self, e):\n        # TODO: if this event_id was already processed, count it in self.duplicates and return\n        self.seen.add(e[\"event_id\"])\n        window_start = e[\"event_time\"] - timedelta(minutes=e[\"event_time\"].minute % 5, seconds=e[\"event_time\"].second)\n        # TODO: if window_start + WINDOW <= self.watermark, its window has already been emitted:\n        #       count the event in self.too_late and return\n        if e[\"event_time\"] < self.watermark:\n            self.late_accepted += 1\n        acc = self.windows[(e[\"turbine_id\"], window_start)]\n        acc[0] += 1\n        acc[1] += e[\"vibration\"]\n        # real-time feature: keep only this turbine's readings inside the span, then count the high ones\n        state = self.recent[e[\"turbine_id\"]]\n        state.append((e[\"event_time\"], e[\"vibration\"] > HIGH))\n        # TODO: evict readings older than e[\"event_time\"] - FEATURE_SPAN from the left of the deque\n        self.features[e[\"event_id\"]] = sum(1 for t, high in state if high and t <= e[\"event_time\"])\n        # TODO: advance the watermark: the newest event time seen so far minus LATENESS\n        for key in [k for k in self.windows if k[1] + WINDOW <= self.watermark]:\n            count, total = self.windows.pop(key)\n            self.closed.append((key[0], key[1], count, round(total / count, 2)))\n\n\ndef batch_feature(events):\n    \"\"\"The same feature in batch SQL, over every event in event-time order: the answer streaming should match.\"\"\"\n    deduped = events.drop_duplicates(\"event_id\")\n    return duckdb.sql(\"\"\"\n        SELECT event_id, sum(CASE WHEN vibration > 4.0 THEN 1 ELSE 0 END) OVER (\n                   PARTITION BY turbine_id ORDER BY event_time\n                   RANGE BETWEEN INTERVAL 10 MINUTES PRECEDING AND CURRENT ROW) AS high_10min\n        FROM deduped\"\"\").df().set_index(\"event_id\")[\"high_10min\"]\n\n\ndef main():\n    events = make_events()\n    p = Processor()\n    for e in events.to_dict(orient=\"records\"):\n        p.process(e)\n    print(f\"Events delivered: {len(events)}  duplicates dropped: {p.duplicates}  \"\n          f\"late but accepted: {p.late_accepted}  too late, dropped: {p.too_late}\")\n    print(f\"Windows emitted: {len(p.closed)}  still open at the end: {len(p.windows)}\")\n    t4 = [w for w in p.closed if w[0] == \"T4\"]\n    print(f\"T4 first window mean {t4[0][3]}, last emitted window mean {t4[-1][3]}\" if t4 else \"T4: no windows emitted\")\n    print(f\"State held: {sum(len(q) for q in p.recent.values())} readings across {len(p.recent)} turbines\")\n\n    expected = batch_feature(events)\n    streamed = pd.Series(p.features)\n    common = streamed.index.intersection(expected.index)\n    same = (streamed[common] == expected[common]).sum()\n    print(f\"Real-time feature matches batch SQL for {same} of {len(common)} scored events; \"\n          f\"{len(common) - same} differ because a reading inside their 10 minutes arrived after them\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "A deque's popleft() removes its oldest entry; readings for each turbine arrive mostly in event-time order, so the oldest are at the left.",
+          "The watermark only moves forward: max(current watermark, event_time - LATENESS)."
+        ]
+      }
+    },
+    {
+      "title": "Hybrid Cloud Architectures",
+      "summary": "Design ML systems that span on-premises sites and clouds: why organisations go hybrid, keeping data in step between environments, deploying the same model everywhere, and securing it all.",
+      "instructor": "catalina-ionescu",
+      "lessons": [
+        {
+          "title": "Why hybrid and multi-cloud",
+          "minutes": 12,
+          "objectives": [
+            "Identify the drivers and costs of hybrid and multi-cloud architectures",
+            "Choose where each workload runs"
+          ],
+          "key_points": [
+            "A hybrid architecture combines on-premises systems with one or more public clouds; multi-cloud uses more than one cloud provider.",
+            "Drivers include data that must stay on site or in a country (residency and sovereignty), low latency to plant or factory systems, existing data centres, bursting to cloud GPUs for training, resilience and less dependence on one provider.",
+            "The costs are more environments to secure, monitor and staff, data transfer (egress) charges, and services that differ between clouds and pull designs towards the lowest common denominator.",
+            "Common patterns: keep data where it's produced and move models to it; train in the cloud on pseudonymised or aggregated data; or run one platform layer, containers and Kubernetes, in every environment.",
+            "Record which workloads run where, and why, for each class of data, so placement doesn't drift system by system."
+          ]
+        },
+        {
+          "title": "Synchronising data between environments",
+          "minutes": 12,
+          "objectives": [
+            "Compare replication approaches and their trade-offs",
+            "Prove two copies agree with reconciliation"
+          ],
+          "key_points": [
+            "Replication options include scheduled incremental copies by high-watermark, change data capture streams, object storage replication and database-native replication, trading freshness, source load and complexity.",
+            "Watermark-based sync never sees hard deletes; change data capture or soft deletes (tombstone records) are needed to carry deletions.",
+            "Upsert by primary key (MERGE, or INSERT OR REPLACE) so rerunning a sync is safe, and apply each batch idempotently.",
+            "Reconcile regularly: compare row counts and checksums per partition on both sides and repair only the partitions that differ.",
+            "Design for eventual consistency and outages: name the source of truth for each dataset, queue changes while links are down, and monitor replication lag."
+          ]
+        },
+        {
+          "title": "Deploying models across clouds",
+          "minutes": 12,
+          "objectives": [
+            "Package and deploy one model consistently in several environments",
+            "Verify that each site runs the registered artefact"
+          ],
+          "key_points": [
+            "Package models portably: a container image with the serving code and, where it helps, a framework-neutral format such as ONNX, so one artefact runs on site and in any cloud.",
+            "Kubernetes gives a common deployment target, and Helm charts or GitOps controllers such as Argo CD and Flux apply the same declarative configuration in every environment.",
+            "Identify artefacts by content digest (sha256), never by a mutable tag such as latest, and check at deploy time that what runs matches the registry; signing images and models, for example with Sigstore's cosign, proves their origin.",
+            "Keep one model registry as the source of truth, replicate approved versions to each environment, and record promotions and rollbacks centrally.",
+            "Give each site health checks and a local fallback model or rule, so predictions continue if the link to the central platform is lost."
+          ]
+        },
+        {
+          "title": "Security and compliance across environments",
+          "minutes": 13,
+          "objectives": [
+            "Apply zero-trust identity, encryption and secrets management across environments",
+            "Pseudonymise personal data and check replication plans against policy"
+          ],
+          "key_points": [
+            "Zero trust: authenticate every user and service, authorise each request with least privilege, and don't trust a network location; federate identity (OpenID Connect, workload identity) instead of copying long-lived keys.",
+            "Encrypt in transit (TLS) and at rest with keys in a key management service or hardware security module, and keep secrets in a secrets manager such as HashiCorp Vault or the cloud's own, never in code.",
+            "Classify data and enforce rules per class: pseudonymise personal data before it leaves a protected zone; a keyed hash (HMAC) keeps joins possible without exposing the identifier.",
+            "Under the GDPR, pseudonymised data is still personal data, because the key can re-identify it, and transfers outside the EEA need a basis such as an adequacy decision or standard contractual clauses.",
+            "Write policies as code, for example with Open Policy Agent, check replication and deployment plans against them automatically, and log every access and change centrally for audit."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Synchronise, reconcile and govern across environments",
+        "tool": "Python 3, SQLite and DuckDB",
+        "minutes": 90,
+        "goal": "Keep a cloud copy of an on-premises database in step with incremental upserts, catch a hard delete with reconciliation, pseudonymise operators' personal data, check a replication plan against a residency and PII policy, and verify deployed model digests.",
+        "setup": [
+          "Python 3.10 or newer with pandas and duckdb installed",
+          "Download the lab files into a new folder: hybrid_sync.py and data_policy.json"
+        ],
+        "steps": [
+          {
+            "do": "Run hybrid_sync.py as it is. The sync step reads the changes but never writes them.",
+            "code": "python hybrid_sync.py",
+            "lang": "bash",
+            "see": "Reconciliation reports a mismatch on every day, with 0 rows in the cloud."
+          },
+          {
+            "do": "Complete sync(): upsert the changed rows by primary key and save the new watermark.",
+            "see": "Sync: 300 changed rows, in sync; then 2 changed rows (an update and an insert), in sync with 301 rows on each side."
+          },
+          {
+            "do": "Read the third sync: a hard delete on-premises.",
+            "see": "Sync: 0 changed rows, then Reconciliation: mismatch on ['2025-06-01'] (300 rows on-premises, 301 in the cloud)."
+          },
+          {
+            "do": "Complete pseudonymise() with an HMAC-SHA256 token of the lower-cased email.",
+            "see": "{'operator_id': 'OP1', 'plant_id': 'P1', 'email_token': '53024d28d9676a66', 'phone_country': '+992'}"
+          },
+          {
+            "do": "Complete check_plan() with the two rules in data_policy.json.",
+            "see": "Two violations: raw PII (email) going to cloud-eu-west, and EU-resident readings going to cloud-us-east."
+          },
+          {
+            "do": "Read the deployment check at the end, then propose fixes: how would CDC or tombstones catch the delete, how should the operators table be replicated instead, and what should happen to the hot-fixed cloud model?",
+            "see": "Deployment onprem-dushanbe: matches the registry; Deployment cloud-eu-west: DIGEST MISMATCH."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Incremental upserts keep the cloud copy in sync.",
+            "look_for": [
+              "2 changed rows",
+              "301 rows on-premises, 301 in the cloud"
+            ]
+          },
+          {
+            "text": "Reconciliation catches the hard delete the watermark missed.",
+            "look_for": [
+              "mismatch on ['2025-06-01']"
+            ]
+          },
+          {
+            "text": "Operators are pseudonymised with a keyed hash.",
+            "look_for": [
+              "53024d28d9676a66"
+            ]
+          },
+          {
+            "text": "The replication plan is checked against residency and PII rules.",
+            "look_for": [
+              "raw PII columns ['email']",
+              "eu-resident data outside the EU"
+            ]
+          },
+          {
+            "text": "The proposals cover deletes, pseudonymised replication and the digest mismatch.",
+            "look_for": [
+              "CDC",
+              "digest"
+            ]
+          }
+        ],
+        "submit": "Paste your sync(), pseudonymise() and check_plan(), the full output, and your three proposals.",
+        "files": [
+          {
+            "path": "hybrid_sync.py",
+            "content": "\"\"\"Lab 4: keep a cloud copy in step with an on-premises database, prove it with reconciliation, pseudonymise\npersonal data before it leaves, check a replication plan against policy, and check deployed model digests.\"\"\"\n\nimport hashlib\nimport hmac\nimport json\nimport sqlite3\nfrom pathlib import Path\n\nimport duckdb\nimport pandas as pd\n\nSECRET = b\"rotate-me-and-keep-me-in-a-vault\"     # in production: from a secrets manager, never in code\nCLOUD = Path(\"cloud\")\n\n\ndef make_onprem():\n    con = sqlite3.connect(\"onprem.db\")\n    con.executescript(\"\"\"\n        DROP TABLE IF EXISTS readings; DROP TABLE IF EXISTS operators;\n        CREATE TABLE readings (reading_id INTEGER PRIMARY KEY, plant_id TEXT, reading_time TEXT,\n                               vibration_mm_s REAL, updated_at TEXT);\n        CREATE TABLE operators (operator_id TEXT PRIMARY KEY, name TEXT, email TEXT, phone TEXT, plant_id TEXT);\"\"\")\n    rows = [(i, \"P1\" if i % 2 else \"P2\", f\"2025-06-0{1 + (i - 1) // 100} {i % 24:02d}:00:00\",\n             round(3 + (i % 7) * 0.1, 2), f\"2025-06-0{1 + (i - 1) // 100} {i % 24:02d}:05:00\") for i in range(1, 301)]\n    con.executemany(\"INSERT INTO readings VALUES (?, ?, ?, ?, ?)\", rows)\n    con.executemany(\"INSERT INTO operators VALUES (?, ?, ?, ?, ?)\", [\n        (\"OP1\", \"Farrukh Nazarov\", \"f.nazarov@plant.example\", \"+992 37 000 0001\", \"P1\"),\n        (\"OP2\", \"Madina Rahimova\", \"m.rahimova@plant.example\", \"+992 37 000 0002\", \"P2\")])\n    con.commit()\n    return con\n\n\ndef sync(onprem, cloud):\n    \"\"\"Incremental sync with a high-watermark, merged into the cloud table by primary key (an upsert).\"\"\"\n    cloud.execute(\"CREATE TABLE IF NOT EXISTS readings (reading_id INTEGER PRIMARY KEY, plant_id VARCHAR, \"\n                  \"reading_time VARCHAR, vibration_mm_s DOUBLE, updated_at VARCHAR)\")\n    cloud.execute(\"CREATE TABLE IF NOT EXISTS sync_state (name VARCHAR PRIMARY KEY, watermark VARCHAR)\")\n    row = cloud.execute(\"SELECT watermark FROM sync_state WHERE name = 'readings'\").fetchone()\n    watermark = row[0] if row else \"1970-01-01\"\n    changed = pd.read_sql_query(\"SELECT * FROM readings WHERE updated_at > ?\", onprem, params=(watermark,))\n    if len(changed):\n        # TODO: upsert the changed rows into the cloud table (INSERT OR REPLACE INTO readings SELECT * FROM changed),\n        #       then save the new watermark: INSERT OR REPLACE INTO sync_state VALUES ('readings', <max updated_at>)\n        pass\n    print(f\"Sync: {len(changed)} changed rows since {watermark}\")\n\n\ndef reconcile(onprem, cloud):\n    \"\"\"Compare per-day counts and a checksum on both sides; any difference names the days to repair.\"\"\"\n    query = (\"SELECT substr(reading_time, 1, 10) AS day, count(*) AS n, \"\n             \"sum(CAST(round(vibration_mm_s * 100) AS INTEGER)) AS checksum FROM readings GROUP BY 1 ORDER BY 1\")\n    source = pd.read_sql_query(query, onprem).set_index(\"day\")\n    target = cloud.sql(query).df().set_index(\"day\")\n    diff = source.compare(target.reindex(source.index)) if len(source) == len(target) else source\n    bad = sorted(set(diff.index))\n    print(\"Reconciliation:\", \"in sync\" if not bad else f\"mismatch on {bad}\",\n          f\"({int(source['n'].sum())} rows on-premises, {int(target['n'].sum())} in the cloud)\")\n\n\ndef pseudonymise(operators):\n    \"\"\"Keep what analytics needs, replace what identifies a person: a keyed hash keeps joins possible\n    without revealing the email, and only someone with the key could recompute it.\"\"\"\n    out = operators[[\"operator_id\", \"plant_id\"]].copy()\n    # TODO: a keyed hash of each lower-cased email: hmac.new(SECRET, email.lower().encode(), hashlib.sha256),\n    #       keeping the first 16 hex characters of its hexdigest()\n    out[\"email_token\"] = \"TODO\"\n    out[\"phone_country\"] = operators[\"phone\"].str.split().str[0]\n    return out\n\n\ndef check_plan(plan, policy):\n    violations = []\n    for step in plan:\n        meta = policy[\"datasets\"][step[\"dataset\"]]\n        region = policy[\"regions\"][step[\"to\"]]\n        # TODO rule 1: eu-resident datasets may go only to \"eu\" or \"on-premises\" regions\n        # TODO rule 2: columns classified \"pii\" may not leave \"on-premises\" un-pseudonymised\n        pass\n    return violations\n\n\ndef digest(path):\n    return \"sha256:\" + hashlib.sha256(Path(path).read_bytes()).hexdigest()\n\n\ndef main():\n    CLOUD.mkdir(exist_ok=True)\n    (CLOUD / \"warehouse.duckdb\").unlink(missing_ok=True)\n    onprem, cloud = make_onprem(), duckdb.connect(str(CLOUD / \"warehouse.duckdb\"))\n    sync(onprem, cloud)\n    reconcile(onprem, cloud)\n\n    onprem.execute(\"UPDATE readings SET vibration_mm_s = 9.9, updated_at = '2025-06-04 10:00:00' WHERE reading_id = 42\")\n    onprem.execute(\"INSERT INTO readings VALUES (301, 'P1', '2025-06-04 09:00:00', 3.3, '2025-06-04 09:05:00')\")\n    onprem.commit()\n    sync(onprem, cloud)\n    reconcile(onprem, cloud)\n\n    onprem.execute(\"DELETE FROM readings WHERE reading_id = 7\")      # a hard delete leaves no updated_at behind\n    onprem.commit()\n    sync(onprem, cloud)\n    reconcile(onprem, cloud)\n\n    operators = pd.read_sql_query(\"SELECT * FROM operators\", onprem)\n    print(\"Pseudonymised operators:\", pseudonymise(operators).to_dict(orient=\"records\")[0])\n\n    policy = json.loads(Path(\"data_policy.json\").read_text())\n    plan = [{\"dataset\": \"readings\", \"to\": \"cloud-eu-west\", \"columns\": [\"reading_id\", \"plant_id\", \"vibration_mm_s\"]},\n            {\"dataset\": \"operators\", \"to\": \"cloud-eu-west\", \"columns\": [\"operator_id\", \"email\", \"plant_id\"]},\n            {\"dataset\": \"readings\", \"to\": \"cloud-us-east\", \"columns\": [\"reading_id\", \"vibration_mm_s\"]}]\n    for v in check_plan(plan, policy):\n        print(\"Policy violation:\", v)\n\n    Path(\"model.bin\").write_bytes(b\"turbine-fault-model v7 weights\")\n    Path(\"model_patched.bin\").write_bytes(b\"turbine-fault-model v7 weights, hot-fixed on site\")\n    registry = {\"turbine-fault\": {\"version\": 7, \"digest\": digest(\"model.bin\")}}\n    for site, artefact in [(\"onprem-dushanbe\", \"model.bin\"), (\"cloud-eu-west\", \"model_patched.bin\")]:\n        ok = digest(artefact) == registry[\"turbine-fault\"][\"digest\"]\n        print(f\"Deployment {site}: {'matches the registry' if ok else 'DIGEST MISMATCH: not the registered model'}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "data_policy.json",
+            "content": "{\n  \"datasets\": {\n    \"readings\": {\"residency\": \"eu\", \"columns\": {\"reading_id\": \"internal\", \"plant_id\": \"internal\",\n                 \"reading_time\": \"internal\", \"vibration_mm_s\": \"internal\", \"updated_at\": \"internal\"}},\n    \"operators\": {\"residency\": \"eu\", \"columns\": {\"operator_id\": \"internal\", \"name\": \"pii\", \"email\": \"pii\",\n                  \"phone\": \"pii\", \"plant_id\": \"internal\"}}\n  },\n  \"regions\": {\"onprem-dushanbe\": \"on-premises\", \"cloud-eu-west\": \"eu\", \"cloud-us-east\": \"us\"},\n  \"rules\": [\"pii columns leave the premises only pseudonymised or dropped\",\n            \"eu-resident datasets replicate only to eu regions\"]\n}\n"
+          }
+        ],
+        "hints": [
+          "DuckDB can read the pandas DataFrame changed by name: INSERT OR REPLACE INTO readings SELECT * FROM changed.",
+          "hmac.new(SECRET, email.lower().encode(), hashlib.sha256).hexdigest()[:16]",
+          "Look up a column's class with policy[\"datasets\"][name][\"columns\"].get(column)."
+        ]
+      }
+    },
+    {
+      "title": "Enterprise MLOps",
+      "summary": "Run ML at enterprise scale: maturity models, automated CI, CD and continuous training pipelines, model governance with registries, model cards and approvals, and safe promotion of retrained models.",
+      "instructor": "catalina-ionescu",
+      "lessons": [
+        {
+          "title": "MLOps maturity models",
+          "minutes": 12,
+          "objectives": [
+            "Describe Google's and Microsoft's MLOps maturity levels",
+            "Assess an organisation's maturity and choose the next step"
+          ],
+          "key_points": [
+            "Maturity models describe how automated and governed ML delivery is, so a team can see where it stands and what to improve next.",
+            "Google Cloud's MLOps guidance describes level 0 (manual, script-driven), level 1 (ML pipeline automation with continuous training) and level 2 (CI/CD automation of the pipelines themselves).",
+            "Microsoft's MLOps maturity model has five levels: 0, no MLOps; 1, DevOps but no MLOps; 2, automated training; 3, automated model deployment; and 4, full MLOps automated operations, including retraining.",
+            "Assess each dimension separately (data management, experiment tracking, training, deployment, monitoring, governance) and raise the weakest one that blocks the most value.",
+            "Higher isn't always better: automate what changes often or fails expensively; a low-risk model retrained twice a year may not need continuous training."
+          ]
+        },
+        {
+          "title": "Automated pipelines: CI, CD and continuous training",
+          "minutes": 12,
+          "objectives": [
+            "Define CI, CD and CT for ML systems",
+            "Compare a challenger with a champion fairly"
+          ],
+          "key_points": [
+            "Continuous integration for ML tests code, data and models: unit tests for feature code, data validation (schema, ranges, freshness), and minimum-quality checks on trained models.",
+            "Continuous delivery moves the training pipeline and the serving system through development, staging and production with the same automation.",
+            "Continuous training retrains on new data on a schedule or when triggered by drift, new labels or falling performance, and evaluates the challenger before anything is promoted.",
+            "Compare challenger and champion on the same recent, held-out data with the same metrics, including per-segment ones, so a lucky split doesn't decide.",
+            "Keep pipelines reproducible: version code, data snapshots, configuration and environment images, and record lineage from data to deployed model."
+          ]
+        },
+        {
+          "title": "Model governance",
+          "minutes": 13,
+          "objectives": [
+            "Describe the records and controls of model governance",
+            "Tier models by risk and apply segregation of duties"
+          ],
+          "key_points": [
+            "Governance makes ML decisions accountable: who built a model, on what data, how it was tested, who approved it, where it runs and when it changed.",
+            "A model registry stores each version with metrics, lineage, stage (staging, production, archived) and approvals; an append-only audit log records every change.",
+            "Model cards (Mitchell and colleagues, 2019) document intended use, training data, evaluation by group, limitations and owners; a deployment gate can refuse a model whose card is incomplete.",
+            "Tier models by risk: high-risk models, such as those affecting safety, credit or employment, need stricter review, segregation of duties (the approver isn't the author) and closer monitoring.",
+            "Frameworks to align with include the NIST AI Risk Management Framework (AI RMF 1.0, 2023), ISO/IEC 42001 for AI management systems, the EU AI Act's duties for high-risk systems, and, in banking, model risk guidance such as the US SR 11-7."
+          ]
+        },
+        {
+          "title": "Continuous training and safe promotion",
+          "minutes": 12,
+          "objectives": [
+            "Choose retraining triggers",
+            "Design a promotion gate and a gradual release"
+          ],
+          "key_points": [
+            "Retraining triggers include a schedule, enough new labelled data, input drift (such as a population stability index over 0.25) and a drop in live performance once labels arrive.",
+            "A promotion gate checks explicit rules: a minimum improvement over the champion, no segment made worse, fairness gaps within limits, documentation complete, and approvals in place.",
+            "Release the winner gradually, in shadow or as a canary, keep the champion ready for rollback, and record why each model was promoted or rejected.",
+            "Retraining alone doesn't fix everything: a new population may need new features, such as terms for a new turbine type, new labels or a separate model, so review what changed, not just the score.",
+            "Watch for feedback loops, where a model's decisions change the data it is later trained on, such as inspections preventing the very faults the model predicts."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Govern continuous training with a promotion gate",
+        "tool": "Python 3, scikit-learn and SQLite",
+        "minutes": 90,
+        "goal": "Detect drift that triggers retraining, train a challenger with features for a new turbine type, compare it with the champion on the latest month, and promote it only through a gate that checks performance, fairness between regions, the model card and an independent approval, with every step in an audit log.",
+        "setup": [
+          "Python 3.10 or newer with pandas, numpy and scikit-learn installed",
+          "Download the lab files into a new folder: mlops_gate.py and model_card_v2.json"
+        ],
+        "steps": [
+          {
+            "do": "Run mlops_gate.py as it is. Its placeholder gate checks only one rule, so the challenger is promoted straight away, without an approval.",
+            "code": "python mlops_gate.py",
+            "lang": "bash",
+            "see": "Gate with approver None: PASS"
+          },
+          {
+            "do": "Read the trigger: which feature drifted, and why?",
+            "see": "Retraining triggered by: ['PSI vibration_mean 0.554']: type B turbines, which vibrate more, went from 5% of the fleet to half of it."
+          },
+          {
+            "do": "Compare the two models on the held-out part of month 4.",
+            "see": "Champion v1: AUC 0.706, recall gap between regions 0.059; challenger v2: AUC 0.742, recall gap 0.019."
+          },
+          {
+            "do": "Complete gate() with all five checks, and run the script.",
+            "see": "FAIL with no approver and with the author (amina) as approver; PASS when davron approves. Registry: [(1, 'Archived'), (2, 'Production')]."
+          },
+          {
+            "do": "Blank the limitations field in model_card_v2.json and rerun: which check fails? Restore it."
+          },
+          {
+            "do": "Describe how you'd release v2 safely after the gate passes, and how you'd watch for the feedback loop the lessons describe."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Drift on vibration triggers retraining.",
+            "look_for": [
+              "PSI vibration_mean 0.554"
+            ]
+          },
+          {
+            "text": "Champion and challenger are compared on the same recent held-out data.",
+            "look_for": [
+              "'auc': 0.706",
+              "'auc': 0.742"
+            ]
+          },
+          {
+            "text": "The gate enforces segregation of duties: the author can't approve a high-risk model.",
+            "look_for": [
+              "approved by someone other than the author",
+              "Gate with approver 'davron': PASS"
+            ]
+          },
+          {
+            "text": "Promotion is recorded in the registry and the audit log.",
+            "look_for": [
+              "(2, 'Production')",
+              "stage changed"
+            ]
+          },
+          {
+            "text": "The incomplete model card blocks promotion.",
+            "look_for": [
+              "model card complete"
+            ]
+          }
+        ],
+        "submit": "Paste your gate(), the output of each run (including the blanked model card), and your release and feedback-loop plan.",
+        "files": [
+          {
+            "path": "mlops_gate.py",
+            "content": "\"\"\"Lab 5: continuous training with governance. A trigger decides when to retrain, a challenger is trained and\ncompared with the champion on the same recent data, a gate checks performance, fairness, documentation and\napproval, and every decision lands in an audit log of a small registry.\"\"\"\n\nimport json\nimport sqlite3\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import recall_score, roc_auc_score\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nFEATURES = [\"vibration_mean\", \"temperature_max\", \"load_factor\", \"days_since_service\", \"turbine_type\", \"region\"]\nTYPE_B_TERMS = [\"b_vibration\", \"b_temperature\"]       # the challenger's new features: type-B-specific slopes\nREQUIRED_CARD_FIELDS = [\"owner\", \"intended_use\", \"training_data\", \"metrics\", \"limitations\", \"risk_tier\"]\n\n\ndef make_data():\n    \"\"\"Four months of daily turbine records; in month 4 a new turbine type, B, becomes common.\"\"\"\n    rng = np.random.RandomState(6)\n    parts = []\n    for month in range(1, 5):\n        n = 900\n        turbine_type = rng.choice([\"A\", \"B\"], n, p=[0.95, 0.05] if month < 4 else [0.5, 0.5])\n        vibration = np.round(rng.normal(3.0, 0.5, n) + (turbine_type == \"B\") * 0.9, 2)\n        temperature = np.round(rng.normal(60, 6, n), 1)\n        load = np.round(rng.uniform(0.3, 1.0, n), 2)\n        days = rng.randint(0, 180, n)\n        region = rng.choice([\"north\", \"south\"], n)\n        is_b = turbine_type == \"B\"\n        logit = np.where(is_b, -2.6 + 0.2 * (vibration - 3.9) + 0.18 * (temperature - 60),\n                         -3.4 + 1.8 * (vibration - 3.0) + 0.03 * (temperature - 60)) + 1.0 * load + 0.012 * days\n        fault = (rng.rand(n) < 1 / (1 + np.exp(-logit))).astype(int)\n        parts.append(pd.DataFrame({\"month\": month, \"vibration_mean\": vibration, \"temperature_max\": temperature,\n                                   \"load_factor\": load, \"days_since_service\": days, \"turbine_type\": turbine_type,\n                                   \"region\": region, \"fault_7d\": fault}))\n    data = pd.concat(parts, ignore_index=True)\n    b = data[\"turbine_type\"] == \"B\"\n    data[\"b_vibration\"] = np.where(b, data[\"vibration_mean\"] - 3.9, 0.0)\n    data[\"b_temperature\"] = np.where(b, data[\"temperature_max\"] - 60, 0.0)\n    return data\n\n\ndef psi(reference, live, bins=10):\n    edges = np.unique(np.quantile(reference, np.linspace(0, 1, bins + 1)))\n    edges[0], edges[-1] = -np.inf, np.inf\n    ref = np.clip(np.histogram(reference, edges)[0] / len(reference), 1e-4, None)\n    cur = np.clip(np.histogram(live, edges)[0] / len(live), 1e-4, None)\n    return float(np.sum((cur - ref) * np.log(cur / ref)))\n\n\ndef train(data, extra=()):\n    numeric = FEATURES[:4] + list(extra)\n    prep = ColumnTransformer([(\"num\", StandardScaler(), numeric),\n                              (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), [\"turbine_type\", \"region\"])])\n    model = make_pipeline(prep, LogisticRegression(max_iter=1000))\n    return model.fit(data[numeric + [\"turbine_type\", \"region\"]], data[\"fault_7d\"])\n\n\ndef evaluate(model, data, threshold=0.25):\n    p = model.predict_proba(data[list(model.feature_names_in_)])[:, 1]\n    recalls = {r: recall_score(data[\"fault_7d\"][data[\"region\"] == r], p[data[\"region\"] == r] >= threshold)\n               for r in [\"north\", \"south\"]}\n    return {\"auc\": round(roc_auc_score(data[\"fault_7d\"], p), 3),\n            \"recall_by_region\": {r: round(v, 3) for r, v in recalls.items()},\n            \"recall_gap\": round(max(recalls.values()) - min(recalls.values()), 3)}\n\n\nclass Registry:\n    def __init__(self, path=\"registry.db\"):\n        Path(path).unlink(missing_ok=True)\n        self.db = sqlite3.connect(path)\n        self.db.executescript(\"\"\"\n            CREATE TABLE models (name TEXT, version INTEGER, stage TEXT, metrics TEXT, author TEXT,\n                                 PRIMARY KEY (name, version));\n            CREATE TABLE audit (seq INTEGER PRIMARY KEY AUTOINCREMENT, event TEXT, detail TEXT);\"\"\")\n\n    def log(self, event, detail):\n        self.db.execute(\"INSERT INTO audit (event, detail) VALUES (?, ?)\", (event, json.dumps(detail)))\n\n    def register(self, name, version, stage, metrics, author):\n        self.db.execute(\"INSERT INTO models VALUES (?, ?, ?, ?, ?)\", (name, version, stage, json.dumps(metrics), author))\n        self.log(\"registered\", {\"model\": name, \"version\": version, \"stage\": stage})\n\n    def set_stage(self, name, version, stage):\n        self.db.execute(\"UPDATE models SET stage = ? WHERE name = ? AND version = ?\", (stage, name, version))\n        self.log(\"stage changed\", {\"model\": name, \"version\": version, \"stage\": stage})\n\n\ndef gate(champion, challenger, card, author, approver):\n    # TODO: return a dictionary of check name -> True/False:\n    #   \"beats champion by 0.005 AUC\"                 challenger AUC minus champion AUC is at least 0.005\n    #   \"no region loses recall\"                      no region's recall falls by more than 0.02\n    #   \"recall gap between regions <= 0.10\"          the challenger's recall_gap\n    #   \"model card complete\"                         every field in REQUIRED_CARD_FIELDS is filled in\n    #   \"approved by someone other than the author\"   needed when the card's risk_tier is \"high\"\n    return {\"beats champion by 0.005 AUC\": challenger[\"auc\"] > champion[\"auc\"]}\n\n\ndef main():\n    data = make_data()\n    reference, recent = data[data[\"month\"] <= 3], data[data[\"month\"] == 4]\n    registry = Registry()\n\n    champion_model = train(reference[reference[\"month\"] <= 2])\n    registry.register(\"turbine-fault\", 1, \"Production\", evaluate(champion_model, reference[reference[\"month\"] == 3]),\n                      \"amina\")\n\n    drift = {c: round(psi(reference[c], recent[c]), 3) for c in [\"vibration_mean\", \"temperature_max\", \"load_factor\"]}\n    reasons = [f\"PSI {c} {v}\" for c, v in drift.items() if v > 0.25]\n    print(f\"Trigger check: drift {drift}; new labelled rows {len(recent)}\")\n    if not reasons:\n        print(\"No retraining needed\")\n        return\n    registry.log(\"retraining triggered\", {\"reasons\": reasons})\n    print(\"Retraining triggered by:\", reasons)\n\n    holdout = recent.sample(frac=0.4, random_state=0)                      # the latest month, held out\n    train_rows = pd.concat([reference, recent.drop(holdout.index)])\n    challenger_model = train(train_rows, extra=TYPE_B_TERMS)\n    champion, challenger = evaluate(champion_model, holdout), evaluate(challenger_model, holdout)\n    print(f\"Champion v1 on recent data:   {champion}\")\n    print(f\"Challenger v2 on recent data: {challenger}\")\n    registry.register(\"turbine-fault\", 2, \"Staging\", challenger, \"amina\")\n\n    card = json.loads(Path(\"model_card_v2.json\").read_text())\n    for approver in [None, \"amina\", \"davron\"]:\n        checks = gate(champion, challenger, card, author=\"amina\", approver=approver)\n        failed = [name for name, ok in checks.items() if not ok]\n        registry.log(\"gate evaluated\", {\"approver\": approver, \"failed\": failed})\n        print(f\"Gate with approver {approver!r}: {'PASS' if not failed else 'FAIL ' + str(failed)}\")\n        if not failed:\n            registry.set_stage(\"turbine-fault\", 1, \"Archived\")\n            registry.set_stage(\"turbine-fault\", 2, \"Production\")\n            break\n    print(\"Registry:\", registry.db.execute(\"SELECT version, stage FROM models ORDER BY version\").fetchall())\n    print(\"Audit log:\", [e for (e,) in registry.db.execute(\"SELECT event FROM audit ORDER BY seq\")])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "model_card_v2.json",
+            "content": "{\n  \"model\": \"turbine-fault\",\n  \"version\": 2,\n  \"owner\": \"reliability-ml team\",\n  \"intended_use\": \"Rank turbines by risk of a fault in the next 7 days, to schedule inspections. Not for automatic shutdowns.\",\n  \"training_data\": \"Daily turbine features, months 1-4 (point-in-time joined); data snapshot hash in the registry\",\n  \"metrics\": \"ROC AUC and recall at the inspection threshold, overall and per region, on the latest month\",\n  \"limitations\": \"Trained on two turbine types; new types need fresh evaluation before use.\",\n  \"risk_tier\": \"high\"\n}\n"
+          }
+        ],
+        "hints": [
+          "all(card.get(f) for f in REQUIRED_CARD_FIELDS) is False when any field is missing or empty.",
+          "For a high-risk card, the approval check needs an approver who isn't None and isn't the author."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Make the case for modernisation, design the lake's zones and storage, and build the zoned lake with incremental ingestion.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Learn lakehouse concepts and how Delta Lake and Apache Iceberg track versions.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Study ACID commits and query optimisation, and build the miniature table format.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Compare stream processing engines and event-driven styles, and learn windows and watermarks.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Design real-time features and finish the streaming lab.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Design hybrid placement, synchronisation, portable deployment and security, and run the synchronisation lab.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 7,
+      "focus": "Assess MLOps maturity, build the governed retraining gate, and draft the capstone's architecture.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 8,
+      "focus": "Finish the capstone's documents and walking skeleton, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Design a cloud-agnostic lakehouse with streaming and MLOps",
+    "minutes": 780,
+    "brief": "A hydropower company runs plants in two countries. Turbine sensors stream readings every few seconds, the maintenance system keeps work orders in an on-premises database, and operators' personal data must stay in its country of origin. The company wants a lakehouse that serves dashboards, data science and a fault-prediction model, on-premises and in a cloud region, without being tied to one vendor. Design it: an architecture diagram (start from the Mermaid diagram in architecture_template.md), the eight sections of the architecture document, and at least five architecture decision records (adr_template.md) for the choices that matter most, such as the table format, the stream processor, where training runs, how personal data is protected and the promotion gate. Then build a walking skeleton that runs locally, reusing and extending your labs: bronze, silver and gold tables with incremental ingestion, a streaming feature written to an online store (SQLite is enough) and to the offline store, a point-in-time training set, training with a governed promotion into a registry, and a reconciliation report between two environments.",
+    "deliverables": [
+      "An architecture diagram covering sources, batch and streaming paths, the table format and catalog, online and offline feature stores, training, registry and serving in both environments",
+      "The architecture document, all eight sections",
+      "At least five ADRs, each with context, decision, alternatives and consequences",
+      "A walking skeleton: ingestion into bronze, silver and gold tables, a streaming feature job writing to online and offline stores, and a point-in-time training set",
+      "A training and promotion step with a registry, model card, gate and audit log",
+      "A reconciliation report showing the on-premises and cloud copies agree, and a policy check of your replication plan",
+      "A README with run instructions and a short cost, risk and operations section"
+    ],
+    "rubric": [
+      {
+        "name": "Architecture and diagram",
+        "points": 20,
+        "description": "The diagram and document show batch and streaming paths, storage, catalog, feature stores, training, registry and serving, consistent with the stated constraints."
+      },
+      {
+        "name": "Decision records",
+        "points": 15,
+        "description": "At least five ADRs weigh real alternatives with consequences, including the table format and where training and personal data live."
+      },
+      {
+        "name": "Data platform skeleton",
+        "points": 20,
+        "description": "Ingestion is incremental and idempotent, tables are transactional or versioned, and the batch and streaming features agree on the same definition."
+      },
+      {
+        "name": "Hybrid, security and compliance",
+        "points": 15,
+        "description": "Residency and PII rules are enforced in code, replication is reconciled, and identity, encryption, secrets and audit are designed for both environments."
+      },
+      {
+        "name": "MLOps and governance",
+        "points": 20,
+        "description": "Training uses a point-in-time set, a gate checks performance, segments, documentation and approval, and every promotion is in an audit log with a rollback path."
+      },
+      {
+        "name": "Clarity and operability",
+        "points": 10,
+        "description": "The README runs end to end, and costs, risks and day-two operations are considered."
+      }
+    ],
+    "submit": "Paste your diagram (Mermaid source or a description of the image), the architecture document, your ADRs, the walking skeleton's files with their names, the output of a full run, and your README.",
+    "files": [
+      {
+        "path": "architecture_template.md",
+        "content": "# Lakehouse and MLOps platform: architecture\n\n## 1. Context and drivers\n- Business goals and the ML use cases the platform must serve first:\n- Modernisation drivers (what is wrong with today's set-up):\n- Constraints: data residency, regulation, existing on-premises systems, skills, budget:\n\n## 2. Architecture diagram\nEdit this Mermaid diagram (it renders on GitHub and in many editors) or attach your own.\n\n```mermaid\nflowchart LR\n  subgraph sources[Sources]\n    OLTP[(Operational DB)] --> CDC[Change data capture]\n    IOT[Sensors] --> BUS[[Event stream]]\n  end\n  CDC --> BRONZE[(Bronze / raw)]\n  BUS --> STREAM[Stream processor] --> BRONZE\n  BRONZE --> SILVER[(Silver / clean)] --> GOLD[(Gold / features)]\n  STREAM --> ONLINE[(Online feature store)]\n  GOLD --> TRAIN[Training pipeline] --> REG[(Model registry)]\n  REG --> SERVE[Serving] --> ONLINE\n  CATALOG[[Catalog and governance]] -.-> BRONZE & SILVER & GOLD & REG\n```\n\n## 3. Storage and table format\n- Object storage, file format and table format (and why):\n- Zones, partitioning and clustering:\n- Catalog, schema evolution, compaction and retention (vacuum) policy:\n\n## 4. Batch and streaming paths\n- Ingestion strategy per source (full, incremental, CDC):\n- Stream processing engine, windows, watermarks and lateness:\n- How the same feature definition serves batch training and online prediction:\n\n## 5. Hybrid and multi-cloud\n- What runs where, and why:\n- Data synchronisation and reconciliation:\n- Portable deployment (containers, model formats, artefact digests):\n\n## 6. Security and compliance\n- Identity and access, encryption, secrets, network:\n- Data classification, pseudonymisation, residency:\n- Audit logging:\n\n## 7. MLOps\n- Maturity today and target:\n- Pipelines: CI, CD and continuous training, with triggers:\n- Registry, approval gates, model cards, monitoring and rollback:\n\n## 8. Risks, costs and open questions\n"
+      },
+      {
+        "path": "adr_template.md",
+        "content": "# ADR-NNN: <decision title>\n\nStatus: proposed | accepted | superseded by ADR-MMM\nDate:\n\n## Context\nWhat forces are at play: requirements, constraints, facts.\n\n## Decision\nWhat we will do, in one or two sentences.\n\n## Alternatives considered\n- Option A: pros, cons\n- Option B: pros, cons\n\n## Consequences\nWhat becomes easier, what becomes harder, and what we must now do.\n"
+      }
+    ]
+  }
+}

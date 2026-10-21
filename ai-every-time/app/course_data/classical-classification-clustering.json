@@ -1,0 +1,1341 @@
+{
+  "slug": "classical-classification-clustering",
+  "title": "Classical Classification and Clustering",
+  "subtitle": "Apply and tune logistic regression, k-NN, SVMs, decision trees and ensembles, then find structure in unlabelled data with k-means and PCA, all in scikit-learn.",
+  "category": "Machine Learning",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "marisolo-garcia",
+    "zawadi-mutembo"
+  ],
+  "skills": [
+    "Logistic regression",
+    "k-nearest neighbours",
+    "Support vector machines",
+    "Decision trees",
+    "Random forests",
+    "Gradient boosting",
+    "k-means clustering",
+    "Principal component analysis",
+    "Model selection",
+    "scikit-learn"
+  ],
+  "tools": [
+    "JupyterLab",
+    "Python 3",
+    "scikit-learn",
+    "NumPy",
+    "pandas",
+    "matplotlib"
+  ],
+  "outcomes": [
+    "Train and tune logistic regression and k-NN classifiers, and compare classifiers with ROC AUC and cross-validation",
+    "Apply support vector machines with linear, polynomial and RBF kernels, tuning C and gamma",
+    "Build, prune and read decision trees, and beat them with random forests and gradient boosting",
+    "Cluster unlabelled data with k-means, choosing K with the elbow method and silhouette scores",
+    "Reduce dimensions with PCA to compress data, visualise it and speed up models",
+    "Build an end-to-end pipeline that selects the best classifier by cross-validation"
+  ],
+  "prerequisites": "Machine Learning Foundations with Python, or Foundations of Machine Learning (Vietnamese and English): train/test splits, fitting scikit-learn models and basic metrics. Comfortable Python with pandas and NumPy. Machine Learning from Scratch is a good companion: it builds several of these algorithms by hand. Install Python 3 with NumPy, pandas, scikit-learn, matplotlib and JupyterLab; every dataset ships with scikit-learn or the labs.",
+  "description": "This course is a practical tour of the classical algorithms that still solve most tabular problems, each applied, tuned and understood in scikit-learn. You start with logistic regression, reading its coefficients as odds ratios and controlling it with C and L1 or L2 penalties, and k-nearest neighbours, with its distance metrics, k and weights, and compare classifiers properly with ROC curves, AUC and shared cross-validation folds. Then come support vector machines: maximum margins, support vectors, the kernel trick, the tuning of C and gamma, and calibrated probabilities. Decision trees follow, with information gain and pruning, and then the ensembles that fix their weaknesses: bagging, random forests with out-of-bag scores and permutation importance, gradient boosting, voting and stacking.\n\nThe last two modules turn to unlabelled data. You cluster with k-means, choose K with the elbow method and silhouette scores, and learn where DBSCAN or hierarchical clustering fit better; then you reduce dimensions with PCA, choosing components by explained variance, compressing data and mapping it in two dimensions beside t-SNE. Every lesson has a JupyterLab walkthrough with real outputs, and every module a lab on data such as scikit-learn's wine and digits sets and a made-up football dataset, where clustering rediscovers playing styles. The capstone is an end-to-end pipeline that compares classifier families by cross-validation and selects the best one.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Logistic Regression & KNN",
+      "summary": "Two classic classifiers from opposite traditions: logistic regression, which turns a weighted sum into a probability, and k-nearest neighbours, which votes among similar examples. Tune both, read what they learned, and compare them fairly with ROC AUC.",
+      "instructor": "marisolo-garcia",
+      "lessons": [
+        {
+          "title": "Logistic regression: probabilities, log-odds and regularisation",
+          "minutes": 12,
+          "objectives": [
+            "Explain how the sigmoid turns a linear score into a probability",
+            "Read coefficients as changes in log-odds and odds ratios",
+            "Control model complexity with C and choose between L2 and L1 penalties"
+          ],
+          "key_points": [
+            "Logistic regression outputs probabilities: the sigmoid σ(z) = 1 / (1 + e^(−z)) maps the linear score z = w · x + b to a value between 0 and 1. Despite its name it is a classifier.",
+            "The score is the log-odds, log(p / (1 − p)) = w · x + b, so a coefficient w_j is the change in log-odds when x_j rises by one unit, and e^(w_j) multiplies the odds; on standardised features, the unit is one standard deviation.",
+            "scikit-learn regularises by default: C (1.0 unless set) is the inverse of the penalty's strength, so a smaller C means smaller weights and a simpler model. On the standardised wine data the largest coefficient is 0.25 at C=0.01, 1.14 at C=1 and 3.41 at C=100.",
+            "L2 shrinks every coefficient towards zero; L1 sets some exactly to zero, a form of feature selection. In scikit-learn 1.8 and later choose L1 with l1_ratio=1 (earlier versions: penalty='l1') and a solver that supports it, such as 'saga'.",
+            "With more than two classes, LogisticRegression's default lbfgs solver fits one multinomial (softmax) model: one coefficient vector per class, so coef_ has shape (3, 13) for the wine data, and probabilities that sum to 1.",
+            "Standardise the features in a pipeline, so that the penalty treats them equally and the solver converges; raise max_iter if scikit-learn warns that it didn't."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Scores, probabilities and the penalty",
+            "steps": [
+              {
+                "do": "Pass five scores through the sigmoid, then take the log-odds of the result.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nz = np.array([-4.0, -1.0, 0.0, 1.0, 4.0])\np = 1 / (1 + np.exp(-z))\nprint(p.round(3), np.log(p / (1 - p)).round(3))",
+                "lang": "python",
+                "see": "[0.018 0.269 0.5   0.731 0.982], then the original scores back: the log-odds undo the sigmoid."
+              },
+              {
+                "do": "Fit a multinomial logistic regression to the three wine classes.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_wine\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nwine = load_wine()\nmodel = make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000)).fit(wine.data, wine.target)\nproba = model.predict_proba(wine.data[:3])\nprint(proba.round(3), proba.sum(axis=1))\nprint(model[-1].coef_.shape)",
+                "lang": "python",
+                "see": "Three rows of probabilities that each sum to 1, and coefficients of shape (3, 13): one vector per class."
+              },
+              {
+                "do": "Watch C control the size of the weights.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "for C in (0.01, 1, 100):\n    m = make_pipeline(StandardScaler(), LogisticRegression(C=C, max_iter=5000)).fit(wine.data, wine.target)\n    print(C, np.abs(m[-1].coef_).max().round(2))",
+                "lang": "python",
+                "see": "0.25, 1.14 and 3.41: weaker regularisation, bigger weights."
+              }
+            ]
+          }
+        },
+        {
+          "title": "k-nearest neighbours: distance metrics, k and weights",
+          "minutes": 12,
+          "objectives": [
+            "Choose a distance metric and vote weighting for k-NN",
+            "Tune k with cross-validation inside a pipeline",
+            "Explain how irrelevant features hurt k-NN"
+          ],
+          "key_points": [
+            "k-NN classifies a sample by a vote of its k nearest training samples. scikit-learn's default metric is Minkowski with p=2, the Euclidean distance; p=1 gives the Manhattan distance, the sum of absolute differences (5.0 against 7 between (0, 0) and (3, 4)).",
+            "weights='distance' gives nearer neighbours bigger votes, in proportion to 1/distance, which makes a large k less likely to wash out a local pattern.",
+            "k is a hyperparameter: small k gives low bias and high variance, large k the reverse. Tune it with cross-validation together with the metric and the weights, with the scaler inside the pipeline so that each fold is scaled on its own training part.",
+            "Every feature counts in the distance, so irrelevant features add noise: on the wine data, 5-fold accuracy with k=15 is 0.967, and adding 50 columns of random noise drops it to 0.916.",
+            "Prediction compares each query with the training set, so k-NN suits small to medium data with a modest number of meaningful features; algorithm='auto' picks a KD-tree, a ball tree or brute force."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Metrics, weights and noise",
+            "steps": [
+              {
+                "do": "Compare the two common distances on one pair of points.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from scipy.spatial.distance import cityblock, euclidean\n\nprint(euclidean([0, 0], [3, 4]), cityblock([0, 0], [3, 4]))",
+                "lang": "python",
+                "see": "5.0 7"
+              },
+              {
+                "do": "Cross-validate k-NN on the wine data for three values of k, with uniform and distance-weighted votes.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_wine\nfrom sklearn.model_selection import StratifiedKFold, cross_val_score\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nX, y = load_wine(return_X_y=True)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nfor k in (1, 15, 51):\n    for weights in (\"uniform\", \"distance\"):\n        model = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=k, weights=weights))\n        print(k, weights, cross_val_score(model, X, y, cv=cv).mean().round(3))",
+                "lang": "python",
+                "see": "0.955 for k=1 either way, 0.967 and 0.961 for k=15, and 0.961 against 0.972 for k=51, where distance weighting helps most."
+              },
+              {
+                "do": "Add 50 columns of pure noise and cross-validate k=15 again.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nnoise = np.random.default_rng(0).normal(size=(len(X), 50))\nmodel = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=15))\nprint(cross_val_score(model, np.column_stack([X, noise]), y, cv=cv).mean().round(3))",
+                "lang": "python",
+                "see": "0.916: the noise columns crowd the distances."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Comparing classifiers: ROC curves and AUC",
+          "minutes": 12,
+          "objectives": [
+            "Read a ROC curve and its AUC",
+            "Choose between ROC AUC, average precision and accuracy",
+            "Compare models fairly on the same cross-validation folds"
+          ],
+          "key_points": [
+            "A ROC curve plots the true positive rate (recall) against the false positive rate as the decision threshold moves from high to low, showing every threshold's trade-off at once.",
+            "AUC, the area under the ROC curve, is the probability that a random positive is scored higher than a random negative: 0.5 is chance and 1.0 a perfect ranking, whatever threshold is used later.",
+            "AUC needs scores, not labels: pass predict_proba(X)[:, 1] or decision_function(X). For more than two classes, roc_auc_score(y, proba, multi_class='ovr') averages the one-against-the-rest AUCs.",
+            "Accuracy hides weak models when classes are imbalanced: with 10% positives, models scoring 0.907 and 0.912 accuracy, barely above always saying no, can differ a lot in ROC AUC (0.733 and 0.892).",
+            "With rare positives, the precision-recall curve and its summary, average precision, show the difference more clearly than ROC, because the many true negatives keep the false positive rate small.",
+            "Compare models on the same folds with the same metric (a StratifiedKFold with shuffle=True and a random_state), report the mean and the spread, and keep the test set for the final model."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Two models, three metrics",
+            "steps": [
+              {
+                "do": "Make an imbalanced problem, about 10% positives, and fit logistic regression and k-NN.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import make_classification\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nX, y = make_classification(n_samples=2000, n_features=10, n_informative=4, weights=[0.9], random_state=0)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\nmodels = {\"logistic\": make_pipeline(StandardScaler(), LogisticRegression()),\n          \"k-NN\": make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=15))}\nfor m in models.values():\n    m.fit(X_train, y_train)\nprint(y.mean())",
+                "lang": "python",
+                "see": "0.1025: about one sample in ten is positive."
+              },
+              {
+                "do": "Score both with ROC AUC, average precision and accuracy.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.metrics import average_precision_score, roc_auc_score\n\nfor name, m in models.items():\n    score = m.predict_proba(X_test)[:, 1]\n    print(name, round(roc_auc_score(y_test, score), 3), round(average_precision_score(y_test, score), 3), round(m.score(X_test, y_test), 3))",
+                "lang": "python",
+                "see": "logistic 0.733 0.485 0.907 and k-NN 0.892 0.635 0.912: near-identical accuracy, very different rankings."
+              },
+              {
+                "do": "Read the logistic model's ROC curve at three false positive rates.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.metrics import roc_curve\n\nfpr, tpr, thresholds = roc_curve(y_test, models[\"logistic\"].predict_proba(X_test)[:, 1])\nfor target in (0.05, 0.1, 0.2):\n    i = (fpr <= target).nonzero()[0][-1]\n    print(target, round(tpr[i], 3), round(thresholds[i], 3))",
+                "lang": "python",
+                "see": "Allowing 5%, 10% and 20% false positives catches 49%, 59% and 67% of the positives, at thresholds of 0.24, 0.189 and 0.143."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Classify wines with logistic regression and k-NN",
+        "tool": "JupyterLab",
+        "minutes": 75,
+        "goal": "Tune logistic regression's C and k-NN's k, weights and metric by cross-validation on the wine data, read the logistic model's coefficients as odds ratios, see L1 select features, and score both models once on the test set with accuracy and ROC AUC.",
+        "setup": [
+          "Python 3 with NumPy, pandas, scikit-learn, matplotlib and JupyterLab (python -m pip install numpy pandas scikit-learn matplotlib jupyterlab)",
+          "Download the starter file wine_classifiers.py into a folder and start JupyterLab there"
+        ],
+        "steps": [
+          {
+            "do": "Open wine_classifiers.py. Do the first TODO: cross-validate logistic regression for six values of C."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python wine_classifiers.py",
+            "lang": "bash",
+            "see": "C=0.001 scores only 0.638, C=0.1 and C=1 reach 0.967, and accuracy falls back to 0.951 at C=100."
+          },
+          {
+            "do": "Do the second TODO: the three largest class-0 coefficients and their odds ratios.",
+            "see": "The first test wine gets probabilities [[0.999 0.    0.001]] and is class 0; proline (0.98, odds x2.67), alcohol (0.79, odds x2.20) and alcalinity_of_ash (-0.73, odds x0.48) matter most for class 0."
+          },
+          {
+            "do": "Do the third TODO: L1-penalised models at three values of C.",
+            "see": "6, 10 and 14 of the 39 coefficients are non-zero at C=0.05, 0.2 and 1."
+          },
+          {
+            "do": "Do the fourth TODO: tune k-NN with GridSearchCV.",
+            "see": "Best: 9 neighbours, p=1 (Manhattan) and uniform weights, with a cross-validated accuracy of 0.959."
+          },
+          {
+            "do": "Run the whole script and read the test-set lines.",
+            "see": "Logistic regression scores accuracy 1.000 and k-NN 0.981; both reach a one-vs-rest ROC AUC of 1.000."
+          },
+          {
+            "do": "Write three sentences: why C=0.001 does so badly, what odds x2.67 means for proline, and why the models were compared by cross-validation before the test set was used."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Logistic regression is cross-validated over six values of C.",
+            "look_for": [
+              "C=0.001  0.638",
+              "C=0.1    0.967",
+              "C=100    0.951"
+            ]
+          },
+          {
+            "text": "Probabilities are shown and the class-0 coefficients are read as odds ratios.",
+            "look_for": [
+              "[[0.999 0.    0.001]] class 0",
+              "odds x2.67",
+              "odds x0.48"
+            ]
+          },
+          {
+            "text": "The L1 penalty keeps fewer coefficients as C shrinks.",
+            "look_for": [
+              "C=0.05  6",
+              "C=0.2   10",
+              "C=1     14"
+            ]
+          },
+          {
+            "text": "k-NN's k, metric and weights are tuned by cross-validation.",
+            "look_for": [
+              "'kneighborsclassifier__n_neighbors': 9",
+              "'kneighborsclassifier__p': 1",
+              "0.959"
+            ]
+          },
+          {
+            "text": "Both models are scored once on the test set.",
+            "look_for": [
+              "logistic regression  accuracy 1.000",
+              "k-NN                 accuracy 0.981"
+            ]
+          },
+          {
+            "text": "The sentences explain over-regularisation at tiny C, read the odds ratio per standard deviation of proline, and justify keeping the test set for last.",
+            "look_for": [
+              "odds"
+            ]
+          }
+        ],
+        "submit": "Paste your wine_classifiers.py, its output and your three sentences.",
+        "hints": [
+          "make_pipeline names its steps after the classes in lower case, so k-NN's k is kneighborsclassifier__n_neighbors.",
+          "np.argsort(-np.abs(coef))[:3] gives the indices of the three largest coefficients by size.",
+          "Before scikit-learn 1.8, write penalty='l1' instead of l1_ratio=1.",
+          "If saga warns about convergence, raise max_iter; standardised features help it converge."
+        ],
+        "files": [
+          {
+            "path": "wine_classifiers.py",
+            "content": "\"\"\"Classify wines with logistic regression and k-nearest neighbours, and compare them fairly.\"\"\"\n\nimport numpy as np\nfrom sklearn.datasets import load_wine\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, roc_auc_score\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_score, train_test_split\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nwine = load_wine()\nX_train, X_test, y_train, y_test = train_test_split(wine.data, wine.target, test_size=0.3, random_state=0,\n                                                    stratify=wine.target)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\n\nprint(\"1. Logistic regression, cross-validated accuracy by C:\")\n# TODO: for C in (0.001, 0.01, 0.1, 1, 10, 100), score make_pipeline(StandardScaler(), LogisticRegression(C=C, max_iter=5000))\n#       with cross_val_score(..., cv=cv) on the training set, and print  f\"   C={C:<6} {scores.mean():.3f}\"\npass\n\nlogreg = make_pipeline(StandardScaler(), LogisticRegression(C=1, max_iter=5000)).fit(X_train, y_train)\nprint(\"2. Probabilities for the first test wine:\", logreg.predict_proba(X_test[:1]).round(3), \"class\", y_test[0])\ncoef = logreg[-1].coef_[0]\n# TODO: print the three features with the largest coefficients (by size) for class 0, each with its\n#       coefficient and odds ratio np.exp(coef):  f\"   {name:<28} {c:6.2f}  odds x{np.exp(c):.2f}\"\npass\n\nprint(\"3. L1 penalty: non-zero coefficients out of 39\")\n# TODO: for C in (0.05, 0.2, 1), fit make_pipeline(StandardScaler(), LogisticRegression(l1_ratio=1, solver=\"saga\",\n#       C=C, max_iter=20000)) on the training set and print how many coefficients are not 0: np.sum(coef_ != 0)\npass\n\nprint(\"4. k-NN, tuned by cross-validation:\")\nknn = make_pipeline(StandardScaler(), KNeighborsClassifier())\ngrid = {\"kneighborsclassifier__n_neighbors\": [1, 3, 5, 9, 15, 25],\n        \"kneighborsclassifier__weights\": [\"uniform\", \"distance\"],\n        \"kneighborsclassifier__p\": [1, 2]}\n# TODO: run GridSearchCV(knn, grid, cv=cv) on the training set; print best_params_ and best_score_ (3 places)\npass\n\nprint(\"5. On the test set, once:\")\nfor name, model in ((\"logistic regression\", logreg), (\"k-NN\", search.best_estimator_)):\n    proba = model.predict_proba(X_test)\n    print(f\"   {name:<20} accuracy {accuracy_score(y_test, model.predict(X_test)):.3f}  \"\n          f\"ROC AUC (one-vs-rest) {roc_auc_score(y_test, proba, multi_class='ovr'):.3f}\")\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Support Vector Machines",
+      "summary": "Separate classes with the widest possible margin, let a few support vectors define the boundary, and bend it with kernels: tune C and gamma, and turn SVM scores into calibrated probabilities.",
+      "instructor": "zawadi-mutembo",
+      "lessons": [
+        {
+          "title": "Maximum margins and support vectors",
+          "minutes": 12,
+          "objectives": [
+            "Explain the margin and the support vectors of a linear SVM",
+            "Describe how C trades margin width against training errors"
+          ],
+          "key_points": [
+            "A linear SVM separates two classes with the hyperplane w · x + b = 0 that has the widest margin, the gap to the nearest training points of each class; the margin's width is 2 / ‖w‖.",
+            "The support vectors are the training points on or inside the margin. They alone define the boundary: moving any other point, without crossing the margin, changes nothing. SVC exposes them as support_vectors_ and their count per class as n_support_.",
+            "A soft margin lets some points sit inside the margin or on the wrong side, at a cost set by C: small C gives a wide margin with many support vectors (more regularisation), large C a narrow margin that fits the training points harder.",
+            "The soft-margin SVM minimises the hinge loss, max(0, 1 − y · f(x)) with labels ±1, plus a penalty on ‖w‖²: points beyond the margin on the right side cost nothing, so only the support vectors shape the solution.",
+            "SVMs are distance-based, so standardise the features. For large data, LinearSVC fits a linear SVM much faster than SVC(kernel='linear')."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Find the support vectors",
+            "steps": [
+              {
+                "do": "Fit a hard-margin linear SVM (a very large C) to seven points.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.svm import SVC\n\nX = np.array([[1, 1], [2, 1], [1, 2], [4, 4], [5, 4], [4, 5], [2.5, 2.5]])\ny = np.array([0, 0, 0, 1, 1, 1, 0])\nsvm = SVC(kernel=\"linear\", C=1000).fit(X, y)\nprint(svm.support_vectors_.tolist(), svm.n_support_)\nprint(svm.coef_.round(3), svm.intercept_.round(3), round(2 / np.linalg.norm(svm.coef_), 3))",
+                "lang": "python",
+                "see": "Two support vectors, (2.5, 2.5) and (4, 4), one per class; w = [0.667 0.667], b = -4.333 and a margin 2.121 wide."
+              },
+              {
+                "do": "Look at the decision function: the support vectors sit exactly at -1 and +1.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "print(svm.decision_function(X).round(2))",
+                "lang": "python",
+                "see": "[-3.   -2.33 -2.33  1.    1.67  1.67 -1.  ]"
+              },
+              {
+                "do": "Lower C to soften the margin.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "for C in (0.01, 0.1, 1000):\n    m = SVC(kernel=\"linear\", C=C).fit(X, y)\n    print(C, m.n_support_.sum(), round(2 / np.linalg.norm(m.coef_), 3))",
+                "lang": "python",
+                "see": "C=0.01: 6 support vectors and a margin 18.856 wide; C=0.1: 4 and 4.243; C=1000: 2 and 2.121."
+              }
+            ]
+          }
+        },
+        {
+          "title": "The kernel trick",
+          "minutes": 12,
+          "objectives": [
+            "Explain how kernels let a linear method draw curved boundaries",
+            "Describe the linear, polynomial and RBF kernels and the effect of gamma"
+          ],
+          "key_points": [
+            "Classes that no straight line separates can become separable after adding features, such as x₁² + x₂² for two rings; the kernel trick computes the dot products in that bigger space without ever building its features.",
+            "A kernel k(x, x′) measures similarity. Linear: x · x′. Polynomial: (γ x · x′ + coef0)^degree. RBF (Gaussian): exp(−γ ‖x − x′‖²), SVC's default, which can draw very flexible boundaries.",
+            "gamma sets how far one training point's influence reaches with the RBF kernel: small gamma gives smooth, almost linear boundaries; large gamma gives wiggly boundaries around single points, and overfits. The default, gamma='scale', is 1 / (n_features × X.var()).",
+            "The fitted decision function is a weighted sum of kernel similarities to the support vectors, plus b, so prediction slows as the number of support vectors grows.",
+            "SVC's fit time grows at least quadratically with the number of samples, which makes it impractical beyond tens of thousands of samples; LinearSVC or SGDClassifier scale much further."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Two rings",
+            "steps": [
+              {
+                "do": "Try a linear and an RBF SVM on two rings, one inside the other.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import make_circles\nfrom sklearn.model_selection import cross_val_score\nfrom sklearn.svm import SVC\n\nX, y = make_circles(n_samples=400, noise=0.1, factor=0.4, random_state=0)\nfor kernel in (\"linear\", \"rbf\"):\n    print(kernel, cross_val_score(SVC(kernel=kernel), X, y, cv=5).mean().round(3))",
+                "lang": "python",
+                "see": "linear 0.548, close to guessing; rbf 1.0."
+              },
+              {
+                "do": "Add one feature by hand, the squared radius, and the linear SVM succeeds too: that's the idea the kernel automates.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nr2 = (X ** 2).sum(axis=1, keepdims=True)\nprint(cross_val_score(SVC(kernel=\"linear\"), np.column_stack([X, r2]), y, cv=5).mean().round(3))",
+                "lang": "python",
+                "see": "1.0"
+              },
+              {
+                "do": "Vary gamma: training accuracy, cross-validated accuracy and support vectors.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "for gamma in (0.01, 1, 100):\n    m = SVC(gamma=gamma).fit(X, y)\n    print(gamma, round(m.score(X, y), 3), cross_val_score(SVC(gamma=gamma), X, y, cv=5).mean().round(3), m.n_support_.sum())",
+                "lang": "python",
+                "see": "gamma=0.01 underfits (0.73 and 0.68, with all 400 points as support vectors); gamma=1 is perfect with 46; gamma=100 needs 258, a sign of a boundary drawn around single points."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Tuning C and gamma, and getting probabilities",
+          "minutes": 12,
+          "objectives": [
+            "Tune C and gamma together with cross-validation",
+            "Get calibrated probabilities from an SVM",
+            "Handle multiclass and imbalanced problems with SVC"
+          ],
+          "key_points": [
+            "C and gamma interact, so tune them together on log-spaced grids, such as 0.1 to 100 for C and 0.01 to 10 for gamma, with cross-validation and the scaler inside the pipeline.",
+            "SVC's decision_function returns signed distances from the boundary, not probabilities; their sign gives the class.",
+            "For probabilities, wrap the model in CalibratedClassifierCV(SVC(), ensemble=False), which learns a mapping from scores to probabilities with internal cross-validation. SVC(probability=True) is deprecated from scikit-learn 1.9 in its favour.",
+            "With more than two classes SVC trains one classifier per pair of classes (one-vs-one) and combines their votes; decision_function_shape='ovr', the default, reports one score per class.",
+            "class_weight='balanced' raises the penalty for errors on rarer classes, in inverse proportion to their frequency: a simple first fix for imbalanced data."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "A grid of C and gamma",
+            "steps": [
+              {
+                "do": "Search a 4 × 4 grid on the two-moons data and lay the scores out as a table.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import pandas as pd\nfrom sklearn.datasets import make_moons\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.svm import SVC\n\nX, y = make_moons(n_samples=300, noise=0.25, random_state=0)\ngrid = {\"svc__C\": [0.1, 1, 10, 100], \"svc__gamma\": [0.01, 0.1, 1, 10]}\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nsearch = GridSearchCV(make_pipeline(StandardScaler(), SVC()), grid, cv=cv).fit(X, y)\nresults = pd.DataFrame(search.cv_results_)\nprint(results.pivot(index=\"param_svc__C\", columns=\"param_svc__gamma\", values=\"mean_test_score\").round(3))",
+                "lang": "python",
+                "see": "Low gamma stays near 0.83 whatever C is; the best cells, 0.967 and 0.96, sit at gamma 1 to 10 with C=1."
+              },
+              {
+                "do": "Read scores, then calibrated probabilities, for three points.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.calibration import CalibratedClassifierCV\n\nbest = search.best_estimator_\nprint(best.decision_function(X[:3]).round(2), best.predict(X[:3]))\ncalibrated = CalibratedClassifierCV(best, ensemble=False).fit(X, y)\nprint(calibrated.predict_proba(X[:3]).round(3))",
+                "lang": "python",
+                "see": "Scores [ 1.38  1.51 -1.48] for classes [1 1 0], then probabilities such as 0.987 for class 1."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Bend the boundary with kernels",
+        "tool": "JupyterLab",
+        "minutes": 75,
+        "goal": "Compare linear, polynomial and RBF SVMs on two moons, see how C changes the margin and gamma the fit, tune both with cross-validation, then show on the wine data why SVMs need scaling and how to get calibrated probabilities.",
+        "setup": [
+          "Your course folder, with scikit-learn and JupyterLab installed",
+          "Download the starter file svm_kernels.py into it"
+        ],
+        "steps": [
+          {
+            "do": "Open svm_kernels.py and do the first TODO: the three kernels."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python svm_kernels.py",
+            "lang": "bash",
+            "see": "linear 0.767 with 71 support vectors, poly 0.822 with 89, rbf 0.933 with 59."
+          },
+          {
+            "do": "Read the C lines.",
+            "see": "C=0.01: 172 support vectors and a margin 2.358 wide; C=1: 71 and 0.921; C=100: 66 and 0.769."
+          },
+          {
+            "do": "Do the gamma TODO and rerun.",
+            "see": "gamma=0.1 underfits (train 0.862, test 0.789); gamma=1 and 10 test at 0.956; gamma=100 reaches 0.990 on training but drops to 0.922 on test."
+          },
+          {
+            "do": "Do the grid-search TODO and rerun.",
+            "see": "{'svc__C': 1, 'svc__gamma': 10} CV 0.957  test 0.944"
+          },
+          {
+            "do": "Read the wine lines.",
+            "see": "Unscaled, the RBF SVM scores 0.648; standardised, 1.000. The calibrated probabilities for the first test wine are [[0.985 0.012 0.003]]."
+          },
+          {
+            "do": "Write three sentences: why the linear kernel fails on the moons, what the gamma=100 line shows, and why the unscaled wine SVM does so badly."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The three kernels are compared with their support vectors.",
+            "look_for": [
+              "linear  accuracy 0.767  support vectors 71",
+              "rbf     accuracy 0.933  support vectors 59"
+            ]
+          },
+          {
+            "text": "C widens or narrows the margin.",
+            "look_for": [
+              "C=0.01  support vectors 172  margin width 2.358",
+              "C=100   support vectors 66   margin width 0.769"
+            ]
+          },
+          {
+            "text": "gamma's effect on training and test accuracy is shown.",
+            "look_for": [
+              "gamma=0.1  train 0.862  test 0.789",
+              "gamma=100  train 0.990  test 0.922"
+            ]
+          },
+          {
+            "text": "C and gamma are tuned together by cross-validation.",
+            "look_for": [
+              "{'svc__C': 1, 'svc__gamma': 10} CV 0.957  test 0.944"
+            ]
+          },
+          {
+            "text": "Scaling and calibration are shown on the wine data.",
+            "look_for": [
+              "unscaled accuracy 0.648, standardised 1.000",
+              "[[0.985 0.012 0.003]]"
+            ]
+          },
+          {
+            "text": "The sentences explain the curved boundary, overfitting at large gamma, and the RBF kernel's distances being dominated by proline's scale.",
+            "look_for": [
+              "gamma"
+            ]
+          }
+        ],
+        "submit": "Paste your svm_kernels.py, its output and your three sentences.",
+        "hints": [
+          "m.n_support_.sum() counts the support vectors of both classes.",
+          "Pipeline parameters for GridSearchCV are named svc__C and svc__gamma.",
+          "In scikit-learn versions before 1.9, SVC(probability=True) gives probabilities too, but CalibratedClassifierCV works in all recent versions."
+        ],
+        "files": [
+          {
+            "path": "svm_kernels.py",
+            "content": "\"\"\"Support vector machines: kernels, C and gamma on two moons, then on the wine data.\"\"\"\n\nimport numpy as np\nfrom sklearn.calibration import CalibratedClassifierCV\nfrom sklearn.datasets import load_wine, make_moons\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.svm import SVC\n\nX, y = make_moons(n_samples=300, noise=0.25, random_state=0)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\n\nprint(\"1. Kernels on the moons:\")\n# TODO: for kernel in (\"linear\", \"poly\", \"rbf\"), fit SVC(kernel=kernel) and print its test accuracy and its number\n#       of support vectors, sum(model.n_support_):  f\"   {kernel:<7} accuracy {acc:.3f}  support vectors {n}\"\npass\n\nprint(\"2. C and the margin, linear kernel:\")\nfor C in (0.01, 1, 100):\n    m = SVC(kernel=\"linear\", C=C).fit(X_train, y_train)\n    print(f\"   C={C:<5} support vectors {m.n_support_.sum():<4} margin width {2 / np.linalg.norm(m.coef_):.3f}\")\n\nprint(\"3. gamma, RBF kernel:\")\n# TODO: for gamma in (0.1, 1, 10, 100), fit SVC(kernel=\"rbf\", gamma=gamma) and print train and test accuracy\npass\n\nprint(\"4. Tuning C and gamma together:\")\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\ngrid = {\"svc__C\": [0.1, 1, 10, 100], \"svc__gamma\": [0.01, 0.1, 1, 10]}\n# TODO: GridSearchCV(make_pipeline(StandardScaler(), SVC()), grid, cv=cv) on the training set; print best_params_,\n#       best_score_ and the test accuracy, all to 3 places\npass\n\nwine = load_wine()\nXw_train, Xw_test, yw_train, yw_test = train_test_split(wine.data, wine.target, test_size=0.3, random_state=0,\n                                                        stratify=wine.target)\nraw = SVC().fit(Xw_train, yw_train).score(Xw_test, yw_test)\nscaled = make_pipeline(StandardScaler(), SVC()).fit(Xw_train, yw_train).score(Xw_test, yw_test)\nprint(f\"5. Wine, RBF SVC: unscaled accuracy {raw:.3f}, standardised {scaled:.3f}\")\ncalibrated = CalibratedClassifierCV(make_pipeline(StandardScaler(), SVC()), ensemble=False).fit(Xw_train, yw_train)\nprint(\"   Calibrated probabilities for the first test wine:\", calibrated.predict_proba(Xw_test[:1]).round(3))\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Decision Trees & Ensembles",
+      "summary": "Grow interpretable trees and prune them, then combine many trees: bagging and random forests to reduce variance, gradient boosting to reduce bias, and voting and stacking to mix different models.",
+      "instructor": "marisolo-garcia",
+      "lessons": [
+        {
+          "title": "Decision trees: information gain and pruning",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a tree chooses its splits",
+            "Prune a tree with depth limits and cost-complexity pruning"
+          ],
+          "key_points": [
+            "A tree splits the data with yes/no questions about one feature at a time, choosing each split to maximise the information gain: the fall in impurity, measured by Gini (scikit-learn's default) or entropy.",
+            "Grown fully, a tree fits its training data perfectly and overfits. Pre-pruning limits its growth (max_depth, min_samples_leaf, max_leaf_nodes); post-pruning cuts it back with cost-complexity pruning, set by ccp_alpha.",
+            "cost_complexity_pruning_path lists the alphas at which subtrees are pruned away; choose ccp_alpha by cross-validation. On the wine data, alpha 0.011 cuts the tree from 12 leaves to 8 with no loss in cross-validated accuracy.",
+            "Trees need no scaling, capture interactions and non-linear effects, and are easy to read with export_text or plot_tree; but they are unstable, and their boundaries are made of axis-aligned steps.",
+            "A smooth, round boundary is hard for one tree: on make_hastie_10_2, where the class depends on the distance from the centre, even a pruned tree reaches only about 0.75 test accuracy. That is where ensembles come in."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Read a tree, then prune it",
+            "steps": [
+              {
+                "do": "Fit a depth-2 tree to the wine data and print its rules.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_wine\nfrom sklearn.model_selection import cross_val_score\nfrom sklearn.tree import DecisionTreeClassifier, export_text\n\nwine = load_wine()\ntree = DecisionTreeClassifier(max_depth=2, random_state=0).fit(wine.data, wine.target)\nprint(export_text(tree, feature_names=list(wine.feature_names)))",
+                "lang": "python",
+                "see": "proline <= 755.00 first, then od280/od315_of_diluted_wines on one side and flavanoids on the other."
+              },
+              {
+                "do": "Walk along the pruning path: leaves and cross-validated accuracy for four alphas.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "path = DecisionTreeClassifier(random_state=0).cost_complexity_pruning_path(wine.data, wine.target)\nfor a in path.ccp_alphas[[0, 3, 6, 9]]:\n    t = DecisionTreeClassifier(ccp_alpha=a, random_state=0)\n    print(round(a, 4), t.fit(wine.data, wine.target).get_n_leaves(), cross_val_score(t, wine.data, wine.target, cv=5).mean().round(3))",
+                "lang": "python",
+                "see": "12 leaves at alpha 0 and 8 at 0.011, both 0.888; 5 leaves at 0.0217 (0.877); 2 leaves at 0.2054 (0.735), pruned too far."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Random forests: bagging and random features",
+          "minutes": 12,
+          "objectives": [
+            "Explain how bagging and random feature choice reduce variance",
+            "Use out-of-bag scores and permutation importance"
+          ],
+          "key_points": [
+            "Ensembles combine several models into a better one. Bagging (bootstrap aggregating) trains each model on a bootstrap sample, rows drawn with replacement, and averages their votes, which reduces variance.",
+            "A random forest bags deep trees and, at every split, considers only a random subset of the features (max_features='sqrt' by default for classifiers), which makes the trees less alike, so averaging helps more.",
+            "A bootstrap sample contains about 63% of the distinct rows, so each tree leaves out about a third; oob_score=True scores every row with the trees that didn't see it, a free estimate of test accuracy.",
+            "More trees don't make a forest overfit; they cost time, and the score levels off, as between 50 and 200 trees in the lab.",
+            "feature_importances_ is impurity-based: computed on training data and biased towards features with many distinct values. permutation_importance on held-out data, which measures how much the score drops when one feature is shuffled, is more trustworthy."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Bootstrap, out-of-bag and importance",
+            "steps": [
+              {
+                "do": "Draw a bootstrap sample of 10,000 rows and count how many distinct rows it contains.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nrng = np.random.default_rng(0)\nn = 10_000\nsample = rng.integers(0, n, n)\nprint(round(len(np.unique(sample)) / n, 3))",
+                "lang": "python",
+                "see": "0.635, close to 1 − 1/e ≈ 0.632."
+              },
+              {
+                "do": "Fit a random forest to the wine data and compare its out-of-bag score with the test score.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_wine\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.model_selection import train_test_split\n\nwine = load_wine()\nX_train, X_test, y_train, y_test = train_test_split(wine.data, wine.target, test_size=0.3, random_state=0, stratify=wine.target)\nforest = RandomForestClassifier(n_estimators=300, oob_score=True, random_state=0).fit(X_train, y_train)\nprint(round(forest.oob_score_, 3), round(forest.score(X_test, y_test), 3))",
+                "lang": "python",
+                "see": "0.96 out of bag and 1.0 on the test set."
+              },
+              {
+                "do": "Compare permutation importance on the test set with the impurity-based importance.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.inspection import permutation_importance\n\nresult = permutation_importance(forest, X_test, y_test, n_repeats=20, random_state=0)\nfor j in result.importances_mean.argsort()[::-1][:3]:\n    print(f\"{wine.feature_names[j]:<30} permutation {result.importances_mean[j]:.3f}  impurity {forest.feature_importances_[j]:.3f}\")",
+                "lang": "python",
+                "see": "color_intensity comes first by permutation (0.124) but proline first by impurity (0.185): the two measures can rank features differently."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Boosting, voting and stacking",
+          "minutes": 12,
+          "objectives": [
+            "Explain how gradient boosting builds an ensemble step by step",
+            "Combine different models by voting and stacking"
+          ],
+          "key_points": [
+            "Boosting builds models one after another, each correcting the ones before: gradient boosting fits every new small tree to the gradient of the loss (for squared error, the residuals) and adds it, scaled by the learning rate.",
+            "The learning rate and the number of trees trade off: smaller steps need more trees and usually generalise better. On make_hastie_10_2, stumps boosted with a learning rate of 0.5 go from 0.532 test accuracy after 1 tree to 0.914 after 200.",
+            "HistGradientBoostingClassifier bins each feature into at most 255 bins, which makes it fast on large data; it handles missing values natively and turns early stopping on automatically for more than 10,000 samples.",
+            "Voting averages different models' predictions, hard votes or probabilities (voting='soft'); stacking trains a final model on their cross-validated predictions. Both help most when the models make different mistakes.",
+            "Bagging and forests mainly reduce variance, averaging deep, noisy trees; boosting mainly reduces bias, adding up shallow, weak ones. Boosting is often the strongest choice for tabular data, but needs more tuning."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Weak learners, added up",
+            "steps": [
+              {
+                "do": "Boost 400 stumps (trees of depth 1) on the Hastie data and score the ensemble as it grows.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import make_hastie_10_2\nfrom sklearn.ensemble import GradientBoostingClassifier\nfrom sklearn.model_selection import train_test_split\n\nX, y = make_hastie_10_2(n_samples=3000, random_state=0)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\ngb = GradientBoostingClassifier(n_estimators=400, max_depth=1, learning_rate=0.5, random_state=0).fit(X_train, y_train)\nfor i, pred in enumerate(gb.staged_predict(X_test), 1):\n    if i in (1, 10, 50, 200, 400):\n        print(i, round((pred == y_test).mean(), 3))",
+                "lang": "python",
+                "see": "0.532 after one stump, 0.676 after 10, 0.833 after 50, 0.914 after 200 and 0.924 after 400."
+              },
+              {
+                "do": "Combine three different models on the wine data by soft voting and by stacking.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_wine\nfrom sklearn.ensemble import RandomForestClassifier, StackingClassifier, VotingClassifier\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import StratifiedKFold, cross_val_score\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nXw, yw = load_wine(return_X_y=True)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\nmembers = [(\"lr\", make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))),\n           (\"knn\", make_pipeline(StandardScaler(), KNeighborsClassifier())),\n           (\"rf\", RandomForestClassifier(random_state=0))]\nfor name, model in members + [(\"vote\", VotingClassifier(members, voting=\"soft\")),\n                              (\"stack\", StackingClassifier(members, final_estimator=LogisticRegression(max_iter=5000)))]:\n    print(name, cross_val_score(model, Xw, yw, cv=cv).mean().round(3))",
+                "lang": "python",
+                "see": "lr 0.983, knn 0.961, rf 0.972, vote 0.977, stack 0.983: on easy data a combination can't beat its best member by much."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "From one tree to a forest",
+        "tool": "JupyterLab",
+        "minutes": 90,
+        "goal": "On a problem with a round boundary that single trees find hard, measure how depth and pruning change a tree, how bagging and random forests reduce its variance, and how boosting does better still.",
+        "setup": [
+          "Your course folder, with scikit-learn and JupyterLab installed",
+          "Download the starter file ensembles.py into it"
+        ],
+        "steps": [
+          {
+            "do": "Open ensembles.py and do the first TODO: trees of depth 1, 3, 8 and unlimited."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python ensembles.py",
+            "lang": "bash",
+            "see": "Class shares of 0.508 and 0.492; the stump scores 0.532, the unlimited tree 1.000 on training but 0.749 on test, with 244 leaves."
+          },
+          {
+            "do": "Do the pruning TODO and rerun.",
+            "see": "Pruned: ccp_alpha 0.00216, leaves 47, test 0.750: a fifth of the leaves for the same accuracy."
+          },
+          {
+            "do": "Do the bagging and forest TODO.",
+            "see": "bagging OOB 0.865, test 0.838; random forest OOB 0.876, test 0.851. Forests of 1, 10, 50 and 200 trees test at 0.732, 0.790, 0.854 and 0.851."
+          },
+          {
+            "do": "Do the boosting TODO and rerun the whole script.",
+            "see": "HistGradientBoosting: test 0.901 with 100 trees; 500 small trees of 4 leaves: 0.918. The forest's importances are all close to 0.1."
+          },
+          {
+            "do": "Write three sentences: why a single tree struggles with this boundary, why the forest beats bagging, and why every importance is about 0.1 here (look at how make_hastie_10_2 makes its classes)."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Single trees overfit as they grow.",
+            "look_for": [
+              "depth 1     leaves 2     train 0.560  test 0.532",
+              "depth None  leaves 244   train 1.000  test 0.749"
+            ]
+          },
+          {
+            "text": "Cost-complexity pruning keeps the accuracy with far fewer leaves.",
+            "look_for": [
+              "Pruned: ccp_alpha 0.00216, leaves 47, test 0.750"
+            ]
+          },
+          {
+            "text": "Bagging and the random forest are compared with out-of-bag scores.",
+            "look_for": [
+              "bagging        OOB 0.865  test 0.838",
+              "random forest  OOB 0.876  test 0.851"
+            ]
+          },
+          {
+            "text": "Forest size is varied.",
+            "look_for": [
+              "forest of 1   trees: test 0.732",
+              "forest of 50  trees: test 0.854"
+            ]
+          },
+          {
+            "text": "Boosting beats the forest.",
+            "look_for": [
+              "HistGradientBoosting: test 0.901, 100 trees",
+              "500 small trees (4 leaves): test 0.918"
+            ]
+          },
+          {
+            "text": "The sentences explain step-shaped boundaries, decorrelated trees, and that every feature contributes equally to the sum of squares.",
+            "look_for": [
+              "boundary"
+            ]
+          }
+        ],
+        "submit": "Paste your ensembles.py, its output and your three sentences.",
+        "hints": [
+          "str(depth) prints None for the unlimited tree.",
+          "GridSearchCV(...).best_params_['ccp_alpha'] is the chosen alpha, and best_estimator_ the pruned tree refitted on all the training data.",
+          "n_jobs=-1 uses every processor core; random_state keeps the results the same."
+        ],
+        "files": [
+          {
+            "path": "ensembles.py",
+            "content": "\"\"\"From one tree to a forest: trees, pruning, bagging, random forests and boosting on a hard synthetic problem.\"\"\"\n\nimport numpy as np\nfrom sklearn.datasets import make_hastie_10_2\nfrom sklearn.ensemble import BaggingClassifier, HistGradientBoostingClassifier, RandomForestClassifier\nfrom sklearn.model_selection import GridSearchCV, train_test_split\nfrom sklearn.tree import DecisionTreeClassifier\n\nX, y = make_hastie_10_2(n_samples=3000, random_state=0)  # class 1 when the sum of the 10 squared features > 9.34\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\nprint(\"Class shares in training:\", {int(c): round(float(np.mean(y_train == c)), 3) for c in np.unique(y_train)})\n\nprint(\"1. One tree:\")\n# TODO: for depth in (1, 3, 8, None), fit DecisionTreeClassifier(max_depth=depth, random_state=0) and print\n#       f\"   depth {str(depth):<5} leaves {tree.get_n_leaves():<5} train {train:.3f}  test {test:.3f}\"\npass\n\npath = DecisionTreeClassifier(random_state=0).cost_complexity_pruning_path(X_train, y_train)\nalphas = np.quantile(path.ccp_alphas, [0.5, 0.8, 0.9, 0.95, 0.98, 0.99])\n# TODO: choose ccp_alpha from alphas with GridSearchCV(DecisionTreeClassifier(random_state=0), {\"ccp_alpha\": alphas}, cv=5);\n#       print the chosen alpha (5 places), the pruned tree's leaves and its test accuracy\npass\n\nprint(\"3. Many trees:\")\nbag = BaggingClassifier(DecisionTreeClassifier(), n_estimators=200, oob_score=True, random_state=0, n_jobs=-1)\nforest = RandomForestClassifier(n_estimators=200, oob_score=True, random_state=0, n_jobs=-1)\n# TODO: fit both and print f\"   {name:<14} OOB {model.oob_score_:.3f}  test {test:.3f}\"\npass\nfor n in (1, 10, 50, 200):\n    rf = RandomForestClassifier(n_estimators=n, random_state=0, n_jobs=-1).fit(X_train, y_train)\n    print(f\"   forest of {n:<3} trees: test {rf.score(X_test, y_test):.3f}\")\n\nprint(\"4. Boosting:\")\n# TODO: fit HistGradientBoostingClassifier(random_state=0) and print its test accuracy and n_iter_\npass\nhgb_more = HistGradientBoostingClassifier(max_iter=500, learning_rate=0.1, max_leaf_nodes=4, early_stopping=False,\n                                          random_state=0).fit(X_train, y_train)\nprint(f\"   500 small trees (4 leaves): test {hgb_more.score(X_test, y_test):.3f}\")\nprint(\"   Feature importances of the forest:\", forest.feature_importances_.round(3))\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "K-Means Clustering",
+      "summary": "Discover groups in unlabelled data with centroid-based clustering: run k-means well, choose K with the elbow method and silhouette scores, profile the clusters, and know when another method fits better.",
+      "instructor": "marisolo-garcia",
+      "lessons": [
+        {
+          "title": "How k-means works, and how to use it well",
+          "minutes": 12,
+          "objectives": [
+            "Run k-means with sensible initialisation and scaling",
+            "Profile clusters in the original units"
+          ],
+          "key_points": [
+            "K-Means partitions data into K clusters by minimising the inertia, the sum of squared distances from points to their cluster's centroid, alternating two steps: assign each point to its nearest centroid, then move each centroid to the mean of its points.",
+            "K must be chosen beforehand, and the result depends on the starting centroids: k-means++ (the default) spreads them out, n_init runs several starts and keeps the lowest inertia, and random_state makes the result repeatable.",
+            "Standardise first: unscaled, the feature with the largest spread dominates the distances. In the player data that is passes per 90 minutes (standard deviation 17.0, against about 1 for the others), and unscaled clusters mostly sort players by passes.",
+            "A fitted KMeans has labels_, cluster_centers_ (in the scaled space: inverse_transform them to read them in the original units), inertia_, and predict, which assigns new samples to the nearest centroid.",
+            "Cluster numbers are arbitrary. Describe each cluster by its centre and size and give it a name a person can check, such as 'high tackles and aerial duels: defenders'."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Scale, cluster and profile",
+            "steps": [
+              {
+                "do": "Load the made-up player statistics from the module 4 lab and compare the features' spreads.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import pandas as pd\nfrom sklearn.cluster import KMeans\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"players.csv\")\nX = df[[\"passes\", \"tackles\", \"shots\", \"dribbles\", \"aerials_won\", \"key_passes\"]]\nprint(X.std().round(2).to_dict())",
+                "lang": "python",
+                "see": "passes has a standard deviation of 17.0; the other five are between 0.73 and 1.34."
+              },
+              {
+                "do": "Cluster the unscaled data and sort the centres by passes.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "raw = KMeans(n_clusters=4, n_init=10, random_state=0).fit(X)\nprint(pd.DataFrame(raw.cluster_centers_, columns=X.columns).round(1).sort_values(\"passes\"))",
+                "lang": "python",
+                "see": "Centres at about 20, 33, 48 and 67 passes: the clusters are mostly slices of one feature."
+              },
+              {
+                "do": "Cluster the standardised data, then place a new player and read their cluster's centre in the original units.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "scaler = StandardScaler().fit(X)\nkm = KMeans(n_clusters=4, n_init=10, random_state=0).fit(scaler.transform(X))\ncentres = pd.DataFrame(scaler.inverse_transform(km.cluster_centers_), columns=X.columns).round(1)\nnew = pd.DataFrame([[30, 0.8, 3.0, 1.5, 2.0, 0.8]], columns=X.columns)\ncluster = int(km.predict(scaler.transform(new))[0])\nprint(cluster, centres.iloc[cluster].to_dict())",
+                "lang": "python",
+                "see": "The new player joins the cluster with 3.2 shots and 2.6 aerial duels won per 90 minutes: the strikers."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Choosing K: the elbow and the silhouette",
+          "minutes": 12,
+          "objectives": [
+            "Use the elbow method and silhouette scores to choose K",
+            "Compare a clustering with known groups using the adjusted Rand index"
+          ],
+          "key_points": [
+            "Inertia always falls as K grows, reaching 0 when every point is its own cluster, so its minimum can't choose K. The elbow method plots inertia against K and looks for the bend after which extra clusters gain little.",
+            "A sample's silhouette is (b − a) / max(a, b), where a is its mean distance to its own cluster and b to the nearest other cluster: near 1 it sits well inside its cluster, near 0 on a border, and below 0 probably in the wrong one.",
+            "silhouette_score averages it over all samples (it needs K ≥ 2), and higher is better. The two methods can disagree: on three blobs where two sit close together, the silhouette prefers K = 2 while the elbow points at 3.",
+            "Use domain sense as well: clusters must be useful to someone, and stable across random starts and samples of the data.",
+            "When true groups are known for some data, the adjusted Rand index compares a clustering with them: 1 means the same groups (whatever their numbers), and about 0 means no better than random."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Elbow and silhouette disagree",
+            "steps": [
+              {
+                "do": "Score K = 2 to 6 on three blobs, two of them close together.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.cluster import KMeans\nfrom sklearn.datasets import make_blobs\nfrom sklearn.metrics import adjusted_rand_score, silhouette_samples, silhouette_score\n\nX, true = make_blobs(n_samples=500, centers=3, cluster_std=1.2, random_state=1)\nfor k in range(2, 7):\n    km = KMeans(n_clusters=k, n_init=10, random_state=0).fit(X)\n    print(k, round(km.inertia_, 1), round(silhouette_score(X, km.labels_), 3))",
+                "lang": "python",
+                "see": "Inertia falls steeply from 3740.4 to 1367.2 and then slowly: an elbow at 3. The silhouette is highest at K = 2 (0.748), merging the two close blobs."
+              },
+              {
+                "do": "Look inside K = 3: the individual silhouettes, and the agreement with the true blobs.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "km = KMeans(n_clusters=3, n_init=10, random_state=0).fit(X)\ns = silhouette_samples(X, km.labels_)\nprint(round(s.min(), 3), round(s.max(), 3), int((s < 0).sum()))\nprint(round(adjusted_rand_score(true, km.labels_), 3), round(adjusted_rand_score(true, np.random.default_rng(0).integers(0, 3, 500)), 3))",
+                "lang": "python",
+                "see": "No sample has a negative silhouette, and the adjusted Rand index is 0.97 against -0.002 for random labels: K = 3 recovers the blobs."
+              }
+            ]
+          }
+        },
+        {
+          "title": "When k-means fails, and alternatives",
+          "minutes": 10,
+          "objectives": [
+            "Recognise data that k-means can't cluster well",
+            "Choose DBSCAN or hierarchical clustering instead"
+          ],
+          "key_points": [
+            "K-Means assumes compact, roughly round clusters of similar size and spread, because every point goes to its nearest centroid: long, curved, nested or very unequal clusters break it.",
+            "Every point is forced into some cluster, and outliers pull centroids towards themselves.",
+            "DBSCAN groups points that lie in dense regions, finds clusters of any shape and labels points in sparse regions as noise (−1); it needs eps, the neighbourhood radius, and min_samples instead of K.",
+            "Agglomerative (hierarchical) clustering merges the closest clusters step by step; the linkage, such as ward, average, complete or single, defines 'closest', and a dendrogram shows the order of the merges.",
+            "Gaussian mixture models (GaussianMixture) allow elliptical clusters and give each point a probability of belonging to each cluster instead of a hard label."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Two moons, three methods",
+            "steps": [
+              {
+                "do": "Cluster two interleaved half-moons with k-means, DBSCAN and single-linkage clustering.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans\nfrom sklearn.datasets import make_moons\nfrom sklearn.metrics import adjusted_rand_score\nfrom sklearn.preprocessing import StandardScaler\n\nX, y = make_moons(n_samples=400, noise=0.06, random_state=0)\nX = StandardScaler().fit_transform(X)\nfor name, model in ((\"k-means\", KMeans(n_clusters=2, n_init=10, random_state=0)),\n                    (\"DBSCAN\", DBSCAN(eps=0.3, min_samples=5)),\n                    (\"single linkage\", AgglomerativeClustering(n_clusters=2, linkage=\"single\"))):\n    labels = model.fit_predict(X)\n    print(name, round(adjusted_rand_score(y, labels), 3), sorted(set(labels.tolist())))",
+                "lang": "python",
+                "see": "k-means 0.475: it cuts the moons with a straight line. DBSCAN and single linkage both score 1.0, following the shapes."
+              },
+              {
+                "do": "Vary DBSCAN's eps and count the clusters it finds and the points it calls noise.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "for eps in (0.05, 0.3, 1.0):\n    labels = DBSCAN(eps=eps, min_samples=5).fit_predict(X)\n    print(eps, len(set(labels.tolist()) - {-1}), int((labels == -1).sum()))",
+                "lang": "python",
+                "see": "eps=0.05 finds 6 small clusters and calls 367 of the 400 points noise; 0.3 finds the two moons with no noise; 1.0 merges everything into one cluster."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Find playing styles with k-means",
+        "tool": "JupyterLab",
+        "minutes": 75,
+        "goal": "Cluster 240 made-up footballers by six statistics per 90 minutes: choose K with the elbow method and silhouette scores, describe each cluster in football terms, and only then compare the clusters with the roles the data was generated from, with and without scaling.",
+        "setup": [
+          "Your course folder, with pandas, scikit-learn and JupyterLab installed",
+          "Download the starter files playing_styles.py and players.csv (240 made-up players, generated for this course from four playing roles) into it"
+        ],
+        "steps": [
+          {
+            "do": "Open playing_styles.py and do TODO 1: standardise, then inertia and silhouette for K = 1 to 8."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python playing_styles.py",
+            "lang": "bash",
+            "see": "Inertia falls 1440.0, 830.6, 588.5, 385.9, then flattens (352.1 at K = 5); the silhouette peaks at K = 4 with 0.436."
+          },
+          {
+            "do": "Do TODO 2: fit K = 4 and print the centres in the original units, with each cluster's size.",
+            "see": "Four clusters of about 60 players: one with 62.5 passes, one with 3.2 tackles and 3.4 aerial duels won, one with 3.2 shots, and one with 3.3 dribbles."
+          },
+          {
+            "do": "Name each cluster from its centre before you look at the roles."
+          },
+          {
+            "do": "Do TODO 3: compare with the roles, standardised and unscaled.",
+            "see": "Each role falls almost entirely in one cluster; the adjusted Rand index is 0.945 standardised and 0.496 unscaled."
+          },
+          {
+            "do": "Write three sentences: the names you gave the clusters and why, why K = 4 was the right choice here, and why scaling doubled the agreement with the roles."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Inertia and silhouette are computed for K = 1 to 8.",
+            "look_for": [
+              "1   1440.0  -",
+              "4    385.9  0.436"
+            ]
+          },
+          {
+            "text": "The four cluster centres are reported in the original units.",
+            "look_for": [
+              "62.5",
+              "47.6",
+              "32.4",
+              "22.1"
+            ]
+          },
+          {
+            "text": "The clusters are compared with the roles with the adjusted Rand index.",
+            "look_for": [
+              "Adjusted Rand index, standardised: 0.945"
+            ]
+          },
+          {
+            "text": "Scaling's effect on the clustering is measured.",
+            "look_for": [
+              "Adjusted Rand index, unscaled:     0.496"
+            ]
+          },
+          {
+            "text": "The sentences name the clusters from their centres (such as defenders, midfielders, wingers and strikers) and explain the choice of K and the effect of scaling.",
+            "look_for": [
+              "winger"
+            ]
+          }
+        ],
+        "submit": "Paste your playing_styles.py, its output and your three sentences.",
+        "hints": [
+          "Keep the fitted StandardScaler: you need its inverse_transform to read the centres in passes, tackles and shots.",
+          "pd.Series(km.labels_).value_counts().sort_index() gives the cluster sizes in cluster order.",
+          "Cluster numbers can change between scikit-learn versions; the centres, sizes and the adjusted Rand index don't depend on them."
+        ],
+        "files": [
+          {
+            "path": "playing_styles.py",
+            "content": "\"\"\"Find playing styles with k-means: 240 made-up players described by six statistics per 90 minutes.\"\"\"\n\nimport pandas as pd\nfrom sklearn.cluster import KMeans\nfrom sklearn.metrics import adjusted_rand_score, silhouette_score\nfrom sklearn.preprocessing import StandardScaler\n\ndf = pd.read_csv(\"players.csv\")\nfeatures = [\"passes\", \"tackles\", \"shots\", \"dribbles\", \"aerials_won\", \"key_passes\"]\nX = df[features]\nprint(X.describe().loc[[\"mean\", \"std\"]].round(2))\n\n# TODO 1: standardise X with StandardScaler and keep the scaler, then for k in range(1, 9) fit\n#         KMeans(n_clusters=k, n_init=10, random_state=0) and print k, the inertia (1 place) and, for k >= 2,\n#         the silhouette_score (3 places)\npass\n\n# TODO 2: fit the k you choose (4), then print each cluster's centre in the original units:\n#         scaler.inverse_transform(km.cluster_centers_), as a DataFrame with the feature names, rounded to 1 place\npass\n\n# TODO 3: only now look at the roles the data was made from: print pd.crosstab(df[\"role\"], km.labels_) and the\n#         adjusted_rand_score(df[\"role\"], km.labels_) (3 places); then do the same for k-means on unscaled X\npass\n"
+          },
+          {
+            "path": "players.csv",
+            "content": "player,passes,tackles,shots,dribbles,aerials_won,key_passes,role\nP001,55.4,1.92,0.34,0.01,3.74,0.6,defender\nP002,29.3,0.45,3.2,5.04,0.89,1.82,winger\nP003,30.5,1.0,4.15,0.57,3.36,1.14,striker\nP004,49.4,4.03,0.36,0.16,3.85,0.35,defender\nP005,48.5,2.71,0.82,1.17,1.43,1.34,midfielder\nP006,39.9,0.88,1.41,3.37,0.96,1.07,winger\nP007,32.4,0.5,2.4,0.0,2.25,1.2,striker\nP008,21.8,0.16,1.39,3.22,0.41,1.42,winger\nP009,49.9,4.21,0.47,0.23,5.04,0.05,defender\nP010,18.5,0.62,3.8,1.93,2.62,0.46,striker\nP011,20.3,0.67,3.12,1.29,3.47,1.02,striker\nP012,68.6,2.17,1.1,0.49,0.69,0.99,midfielder\nP013,49.6,2.51,0.1,0.33,3.29,0.23,defender\nP014,20.9,0.36,4.47,0.87,4.13,0.69,striker\nP015,17.3,0.07,4.01,1.76,2.49,0.72,striker\nP016,19.1,0.76,3.42,1.33,2.66,1.53,striker\nP017,43.8,3.75,0.23,0.0,3.89,0.17,defender\nP018,38.1,1.39,2.35,2.57,0.63,1.79,winger\nP019,46.3,1.57,0.95,2.22,1.4,2.0,midfielder\nP020,53.1,3.11,0.26,0.18,3.01,0.07,defender\nP021,77.0,2.27,0.64,1.01,0.85,1.24,midfielder\nP022,43.4,2.75,0.46,0.23,2.43,0.13,defender\nP023,64.3,1.24,1.19,0.11,0.0,1.6,midfielder\nP024,66.9,2.25,0.68,0.98,1.09,1.78,midfielder\nP025,17.3,0.56,3.36,2.05,1.31,0.88,striker\nP026,76.0,2.67,1.06,1.17,1.17,1.82,midfielder\nP027,21.2,0.46,1.7,0.9,2.89,0.87,striker\nP028,61.2,1.78,0.29,0.61,5.08,0.38,defender\nP029,19.9,1.01,4.33,1.14,1.1,1.24,striker\nP030,44.4,2.57,0.29,0.21,0.71,0.5,defender\nP031,32.9,2.45,0.57,0.9,3.47,0.52,defender\nP032,47.8,3.19,0.63,1.07,0.66,1.31,midfielder\nP033,58.1,2.5,1.42,1.67,0.97,1.03,midfielder\nP034,24.6,0.39,4.1,1.13,2.91,1.18,striker\nP035,36.6,0.16,2.07,2.2,0.2,1.48,winger\nP036,76.4,0.75,1.18,0.73,1.42,1.15,midfielder\nP037,23.2,0.82,2.45,1.35,2.26,0.12,striker\nP038,49.8,2.85,0.02,0.19,3.76,0.43,defender\nP039,35.6,1.08,1.07,1.74,0.3,2.35,winger\nP040,55.2,2.21,0.39,0.83,1.67,0.54,midfielder\nP041,23.3,0.55,2.31,1.4,2.44,0.81,striker\nP042,39.8,0.96,2.21,2.19,0.66,1.66,winger\nP043,50.7,3.4,0.69,0.92,0.51,1.7,midfielder\nP044,59.1,3.23,1.09,0.8,0.57,1.98,midfielder\nP045,24.8,0.46,2.22,2.01,3.01,0.41,striker\nP046,53.8,1.78,1.2,1.17,1.49,1.94,midfielder\nP047,26.2,0.61,2.67,1.03,2.71,1.09,striker\nP048,19.9,0.5,3.6,0.42,3.67,1.16,striker\nP049,49.5,3.03,0.61,0.53,3.87,0.0,defender\nP050,29.6,2.55,0.31,0.04,2.01,0.31,defender\nP051,68.5,2.5,0.92,0.0,1.56,2.21,midfielder\nP052,27.0,0.56,2.35,2.25,2.87,1.06,striker\nP053,61.6,1.41,1.07,0.4,0.57,1.46,midfielder\nP054,48.7,3.41,0.59,0.45,3.84,0.27,defender\nP055,46.8,4.07,0.52,0.21,2.78,0.7,defender\nP056,64.9,2.31,0.69,0.72,0.9,1.98,midfielder\nP057,19.9,0.33,2.19,1.33,1.8,1.75,striker\nP058,63.1,2.58,1.25,0.37,0.9,1.35,midfielder\nP059,32.4,0.75,0.6,2.41,0.63,2.28,winger\nP060,29.5,1.23,2.32,3.64,0.32,2.31,winger\nP061,37.3,0.95,3.34,2.47,0.19,2.06,winger\nP062,43.0,3.83,0.31,0.39,3.84,0.12,defender\nP063,46.3,3.24,0.49,0.34,4.68,0.33,defender\nP064,25.1,0.84,3.82,1.32,1.38,1.14,striker\nP065,3.3,0.53,3.68,2.18,3.24,1.9,striker\nP066,43.6,3.71,0.65,0.94,1.93,0.48,defender\nP067,22.5,1.19,1.84,3.71,0.71,1.27,winger\nP068,33.8,0.9,3.19,2.82,0.68,2.07,winger\nP069,27.0,0.55,1.59,1.84,4.46,1.62,striker\nP070,47.4,3.63,0.19,0.19,5.03,0.37,defender\nP071,40.4,1.56,1.27,4.69,0.65,1.56,winger\nP072,28.9,0.44,3.32,1.57,0.97,0.63,striker\nP073,52.9,4.58,0.32,0.61,4.44,0.44,defender\nP074,77.7,2.33,1.4,1.2,0.92,1.03,midfielder\nP075,45.7,1.02,2.06,4.34,1.11,2.09,winger\nP076,79.5,1.73,1.7,1.03,1.12,2.15,midfielder\nP077,20.2,0.55,2.98,0.18,3.29,0.3,striker\nP078,31.6,0.44,3.24,0.86,0.23,0.85,striker\nP079,53.6,3.19,1.07,0.99,1.44,0.92,midfielder\nP080,18.8,0.0,3.29,4.15,0.58,0.86,winger\nP081,33.6,0.76,3.76,1.88,3.41,1.46,striker\nP082,42.5,3.35,0.04,0.05,3.96,0.29,defender\nP083,36.3,1.18,2.16,4.29,0.15,1.91,winger\nP084,73.5,3.15,1.33,0.22,0.81,1.17,midfielder\nP085,60.0,0.68,0.07,1.51,1.29,0.75,midfielder\nP086,18.8,0.78,3.73,1.12,2.49,0.79,striker\nP087,29.8,1.75,2.49,1.79,0.63,1.82,winger\nP088,64.0,2.63,1.61,1.64,1.65,0.7,midfielder\nP089,47.5,3.13,0.36,0.01,3.01,0.54,defender\nP090,45.1,3.67,0.13,0.67,2.74,0.15,defender\nP091,15.3,0.59,2.46,0.91,2.04,1.17,striker\nP092,22.0,1.12,1.5,1.61,1.35,1.4,winger\nP093,26.3,0.76,4.97,2.02,2.81,0.77,striker\nP094,34.8,0.95,0.63,3.84,0.52,2.46,winger\nP095,69.6,1.63,1.34,0.4,1.6,1.45,midfielder\nP096,55.8,2.05,0.93,0.28,1.85,1.65,midfielder\nP097,53.4,2.89,0.55,1.01,4.3,0.18,defender\nP098,20.1,0.21,3.88,0.72,1.79,0.46,striker\nP099,33.5,0.26,2.87,2.69,0.43,2.7,winger\nP100,61.3,1.24,1.3,2.08,0.46,2.31,midfielder\nP101,21.8,1.11,2.24,4.72,0.88,2.04,winger\nP102,48.7,3.12,0.2,0.78,2.24,0.41,defender\nP103,25.7,1.55,1.22,2.74,0.75,1.9,winger\nP104,28.4,0.91,3.16,1.3,1.8,0.07,striker\nP105,29.0,0.45,1.91,1.55,2.66,1.29,striker\nP106,49.2,2.38,0.92,1.26,1.44,1.17,midfielder\nP107,64.1,3.59,0.94,1.64,1.34,0.84,midfielder\nP108,65.2,2.61,0.7,1.37,1.59,1.49,midfielder\nP109,52.2,3.01,0.25,0.52,4.22,0.24,defender\nP110,28.7,1.39,1.98,3.61,0.5,1.75,winger\nP111,46.2,2.28,0.48,1.49,2.22,0.37,defender\nP112,27.4,0.51,3.71,0.31,3.59,0.97,striker\nP113,20.2,0.56,4.46,1.21,3.14,0.48,striker\nP114,76.8,1.54,1.23,1.17,0.49,2.21,midfielder\nP115,35.3,0.92,2.43,3.85,0.74,1.59,winger\nP116,35.0,1.16,0.69,0.99,0.42,1.7,winger\nP117,55.4,2.88,1.29,0.23,1.67,2.08,midfielder\nP118,40.6,3.13,0.45,0.3,1.58,0.29,defender\nP119,31.2,1.47,1.35,0.91,0.46,3.19,winger\nP120,15.4,0.87,2.19,1.12,2.75,0.56,striker\nP121,49.2,2.61,0.68,0.65,4.13,0.38,defender\nP122,12.3,0.97,3.66,1.33,1.62,0.26,striker\nP123,44.7,3.16,0.57,0.44,2.74,0.34,defender\nP124,49.5,3.63,0.44,0.45,2.0,0.27,defender\nP125,39.0,3.44,0.4,0.34,2.77,0.38,defender\nP126,19.6,0.72,3.94,1.9,1.86,0.9,striker\nP127,65.0,3.33,0.85,0.69,1.2,1.7,midfielder\nP128,36.1,1.2,1.04,3.58,0.61,1.95,winger\nP129,55.5,3.24,0.17,0.4,1.94,0.66,defender\nP130,51.4,2.73,0.52,0.56,4.82,0.46,defender\nP131,18.0,0.43,2.54,0.0,2.36,1.02,striker\nP132,30.8,1.37,2.23,3.27,1.01,2.2,winger\nP133,21.1,0.64,2.52,1.82,2.67,1.07,striker\nP134,44.9,0.37,1.7,3.99,0.71,2.24,winger\nP135,20.3,0.8,4.72,2.16,3.89,1.39,striker\nP136,50.1,2.45,0.56,0.25,2.41,0.37,defender\nP137,30.9,0.43,2.17,4.01,0.89,1.94,winger\nP138,41.3,2.04,0.66,1.17,2.68,0.17,defender\nP139,36.5,1.2,2.2,5.73,0.68,2.53,winger\nP140,49.0,3.19,0.16,0.77,3.85,0.07,defender\nP141,61.6,2.03,1.58,1.49,1.83,1.7,midfielder\nP142,60.3,2.8,0.24,0.99,0.67,2.59,midfielder\nP143,58.1,1.77,1.1,0.05,1.06,1.2,midfielder\nP144,28.2,0.62,2.42,0.75,2.25,1.29,striker\nP145,49.8,3.12,0.5,0.24,4.59,0.42,defender\nP146,43.6,4.75,0.59,0.67,3.69,0.29,defender\nP147,25.5,0.62,0.76,5.34,0.56,2.05,winger\nP148,52.6,2.13,0.52,0.58,1.73,0.37,defender\nP149,47.5,3.27,0.31,0.35,3.0,0.38,defender\nP150,42.9,1.67,0.43,0.53,3.07,0.36,defender\nP151,26.5,0.78,2.33,1.17,2.83,0.89,striker\nP152,47.7,4.24,0.51,0.29,4.78,0.34,defender\nP153,37.4,1.51,2.08,6.02,0.3,2.04,winger\nP154,24.0,0.64,3.54,1.12,1.67,0.78,striker\nP155,71.9,3.15,1.02,0.89,1.74,1.21,midfielder\nP156,43.1,3.63,0.72,0.95,4.93,0.07,defender\nP157,30.3,1.19,3.36,1.37,3.89,1.47,striker\nP158,58.5,3.97,0.3,0.61,3.05,0.28,defender\nP159,22.1,1.36,1.96,2.98,1.03,2.37,winger\nP160,21.3,0.53,3.07,2.52,1.74,0.83,striker\nP161,58.1,2.64,0.43,1.27,2.73,0.12,defender\nP162,24.0,0.81,2.78,1.74,1.84,0.84,striker\nP163,42.7,3.47,0.3,0.48,2.83,0.36,defender\nP164,26.7,1.02,2.15,4.71,0.99,2.45,winger\nP165,34.5,1.04,1.18,4.41,0.52,0.87,winger\nP166,59.7,1.71,1.31,0.42,1.86,1.69,midfielder\nP167,66.1,2.15,0.88,1.54,2.04,1.53,midfielder\nP168,10.7,0.44,2.45,1.18,3.16,1.49,striker\nP169,11.4,0.82,2.23,1.31,2.03,0.75,striker\nP170,26.8,1.51,1.75,3.95,0.15,1.9,winger\nP171,50.8,3.09,0.83,0.0,1.15,0.91,midfielder\nP172,32.6,0.98,2.59,2.82,0.76,1.85,winger\nP173,82.6,1.98,1.33,1.06,1.04,1.71,midfielder\nP174,27.8,0.71,2.35,3.75,0.4,1.33,winger\nP175,23.8,0.29,3.14,1.55,3.53,0.92,striker\nP176,80.4,2.41,0.56,1.34,0.75,1.15,midfielder\nP177,71.3,2.2,0.95,1.24,1.18,1.8,midfielder\nP178,49.6,3.16,0.55,0.0,5.07,0.28,defender\nP179,68.1,1.52,1.69,0.84,0.63,2.09,midfielder\nP180,24.3,0.63,3.12,1.02,2.34,1.06,striker\nP181,31.8,0.92,2.26,3.51,0.67,1.49,winger\nP182,19.4,1.11,3.96,1.96,2.05,0.49,striker\nP183,27.8,1.14,1.8,2.34,0.34,1.99,winger\nP184,69.9,2.14,1.04,2.21,1.41,1.31,midfielder\nP185,43.5,2.05,0.67,0.56,5.61,0.31,defender\nP186,19.2,0.91,4.13,0.68,3.16,0.71,striker\nP187,66.1,4.22,0.0,0.36,2.62,0.42,defender\nP188,18.1,1.07,2.87,2.34,2.61,0.23,striker\nP189,39.0,3.3,0.31,0.59,4.32,0.36,defender\nP190,33.6,1.02,1.55,1.99,0.66,2.62,winger\nP191,35.3,0.31,3.89,2.42,2.12,0.41,striker\nP192,32.4,4.26,0.3,0.0,3.28,0.23,defender\nP193,53.6,1.46,0.52,0.54,1.11,0.89,midfielder\nP194,49.8,2.54,0.35,0.3,3.69,0.52,defender\nP195,45.7,1.35,0.44,0.09,2.8,0.01,defender\nP196,30.9,0.96,2.03,3.39,0.47,0.82,winger\nP197,64.1,2.36,1.32,0.23,1.25,1.93,midfielder\nP198,30.8,0.79,1.03,4.18,0.32,1.68,winger\nP199,32.8,3.58,0.51,0.0,3.8,0.5,defender\nP200,42.0,0.98,2.53,2.92,0.24,2.74,winger\nP201,53.8,2.17,0.27,0.15,1.77,0.33,defender\nP202,64.9,2.39,1.3,1.25,0.93,1.11,midfielder\nP203,25.7,1.31,4.55,1.87,4.12,0.48,striker\nP204,23.2,0.52,4.8,1.74,0.0,1.45,striker\nP205,38.1,1.49,2.34,2.27,0.49,2.51,winger\nP206,43.8,2.95,1.62,0.6,1.69,0.5,midfielder\nP207,72.1,1.32,1.45,1.73,0.82,0.85,midfielder\nP208,50.5,3.54,0.59,0.94,1.11,2.0,midfielder\nP209,61.0,2.11,0.89,1.47,1.26,0.66,midfielder\nP210,49.8,2.01,1.06,0.33,0.93,1.91,midfielder\nP211,29.5,0.78,2.07,4.71,0.39,1.47,winger\nP212,36.8,0.7,1.28,1.72,0.24,1.25,winger\nP213,42.2,2.8,1.01,1.48,1.14,1.51,midfielder\nP214,23.4,0.47,3.84,0.25,2.35,0.23,striker\nP215,50.4,3.09,0.32,0.54,4.32,0.26,defender\nP216,65.3,3.5,1.14,1.22,1.39,1.02,midfielder\nP217,38.0,1.15,3.36,3.48,0.46,1.99,winger\nP218,64.9,1.58,1.42,0.63,1.38,1.1,midfielder\nP219,51.1,4.67,0.83,0.15,3.89,0.39,defender\nP220,31.0,0.31,1.3,3.42,0.32,2.55,winger\nP221,29.5,1.21,2.24,3.26,0.72,1.93,winger\nP222,66.3,2.51,1.22,0.2,0.77,1.48,midfielder\nP223,43.0,1.61,1.64,2.36,0.25,1.77,winger\nP224,36.1,1.12,2.75,2.56,0.0,1.65,winger\nP225,26.5,0.98,2.75,0.0,2.89,1.42,striker\nP226,32.5,0.97,3.26,3.17,0.64,1.3,winger\nP227,55.5,2.0,1.82,0.72,1.94,2.06,midfielder\nP228,30.1,1.5,3.19,2.22,1.35,2.85,winger\nP229,32.5,1.08,1.51,2.39,0.64,2.48,winger\nP230,23.1,1.54,0.23,3.11,0.86,1.99,winger\nP231,65.3,3.99,0.8,1.15,1.93,0.36,midfielder\nP232,12.9,0.6,2.43,1.37,2.92,1.09,striker\nP233,23.4,1.1,1.2,2.55,0.59,2.75,winger\nP234,45.2,3.94,0.32,0.5,1.36,0.01,defender\nP235,45.3,4.29,0.64,0.25,3.2,0.19,defender\nP236,15.7,0.25,3.21,0.75,4.81,0.73,striker\nP237,16.1,0.47,2.87,1.51,1.55,0.83,striker\nP238,23.2,1.5,2.6,2.36,0.16,1.3,winger\nP239,41.3,0.6,2.44,1.98,0.72,1.42,winger\nP240,64.2,2.14,1.19,0.95,0.87,1.39,midfielder\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "PCA & Dimensionality Reduction",
+      "summary": "Reduce many features to a few with principal component analysis: see what the components are, choose how many to keep, compress and reconstruct data, speed up models, and map high-dimensional data in two dimensions.",
+      "instructor": "zawadi-mutembo",
+      "lessons": [
+        {
+          "title": "What PCA finds",
+          "minutes": 12,
+          "objectives": [
+            "Explain principal components as orthogonal directions of maximum variance",
+            "Read loadings and explained variance",
+            "Decide when to standardise before PCA"
+          ],
+          "key_points": [
+            "Principal component analysis (PCA) finds orthogonal axes, the principal components, ordered by how much of the data's variance each captures; projecting onto the first few keeps as much of the spread as any linear projection can.",
+            "Each component is a linear combination of the original features. Its weights, the loadings, are in components_, and explained_variance_ratio_ gives each component's share of the total variance.",
+            "PCA centres the data and works from its covariance matrix: the components are the matrix's eigenvectors and explained_variance_ its eigenvalues; scikit-learn computes them with the singular value decomposition.",
+            "Standardise first when features have different units, or the feature with the largest variance takes over the first component: on the raw player data PC1 is almost exactly passes (loading 1.00).",
+            "PCA is unsupervised and linear: it ignores the labels, can miss curved structure, and a component's sign is arbitrary."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Components, eigenvectors and scaling",
+            "steps": [
+              {
+                "do": "Run PCA on two correlated features.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.decomposition import PCA\n\nrng = np.random.default_rng(0)\nx = rng.normal(size=300)\nX = np.column_stack([x, 0.5 * x + rng.normal(scale=0.3, size=300)])\npca = PCA().fit(X)\nprint(pca.components_.round(3), pca.explained_variance_ratio_.round(3))",
+                "lang": "python",
+                "see": "The first component points along the shared trend, (0.877, 0.48), and keeps 95.2% of the variance."
+              },
+              {
+                "do": "Check that the explained variances are the covariance matrix's eigenvalues.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "values, vectors = np.linalg.eigh(np.cov(X - X.mean(axis=0), rowvar=False))\nprint(values[::-1].round(3), pca.explained_variance_.round(3))",
+                "lang": "python",
+                "see": "[1.331 0.067] twice."
+              },
+              {
+                "do": "Compare the first component of the raw and the standardised player statistics.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import pandas as pd\nfrom sklearn.preprocessing import StandardScaler\n\nstats = pd.read_csv(\"players.csv\")[[\"passes\", \"tackles\", \"shots\", \"dribbles\", \"aerials_won\", \"key_passes\"]]\nprint(PCA(n_components=1).fit(stats).components_.round(2))\nprint(PCA(n_components=1).fit(StandardScaler().fit_transform(stats)).components_.round(2))",
+                "lang": "python",
+                "see": "Raw: [[ 1. 0.04 ...]], just passes. Standardised: tackles and passes against shots, dribbles and key passes, a defending-to-attacking axis."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Choosing components, compressing data and pipelines",
+          "minutes": 12,
+          "objectives": [
+            "Choose the number of components from the explained variance",
+            "Compress and reconstruct data",
+            "Tune PCA inside a pipeline"
+          ],
+          "key_points": [
+            "Choose the number of components from the cumulative explained variance: for scikit-learn's 8 × 8 digit images, 13 of 64 components keep 80% of the variance, 21 keep 90% and 29 keep 95%. PCA(n_components=0.95) picks the count for you.",
+            "inverse_transform maps compressed data back to the original features; the reconstruction error, such as the mean squared difference, measures what was lost.",
+            "Fewer features reduce computational cost and memory, and can remove noise, but may cost some accuracy: on the digits, logistic regression's cross-validated accuracy is 0.910 with 40 components and 0.915 with all 64.",
+            "Put PCA inside a pipeline, so it is fitted on the training folds only, and tune n_components with GridSearchCV like any other hyperparameter.",
+            "whiten=True rescales the components to unit variance; it helps some models but also amplifies the noise in the small components."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Keep 95%",
+            "steps": [
+              {
+                "do": "Ask PCA for 95% of the digits' variance.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.datasets import load_digits\nfrom sklearn.decomposition import PCA\n\nX, y = load_digits(return_X_y=True)\npca = PCA(n_components=0.95).fit(X)\nprint(pca.n_components_, round(pca.explained_variance_ratio_.sum(), 3))",
+                "lang": "python",
+                "see": "29 components, keeping 0.955 of the variance."
+              },
+              {
+                "do": "Compress the images to 29 numbers each and reconstruct them.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "Z = pca.transform(X)\nback = pca.inverse_transform(Z)\nprint(Z.shape, back.shape, round(np.mean((X - back) ** 2), 3))",
+                "lang": "python",
+                "see": "(1797, 29) (1797, 64) and a mean squared reconstruction error of 0.849, on pixel values from 0 to 16."
+              },
+              {
+                "do": "Tune the number of components inside a pipeline with logistic regression. This takes a little while.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import GridSearchCV\nfrom sklearn.pipeline import make_pipeline\n\npipe = make_pipeline(PCA(), LogisticRegression(max_iter=5000))\nsearch = GridSearchCV(pipe, {\"pca__n_components\": [10, 20, 30, 40]}, cv=5).fit(X, y)\nprint(search.best_params_, round(search.best_score_, 3))",
+                "lang": "python",
+                "see": "{'pca__n_components': 30} 0.91"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Seeing high-dimensional data",
+          "minutes": 10,
+          "objectives": [
+            "Map data in two dimensions with PCA",
+            "Use t-SNE for visualisation, knowing its limits"
+          ],
+          "key_points": [
+            "Projecting onto the first two components gives a quick map of the data; on the digits they keep 14.9% and 13.6% of the variance, enough for some digits to form clear groups while others overlap.",
+            "Read the loadings to name the axes: for the standardised player statistics, PC1 contrasts tackles and passes with shots and dribbles, a defending-to-attacking axis.",
+            "t-SNE (sklearn.manifold.TSNE) builds a non-linear 2-D map that keeps near neighbours together, and often separates groups better than PCA; but the distances between clusters and their sizes on the map mean little, and results change with perplexity and random_state.",
+            "scikit-learn's TSNE has no transform method, so it can't place new points on an existing map; use it to look at data, not as a step inside a model.",
+            "Maps help to explore data and to check clusters and labels, but they are not evidence on their own: confirm what they suggest with numbers, such as cross-validated scores."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Two maps of the digits",
+            "steps": [
+              {
+                "do": "Project the digits onto two components and print where four digits' centres land.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.datasets import load_digits\nfrom sklearn.decomposition import PCA\n\nX, y = load_digits(return_X_y=True)\ntwo = PCA(n_components=2).fit_transform(X)\ncentres = np.array([two[y == d].mean(axis=0) for d in range(10)])\nprint(centres.round(1)[[0, 1, 4, 6]])",
+                "lang": "python",
+                "see": "The 0s, 1s, 4s and 6s sit in different parts of the map, such as (2.0, -21.1) for 0 and (5.4, 12.7) for 1."
+              },
+              {
+                "do": "Make a t-SNE map of the same images. It takes a little while.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.manifold import TSNE\n\nembedded = TSNE(n_components=2, perplexity=30, random_state=0).fit_transform(X)\nprint(embedded.shape, hasattr(TSNE(), \"transform\"))",
+                "lang": "python",
+                "see": "(1797, 2) False: one point per image, and no transform for new images."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Compress the digits with PCA",
+        "tool": "JupyterLab",
+        "minutes": 75,
+        "goal": "Find how many principal components the digit images need, map them in two dimensions, measure what compression loses, test PCA before a classifier, and read the components of the player statistics.",
+        "setup": [
+          "Your course folder, with NumPy, pandas, scikit-learn, matplotlib and JupyterLab installed",
+          "Download the starter file pca_digits.py into the folder that holds players.csv from the module 4 lab"
+        ],
+        "steps": [
+          {
+            "do": "Open pca_digits.py and do TODO 1: the explained variance."
+          },
+          {
+            "do": "Run the script in JupyterLab's terminal (File | New | Terminal) from the lab folder.",
+            "code": "python pca_digits.py",
+            "lang": "bash",
+            "see": "Images: (1797, 64); the first two components keep [0.149 0.136]; 13, 21 and 29 components keep 80%, 90% and 95% of the variance."
+          },
+          {
+            "do": "Do TODO 2, the 2-D scatter plot, and open digits_2d.png.",
+            "see": "Saved digits_2d.png: coloured clouds, some apart and some overlapping."
+          },
+          {
+            "do": "Do TODO 3, the reconstruction errors.",
+            "see": "8.54 with 5 components, 4.91 with 10, 1.98 with 20 and 0.22 with 40."
+          },
+          {
+            "do": "Do TODO 4, PCA before logistic regression, and rerun.",
+            "see": "Accuracy 0.823, 0.888, 0.895 and 0.910 with 5, 10, 20 and 40 components, against 0.915 with all 64 features."
+          },
+          {
+            "do": "Read the player components at the end.",
+            "see": "Two components keep [0.499 0.276] of the variance; PC1's loadings are 0.35, 0.50, -0.42, -0.45, 0.33 and -0.37."
+          },
+          {
+            "do": "Write three sentences: how many components you would keep for the digits and why, what PC1 means for the players, and one reason to use PCA before a classifier even though accuracy fell slightly."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The explained variance is computed and turned into component counts.",
+            "look_for": [
+              "First two components: [0.149 0.136]",
+              "Components for 90% of the variance: 21",
+              "Components for 95% of the variance: 29"
+            ]
+          },
+          {
+            "text": "The 2-D map is saved.",
+            "look_for": [
+              "Saved digits_2d.png"
+            ]
+          },
+          {
+            "text": "Reconstruction errors are measured.",
+            "look_for": [
+              "10 components: reconstruction error 4.91",
+              "40 components: reconstruction error 0.22"
+            ]
+          },
+          {
+            "text": "PCA before logistic regression is compared with no PCA.",
+            "look_for": [
+              "PCA 20   + logistic regression: accuracy 0.895",
+              "PCA None + logistic regression: accuracy 0.915"
+            ]
+          },
+          {
+            "text": "The player statistics' components are read.",
+            "look_for": [
+              "Players: variance kept by 2 components: [0.499 0.276]",
+              "PC1    0.35     0.50  -0.42"
+            ]
+          },
+          {
+            "text": "The sentences justify a number of components, interpret PC1, and give a sound reason such as speed, memory or less noise.",
+            "look_for": [
+              "variance"
+            ]
+          }
+        ],
+        "submit": "Paste your pca_digits.py, its output and your three sentences.",
+        "hints": [
+          "np.searchsorted(cumulative, 0.9) + 1 is the number of components needed for 90%.",
+          "Fit a new PCA(n_components=k) for each k before transform and inverse_transform.",
+          "make_pipeline(*steps, LogisticRegression(max_iter=5000)) with steps = [] gives the model without PCA."
+        ],
+        "files": [
+          {
+            "path": "pca_digits.py",
+            "content": "\"\"\"Compress the handwritten digits with PCA, see them in two dimensions, and use PCA before a classifier.\"\"\"\n\nimport time\n\nimport matplotlib.pyplot as plt\nimport numpy as np\nimport pandas as pd\nfrom sklearn.datasets import load_digits\nfrom sklearn.decomposition import PCA\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.model_selection import cross_val_score\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\ndigits = load_digits()\nX, y = digits.data, digits.target\nprint(\"Images:\", X.shape)\n\n# TODO 1: fit PCA() on X; print the explained variance ratio of the first two components (3 places) and how many\n#         components are needed to keep 80%, 90% and 95% of the variance (np.cumsum and np.searchsorted help)\npass\n\n# TODO 2: project onto 2 components and save a scatter plot coloured by digit as digits_2d.png\npass\n\n# TODO 3: for k in (5, 10, 20, 40), compress and reconstruct X (fit_transform, then inverse_transform) and print the\n#         mean squared reconstruction error (2 places)\npass\n\n# TODO 4: for n in (5, 10, 20, 40), print the 5-fold cross-validated accuracy (3 places) of\n#         make_pipeline(PCA(n_components=n), LogisticRegression(max_iter=5000)); then the same without PCA\npass\n\nplayers = pd.read_csv(\"players.csv\")\nstats = players[[\"passes\", \"tackles\", \"shots\", \"dribbles\", \"aerials_won\", \"key_passes\"]]\npca_p = PCA(n_components=2).fit(StandardScaler().fit_transform(stats))\nprint(\"Players: variance kept by 2 components:\", pca_p.explained_variance_ratio_.round(3))\nprint(pd.DataFrame(pca_p.components_, columns=stats.columns, index=[\"PC1\", \"PC2\"]).round(2))\n"
+          }
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Logistic regression and k-NN: probabilities, regularisation, distances and ROC AUC; finish the wine lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Support vector machines: margins, kernels, C and gamma, and calibrated probabilities; finish the kernels lab.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Decision trees and ensembles: pruning, random forests and boosting; finish the ensembles lab.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Unsupervised learning: k-means and choosing K, then PCA; finish the playing-styles and digits labs.",
+      "modules": [
+        4,
+        5
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Build the end-to-end classification pipeline capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "End-to-end classification pipeline",
+    "minutes": 360,
+    "brief": "Build a complete, reproducible pipeline that chooses the best classifier for scikit-learn's breast cancer data (569 tumours, 30 measurements each, with 1 meaning malignant in the starter file). Split off a stratified test set first and don't touch it again until the end. Put the preprocessing (scaling, and PCA if you try it) inside each model's pipeline. Compare at least four classifier families from this course, including logistic regression, an SVM and a random forest, with cross_validate on the same StratifiedKFold folds, reporting the mean and spread of ROC AUC, F1 and recall for the malignant class. Choose the most promising model, tune its hyperparameters with GridSearchCV (or RandomizedSearchCV) on the training set, then score the tuned pipeline once on the test set: a confusion matrix, a classification report and ROC AUC. Decide, and justify, a decision threshold for a screening setting, where a missed malignant tumour costs far more than a false alarm. Report what you found, including what didn't work.",
+    "deliverables": [
+      "Your code: the split, at least four cross-validated pipelines, the tuning, and the single final test",
+      "A comparison table of each model's cross-validated ROC AUC, F1 and recall, mean and standard deviation",
+      "The tuned model's best parameters, its test confusion matrix, classification report and ROC AUC",
+      "A chosen decision threshold, with the recall and precision it gives and why it suits screening",
+      "A report of 400 to 700 words: the comparison, the choice, the threshold, and the limits of the result"
+    ],
+    "rubric": [
+      {
+        "name": "Sound methodology",
+        "points": 25,
+        "description": "A stratified test set held out from the start; preprocessing inside pipelines; all models compared on the same folds; the test set used once."
+      },
+      {
+        "name": "Model comparison",
+        "points": 20,
+        "description": "At least four families, each sensibly configured, compared on several metrics with means and spreads, and read correctly."
+      },
+      {
+        "name": "Tuning",
+        "points": 20,
+        "description": "A justified search space for the chosen model, tuned with cross-validation on the training data, with the gain over the default reported honestly."
+      },
+      {
+        "name": "Threshold and final evaluation",
+        "points": 15,
+        "description": "Test-set confusion matrix, report and ROC AUC; a threshold chosen from the cost of errors, with its recall and precision."
+      },
+      {
+        "name": "Report and code quality",
+        "points": 20,
+        "description": "Clear, reproducible code with random_state set, and a report that explains choices and limits without overclaiming."
+      }
+    ],
+    "submit": "Paste your code, its output (the comparison table, best parameters, test results and threshold analysis) and your report.",
+    "files": [
+      {
+        "path": "compare_models.py",
+        "content": "\"\"\"Capstone starter: compare classifier families with cross-validation on the breast cancer data, tune the best,\nthen test it once. Fill in the TODOs, then extend it for your report.\"\"\"\n\nimport pandas as pd\nfrom sklearn.datasets import load_breast_cancer\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import classification_report, confusion_matrix\nfrom sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_validate, train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\nfrom sklearn.svm import SVC\n\ndata = load_breast_cancer()\nX, y = data.data, (data.target == 0).astype(int)  # 1 = malignant\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)\n\nmodels = {\n    \"logistic regression\": make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000)),\n    \"SVM (RBF)\": make_pipeline(StandardScaler(), SVC()),\n    \"random forest\": RandomForestClassifier(random_state=0),\n    # TODO: add at least one more family, such as k-NN or HistGradientBoostingClassifier\n}\n\nrows = []\nfor name, model in models.items():\n    # TODO: cross_validate(model, X_train, y_train, cv=cv, scoring=[\"roc_auc\", \"f1\", \"recall\"]) and keep, for each\n    #       metric, the mean and the standard deviation of the test scores in a row of the table\n    pass\nprint(pd.DataFrame(rows).round(3).to_string(index=False))\n\n# TODO: tune the most promising model with GridSearchCV on the training set (choose and justify the grid), then score\n#       its best_estimator_ on the test set once: the confusion matrix and the classification report\npass\n"
+      }
+    ]
+  }
+}

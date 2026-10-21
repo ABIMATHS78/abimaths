@@ -1,0 +1,1097 @@
+{
+  "slug": "ai-powered-business-intelligence",
+  "title": "AI-Powered Business Intelligence Fundamentals",
+  "subtitle": "Add AI to business intelligence: judge data readiness, model data for BI, build KPIs and forecasts, let people ask questions in plain language, and find the drivers and anomalies behind the numbers.",
+  "category": "Data Science",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "valentina-lopez",
+    "thandiwe-dlamini"
+  ],
+  "skills": [
+    "Business intelligence",
+    "KPI design",
+    "Data readiness (4Vs)",
+    "Data quality",
+    "Star schemas",
+    "SQL with DuckDB",
+    "Forecasting",
+    "Natural language querying",
+    "Key influencer analysis",
+    "Anomaly detection"
+  ],
+  "tools": [
+    "Python 3",
+    "DuckDB",
+    "pandas",
+    "scikit-learn",
+    "Excel, Google Sheets or LibreOffice Calc",
+    "Power BI Desktop or Tableau Public (optional)"
+  ],
+  "outcomes": [
+    "Apply the 4V framework and data-quality checks to judge whether data is ready for AI",
+    "Evaluate the feasibility and business value of an AI-enhanced BI project before building it",
+    "Model data as a star schema and define KPIs that everyone computes the same way",
+    "Implement natural language querying over a semantic layer, with guardrails for LLM-written SQL",
+    "Use diagnostic AI techniques to identify the drivers, segments and anomalies behind trends",
+    "Design dashboards that communicate AI-driven insights, forecasts and their uncertainty"
+  ],
+  "prerequisites": "SQL for Data Analysis with DataGrip, or equivalent SQL (GROUP BY, joins, CTEs), and some Python with pandas (Data Analysis with Python and pandas). No machine learning needed. Install Python 3.10 or later, then pip install duckdb pandas scikit-learn, and have a spreadsheet (Excel, Google Sheets or LibreOffice Calc). The capstone uses any dashboard tool, such as Power BI Desktop, Tableau Public, Looker Studio or Python.",
+  "description": "Business intelligence tells an organisation what happened; AI can help it understand why, see what comes next and let anyone ask. This course shows how to add AI to BI without losing what makes BI trustworthy. You'll work through a year in the life of Northwind Living, a fictional homeware retailer whose West region has quietly fallen behind: computing KPIs and comparing them with targets, judging whether the data is ready (the 4Vs, data quality and a star schema that reconciles with the source), and learning the machine learning a BI analyst needs, from churn prediction judged by precision and recall to forecasts tested on months they never saw.\n\nThen you'll build a small natural language query engine over a semantic layer, see how synonyms and naming make or break it, and put guardrails around SQL written by a large language model. Finally you'll diagnose the decline: decompose the shortfall, rank the key influencers of churn (and catch a confounder), segment customers with clustering and flag anomalous days. Labs use free tools, Python with DuckDB and a spreadsheet, on generated data that's identical for everyone; the capstone is a diagnostic sales dashboard with natural-language questions, in Power BI, Tableau, Looker Studio, a spreadsheet or Python.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Introduction to AI in BI",
+      "summary": "Trace the move from reports to AI-powered business intelligence, place questions on the analytics spectrum from descriptive to prescriptive, and define KPIs that lead to decisions rather than just charts.",
+      "instructor": "valentina-lopez",
+      "lessons": [
+        {
+          "title": "From reports to AI-powered BI",
+          "minutes": 12,
+          "objectives": [
+            "Describe the parts of a business intelligence stack",
+            "Explain what AI adds to traditional BI, and what it doesn't replace"
+          ],
+          "key_points": [
+            "Business intelligence (BI) turns an organisation's data into information for decisions: data flows from source systems through extraction and transformation into a warehouse, a semantic model defines the business measures, and reports and dashboards present them.",
+            "Traditional BI is analyst-driven: someone decides which question to ask, writes the query and slices the data by hand, which works well for known questions and badly for unexpected ones.",
+            "AI enhances BI by automating insight discovery: scanning many slices for unusual changes, ranking the factors behind a metric, forecasting it, flagging anomalies and answering questions asked in plain language.",
+            "BI tools build these in: Power BI has a Q&A visual and a Key influencers visual, Tableau has Explain Data, and most tools now offer AI assistants that draft queries, measures and summaries. Features and names change quickly, so learn the techniques underneath.",
+            "AI doesn't replace the foundations: trustworthy data, agreed metric definitions and people who check the output. An automated insight built on bad data is just a confident mistake."
+          ]
+        },
+        {
+          "title": "The analytics spectrum: from descriptive to prescriptive",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish descriptive, diagnostic, predictive and prescriptive analytics",
+            "Place a business question on the spectrum and choose techniques for it"
+          ],
+          "key_points": [
+            "Descriptive analytics answers 'what happened?': totals, trends and comparisons, such as revenue by quarter, which is most of what dashboards show.",
+            "Diagnostic analytics answers 'why did it happen?': breaking a change down by region, channel or product, comparing segments and testing explanations, such as finding that one region's online sales collapsed.",
+            "Predictive analytics answers 'what will happen?': forecasts and models that estimate outcomes such as next month's revenue or which customers will leave.",
+            "Prescriptive analytics answers 'what should be done?': it recommends or optimises actions, such as which customers should get a retention offer within a budget, weighing costs and constraints.",
+            "Each step adds value and difficulty and rests on the one before: a forecast is only as good as the descriptive data beneath it, and a recommendation needs a diagnosis it can trust."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB in Python",
+            "title": "Ask descriptive, diagnostic and predictive questions",
+            "steps": [
+              {
+                "do": "Open DuckDB from Python and point a view at the orders file; revenue is quantity x price x (1 - discount).",
+                "code": "import duckdb\ncon = duckdb.connect()\ncon.sql(\"\"\"CREATE VIEW sales AS SELECT *, quantity * unit_price * (1 - discount) AS revenue\n           FROM 'bi_data/orders.csv'\"\"\")",
+                "lang": "python"
+              },
+              {
+                "do": "Descriptive: what happened? Revenue by quarter in 2025.",
+                "code": "print(con.sql(\"\"\"SELECT quarter(order_date) AS q, ROUND(SUM(revenue)) AS revenue FROM sales\n                 WHERE year(order_date) = 2025 GROUP BY q ORDER BY q\"\"\").fetchall())",
+                "lang": "python",
+                "see": "[(1, 323903.0), (2, 359409.0), (3, 377880.0), (4, 477686.0)]"
+              },
+              {
+                "do": "Diagnostic: why did it happen? Break Q4 2025 down by region and compare with Q4 2024.",
+                "code": "print(con.sql(\"\"\"SELECT region, ROUND(SUM(revenue) FILTER (WHERE year(order_date) = 2025)\n                        / SUM(revenue) FILTER (WHERE year(order_date) = 2024) - 1, 3) AS growth\n                 FROM sales WHERE quarter(order_date) = 4 GROUP BY region ORDER BY growth\"\"\").fetchall())",
+                "lang": "python",
+                "see": "[('West', -0.149), ('North', 0.027), ('South', 0.143), ('East', 0.159)]: West shrank while the other regions grew."
+              },
+              {
+                "do": "Predictive, at its simplest: forecast January 2026 as January 2025 times the latest year-on-year growth.",
+                "code": "jan, growth = con.sql(\"\"\"SELECT SUM(revenue) FILTER (WHERE strftime(order_date, '%Y-%m') = '2025-01'),\n                                SUM(revenue) FILTER (WHERE year(order_date) = 2025) / SUM(revenue) FILTER (WHERE year(order_date) = 2024)\n                         FROM sales\"\"\").fetchone()\nprint(f\"{jan * growth:,.0f}\")",
+                "lang": "python",
+                "see": "116,405: a baseline any cleverer model must beat. Prescriptive analytics would go on to ask what to do about West."
+              }
+            ]
+          }
+        },
+        {
+          "title": "KPIs and decision intelligence",
+          "minutes": 12,
+          "objectives": [
+            "Define a KPI precisely enough that everyone computes it the same way",
+            "Build a metric tree that links a KPI to drivers people can act on",
+            "Connect each insight to a decision and an action"
+          ],
+          "key_points": [
+            "A KPI (key performance indicator) needs a precise definition: name, formula, grain, filters, owner, target and refresh frequency. 'Revenue' must say whether it's before or after discounts and returns.",
+            "Lagging indicators, such as quarterly revenue, report results after the fact; leading indicators, such as failed deliveries or support tickets, move earlier and leave time to act.",
+            "A metric tree breaks a KPI into its drivers: revenue = orders × average order value, and orders = visits × conversion rate, so a change can be traced to the branch that moved.",
+            "The goal is actionable decision intelligence: each insight should name the decision it informs, the action, who owns it and how its effect will be measured.",
+            "Beware vanity metrics that only go up, and metrics turned into targets: when people are rewarded for a number they find ways to move it without improving the business (Goodhart's law)."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB in Python",
+            "title": "Break revenue into a metric tree",
+            "steps": [
+              {
+                "do": "Set up the sales view.",
+                "code": "import duckdb\ncon = duckdb.connect()\ncon.sql(\"CREATE VIEW sales AS SELECT *, quantity * unit_price * (1 - discount) AS revenue FROM 'bi_data/orders.csv'\")",
+                "lang": "python"
+              },
+              {
+                "do": "Revenue = orders x average order value. Compute both branches for each region's Q4, in 2024 and 2025.",
+                "code": "rows = con.sql(\"\"\"SELECT region, year(order_date) AS y, COUNT(*) AS orders, SUM(revenue) / COUNT(*) AS aov\n                  FROM sales WHERE quarter(order_date) = 4 GROUP BY ALL ORDER BY region, y\"\"\").fetchall()\nfor region, y, orders, aov in rows:\n    print(region, y, orders, round(aov, 2))",
+                "lang": "python",
+                "see": "East 2024 1021 106.41 | East 2025 1176 107.11 | North 2024 1236 117.39 | North 2025 1345 110.73 | South 2024 1049 102.49 | South 2025 1108 110.88 | West 2024 829 113.24 | West 2025 704 113.55. West's orders fell while its order value held steady: a volume problem, not a price problem."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Compute KPIs and ask why with DuckDB",
+        "tool": "DuckDB in Python, and a spreadsheet",
+        "minutes": 45,
+        "goal": "Generate Northwind Living's data, compute its headline KPIs, growth by region and Q4 results against target with DuckDB, take a first diagnostic step into the biggest miss, and chart the monthly KPIs in a spreadsheet.",
+        "setup": [
+          "Python 3.10 or later with DuckDB, pandas and scikit-learn: pip install duckdb pandas scikit-learn",
+          "A spreadsheet: Excel, Google Sheets or LibreOffice Calc",
+          "A course folder with the starter files make_bi_data.py, bi_common.py and kpis.py; keep using it for every lab"
+        ],
+        "steps": [
+          {
+            "do": "Generate the data: two years of orders, a CRM snapshot of 3,000 customers, 2025's targets and an untidy Q4 extract, the same for everyone.",
+            "code": "python make_bi_data.py",
+            "lang": "bash",
+            "see": "Wrote 27,101 orders, 3,000 customers, targets and the Q4 2025 extract to bi_data/"
+          },
+          {
+            "do": "Read bi_common.py: connect() creates a view called sales over orders.csv with a revenue column (quantity x unit_price x (1 - discount)), and show() prints a query's result as a table."
+          },
+          {
+            "do": "Complete the four queries in kpis.py, using the column names the TODO comments give.",
+            "code": "SELECT year(order_date) AS year, COUNT(*) AS orders, SUM(quantity) AS units,\n       SUM(revenue) AS revenue, SUM(revenue) / COUNT(*) AS avg_order_value\nFROM sales GROUP BY year ORDER BY year",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python kpis.py",
+            "lang": "bash",
+            "see": "Revenue of 1,432,734 in 2024 and 1,538,878 in 2025 with an average order value of 109.46; West is the only region that shrank (-0.042) and misses its Q4 target by 22.5% (-0.225)."
+          },
+          {
+            "do": "Read the last table, the first diagnostic step: West's Q4 revenue by channel.",
+            "see": "Online fell from 44,618 to 20,132 (-0.549) while Store and Marketplace grew."
+          },
+          {
+            "do": "Open monthly_kpis.csv in your spreadsheet, build a pivot table of revenue by month (rows) and region (columns), and add a line chart of it."
+          },
+          {
+            "do": "Write a short note: label each of the four queries descriptive or diagnostic, and say which decision the last one should lead to and who owns it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The headline KPIs per year are right: orders, units, revenue and average order value.",
+            "look_for": [
+              "1,432,734",
+              "1,538,878",
+              "109.46"
+            ]
+          },
+          {
+            "text": "Growth by region shows West shrinking while the other regions grew.",
+            "look_for": [
+              "-0.042",
+              "0.114"
+            ]
+          },
+          {
+            "text": "Q4 2025 against target: West misses by 22.5% and North by 6.6%.",
+            "look_for": [
+              "-0.225",
+              "-0.066"
+            ]
+          },
+          {
+            "text": "The first 'why': West's online revenue fell by more than half while its other channels grew.",
+            "look_for": [
+              "44,618",
+              "20,132",
+              "-0.549"
+            ]
+          },
+          {
+            "text": "monthly_kpis.csv is exported and turned into a pivot table and chart in a spreadsheet.",
+            "look_for": [
+              "Wrote monthly_kpis.csv"
+            ]
+          },
+          {
+            "text": "The note places each query on the analytics spectrum and states the decision it informs.",
+            "look_for": [
+              "diagnostic"
+            ]
+          }
+        ],
+        "submit": "Paste your four queries, the output of python kpis.py, a description or screenshot of your pivot chart, and your note.",
+        "files": [
+          {
+            "path": "make_bi_data.py",
+            "content": "\"\"\"Generate the course's data for Northwind Living, a fictional homeware retailer, into the folder bi_data/.\n\n    python make_bi_data.py\n\norders.csv        every order line from 2024-01-01 to 2025-12-31 (one product per order)\ncustomers.csv     a CRM snapshot of every customer on 2025-12-31, with whether they churned in the next 90 days\ntargets.csv       the monthly revenue target for each region in 2025\nraw_orders_2025q4.csv   an untidy extract of Q4 2025 orders, as it arrived from the source system\n\nOnly random.random() is used, because Python guarantees its sequence for a given seed across versions, so\neveryone gets exactly the same files and the same answers.\n\"\"\"\n\nimport csv\nimport math\nimport random\nfrom datetime import date, timedelta\nfrom pathlib import Path\n\nOUT = Path(\"bi_data\")\nrng = random.Random(2025)\n\nREGIONS = [\"North\", \"South\", \"East\", \"West\"]\nREGION_WEIGHTS = [0.30, 0.25, 0.25, 0.20]\nCHANNELS = [\"Online\", \"Store\", \"Marketplace\"]\nCATALOGUE = {\n    \"Kitchen\": [(\"Kettle\", 35.0), (\"Toaster\", 40.0), (\"Knife set\", 60.0), (\"Blender\", 75.0)],\n    \"Furniture\": [(\"Desk\", 180.0), (\"Office chair\", 150.0), (\"Bookshelf\", 120.0), (\"Side table\", 70.0)],\n    \"Lighting\": [(\"Desk lamp\", 30.0), (\"Floor lamp\", 85.0), (\"LED strip\", 20.0)],\n    \"Textiles\": [(\"Cushion\", 18.0), (\"Throw blanket\", 40.0), (\"Curtains\", 55.0), (\"Rug\", 95.0)],\n}\nCATEGORY_WEIGHTS = [0.35, 0.20, 0.20, 0.25]\nWEEKDAY = [0.90, 0.90, 0.95, 1.00, 1.10, 1.25, 1.20]  # Monday to Sunday\nMONTH = [0.85, 0.85, 0.95, 0.95, 1.00, 1.00, 0.95, 0.95, 1.00, 1.05, 1.25, 1.40]\nSTART, END = date(2024, 1, 1), date(2025, 12, 31)\nBLACK_FRIDAY, OUTAGE, WEST_PROBLEM = date(2025, 11, 28), date(2025, 6, 14), date(2025, 9, 1)\n\n\ndef pick(items, weights=None):\n    if weights is None:\n        return items[int(rng.random() * len(items))]\n    r, total = rng.random() * sum(weights), 0.0\n    for item, w in zip(items, weights):\n        total += w\n        if r < total:\n            return item\n    return items[-1]\n\n\ndef poisson(lam):\n    limit, k, p = math.exp(-lam), 0, 1.0\n    while True:\n        p *= rng.random()\n        if p <= limit:\n            return k\n        k += 1\n\n\ndef make_customers(n=3000):\n    customers = []\n    for i in range(1, n + 1):\n        signup = date(2022, 1, 1) + timedelta(days=int(rng.random() * (365 * 4)))\n        customers.append({\"customer_id\": f\"C{i:05d}\", \"region\": pick(REGIONS, REGION_WEIGHTS),\n                          \"segment\": pick([\"Consumer\", \"Business\"], [0.8, 0.2]),\n                          \"membership\": pick([\"Free\", \"Plus\"], [0.7, 0.3]), \"signup_date\": signup})\n    return customers\n\n\ndef make_orders(customers):\n    by_region = {r: [c for c in customers] for r in REGIONS}\n    for r in REGIONS:\n        by_region[r] = [c for c in customers if c[\"region\"] == r]\n    orders, n, day = [], 0, START\n    while day <= END:\n        years = (day - START).days / 365.0\n        expected = 32 * WEEKDAY[day.weekday()] * MONTH[day.month - 1] * (1 + 0.10 * years)\n        if day == BLACK_FRIDAY:\n            expected *= 3\n        for _ in range(poisson(expected)):\n            region = pick(REGIONS, REGION_WEIGHTS)\n            pool = [c for c in by_region[region] if c[\"signup_date\"] <= day] or by_region[region]\n            customer = pick(pool)\n            channel = pick(CHANNELS, [0.6, 0.25, 0.15] if customer[\"segment\"] == \"Business\" else [0.42, 0.43, 0.15])\n            if channel == \"Online\" and ((day == OUTAGE) or (region == \"West\" and day >= WEST_PROBLEM)):\n                if rng.random() < (0.95 if day == OUTAGE else 0.55):\n                    continue  # the order never happened: the site was down, or West's deliveries failed\n            category = pick(list(CATALOGUE), CATEGORY_WEIGHTS)\n            product, price = pick(CATALOGUE[category])\n            quantity = 1 + poisson(2.0 if customer[\"segment\"] == \"Business\" else 0.4)\n            discount = 0.3 if day == BLACK_FRIDAY and rng.random() < 0.8 else pick([0.0, 0.1, 0.2], [0.8, 0.15, 0.05])\n            n += 1\n            orders.append({\"order_id\": f\"O{n:06d}\", \"order_date\": day.isoformat(), \"customer_id\": customer[\"customer_id\"],\n                           \"region\": region, \"channel\": channel, \"category\": category, \"product\": product,\n                           \"quantity\": quantity, \"unit_price\": price, \"discount\": discount})\n        day += timedelta(days=1)\n    return orders\n\n\ndef crm_snapshot(customers, orders):\n    snapshot_day = END\n    stats = {c[\"customer_id\"]: {\"orders\": 0, \"spend\": 0.0, \"last\": None} for c in customers}\n    for o in orders:\n        d = date.fromisoformat(o[\"order_date\"])\n        s = stats[o[\"customer_id\"]]\n        if (snapshot_day - d).days < 365:\n            s[\"orders\"] += 1\n            s[\"spend\"] += o[\"quantity\"] * o[\"unit_price\"] * (1 - o[\"discount\"])\n        if s[\"last\"] is None or d > s[\"last\"]:\n            s[\"last\"] = d\n    rows = []\n    for c in customers:\n        s = stats[c[\"customer_id\"]]\n        days_since = (snapshot_day - s[\"last\"]).days if s[\"last\"] else (snapshot_day - c[\"signup_date\"]).days\n        tickets = poisson(0.6 + (0.5 if c[\"region\"] == \"West\" else 0.0))\n        delivery_issues = poisson(0.9 if c[\"region\"] == \"West\" else 0.15)\n        tenure = (snapshot_day.year - c[\"signup_date\"].year) * 12 + snapshot_day.month - c[\"signup_date\"].month\n        z = (-1.7 + 0.45 * tickets + 0.8 * delivery_issues + 0.006 * min(days_since, 365) - 0.09 * s[\"orders\"]\n             - 0.7 * (c[\"membership\"] == \"Plus\") - 0.01 * tenure)\n        churned = int(rng.random() < 1 / (1 + math.exp(-z)))\n        rows.append({\"customer_id\": c[\"customer_id\"], \"region\": c[\"region\"], \"segment\": c[\"segment\"],\n                     \"membership\": c[\"membership\"], \"signup_date\": c[\"signup_date\"].isoformat(),\n                     \"tenure_months\": tenure, \"orders_12m\": s[\"orders\"], \"spend_12m\": round(s[\"spend\"], 2),\n                     \"days_since_last_order\": days_since, \"support_tickets_90d\": tickets,\n                     \"delivery_issues_90d\": delivery_issues, \"churned_next_90d\": churned})\n    return rows\n\n\ndef targets(orders):\n    revenue_2024 = {}\n    for o in orders:\n        if o[\"order_date\"].startswith(\"2024\"):\n            key = (o[\"region\"], int(o[\"order_date\"][5:7]))\n            revenue_2024[key] = revenue_2024.get(key, 0.0) + o[\"quantity\"] * o[\"unit_price\"] * (1 - o[\"discount\"])\n    return [{\"region\": r, \"month\": f\"2025-{m:02d}\", \"revenue_target\": round(revenue_2024[(r, m)] * 1.10, -2)}\n            for r in REGIONS for m in range(1, 13)]\n\n\ndef untidy_extract(orders):\n    \"\"\"Q4 2025 as the source system exported it: duplicates, inconsistent labels, gaps and typos.\"\"\"\n    rows = [dict(o) for o in orders if o[\"order_date\"] >= \"2025-10-01\"]\n    for o in rows:\n        r = rng.random()\n        if r < 0.03:\n            o[\"region\"] = o[\"region\"].lower()\n        elif r < 0.05:\n            o[\"region\"] = o[\"region\"] + \" \"\n        elif r < 0.06:\n            o[\"region\"] = o[\"region\"][0] + \".\"\n        if rng.random() < 0.015:\n            o[\"customer_id\"] = \"\"\n        if rng.random() < 0.006:\n            o[\"quantity\"] = -o[\"quantity\"]  # returns booked as negative lines\n        if rng.random() < 0.005:\n            o[\"unit_price\"] = \"\"\n        if rng.random() < 0.003:\n            o[\"order_date\"] = \"2026\" + o[\"order_date\"][4:]  # year typed wrongly\n    duplicates = [dict(rows[int(rng.random() * len(rows))]) for _ in range(40)]  # part of a batch loaded twice\n    return rows + duplicates\n\n\ndef write(name, rows):\n    with open(OUT / name, \"w\", newline=\"\") as f:\n        writer = csv.DictWriter(f, fieldnames=list(rows[0]))\n        writer.writeheader()\n        writer.writerows(rows)\n\n\ndef main():\n    OUT.mkdir(exist_ok=True)\n    customers = make_customers()\n    orders = make_orders(customers)\n    write(\"orders.csv\", orders)\n    write(\"customers.csv\", crm_snapshot(customers, orders))\n    write(\"targets.csv\", targets(orders))\n    write(\"raw_orders_2025q4.csv\", untidy_extract(orders))\n    print(f\"Wrote {len(orders):,} orders, {len(customers):,} customers, targets and the Q4 2025 extract to {OUT}/\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "bi_common.py",
+            "content": "\"\"\"Shared helpers for the labs: make the data if it's missing, open DuckDB, and print query results.\"\"\"\n\nimport os\nimport subprocess\nimport sys\n\nimport duckdb\n\n\ndef connect():\n    if not os.path.isdir(\"bi_data\"):\n        subprocess.run([sys.executable, \"make_bi_data.py\"], check=True)\n    con = duckdb.connect()\n    con.sql(\"CREATE VIEW sales AS SELECT *, quantity * unit_price * (1 - discount) AS revenue \"\n            \"FROM 'bi_data/orders.csv'\")\n    return con\n\n\ndef show(con, title, sql):\n    \"\"\"Run a query and print it as a plain table, numbers rounded, the same in every DuckDB version.\"\"\"\n    rel = con.sql(sql)\n    rows = rel.fetchall()\n    def fmt(v):\n        if isinstance(v, float):\n            if abs(v) < 1:\n                return f\"{v:.3f}\"\n            return f\"{v:,.2f}\" if abs(v) < 1000 else f\"{v:,.0f}\"\n        if isinstance(v, int):\n            return f\"{v:,}\" if abs(v) >= 10000 else str(v)\n        return str(v)\n    cells = [[fmt(v) for v in row] for row in rows]\n    widths = [max(len(c), *(len(r[i]) for r in cells)) for i, c in enumerate(rel.columns)]\n    print(f\"\\n{title}\")\n    print(\"  \".join(c.ljust(w) for c, w in zip(rel.columns, widths)))\n    for r in cells:\n        print(\"  \".join(v.rjust(w) if v[:1].isdigit() or v[:1] == \"-\" else v.ljust(w) for v, w in zip(r, widths)))\n    return rows\n"
+          },
+          {
+            "path": "kpis.py",
+            "content": "\"\"\"What happened at Northwind Living in 2025? Headline KPIs, growth and targets with DuckDB, and a first 'why'.\"\"\"\n\nfrom bi_common import connect, show\n\n\ndef main():\n    con = connect()\n\n    # TODO: one row per year with orders (COUNT(*)), units (SUM(quantity)), revenue (SUM(revenue)) and\n    #      average order value (revenue / orders), from the sales view\n\n    # TODO: revenue by region in 2024 and 2025 (SUM(revenue) FILTER (WHERE year(order_date) = 2024) ...)\n    #      and the growth between them, sorted by growth\n\n    # TODO: Q4 2025 revenue against target by region: join monthly actuals to bi_data/targets.csv on region and\n    #      month (strftime(order_date, '%Y-%m')), keep months from 2025-10, and show target, actual and the gap\n\n    # TODO: a first 'why' for the region furthest below target: its Q4 revenue by channel in 2024 and 2025\n\n    con.sql(\"\"\"COPY (SELECT strftime(order_date, '%Y-%m') AS month, region, ROUND(SUM(revenue), 2) AS revenue,\n                            COUNT(*) AS orders\n                     FROM sales GROUP BY ALL ORDER BY ALL) TO 'monthly_kpis.csv' (HEADER)\"\"\")\n    print(\"\\nWrote monthly_kpis.csv for the spreadsheet: one row per month and region\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "SUM(revenue) FILTER (WHERE year(order_date) = 2024) adds up one year's revenue inside a query that covers both.",
+          "Join targets.csv to monthly actuals on region and month, with month as strftime(order_date, '%Y-%m').",
+          "The data is generated with a fixed seed, so your numbers should match the expected ones exactly."
+        ]
+      }
+    },
+    {
+      "title": "Feasibility and Data Readiness",
+      "summary": "Decide whether an AI-enhanced BI project is worth doing and whether the data can support it: judge business impact first, assess the 4Vs, profile and fix data quality, and model the data as a star schema.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "Business impact before technical feasibility",
+          "minutes": 12,
+          "objectives": [
+            "Frame an AI-in-BI use case around a decision and its value",
+            "Score candidate use cases on impact and feasibility"
+          ],
+          "key_points": [
+            "Assess business impact before technical feasibility: start from a decision someone makes, how often, what a better decision is worth and how it's made today, not from an algorithm looking for a use.",
+            "Define success up front: the baseline (the current process or a simple rule), the metric that should improve and the improvement that would justify the cost.",
+            "Score each candidate on impact (value, number of decisions, strategic fit) and feasibility (data, skills, integration, risk), plot them on a 2 × 2 grid, and start with high impact and high feasibility.",
+            "Count the cost of errors: a churn model's false alarm wastes an offer while a missed churner loses a customer, and the balance decides which model and threshold are acceptable.",
+            "Check the risks early: personal data and privacy rules, bias against groups of customers, and whether people will trust and use the output."
+          ]
+        },
+        {
+          "title": "The 4Vs: is the data ready?",
+          "minutes": 12,
+          "objectives": [
+            "Assess data with the 4Vs: volume, velocity, variety and veracity",
+            "Record the evidence behind each readiness score"
+          ],
+          "key_points": [
+            "The 4Vs are Volume, Velocity, Variety and Veracity: a quick, structured way to judge whether data can support an AI use case, scored with evidence rather than impressions.",
+            "Volume: enough rows, history and examples per segment for the question; a forecast with yearly seasonality needs at least two full years, and a classifier needs enough examples of the rare outcome, such as churners.",
+            "Velocity: how quickly data arrives and changes, against how fast decisions are made; a daily batch suits weekly planning, while fraud alerts need streaming.",
+            "Variety: the sources and formats to combine, such as tables, logs, text and images, and whether their keys and definitions match; joining CRM and sales data needs a shared customer ID.",
+            "Veracity: how trustworthy the data is, from duplicates, gaps, typos and inconsistent labels to biased collection; it's the V that most often sinks AI projects."
+          ],
+          "walkthrough": {
+            "tool": "Excel, Google Sheets or LibreOffice Calc",
+            "title": "Score data readiness in a spreadsheet",
+            "steps": [
+              {
+                "do": "Open readiness_scorecard.csv from the Module 2 starter files in your spreadsheet: one row per readiness dimension (the 4Vs, business impact and feasibility), with columns for evidence and a score."
+              },
+              {
+                "do": "For each row, write the evidence in column C, such as 'two years of daily orders, 27,101 rows' for Volume, and a score from 1 (not ready) to 5 (ready) in column D."
+              },
+              {
+                "do": "Add the overall readiness under the table: the average, and the weakest dimension, which usually matters more.",
+                "code": "=AVERAGE(D2:D7)\n=MIN(D2:D7)",
+                "lang": "spreadsheet",
+                "see": "Two numbers, such as an average of 3.5 and a minimum of 2: one weak dimension can sink a project whatever the average says."
+              },
+              {
+                "do": "Highlight scores below 3 with conditional formatting (Format | Conditional formatting in Google Sheets and Calc; Home | Conditional Formatting in Excel), so the gaps stand out."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Data quality checks and transformations",
+          "minutes": 14,
+          "objectives": [
+            "Profile a dataset for completeness, validity, uniqueness and consistency",
+            "Choose and document the transformations it needs",
+            "Reconcile cleaned data with the source"
+          ],
+          "key_points": [
+            "Data quality is critical for reliable AI outputs: models and automated insights amplify errors, so a batch loaded twice looks like a sales spike and inconsistent labels split one region into several.",
+            "The dimensions of quality: completeness (missing values), validity (allowed ranges and formats), uniqueness (no duplicates), consistency (one spelling per category) and timeliness (up-to-date data).",
+            "Profile before modelling: COUNT(*) against COUNT(column) for gaps, COUNT(DISTINCT) for duplicates and label variants, MIN and MAX for impossible values such as future dates, and DuckDB's SUMMARIZE for every column at once.",
+            "Identify the necessary data transformations and record each decision: remove duplicates, standardise labels, correct or quarantine invalid values, fill gaps only with defensible values, and separate returns from sales.",
+            "Reconcile after cleaning: row counts and totals should match the source system's own figures, or the difference should be explained."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB in Python",
+            "title": "Profile a table with SUMMARIZE",
+            "steps": [
+              {
+                "do": "Profile every column of the raw extract in one statement.",
+                "code": "import duckdb\nprofile = duckdb.sql(\"SUMMARIZE SELECT * FROM 'bi_data/raw_orders_2025q4.csv'\")\nprint(profile.columns)",
+                "lang": "python",
+                "see": "The profile's columns: column name and type, minimum and maximum, approximate distinct count, mean, standard deviation, quartiles, count and null percentage."
+              },
+              {
+                "do": "Look at the nulls and the minimums: missing customers and prices, and negative quantities.",
+                "code": "for name, kind, low, nulls in duckdb.sql(\"\"\"SELECT column_name, column_type, min, null_percentage\n        FROM (SUMMARIZE SELECT * FROM 'bi_data/raw_orders_2025q4.csv')\"\"\").fetchall():\n    print(f\"{name:12} {kind:8} min {low:12} nulls {nulls}%\")",
+                "lang": "python",
+                "see": "customer_id  VARCHAR  min C00001       nulls 1.39% | region       VARCHAR  min E.           nulls 0.00% | quantity     BIGINT   min -3           nulls 0.00% | unit_price   DOUBLE   min 18.0         nulls 0.50%. The minimum quantity is negative and two columns have gaps."
+              },
+              {
+                "do": "SUMMARIZE's distinct counts are approximate; count the region spellings exactly.",
+                "code": "print(duckdb.sql(\"SELECT COUNT(DISTINCT region) FROM 'bi_data/raw_orders_2025q4.csv'\").fetchone()[0])",
+                "lang": "python",
+                "see": "16 spellings of what should be four regions."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Data modelling for BI: the star schema",
+          "minutes": 12,
+          "objectives": [
+            "Design a star schema with a fact table and dimension tables",
+            "Choose a fact table's grain"
+          ],
+          "key_points": [
+            "A star schema puts measurable events in a fact table, such as one row per order line with its quantity and amount, and their context in dimension tables (date, product, customer, region) joined to it by keys.",
+            "Choose the grain first, the detail of one fact row (one order line, one store-day, one product-month); every measure in the fact table must be true at that grain.",
+            "A date dimension with one row per day, holding year, quarter, month, weekday and holiday flags, makes time comparisons easy and consistent.",
+            "Dimensions carry business-friendly names and attributes, so one set of definitions serves dashboards, natural-language questions and models alike.",
+            "Surrogate keys, integers assigned by the warehouse, protect against changes in source system IDs, and slowly changing dimensions keep history when an attribute, such as a customer's region, changes."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Audit a sales extract and build a star schema",
+        "tool": "DuckDB in Python, and a spreadsheet",
+        "minutes": 55,
+        "goal": "Profile the untidy Q4 2025 extract, clean it with documented decisions, model it as a star schema that reconciles exactly with the source system, and score the data's readiness for AI with the 4Vs.",
+        "setup": [
+          "Your course folder from Module 1, with make_bi_data.py, bi_common.py and the bi_data folder",
+          "The starter files readiness.py and readiness_scorecard.csv in that folder"
+        ],
+        "steps": [
+          {
+            "do": "Complete the profile query in readiness.py, with the column names its TODO comment gives (rows_total, duplicate_rows, missing_customer, negative_quantity, missing_price, future_date)."
+          },
+          {
+            "do": "Run the script to see the profile and the region spellings.",
+            "code": "python readiness.py",
+            "lang": "bash",
+            "see": "4,373 rows with 40 exact duplicates, 61 missing customer IDs, 27 negative quantities, 22 missing prices and 17 dates in 2026; and 16 spellings of four regions, from [north] and [East ] to [N.]."
+          },
+          {
+            "do": "Complete clean(): drop duplicates, standardise the regions, move the mistyped 2026 dates back a year, fill missing prices from each product's list price, label missing customers UNKNOWN and flag negative quantities as returns."
+          },
+          {
+            "do": "Complete star_schema(): dim_customer from customers.csv plus an UNKNOWN row, and fact_sales at the grain of one order line, joined to dim_product."
+          },
+          {
+            "do": "Run the script again and read the reconciliation.",
+            "see": "4,333 rows in 4 regions, 26 returns flagged; fact_sales has 4,333 order lines and revenue 477,686.30, exactly the source's figures: Reconciles: True | orphan customer keys: 0."
+          },
+          {
+            "do": "Open readiness_scorecard.csv in your spreadsheet and fill in the evidence and a score from 1 to 5 for each dimension, using what the profile showed, as in this module's spreadsheet walkthrough."
+          },
+          {
+            "do": "Write a short justification of each cleaning decision, and say which decision you'd confirm with the source system's owner before trusting it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The profile counts every planted problem in the extract.",
+            "look_for": [
+              "4373              40                61                 27             22           17"
+            ]
+          },
+          {
+            "text": "The region spellings are listed, including lower case, trailing spaces and abbreviations.",
+            "look_for": [
+              "[N.]",
+              "[East ]"
+            ]
+          },
+          {
+            "text": "After cleaning: 4,333 rows, 4 regions, returns flagged and no dates outside Q4 2025.",
+            "look_for": [
+              "4333        4       26                60  2025-10-01  2025-12-31"
+            ]
+          },
+          {
+            "text": "The star schema's four tables are built.",
+            "look_for": [
+              "dim_date          92 rows",
+              "dim_customer   3,001 rows",
+              "fact_sales     4,333 rows"
+            ]
+          },
+          {
+            "text": "The fact table reconciles exactly with the source system's Q4 figures.",
+            "look_for": [
+              "Reconciles: True | orphan customer keys: 0"
+            ]
+          },
+          {
+            "text": "The 4V scorecard is filled in with evidence and scores, and each cleaning decision is justified.",
+            "look_for": [
+              "Veracity"
+            ]
+          }
+        ],
+        "submit": "Paste your profile query, clean() and star_schema(), the output of python readiness.py, your completed scorecard and your justifications.",
+        "files": [
+          {
+            "path": "readiness.py",
+            "content": "\"\"\"Audit the Q4 2025 extract before anyone builds AI on it: profile it, clean it, model it as a star schema, and\ncheck that the cleaned data reconciles with the source.\"\"\"\n\nimport duckdb\n\nfrom bi_common import connect, show\n\n\ndef profile(con):\n    con.sql(\"CREATE TABLE raw AS SELECT * FROM 'bi_data/raw_orders_2025q4.csv'\")\n    # TODO: count the problems: total rows, exact duplicate rows (rows minus distinct rows), missing customer\n    #      ids, negative quantities, missing unit prices and order dates after 2025-12-31\n    show(con, \"Region spellings\", \"SELECT '[' || region || ']' AS region, COUNT(*) AS rows FROM raw GROUP BY ALL ORDER BY rows DESC\")\n\n\ndef clean(con):\n    # TODO: build clean_orders from raw: drop exact duplicates (SELECT DISTINCT), standardise region (trim, then map\n    #      lower case and abbreviations such as 'n.' to North, South, East, West), move 2026 dates back to 2025,\n    #      fill a missing unit price with the product's list price, label a missing customer 'UNKNOWN', and flag\n    #      negative quantities as returns\n    show(con, \"After cleaning\", \"\"\"\n        SELECT COUNT(*) AS rows_total, COUNT(DISTINCT region) AS regions, COUNT(*) FILTER (WHERE is_return) AS returns,\n               COUNT(*) FILTER (WHERE customer_id = 'UNKNOWN') AS unknown_customer,\n               MIN(order_date) AS first_day, MAX(order_date) AS last_day\n        FROM clean_orders\"\"\")\n\n\ndef star_schema(con):\n    \"\"\"A star schema: one fact table at the grain of an order line, and the dimensions that describe it.\"\"\"\n    con.sql(\"\"\"CREATE TABLE dim_date AS\n               SELECT d::DATE AS date, year(d) AS year, quarter(d) AS quarter, month(d) AS month,\n                      strftime(d, '%Y-%m') AS year_month, dayname(d) AS weekday, isodow(d) >= 6 AS is_weekend\n               FROM range(DATE '2025-10-01', DATE '2026-01-01', INTERVAL 1 DAY) t(d)\"\"\")\n    con.sql(\"\"\"CREATE TABLE dim_product AS\n               SELECT ROW_NUMBER() OVER (ORDER BY category, product) AS product_key, product, category,\n                      MAX(unit_price) AS list_price\n               FROM clean_orders GROUP BY product, category\"\"\")\n    # TODO: dim_customer from bi_data/customers.csv (customer_id, region, segment, membership, signup_date), plus\n    #      one 'UNKNOWN' row; then fact_sales with order_id, order_date, customer_id, product_key, region, channel,\n    #      quantity, unit_price, discount, is_return and revenue (quantity * unit_price * (1 - discount))\n    for table in (\"dim_date\", \"dim_product\", \"dim_customer\", \"fact_sales\"):\n        n = con.sql(f\"SELECT COUNT(*) FROM {table}\").fetchone()[0]\n        print(f\"{table:13} {n:6,} rows\")\n\n\ndef reconcile(con):\n    \"\"\"The cleaned fact table should match the source system's own Q4 figures exactly.\"\"\"\n    source = con.sql(\"\"\"SELECT COUNT(*), SUM(revenue) FROM sales\n                        WHERE order_date >= DATE '2025-10-01'\"\"\").fetchone()\n    fact = con.sql(\"SELECT COUNT(*), SUM(revenue) FROM fact_sales\").fetchone()\n    orphans = con.sql(\"\"\"SELECT COUNT(*) FROM fact_sales f LEFT JOIN dim_customer c USING (customer_id)\n                         WHERE c.customer_id IS NULL\"\"\").fetchone()[0]\n    print(f\"\\nSource Q4 2025: {source[0]:,} order lines, revenue {source[1]:,.2f}\")\n    print(f\"fact_sales:     {fact[0]:,} order lines, revenue {fact[1]:,.2f}\")\n    print(\"Reconciles:\", source[0] == fact[0] and abs(source[1] - fact[1]) < 0.01, \"| orphan customer keys:\", orphans)\n\n\ndef main():\n    con = connect()\n    profile(con)\n    clean(con)\n    star_schema(con)\n    reconcile(con)\n    con.sql(\"ATTACH 'q4_star.duckdb' AS out\")\n    for table in (\"dim_date\", \"dim_product\", \"dim_customer\", \"fact_sales\"):\n        con.sql(f\"CREATE OR REPLACE TABLE out.{table} AS SELECT * FROM {table}\")\n    print(\"Saved the star schema to q4_star.duckdb\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "readiness_scorecard.csv",
+            "content": "dimension,question,evidence,score_1_to_5\nVolume,\"Is there enough history and enough rows per segment for the question (for example two or more years for yearly seasonality)?\",,\nVelocity,\"Does the data arrive as often as the decision needs it (daily batch, hourly, streaming)?\",,\nVariety,\"Which sources and formats must be combined, and do their keys match?\",,\nVeracity,\"How trustworthy is it: duplicates, gaps, inconsistent labels, typos, biases?\",,\nBusiness impact,\"What decision would change, and what is it worth?\",,\nFeasibility,\"Skills, tools, time and data access: can the team build and run it?\",,\n"
+          }
+        ],
+        "hints": [
+          "SELECT DISTINCT * removes rows that are identical in every column; COUNT(*) minus the count of distinct rows gives the number of duplicates.",
+          "trim() removes the trailing spaces, and lower() makes the comparison case-insensitive.",
+          "If the reconciliation fails, compare row counts first, then revenue by region, to find where rows were lost or doubled."
+        ]
+      }
+    },
+    {
+      "title": "ML Fundamentals for BI Analysts",
+      "summary": "Learn the machine learning a BI analyst needs: supervised and unsupervised learning for business questions, evaluating classifiers with accuracy, precision and recall, and forecasting honestly without overfitting history.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "Supervised and unsupervised learning for BI questions",
+          "minutes": 12,
+          "objectives": [
+            "Match a business question to a supervised or unsupervised method",
+            "Choose features without leaking the future"
+          ],
+          "key_points": [
+            "Supervised learning uses labelled data for prediction: past examples with known outcomes (churned or stayed, last month's revenue) train a model to predict the outcome for new cases; classification predicts a category and regression a number.",
+            "Unsupervised learning finds hidden patterns in unlabelled data: clustering groups similar customers into segments, and anomaly detection finds records unlike the rest, with no right answer given.",
+            "Turn the question into a target and features: 'which customers will leave in the next 90 days?' needs a churned-within-90-days label and features known before that window, such as orders, tickets and tenure.",
+            "Leakage means using information that wouldn't exist at prediction time, such as a cancellation reason recorded after the customer left; it gives brilliant test scores and useless predictions.",
+            "Keep data aside for testing: train on one part and measure on another that the model never saw."
+          ]
+        },
+        {
+          "title": "Evaluating models: accuracy, precision and recall",
+          "minutes": 12,
+          "objectives": [
+            "Read a confusion matrix",
+            "Explain why accuracy misleads when an outcome is rare",
+            "Choose a decision threshold from the costs of errors"
+          ],
+          "key_points": [
+            "A confusion matrix counts true positives, false positives, false negatives and true negatives; accuracy, precision and recall, the key evaluation metrics, all come from it.",
+            "Accuracy, the share of all predictions that are right, misleads for rare outcomes: if 19% of customers churn, predicting that nobody does is 81% accurate and useless.",
+            "Precision is the share of flagged cases that are real (of the customers sent an offer, how many would have left); recall is the share of real cases flagged (of the customers who left, how many were caught).",
+            "A model's probability becomes a decision at a threshold: lowering it raises recall and lowers precision. Choose it from the costs, so a cheap offer and a valuable customer justify a low threshold.",
+            "Compare every model with a baseline, such as always predicting the most common class, and report the numbers measured on held-out data."
+          ],
+          "walkthrough": {
+            "tool": "Python with scikit-learn",
+            "title": "Choose a threshold from precision and recall",
+            "steps": [
+              {
+                "do": "Take ten customers' churn probabilities from a model, and whether each really churned.",
+                "code": "from sklearn.metrics import precision_score, recall_score\nprob = [0.9, 0.8, 0.65, 0.6, 0.45, 0.4, 0.3, 0.2, 0.15, 0.05]\nchurned = [1, 1, 0, 1, 1, 0, 0, 1, 0, 0]",
+                "lang": "python"
+              },
+              {
+                "do": "Score three thresholds: everyone at or above it gets a retention offer.",
+                "code": "for threshold in (0.7, 0.5, 0.3):\n    flagged = [int(p >= threshold) for p in prob]\n    print(threshold, sum(flagged), round(precision_score(churned, flagged), 2), round(recall_score(churned, flagged), 2))",
+                "lang": "python",
+                "see": "Threshold, offers sent, precision, recall: 0.7 2 1.0 0.4 | 0.5 4 0.75 0.6 | 0.3 7 0.57 0.8. Lowering the threshold finds more churners but wastes more offers."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Forecasting without overfitting history",
+          "minutes": 12,
+          "objectives": [
+            "Evaluate a forecast with a time-based split",
+            "Compare forecasts with naive baselines using MAE and MAPE",
+            "Recognise a model that overfits historical data"
+          ],
+          "key_points": [
+            "Test forecasts on the future: train on earlier periods and measure on later ones, never on a random split, which lets the model peek at the future it's meant to predict.",
+            "Start with naive baselines: the last value, or the same month last year (seasonal naive), perhaps scaled by recent growth; a complex model that can't beat them isn't worth using.",
+            "MAE, the mean absolute error, is in the metric's own units; MAPE, the mean absolute percentage error, compares easily across series but breaks down when actual values are near zero.",
+            "Avoid overfitting models to historical data: 14 parameters fitted to 18 months can match the past almost perfectly and still forecast the future barely better than a simple rule.",
+            "A forecast assumes the past pattern continues; when something changes, such as a regional delivery problem, the forecast misses, and those misses are diagnostic signals worth investigating."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Predict churn and forecast revenue",
+        "tool": "Python with scikit-learn",
+        "minutes": 50,
+        "goal": "Train a churn classifier and judge it against a baseline at two thresholds, then forecast six months of revenue with two naive baselines and a regression, tested on months they never saw.",
+        "setup": [
+          "Your course folder from Module 1, with make_bi_data.py, bi_common.py and the bi_data folder",
+          "The starter file ml_bi.py in that folder"
+        ],
+        "steps": [
+          {
+            "do": "Complete the churn pipeline in ml_bi.py: scale the numeric columns, one-hot encode region, segment and membership, and fit a logistic regression.",
+            "code": "model = make_pipeline(\n    make_column_transformer((StandardScaler(), NUMERIC), (OneHotEncoder(), CATEGORICAL)),\n    LogisticRegression(max_iter=1000),\n).fit(X_train, y_train)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete the two forecasts: seasonal naive scaled by growth, and a regression on a trend plus month dummies."
+          },
+          {
+            "do": "Run the script.",
+            "code": "python ml_bi.py",
+            "lang": "bash",
+            "see": "The always-'stays' baseline scores 0.815 accuracy; the model at 0.5 scores 0.823 but catches only 21 of 139 churners, and at 0.3 catches 54 for 70 false alarms."
+          },
+          {
+            "do": "Read the forecasts.",
+            "see": "The regression fits its 18 training months to 1.5% MAPE but scores 7.8% on the six test months, against 9.7% for seasonal naive and 8.3% for seasonal naive with growth."
+          },
+          {
+            "do": "Read the month-by-month table: which months were missed most, and does anything you found in Module 1 explain them?"
+          },
+          {
+            "do": "Write a short recommendation: which threshold you'd use if an offer costs 10 and a lost customer 500, and which forecast you'd trust, with reasons."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The baseline that predicts nobody churns is 81.5% accurate and catches no one.",
+            "look_for": [
+              "Baseline (always 'stays'): accuracy 0.815, recall 0.000"
+            ]
+          },
+          {
+            "text": "The churn model is evaluated at two thresholds, with precision, recall and the counts behind them.",
+            "look_for": [
+              "threshold 0.5: accuracy 0.823, precision 0.583, recall 0.151",
+              "threshold 0.3: accuracy 0.793, precision 0.435, recall 0.388"
+            ]
+          },
+          {
+            "text": "The regression with month dummies fits its 18 training months almost perfectly.",
+            "look_for": [
+              "Regression: 14 parameters for 18 months; training MAPE 1.5%"
+            ]
+          },
+          {
+            "text": "The three forecasts are compared on the six test months with MAE and MAPE.",
+            "look_for": [
+              "MAPE   9.7%",
+              "MAPE   8.3%",
+              "MAPE   7.8%"
+            ]
+          },
+          {
+            "text": "The write-up recommends a threshold from the costs of errors and explains the gap between training and test error.",
+            "look_for": [
+              "threshold"
+            ]
+          }
+        ],
+        "submit": "Paste your pipeline and forecast code, the output of python ml_bi.py and your recommendation.",
+        "files": [
+          {
+            "path": "ml_bi.py",
+            "content": "\"\"\"Machine learning for two BI questions: which customers will churn (classification), and what will revenue be\nnext month (forecasting), each judged honestly against a baseline.\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.compose import make_column_transformer\nfrom sklearn.dummy import DummyClassifier\nfrom sklearn.linear_model import LinearRegression, LogisticRegression\nfrom sklearn.metrics import confusion_matrix, precision_score, recall_score\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nfrom bi_common import connect\n\nNUMERIC = [\"tenure_months\", \"orders_12m\", \"spend_12m\", \"days_since_last_order\", \"support_tickets_90d\",\n           \"delivery_issues_90d\"]\nCATEGORICAL = [\"region\", \"segment\", \"membership\"]\n\n\ndef churn():\n    df = pd.read_csv(\"bi_data/customers.csv\")\n    X, y = df[NUMERIC + CATEGORICAL], df[\"churned_next_90d\"]\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\n    print(f\"Churn: {len(df):,} customers, {y.mean():.1%} churned; {len(X_test)} held out for testing\")\n\n    baseline = DummyClassifier(strategy=\"most_frequent\").fit(X_train, y_train)\n    print(f\"Baseline (always 'stays'): accuracy {baseline.score(X_test, y_test):.3f}, recall 0.000\")\n\n    # TODO: a pipeline that scales the numeric columns and one-hot encodes the categorical ones\n    #      (make_column_transformer), followed by LogisticRegression(max_iter=1000); fit it on the training data\n    model = baseline\n    proba = model.predict_proba(X_test)[:, 1]\n    for threshold in (0.5, 0.3):\n        pred = (proba >= threshold).astype(int)\n        tn, fp, fn, tp = confusion_matrix(y_test, pred).ravel()\n        print(f\"Logistic regression at threshold {threshold}: accuracy {(tp + tn) / len(pred):.3f}, \"\n              f\"precision {precision_score(y_test, pred):.3f}, recall {recall_score(y_test, pred):.3f} \"\n              f\"(caught {tp} of {tp + fn} churners, {fp} false alarms)\")\n\n\ndef monthly_revenue():\n    con = connect()\n    m = con.sql(\"\"\"SELECT strftime(order_date, '%Y-%m') AS month, SUM(revenue) AS revenue\n                   FROM sales GROUP BY month ORDER BY month\"\"\").df()\n    m[\"t\"] = np.arange(len(m))\n    m[\"month_of_year\"] = m[\"month\"].str[5:].astype(int)\n    return m\n\n\ndef forecasting():\n    m = monthly_revenue()\n    train, test = m.iloc[:18], m.iloc[18:]  # train on 2024-01 to 2025-06, test on 2025-07 to 2025-12\n    print(f\"\\nForecast: train on {train.month.iloc[0]} to {train.month.iloc[-1]}, test on {test.month.iloc[0]} \"\n          f\"to {test.month.iloc[-1]}\")\n    forecasts = {\"seasonal naive (same month last year)\": m[\"revenue\"].shift(12).iloc[18:].to_numpy()}\n\n    # TODO: seasonal naive with growth: last year's same month times the growth of the latest six months\n    #      against the same six months a year earlier\n\n    # TODO: a linear regression on a trend (t) plus one dummy per month of the year, fitted on the 18 months\n\n    actual = test[\"revenue\"].to_numpy()\n    for name, f in forecasts.items():\n        mae, mape = np.mean(np.abs(f - actual)), np.mean(np.abs(f / actual - 1))\n        print(f\"{name:38} MAE {mae:9,.0f}  MAPE {mape:6.1%}\")\n    best = forecasts[\"seasonal naive x growth\"]\n    print(\"Month     actual    forecast  error\")\n    for month, a, f in zip(test[\"month\"], actual, best):\n        print(f\"{month}  {a:9,.0f}  {f:9,.0f}  {f / a - 1:+.1%}\")\n\n\nif __name__ == \"__main__\":\n    connect()  # generates bi_data first if it's missing\n    churn()\n    forecasting()\n"
+          }
+        ],
+        "hints": [
+          "predict_proba(X)[:, 1] gives the probability of churn; compare it with a threshold to get decisions.",
+          "The test months are the last six rows of the monthly table: never fit anything on them.",
+          "A very low training error with a much higher test error is the signature of overfitting."
+        ]
+      }
+    },
+    {
+      "title": "Descriptive Analytics with NLP",
+      "summary": "Let people ask questions of the data in everyday language: how natural language querying works, why it depends on a well-designed semantic model, and how to use SQL written by a large language model safely.",
+      "instructor": "valentina-lopez",
+      "lessons": [
+        {
+          "title": "How natural language querying works",
+          "minutes": 12,
+          "objectives": [
+            "Describe the steps from a question in words to an answer",
+            "Explain why ambiguity needs a clarifying question rather than a guess"
+          ],
+          "key_points": [
+            "NLQ translates natural language into database queries: it recognises the measure (revenue), the dimensions (by region), the filters (Q4 2025, online) and any ranking (top 3), then generates SQL or a BI tool's own query language.",
+            "Questions are often ambiguous: 'best region' could mean highest revenue, fastest growth or highest margin. A good system asks a clarifying question or states its interpretation beside the answer.",
+            "Answers should show their working, with the interpretation, the filters applied and ideally the query, so users can spot a misunderstanding.",
+            "NLP democratises data access for non-technical users: managers can ask their own follow-up questions without waiting for an analyst, which frees analysts for harder problems.",
+            "Test NLQ like any software: keep a set of real questions with known correct answers and rerun it whenever the model, the synonyms or the data change."
+          ]
+        },
+        {
+          "title": "Data modelling for NLQ: semantic layers, naming and synonyms",
+          "minutes": 12,
+          "objectives": [
+            "Explain why NLQ depends on the data model",
+            "Design names, measures and synonyms that improve NLQ accuracy"
+          ],
+          "key_points": [
+            "Proper data modelling is essential for effective NLQ: a clean star schema with clear relationships lets the system find the right table and join for each question.",
+            "A semantic layer defines each measure once, such as revenue = SUM(quantity × unit_price × (1 − discount)), so every query, dashboard and question uses the same formula.",
+            "Synonyms and clear naming conventions improve NLQ accuracy: name columns as people speak ('Region', not 'rgn_cd'), and map the words people use, such as 'sales', 'turnover' and 'takings', to the agreed measure.",
+            "Hide technical columns such as keys and load timestamps, and keep category values consistent: a system can't match 'North' reliably if the data also holds 'north' and 'N.'.",
+            "A date dimension and explicit relationships let phrases like 'last quarter' or 'by month' resolve correctly."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "See a semantic layer resolve a question",
+            "steps": [
+              {
+                "do": "Load the course's NLQ engine and normalise a question full of everyday words.",
+                "code": "from nlq import normalise, to_sql\nprint(normalise(\"What were the takings by territory in Q4 2025?\"))",
+                "lang": "python",
+                "see": "what were the revenue by region in q4 2025: the synonyms map 'takings' to the revenue measure and 'territory' to the region dimension."
+              },
+              {
+                "do": "Translate it into SQL that uses the measure's single, agreed definition.",
+                "code": "print(to_sql(\"What were the takings by territory in Q4 2025?\")[0])",
+                "lang": "python",
+                "see": "SELECT region AS region, SUM(revenue) AS revenue FROM sales WHERE year(order_date) = 2025 AND quarter(order_date) = 4 GROUP BY 1 ORDER BY 1"
+              },
+              {
+                "do": "Ask something the semantic layer can't resolve.",
+                "code": "print(to_sql(\"How are we doing?\")[1])",
+                "lang": "python",
+                "see": "Which measure do you mean: revenue, orders, units, average order value?: asking back beats guessing."
+              }
+            ]
+          }
+        },
+        {
+          "title": "LLM-powered NLQ and AI assistants",
+          "minutes": 14,
+          "objectives": [
+            "Explain how LLMs generate SQL from a schema and a question",
+            "Apply guardrails before running generated SQL",
+            "Govern AI assistants in BI tools"
+          ],
+          "key_points": [
+            "Large language models can write SQL from a question when the prompt includes the schema, the measure definitions, synonyms and example questions, which handles phrasings a rule-based system never anticipated.",
+            "Generated SQL can be fluent and wrong: a wrong join, a different revenue formula, an invented column or a missing filter, delivered with the same confidence as a correct answer.",
+            "Guardrails before running it: a single SELECT only, no data-changing statements or file access, allow-listed tables, a row limit, and a read-only connection with the user's own permissions (row-level security).",
+            "Evaluate the system on a test set of questions with known answers, and show users the generated SQL and its interpretation so they can check it.",
+            "AI assistants in BI tools that draft measures, queries, dashboards or narrative summaries need the same care: review what they produce, and check every summary against the numbers it describes."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Check an LLM's SQL before running it",
+            "steps": [
+              {
+                "do": "Asking Claude for SQL follows the usual pattern; the model ID comes from CLAUDE_MODEL, set to a current model from Anthropic's documentation (this step needs an API key, so it isn't run here).",
+                "code": "import os, anthropic\nclient = anthropic.Anthropic()                  # reads ANTHROPIC_API_KEY\nreply = client.messages.create(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=400,\n    messages=[{\"role\": \"user\", \"content\": \"Schema, measures and synonyms... Question: revenue by region\"}])\nsql = reply.content[0].text",
+                "lang": "python"
+              },
+              {
+                "do": "Whatever comes back, validate it before it touches the data.",
+                "code": "from nlq import validate_sql\nfor sql in (\"SELECT region, SUM(revenue) FROM sales GROUP BY region\",\n            \"SELECT * FROM customers\",\n            \"DELETE FROM sales\"):\n    print(validate_sql(sql))",
+                "lang": "python",
+                "see": "(True, 'SELECT region, SUM(revenue) FROM sales GROUP BY region LIMIT 1000') | (False, 'table not allowed: customers') | (False, 'only SELECT queries are allowed'). Only the first runs, with a row limit added."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build a small NLQ engine with guardrails",
+        "tool": "Python with DuckDB",
+        "minutes": 55,
+        "goal": "Write a rule-based NLQ engine over a semantic layer of measures, dimensions and synonyms, pass a test set of eight questions, then write the guardrails that SQL from an LLM must pass, and optionally try them on Claude's SQL.",
+        "setup": [
+          "Your course folder from Module 1, with make_bi_data.py, bi_common.py and the bi_data folder",
+          "The starter file nlq.py in that folder",
+          "Optional: pip install anthropic, an Anthropic API key in ANTHROPIC_API_KEY, and CLAUDE_MODEL set to a current model ID from Anthropic's documentation"
+        ],
+        "steps": [
+          {
+            "do": "Read the semantic layer at the top of nlq.py: MEASURES, DIMENSIONS, VALUES and SYNONYMS, and normalise(), which maps everyday words to the layer's names."
+          },
+          {
+            "do": "Complete to_sql(): find the measure, the dimension after 'by', 'per' or 'for each', the year, quarter and value filters, and any ranking; return a clarifying question when there's no measure."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python nlq.py",
+            "lang": "bash",
+            "see": "PASS for each question with the SQL it produced, 8 of 8 test questions answered correctly, a clarifying question for 'How are we doing?', and West, with 79,936, as the area with the lowest Q4 sales."
+          },
+          {
+            "do": "Complete validate_sql() and run the script again: the safe queries are allowed with a row limit added, and the dangerous ones are blocked with a reason.",
+            "see": "blocked: DROP TABLE sales, blocked with file access isn't allowed, and table not allowed: customers."
+          },
+          {
+            "do": "Add five synonyms people at Northwind might use (such as 'revenue' for 'income' or 'region' for 'patch') and four new test questions that use them, with their golden SQL, and make them pass."
+          },
+          {
+            "do": "Optional: set ANTHROPIC_API_KEY and CLAUDE_MODEL and run again: the script sends three test questions to Claude, validates its SQL and compares the answers."
+          }
+        ],
+        "checks": [
+          {
+            "text": "to_sql() answers all eight test questions the way a careful analyst's SQL does.",
+            "look_for": [
+              "8 of 8 test questions answered correctly"
+            ]
+          },
+          {
+            "text": "An ambiguous question gets a clarifying question back instead of a guess.",
+            "look_for": [
+              "Ambiguous question: Which measure do you mean"
+            ]
+          },
+          {
+            "text": "A ranking question that uses two synonyms is answered correctly.",
+            "look_for": [
+              "Which area had the lowest sales in Q4 2025? West, with 79,936"
+            ]
+          },
+          {
+            "text": "validate_sql() allows the safe queries and blocks the dangerous ones, each with a reason.",
+            "look_for": [
+              "blocked: DROP TABLE sales",
+              "file access isn't allowed",
+              "table not allowed: customers"
+            ]
+          },
+          {
+            "text": "The new synonyms and test questions are added and pass.",
+            "look_for": [
+              "PASS"
+            ]
+          }
+        ],
+        "submit": "Paste to_sql() and validate_sql(), your new synonyms and test questions, and the output of python nlq.py (including the LLM lines, if you ran them).",
+        "files": [
+          {
+            "path": "nlq.py",
+            "content": "\"\"\"A small natural-language query (NLQ) engine over a semantic layer, its tests, and guardrails for SQL written by\nan LLM (optional: it needs an Anthropic API key).\"\"\"\n\nimport os\nimport re\n\nimport duckdb\n\nfrom bi_common import connect\n\n# The semantic layer: measures defined once, dimensions with business names, and the words people actually use\nMEASURES = {\"revenue\": \"SUM(revenue)\", \"orders\": \"COUNT(*)\", \"units\": \"SUM(quantity)\",\n            \"average order value\": \"SUM(revenue) / COUNT(*)\"}\nDIMENSIONS = {\"region\": \"region\", \"channel\": \"channel\", \"category\": \"category\", \"product\": \"product\",\n              \"month\": \"strftime(order_date, '%Y-%m')\", \"year\": \"year(order_date)\"}\nVALUES = {\"region\": [\"North\", \"South\", \"East\", \"West\"], \"channel\": [\"Online\", \"Store\", \"Marketplace\"],\n          \"category\": [\"Kitchen\", \"Furniture\", \"Lighting\", \"Textiles\"]}\nSYNONYMS = {\"sales\": \"revenue\", \"turnover\": \"revenue\", \"takings\": \"revenue\", \"number of orders\": \"orders\",\n            \"units sold\": \"units\", \"items sold\": \"units\", \"aov\": \"average order value\",\n            \"average basket\": \"average order value\", \"basket size\": \"average order value\", \"territory\": \"region\",\n            \"area\": \"region\", \"sales channel\": \"channel\", \"department\": \"category\", \"per month\": \"by month\",\n            \"monthly\": \"by month\", \"each month\": \"by month\"}\n\n\ndef normalise(question):\n    q = \" \" + re.sub(r\"[^a-z0-9 ]\", \" \", question.lower()) + \" \"\n    for word in sorted(SYNONYMS, key=len, reverse=True):  # longest first, so 'sales channel' beats 'sales'\n        q = q.replace(f\" {word} \", f\" {SYNONYMS[word]} \")\n    return \" \".join(q.split())\n\n\ndef to_sql(question):\n    \"\"\"Translate a question into SQL, or return (None, a clarifying question).\"\"\"\n    q = normalise(question)\n    # TODO: find the measure (longest name first), the dimension after 'by', 'per' or 'for each', filters for a\n    #      year, a quarter (q1 to q4) and any region, channel or category named, and 'top N', 'highest' or\n    #      'lowest'; return the SQL, or None and a question asking which measure was meant\n    return None, \"to_sql() isn't written yet\"\n\n\nFORBIDDEN = re.compile(r\"\\b(insert|update|delete|drop|alter|create|copy|attach|detach|pragma|install|load|export|\"\n                       r\"import|call|set)\\b\", re.I)\nALLOWED_TABLES = {\"sales\"}\n\n\ndef validate_sql(sql):\n    \"\"\"Guardrails for SQL from an LLM: one read-only SELECT on allowed tables, no file access, a row limit.\"\"\"\n    s = sql.strip().rstrip(\";\").strip()\n    # TODO: reject anything that isn't a single SELECT (or WITH) statement, that contains a forbidden keyword,\n    #      that reads files (quoted paths or read_ functions) or that uses a table outside ALLOWED_TABLES; add\n    #      LIMIT 1000 when there's no LIMIT. Return (True, sql) or (False, reason)\n    return True, sql\n\n\ndef llm_sql(question):\n    \"\"\"Ask Claude for SQL (needs pip install anthropic, and ANTHROPIC_API_KEY and CLAUDE_MODEL set).\"\"\"\n    import anthropic\n\n    client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY\n    prompt = (\"Translate the question into one DuckDB SQL query on the table sales(order_id, order_date DATE, \"\n              \"customer_id, region, channel, category, product, quantity, unit_price, discount, revenue). \"\n              f\"Measures: {MEASURES}. Synonyms: {SYNONYMS}. Values: {VALUES}. Reply with the SQL only.\\n\\n\"\n              f\"Question: {question}\")\n    reply = client.messages.create(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=400,\n                                   messages=[{\"role\": \"user\", \"content\": prompt}])\n    text = reply.content[0].text\n    fenced = re.search(r\"```(?:sql)?\\s*(.*?)```\", text, re.S)\n    return (fenced.group(1) if fenced else text).strip()\n\n\nTESTS = [  # question, and the SQL a careful analyst would write for it\n    (\"What was total revenue in 2025?\", \"SELECT SUM(revenue) FROM sales WHERE year(order_date) = 2025\"),\n    (\"Sales by region in Q4 2025\", \"SELECT region, SUM(revenue) FROM sales WHERE year(order_date) = 2025 \"\n     \"AND quarter(order_date) = 4 GROUP BY 1 ORDER BY 1\"),\n    (\"Top 3 products by units sold in 2025\", \"SELECT product, SUM(quantity) AS u FROM sales \"\n     \"WHERE year(order_date) = 2025 GROUP BY 1 ORDER BY u DESC LIMIT 3\"),\n    (\"Average basket by channel\", \"SELECT channel, SUM(revenue) / COUNT(*) FROM sales GROUP BY 1 ORDER BY 1\"),\n    (\"Number of orders per month in 2025 for the West\", \"SELECT strftime(order_date, '%Y-%m'), COUNT(*) FROM sales \"\n     \"WHERE year(order_date) = 2025 AND region = 'West' GROUP BY 1 ORDER BY 1\"),\n    (\"Which territory had the highest turnover in 2024?\", \"SELECT region, SUM(revenue) AS r FROM sales \"\n     \"WHERE year(order_date) = 2024 GROUP BY 1 ORDER BY r DESC LIMIT 1\"),\n    (\"Online takings by department in Q4 2025\", \"SELECT category, SUM(revenue) FROM sales WHERE channel = 'Online' \"\n     \"AND year(order_date) = 2025 AND quarter(order_date) = 4 GROUP BY 1 ORDER BY 1\"),\n    (\"How many units sold in the lowest month of 2025?\", \"SELECT strftime(order_date, '%Y-%m'), SUM(quantity) AS u \"\n     \"FROM sales WHERE year(order_date) = 2025 GROUP BY 1 ORDER BY u ASC LIMIT 1\"),\n]\n\n\ndef same(a, b):\n    return len(a) == len(b) and all(\n        all((abs(x - y) < 1e-6 if isinstance(x, float) else x == y) for x, y in zip(r1, r2)) for r1, r2 in zip(a, b))\n\n\ndef main():\n    con = connect()\n    passed = 0\n    for question, golden in TESTS:\n        sql, clarify = to_sql(question)\n        ok = sql is not None and same(con.sql(sql).fetchall(), con.sql(golden).fetchall())\n        passed += ok\n        print(f\"{'PASS' if ok else 'FAIL'}  {question}\\n      {sql or clarify}\")\n    print(f\"{passed} of {len(TESTS)} test questions answered correctly\")\n    print(\"Ambiguous question:\", to_sql(\"How are we doing?\")[1])\n    region, value = con.sql(to_sql(\"Which area had the lowest sales in Q4 2025?\")[0]).fetchone()\n    print(f\"Which area had the lowest sales in Q4 2025? {region}, with {value:,.0f}\")\n\n    print(\"\\nGuardrails\")\n    for sql in [\"SELECT region, SUM(revenue) FROM sales GROUP BY region\",\n                \"DROP TABLE sales\",\n                \"SELECT * FROM sales; DELETE FROM sales\",\n                \"SELECT * FROM 'bi_data/customers.csv'\",\n                \"SELECT * FROM customers\",\n                \"WITH q AS (SELECT region, SUM(revenue) AS r FROM sales GROUP BY 1) SELECT * FROM q LIMIT 5\"]:\n        ok, result = validate_sql(sql)\n        print(f\"{'allowed' if ok else 'blocked'}: {sql[:60]:60} -> {result}\")\n\n    if os.environ.get(\"ANTHROPIC_API_KEY\") and os.environ.get(\"CLAUDE_MODEL\"):\n        for question, golden in TESTS[:3]:\n            ok, sql = validate_sql(llm_sql(question))\n            right = ok and same(con.sql(sql).fetchall()[:1000], con.sql(golden).fetchall())\n            print(f\"LLM {'PASS' if right else 'FAIL'}  {question}\\n      {sql}\")\n    else:\n        print(\"\\nLLM step skipped: set ANTHROPIC_API_KEY and CLAUDE_MODEL (and pip install anthropic) to try it\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "Search for the longest measure names first, so 'average order value' isn't mistaken for 'orders'.",
+          "A golden SQL query is the one a careful analyst would write; the test compares results, not SQL text.",
+          "Guardrails are layers: even with validate_sql(), run generated SQL on a read-only connection."
+        ]
+      }
+    },
+    {
+      "title": "Diagnostic Analytics and Anomaly Detection",
+      "summary": "Explain why metrics move: decompose a change into its drivers, rank key influencers while watching for confounders, segment customers with clustering, flag anomalies for review, and present the findings on a dashboard.",
+      "instructor": "valentina-lopez",
+      "lessons": [
+        {
+          "title": "Key influencers: what drives a metric",
+          "minutes": 12,
+          "objectives": [
+            "Decompose a change in a metric into the segments that caused it",
+            "Rank the factors associated with an outcome",
+            "Recognise a confounder"
+          ],
+          "key_points": [
+            "Key influencer analysis identifies factors driving a specific metric: it compares the outcome across each factor's values, such as churn by region or by number of delivery issues, and ranks them by lift, the segment's rate divided by the overall rate.",
+            "Decompose a change before explaining it: the difference between two periods split by region and channel shows which cells caused it, often one or two out of many.",
+            "Factors are often correlated, so a segment can look influential only because of another factor, a confounder: compare within groups, or use a regression that holds the other factors constant.",
+            "A logistic regression's odds ratios show each factor's association with the outcome with the others held constant; with standardised numeric features they're per standard deviation, and comparable.",
+            "Influence is association, not proof of cause: confirm a driver with the business (the delivery problems really happened) or with an experiment before acting on it."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB in Python",
+            "title": "Find key influencers, and check for a confounder",
+            "steps": [
+              {
+                "do": "Compare churn by region: West looks much worse.",
+                "code": "import duckdb\nq = lambda sql: print(duckdb.sql(sql).fetchall())\nq(\"\"\"SELECT region, ROUND(AVG(churned_next_90d), 3) FROM 'bi_data/customers.csv' GROUP BY region ORDER BY 2 DESC\"\"\")",
+                "lang": "python",
+                "see": "[('West', 0.292), ('South', 0.173), ('East', 0.154), ('North', 0.153)]"
+              },
+              {
+                "do": "Compare churn by the number of delivery issues in the last 90 days.",
+                "code": "q(\"\"\"SELECT LEAST(delivery_issues_90d, 2) AS issues, ROUND(AVG(churned_next_90d), 3), COUNT(*)\n     FROM 'bi_data/customers.csv' GROUP BY issues ORDER BY issues\"\"\")",
+                "lang": "python",
+                "see": "[(0, 0.143, 2349), (1, 0.268, 485), (2, 0.548, 166)]: churn rises steeply with delivery issues (2 means 2 or more)."
+              },
+              {
+                "do": "Compare regions again, among customers with no delivery issues at all.",
+                "code": "q(\"\"\"SELECT region, ROUND(AVG(churned_next_90d), 3), COUNT(*) FROM 'bi_data/customers.csv'\n     WHERE delivery_issues_90d = 0 GROUP BY region ORDER BY 2 DESC\"\"\")",
+                "lang": "python",
+                "see": "[('West', 0.169, 237), ('East', 0.143, 666), ('North', 0.139, 805), ('South', 0.139, 641)]: without delivery problems the gap between West and the other regions shrinks from about 13 points to about 3, so most of West's extra churn comes with its delivery problems, the driver to fix."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Segmentation with clustering",
+          "minutes": 12,
+          "objectives": [
+            "Segment customers with k-means on RFM features",
+            "Choose k from silhouette scores and business sense",
+            "Profile and name segments"
+          ],
+          "key_points": [
+            "Clustering groups similar data points for segmentation: k-means places k centres, assigns every customer to the nearest, and moves the centres until the groups stop changing.",
+            "RFM features (recency, frequency and monetary value) are a classic start for customer segments; skewed amounts are usually log-transformed, and every feature must be scaled, because k-means uses distances.",
+            "k is a choice: silhouette scores (from −1 to 1, higher for tighter, better-separated clusters) and the elbow in within-cluster error guide it, but the right k gives segments the business can act on.",
+            "Profile each cluster by its size and median features, name it in business terms, such as 'recent loyal buyers' or 'lapsing low spenders', and check that the segments differ on outcomes such as churn.",
+            "k-means assumes roughly round clusters of similar size and is sensitive to outliers and to its random start, so fix random_state and use several starts (n_init)."
+          ]
+        },
+        {
+          "title": "Anomaly detection for metrics",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish point, contextual and collective anomalies",
+            "Flag anomalies against an expected value with a robust z-score",
+            "Tune alerts so that people trust them"
+          ],
+          "key_points": [
+            "Anomaly detection flags unusual data points for review: point anomalies (one odd day), contextual ones (normal in December, odd in June) and collective ones (a run of slightly low days).",
+            "Compare each value with what was expected, such as the median of the same weekday over the previous four weeks, so normal weekly patterns don't raise alarms; a log ratio of actual to expected treats drops and spikes alike.",
+            "Score the deviation robustly: the median and the median absolute deviation (MAD) aren't inflated by the outliers being sought, and a robust z-score, 0.6745 × (x − median) / MAD, above 3.5 is a common flag (Iglewicz and Hoaglin).",
+            "Monitor where problems happen: an outage that empties one channel can hide in the total, so check important segments as well as the whole.",
+            "Flags need review: known events (a sale, a holiday) explain some, a few are chance, and an alert that fires too often gets ignored, so tune thresholds and record what each flag turned out to be."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Flag an anomaly with a robust z-score",
+            "steps": [
+              {
+                "do": "Take a week of daily orders with one spike, and score it with the ordinary z-score.",
+                "code": "import numpy as np\nx = np.array([50, 52, 49, 51, 120, 48, 50], dtype=float)\nprint(round(float((x[4] - x.mean()) / x.std()), 2))",
+                "lang": "python",
+                "see": "2.45: under 3, because the spike itself inflates the mean and the standard deviation."
+              },
+              {
+                "do": "Score it with the robust z-score, built on the median and the median absolute deviation (MAD).",
+                "code": "median = np.median(x)\nmad = np.median(np.abs(x - median))\nprint(median, mad, round(float(0.6745 * (x[4] - median) / mad), 1))",
+                "lang": "python",
+                "see": "50.0 1.0 47.2: median, MAD and a robust z far above 3.5, so the spike is flagged."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Dashboards that communicate AI-driven insights",
+          "minutes": 12,
+          "objectives": [
+            "Design a dashboard around its users' questions",
+            "Present forecasts, drivers and anomalies honestly"
+          ],
+          "key_points": [
+            "Design for the decision: the few KPIs that matter at the top with their comparisons (against target, last year), then trends, then breakdowns and detail, with one main question per page.",
+            "Diagnostic tools reduce manual data slicing and dicing: instead of filtering by every dimension in turn, show the drivers of a change, the key influencers and the flagged anomalies directly.",
+            "Label what's computed by AI or statistics: show forecasts with their uncertainty (a band, not a single line), say how anomalies were flagged and how fresh the data is.",
+            "Keep charts readable: consistent colours with enough contrast, direct labels instead of legends where possible, no 3D effects, and a sentence that states each finding.",
+            "Test the dashboard with its users: can they answer their questions without help, and do they trust the numbers enough to act on them?"
+          ],
+          "walkthrough": {
+            "tool": "Excel, Google Sheets or LibreOffice Calc",
+            "title": "Lay out a one-page KPI dashboard",
+            "steps": [
+              {
+                "do": "Import monthly_kpis.csv (from the Module 1 lab) into a new sheet, then create a pivot table from it: months as rows, regions as columns, sum of revenue as values (Insert | Pivot table in Google Sheets and Excel; Insert | Pivot Table in Calc)."
+              },
+              {
+                "do": "On a separate dashboard sheet, put the headline KPIs in a row across the top: 2025 revenue, growth on 2024, Q4 against target, each with its comparison.",
+                "code": "=SUMIFS(C:C, A:A, \"2025-*\")",
+                "lang": "spreadsheet",
+                "see": "Total 2025 revenue from the monthly table (wildcards in SUMIFS work in Excel, Google Sheets and Calc)."
+              },
+              {
+                "do": "Below the KPIs, add a line chart of monthly revenue by region from the pivot table, and next to it a bar chart of Q4 against target by region, sorted from the biggest miss."
+              },
+              {
+                "do": "Add a short text box that states the finding and its evidence, for example that West's online revenue halved from September, and label any forecast or flagged anomaly as such, with its method."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Diagnose the decline",
+        "tool": "Python with DuckDB and scikit-learn",
+        "minutes": 55,
+        "goal": "Find the cell behind Q4's shortfall, rank the key influencers of churn and test one for confounding, flag anomalous days in the total and in the online channel, and segment customers with k-means.",
+        "setup": [
+          "Your course folder from Module 1, with make_bi_data.py, bi_common.py and the bi_data folder",
+          "The starter file diagnostics.py in that folder"
+        ],
+        "steps": [
+          {
+            "do": "Complete drivers(): Q4 revenue by region and channel in both years, and each cell's change, the five biggest falls first."
+          },
+          {
+            "do": "Complete the segment lift loop in key_influencers(): churn rate, lift and size for every value of region, segment, membership, delivery issues and support tickets."
+          },
+          {
+            "do": "Complete flag_anomalies(): the expected value from the same weekday over the previous four weeks, the log ratio, the robust z-score and the flagged days."
+          },
+          {
+            "do": "Run the script.",
+            "code": "python diagnostics.py",
+            "lang": "bash",
+            "see": "West Online, down 24,486, tops the list of falls; delivery issues (2 or more: 54.8% churn, lift 2.95) and region West (29.2%) top the influencers, but West's odds ratio is 0.76 once delivery issues are held constant."
+          },
+          {
+            "do": "Read the anomalies.",
+            "see": "All channels: 2025-11-28 (Black Friday, 151 orders against 49.5 expected) and 2025-01-05. Online only: five days, including 2025-06-14 with 1 order against 19.5 expected, the site outage."
+          },
+          {
+            "do": "Read the silhouette scores and the four segments' profiles, and name each segment in business terms."
+          },
+          {
+            "do": "Write a short diagnosis for leadership: what caused the shortfall, whether region or delivery issues drive churn (and how you know), what each flagged day was, and which segment to act on first."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The decomposition finds the cell behind Q4's shortfall: West's online sales.",
+            "look_for": [
+              "West    Online        44,618   20,132  -24,486"
+            ]
+          },
+          {
+            "text": "Segment lift ranks delivery issues and region West among the top influencers of churn.",
+            "look_for": [
+              "delivery_issues = 2 or more      54.8%   2.95        166",
+              "region = West                    29.2%"
+            ]
+          },
+          {
+            "text": "The odds ratios show that, with delivery issues and the other factors held constant, West is no riskier.",
+            "look_for": [
+              "delivery_issues_90d 1.72",
+              "region_West 0.76"
+            ]
+          },
+          {
+            "text": "The anomaly detector flags Black Friday in the total and the outage in the online series.",
+            "look_for": [
+              "2025-11-28 Fri  actual  151",
+              "2025-06-14 Sat  actual    1"
+            ]
+          },
+          {
+            "text": "Customers are segmented with k-means and the segments profiled.",
+            "look_for": [
+              "Profile of the 4 segments"
+            ]
+          },
+          {
+            "text": "The write-up explains the confounding between region and delivery issues, and what each flagged day was.",
+            "look_for": [
+              "confound"
+            ]
+          }
+        ],
+        "submit": "Paste drivers(), the lift loop and flag_anomalies(), the output of python diagnostics.py, your segment names and your diagnosis.",
+        "files": [
+          {
+            "path": "diagnostics.py",
+            "content": "\"\"\"Diagnostic analytics on Northwind Living: what drove Q4's change, what drives churn, which days were unusual,\nand which customer segments there are.\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.cluster import KMeans\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import silhouette_score\nfrom sklearn.preprocessing import StandardScaler\n\nfrom bi_common import connect, show\n\n\ndef drivers(con):\n    \"\"\"Split the change between Q4 2024 and Q4 2025 into the region-and-channel cells that caused it.\"\"\"\n    # TODO: Q4 revenue per region and channel in 2024 and 2025 and each cell's change, as whole numbers, the five\n    #      biggest falls first\n\n\ndef key_influencers():\n    df = pd.read_csv(\"bi_data/customers.csv\")\n    overall = df[\"churned_next_90d\"].mean()\n    print(f\"\\nChurn in the next 90 days: {overall:.1%} overall\")\n    df[\"delivery_issues\"] = pd.cut(df[\"delivery_issues_90d\"], [-1, 0, 1, 99], labels=[\"0\", \"1\", \"2 or more\"])\n    df[\"support_tickets\"] = pd.cut(df[\"support_tickets_90d\"], [-1, 0, 1, 99], labels=[\"0\", \"1\", \"2 or more\"])\n    rows = []\n    # TODO: for each value of region, segment, membership, delivery_issues and support_tickets, the churn rate,\n    #      its lift (rate / overall) and the number of customers; print the ten with the highest lift\n    print(\"Segment                          churn   lift  customers\")\n    for name, rate, lift, n in sorted(rows, key=lambda r: -r[2])[:10]:\n        print(f\"{name:30} {rate:7.1%}  {lift:5.2f}  {n:9,}\")\n\n    numeric = [\"tenure_months\", \"orders_12m\", \"days_since_last_order\", \"support_tickets_90d\", \"delivery_issues_90d\"]\n    X = pd.concat([pd.DataFrame(StandardScaler().fit_transform(df[numeric]), columns=numeric),\n                   pd.get_dummies(df[[\"region\", \"membership\"]], drop_first=True, dtype=float)], axis=1)\n    model = LogisticRegression(max_iter=1000).fit(X, df[\"churned_next_90d\"])\n    odds = pd.Series(np.exp(model.coef_[0]), index=X.columns).sort_values(ascending=False)\n    print(\"Odds ratios (numbers per standard deviation; categories against East and Free):\")\n    print(\"  \" + \", \".join(f\"{name} {value:.2f}\" for name, value in odds.items()))\n\n\ndef flag_anomalies(daily, threshold=3.5):\n    \"\"\"Expected value: the median of the same weekday over the previous four weeks. Returns flagged days.\"\"\"\n    # TODO: the expected value for each day is the median of the same weekday in the previous four weeks; take\n    #      the log of actual / expected (adding 1 to both, so a zero day still works), turn it into a robust\n    #      z-score with the median and the MAD (0.6745 * (x - median) / MAD) and return the days where\n    #      |z| > threshold, with the expected values\n    return pd.Series(dtype=float), daily\n\n\ndef anomalies(con):\n    for name, where in ((\"all channels\", \"TRUE\"), (\"Online only\", \"channel = 'Online'\")):\n        daily = con.sql(f\"SELECT order_date, COUNT(*) AS orders FROM sales WHERE {where} GROUP BY 1 ORDER BY 1\").df()\n        daily = daily.set_index(\"order_date\")[\"orders\"].asfreq(\"D\", fill_value=0).astype(float)\n        flagged, expected = flag_anomalies(daily)\n        print(f\"\\nDaily orders, {name}: {len(daily)} days, {len(flagged)} flagged (|robust z| > 3.5)\")\n        for day, score in flagged.items():\n            print(f\"  {day:%Y-%m-%d} {day:%a}  actual {daily[day]:4.0f}  expected {expected[day]:5.1f}  z {score:+.1f}\")\n\n\ndef segments():\n    df = pd.read_csv(\"bi_data/customers.csv\")\n    rfm = np.log1p(df[[\"days_since_last_order\", \"orders_12m\", \"spend_12m\"]])\n    X = StandardScaler().fit_transform(rfm)\n    print()\n    # TODO: k-means for k = 2 to 6 (n_init=10, random_state=0) and each k's silhouette score\n    k = 4\n    df[\"segment_id\"] = KMeans(n_clusters=k, n_init=10, random_state=0).fit_predict(X)\n    profile = df.groupby(\"segment_id\").agg(customers=(\"customer_id\", \"size\"),\n                                           days_since_last_order=(\"days_since_last_order\", \"median\"),\n                                           orders_12m=(\"orders_12m\", \"median\"), spend_12m=(\"spend_12m\", \"median\"),\n                                           churn=(\"churned_next_90d\", \"mean\")).sort_values(\"spend_12m\")\n    print(f\"Profile of the {k} segments (medians), from lowest to highest spend:\")\n    print(profile.round({\"churn\": 3, \"spend_12m\": 0}).to_string())\n\n\nif __name__ == \"__main__\":\n    con = connect()\n    drivers(con)\n    key_influencers()\n    anomalies(con)\n    segments()\n"
+          }
+        ],
+        "hints": [
+          "ORDER BY change LIMIT 5 puts the biggest falls first, because they're the most negative.",
+          "pd.concat([daily.shift(7 * k) for k in range(1, 5)], axis=1).median(axis=1) gives each day the median of the same weekday in the four weeks before.",
+          "The silhouette prefers two clusters here; four segments are more useful, which is a business judgement worth stating."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Understand AI's role in BI and the analytics spectrum, define KPIs and finish the KPI lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Assess feasibility and data readiness with the 4Vs, clean the extract and build its star schema.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Learn the machine learning BI needs: churn classification, precision and recall, and honest forecasting.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Implement natural language querying over a semantic layer, with guardrails for LLM-written SQL.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Apply diagnostic analytics and anomaly detection, then complete the capstone dashboard; review with the mock exam and the flashcards.",
+      "modules": [
+        5
+      ]
+    }
+  ],
+  "project": {
+    "title": "Diagnostic sales dashboard with NLP",
+    "minutes": 480,
+    "brief": "Northwind Living's leadership want to understand 2025: which regions grew, which missed their targets, and why. Build a diagnostic sales dashboard from the course's data (python make_bi_data.py) in the tool of your choice: Power BI Desktop, Tableau Public, Looker Studio, a spreadsheet, or Python with a charting library. It should show the headline KPIs against target and last year, regional trends, the drivers of the Q4 shortfall, the key influencers of customer churn, flagged anomalies with their explanations, and a simple forecast with its uncertainty. Add natural-language questions: your tool's own Q&A feature, set up with synonyms, or the course's NLQ engine extended with at least five new synonyms and four new test questions. Finish with a one-page brief for leadership: the three most important findings, the evidence for each, a recommended action, and your data-readiness assessment with its caveats.",
+    "deliverables": [
+      "The dashboard (screenshots or a link), with KPIs, trends, drivers, key influencers, anomalies and a forecast",
+      "The data model behind it: the star schema, the measure definitions, and the KPI definitions with formulas, grain and targets",
+      "The NLQ set-up: the synonyms you added, and a test set of at least eight questions with expected and actual answers",
+      "The diagnostic analysis: the decomposition of the Q4 shortfall, the key influencers of churn (and the confounder check), and the flagged anomalies with their explanations",
+      "A one-page brief for leadership: three findings, their evidence, recommended actions and the data-readiness caveats"
+    ],
+    "rubric": [
+      {
+        "name": "Data model and KPIs",
+        "points": 20,
+        "description": "A sound star schema, measures defined once, and KPIs defined precisely with targets and comparisons."
+      },
+      {
+        "name": "Diagnostic insight",
+        "points": 25,
+        "description": "The shortfall is traced to its cause with evidence, key influencers are ranked with a confounder check, and anomalies are explained, not just listed."
+      },
+      {
+        "name": "Natural-language questions",
+        "points": 15,
+        "description": "Names and synonyms chosen from how people ask, the test questions pass, and ambiguous questions get a clarification."
+      },
+      {
+        "name": "Dashboard design",
+        "points": 20,
+        "description": "Answers its users' questions at a glance: a clear hierarchy, comparisons, readable charts, forecasts with uncertainty and AI outputs labelled."
+      },
+      {
+        "name": "Brief and recommendations",
+        "points": 20,
+        "description": "Specific findings supported by the data, tied to decisions and honest about the data's limits."
+      }
+    ],
+    "submit": "Paste screenshots of (or a link to) the dashboard, your KPI and measure definitions, the NLQ synonyms and test results, the diagnostic analysis and your one-page brief.",
+    "files": [
+      {
+        "path": "make_bi_data.py",
+        "content": "\"\"\"Generate the course's data for Northwind Living, a fictional homeware retailer, into the folder bi_data/.\n\n    python make_bi_data.py\n\norders.csv        every order line from 2024-01-01 to 2025-12-31 (one product per order)\ncustomers.csv     a CRM snapshot of every customer on 2025-12-31, with whether they churned in the next 90 days\ntargets.csv       the monthly revenue target for each region in 2025\nraw_orders_2025q4.csv   an untidy extract of Q4 2025 orders, as it arrived from the source system\n\nOnly random.random() is used, because Python guarantees its sequence for a given seed across versions, so\neveryone gets exactly the same files and the same answers.\n\"\"\"\n\nimport csv\nimport math\nimport random\nfrom datetime import date, timedelta\nfrom pathlib import Path\n\nOUT = Path(\"bi_data\")\nrng = random.Random(2025)\n\nREGIONS = [\"North\", \"South\", \"East\", \"West\"]\nREGION_WEIGHTS = [0.30, 0.25, 0.25, 0.20]\nCHANNELS = [\"Online\", \"Store\", \"Marketplace\"]\nCATALOGUE = {\n    \"Kitchen\": [(\"Kettle\", 35.0), (\"Toaster\", 40.0), (\"Knife set\", 60.0), (\"Blender\", 75.0)],\n    \"Furniture\": [(\"Desk\", 180.0), (\"Office chair\", 150.0), (\"Bookshelf\", 120.0), (\"Side table\", 70.0)],\n    \"Lighting\": [(\"Desk lamp\", 30.0), (\"Floor lamp\", 85.0), (\"LED strip\", 20.0)],\n    \"Textiles\": [(\"Cushion\", 18.0), (\"Throw blanket\", 40.0), (\"Curtains\", 55.0), (\"Rug\", 95.0)],\n}\nCATEGORY_WEIGHTS = [0.35, 0.20, 0.20, 0.25]\nWEEKDAY = [0.90, 0.90, 0.95, 1.00, 1.10, 1.25, 1.20]  # Monday to Sunday\nMONTH = [0.85, 0.85, 0.95, 0.95, 1.00, 1.00, 0.95, 0.95, 1.00, 1.05, 1.25, 1.40]\nSTART, END = date(2024, 1, 1), date(2025, 12, 31)\nBLACK_FRIDAY, OUTAGE, WEST_PROBLEM = date(2025, 11, 28), date(2025, 6, 14), date(2025, 9, 1)\n\n\ndef pick(items, weights=None):\n    if weights is None:\n        return items[int(rng.random() * len(items))]\n    r, total = rng.random() * sum(weights), 0.0\n    for item, w in zip(items, weights):\n        total += w\n        if r < total:\n            return item\n    return items[-1]\n\n\ndef poisson(lam):\n    limit, k, p = math.exp(-lam), 0, 1.0\n    while True:\n        p *= rng.random()\n        if p <= limit:\n            return k\n        k += 1\n\n\ndef make_customers(n=3000):\n    customers = []\n    for i in range(1, n + 1):\n        signup = date(2022, 1, 1) + timedelta(days=int(rng.random() * (365 * 4)))\n        customers.append({\"customer_id\": f\"C{i:05d}\", \"region\": pick(REGIONS, REGION_WEIGHTS),\n                          \"segment\": pick([\"Consumer\", \"Business\"], [0.8, 0.2]),\n                          \"membership\": pick([\"Free\", \"Plus\"], [0.7, 0.3]), \"signup_date\": signup})\n    return customers\n\n\ndef make_orders(customers):\n    by_region = {r: [c for c in customers] for r in REGIONS}\n    for r in REGIONS:\n        by_region[r] = [c for c in customers if c[\"region\"] == r]\n    orders, n, day = [], 0, START\n    while day <= END:\n        years = (day - START).days / 365.0\n        expected = 32 * WEEKDAY[day.weekday()] * MONTH[day.month - 1] * (1 + 0.10 * years)\n        if day == BLACK_FRIDAY:\n            expected *= 3\n        for _ in range(poisson(expected)):\n            region = pick(REGIONS, REGION_WEIGHTS)\n            pool = [c for c in by_region[region] if c[\"signup_date\"] <= day] or by_region[region]\n            customer = pick(pool)\n            channel = pick(CHANNELS, [0.6, 0.25, 0.15] if customer[\"segment\"] == \"Business\" else [0.42, 0.43, 0.15])\n            if channel == \"Online\" and ((day == OUTAGE) or (region == \"West\" and day >= WEST_PROBLEM)):\n                if rng.random() < (0.95 if day == OUTAGE else 0.55):\n                    continue  # the order never happened: the site was down, or West's deliveries failed\n            category = pick(list(CATALOGUE), CATEGORY_WEIGHTS)\n            product, price = pick(CATALOGUE[category])\n            quantity = 1 + poisson(2.0 if customer[\"segment\"] == \"Business\" else 0.4)\n            discount = 0.3 if day == BLACK_FRIDAY and rng.random() < 0.8 else pick([0.0, 0.1, 0.2], [0.8, 0.15, 0.05])\n            n += 1\n            orders.append({\"order_id\": f\"O{n:06d}\", \"order_date\": day.isoformat(), \"customer_id\": customer[\"customer_id\"],\n                           \"region\": region, \"channel\": channel, \"category\": category, \"product\": product,\n                           \"quantity\": quantity, \"unit_price\": price, \"discount\": discount})\n        day += timedelta(days=1)\n    return orders\n\n\ndef crm_snapshot(customers, orders):\n    snapshot_day = END\n    stats = {c[\"customer_id\"]: {\"orders\": 0, \"spend\": 0.0, \"last\": None} for c in customers}\n    for o in orders:\n        d = date.fromisoformat(o[\"order_date\"])\n        s = stats[o[\"customer_id\"]]\n        if (snapshot_day - d).days < 365:\n            s[\"orders\"] += 1\n            s[\"spend\"] += o[\"quantity\"] * o[\"unit_price\"] * (1 - o[\"discount\"])\n        if s[\"last\"] is None or d > s[\"last\"]:\n            s[\"last\"] = d\n    rows = []\n    for c in customers:\n        s = stats[c[\"customer_id\"]]\n        days_since = (snapshot_day - s[\"last\"]).days if s[\"last\"] else (snapshot_day - c[\"signup_date\"]).days\n        tickets = poisson(0.6 + (0.5 if c[\"region\"] == \"West\" else 0.0))\n        delivery_issues = poisson(0.9 if c[\"region\"] == \"West\" else 0.15)\n        tenure = (snapshot_day.year - c[\"signup_date\"].year) * 12 + snapshot_day.month - c[\"signup_date\"].month\n        z = (-1.7 + 0.45 * tickets + 0.8 * delivery_issues + 0.006 * min(days_since, 365) - 0.09 * s[\"orders\"]\n             - 0.7 * (c[\"membership\"] == \"Plus\") - 0.01 * tenure)\n        churned = int(rng.random() < 1 / (1 + math.exp(-z)))\n        rows.append({\"customer_id\": c[\"customer_id\"], \"region\": c[\"region\"], \"segment\": c[\"segment\"],\n                     \"membership\": c[\"membership\"], \"signup_date\": c[\"signup_date\"].isoformat(),\n                     \"tenure_months\": tenure, \"orders_12m\": s[\"orders\"], \"spend_12m\": round(s[\"spend\"], 2),\n                     \"days_since_last_order\": days_since, \"support_tickets_90d\": tickets,\n                     \"delivery_issues_90d\": delivery_issues, \"churned_next_90d\": churned})\n    return rows\n\n\ndef targets(orders):\n    revenue_2024 = {}\n    for o in orders:\n        if o[\"order_date\"].startswith(\"2024\"):\n            key = (o[\"region\"], int(o[\"order_date\"][5:7]))\n            revenue_2024[key] = revenue_2024.get(key, 0.0) + o[\"quantity\"] * o[\"unit_price\"] * (1 - o[\"discount\"])\n    return [{\"region\": r, \"month\": f\"2025-{m:02d}\", \"revenue_target\": round(revenue_2024[(r, m)] * 1.10, -2)}\n            for r in REGIONS for m in range(1, 13)]\n\n\ndef untidy_extract(orders):\n    \"\"\"Q4 2025 as the source system exported it: duplicates, inconsistent labels, gaps and typos.\"\"\"\n    rows = [dict(o) for o in orders if o[\"order_date\"] >= \"2025-10-01\"]\n    for o in rows:\n        r = rng.random()\n        if r < 0.03:\n            o[\"region\"] = o[\"region\"].lower()\n        elif r < 0.05:\n            o[\"region\"] = o[\"region\"] + \" \"\n        elif r < 0.06:\n            o[\"region\"] = o[\"region\"][0] + \".\"\n        if rng.random() < 0.015:\n            o[\"customer_id\"] = \"\"\n        if rng.random() < 0.006:\n            o[\"quantity\"] = -o[\"quantity\"]  # returns booked as negative lines\n        if rng.random() < 0.005:\n            o[\"unit_price\"] = \"\"\n        if rng.random() < 0.003:\n            o[\"order_date\"] = \"2026\" + o[\"order_date\"][4:]  # year typed wrongly\n    duplicates = [dict(rows[int(rng.random() * len(rows))]) for _ in range(40)]  # part of a batch loaded twice\n    return rows + duplicates\n\n\ndef write(name, rows):\n    with open(OUT / name, \"w\", newline=\"\") as f:\n        writer = csv.DictWriter(f, fieldnames=list(rows[0]))\n        writer.writeheader()\n        writer.writerows(rows)\n\n\ndef main():\n    OUT.mkdir(exist_ok=True)\n    customers = make_customers()\n    orders = make_orders(customers)\n    write(\"orders.csv\", orders)\n    write(\"customers.csv\", crm_snapshot(customers, orders))\n    write(\"targets.csv\", targets(orders))\n    write(\"raw_orders_2025q4.csv\", untidy_extract(orders))\n    print(f\"Wrote {len(orders):,} orders, {len(customers):,} customers, targets and the Q4 2025 extract to {OUT}/\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+        "path": "bi_common.py",
+        "content": "\"\"\"Shared helpers for the labs: make the data if it's missing, open DuckDB, and print query results.\"\"\"\n\nimport os\nimport subprocess\nimport sys\n\nimport duckdb\n\n\ndef connect():\n    if not os.path.isdir(\"bi_data\"):\n        subprocess.run([sys.executable, \"make_bi_data.py\"], check=True)\n    con = duckdb.connect()\n    con.sql(\"CREATE VIEW sales AS SELECT *, quantity * unit_price * (1 - discount) AS revenue \"\n            \"FROM 'bi_data/orders.csv'\")\n    return con\n\n\ndef show(con, title, sql):\n    \"\"\"Run a query and print it as a plain table, numbers rounded, the same in every DuckDB version.\"\"\"\n    rel = con.sql(sql)\n    rows = rel.fetchall()\n    def fmt(v):\n        if isinstance(v, float):\n            if abs(v) < 1:\n                return f\"{v:.3f}\"\n            return f\"{v:,.2f}\" if abs(v) < 1000 else f\"{v:,.0f}\"\n        if isinstance(v, int):\n            return f\"{v:,}\" if abs(v) >= 10000 else str(v)\n        return str(v)\n    cells = [[fmt(v) for v in row] for row in rows]\n    widths = [max(len(c), *(len(r[i]) for r in cells)) for i, c in enumerate(rel.columns)]\n    print(f\"\\n{title}\")\n    print(\"  \".join(c.ljust(w) for c, w in zip(rel.columns, widths)))\n    for r in cells:\n        print(\"  \".join(v.rjust(w) if v[:1].isdigit() or v[:1] == \"-\" else v.ljust(w) for v, w in zip(r, widths)))\n    return rows\n"
+      }
+    ]
+  }
+}

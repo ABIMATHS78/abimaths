@@ -1,0 +1,1016 @@
+{
+  "slug": "ai-system-design-foundations",
+  "title": "Foundations of AI System Design",
+  "subtitle": "Scope a machine learning system and design its data, features, models, deployment and monitoring, with a design document that catches data leakage before it ships.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "hiroshi-yamada",
+    "wei-cheng-liu"
+  ],
+  "skills": [
+    "ML system design",
+    "Problem framing",
+    "Data management",
+    "Data versioning",
+    "Data leakage detection",
+    "Feature engineering",
+    "Model evaluation",
+    "Deployment strategy",
+    "Model monitoring",
+    "Design documents"
+  ],
+  "tools": [
+    "Python 3",
+    "pandas",
+    "scikit-learn",
+    "DuckDB",
+    "Parquet"
+  ],
+  "outcomes": [
+    "Turn a business problem into an ML problem statement with stakeholders, requirements, success metrics and a feasibility check",
+    "Design data collection, storage and versioning for an ML system, and handle missing data without leakage",
+    "Detect and fix target, preprocessing, temporal and group leakage in ML pipelines",
+    "Engineer, encode, scale and select features inside reproducible pipelines",
+    "Select, tune and evaluate models with validation that matches production and thresholds set by cost",
+    "Choose deployment and release strategies, and plan monitoring and retraining in a design document"
+  ],
+  "prerequisites": "Python and pandas basics, and supervised learning essentials: splitting data, fitting and scoring a scikit-learn model (Machine Learning Foundations with Python covers them; Data Analysis with Python and pandas helps). Install Python 3.10 or newer, then: pip install pandas scikit-learn duckdb joblib. The labs generate their own synthetic data.",
+  "description": "Most machine learning projects that fail in production don't fail because of the algorithm. They fail because the problem was framed loosely, the training data contained information the model would never see in real use, nobody decided how predictions would reach the people who act on them, or nobody noticed when the world changed. This course teaches the design work around the model: scoping a project with its stakeholders, requirements and success metrics; collecting, storing and versioning data; engineering features that exist at prediction time; selecting, tuning and evaluating models honestly; and deploying and monitoring them.\n\nYou'll work through one system end to end: a same-day delivery company that wants to warn customers before an order arrives late. You'll cost the trivial strategies and a rule baseline, build a versioned Parquet snapshot with DuckDB, catch three kinds of data leakage, compare models with time-aware cross-validation and set the warning threshold by cost, then package the model, batch-score a new week, run a shadow candidate and check for drift. Each lab adds sections to a design document, and the capstone asks you to design and prototype a new system, from ingestion to monitoring, on a fresh dataset with leaks of its own to find.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Project Scoping and Requirements",
+      "summary": "Turn a vague request into a machine learning problem worth solving: the decision it supports, its stakeholders and requirements, how success is measured and whether it's feasible, written into the first sections of a design document.",
+      "instructor": "hiroshi-yamada",
+      "lessons": [
+        {
+          "title": "From a business goal to an ML problem statement",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish a business objective from the objective a model optimises",
+            "Frame a prediction task by its decision, target, unit and prediction time",
+            "Decide when a rule or heuristic is a better answer than machine learning"
+          ],
+          "key_points": [
+            "A business objective is the outcome an organisation wants, such as fewer late deliveries; an ML objective is what a model optimises, such as the probability that an order will be late. A design has to show how improving the second moves the first.",
+            "Frame every task precisely: the decision the prediction supports, the target, the unit of prediction (one row per order, customer or day), the moment the prediction is made, and the data that exists at that moment.",
+            "The decision sets the task type: classification for yes-or-no actions, regression for quantities, ranking when the output is an ordered list, and forecasting when the target is a future value of a time series.",
+            "Machine learning earns its cost when the pattern is too complex for hand-written rules, changes over time, and there is enough labelled data to learn it. When a simple rule meets the need, ship the rule.",
+            "Measure the current process or a simple heuristic first. That baseline is the bar a model must clear, and every later metric is reported against it."
+          ]
+        },
+        {
+          "title": "Stakeholders, requirements and constraints",
+          "minutes": 12,
+          "objectives": [
+            "Identify the stakeholders of an ML system and what each needs from it",
+            "Write functional and non-functional requirements, including latency, throughput and freshness",
+            "Record constraints and conflicting needs as explicit decisions"
+          ],
+          "key_points": [
+            "Stakeholders include the people who act on predictions, the people affected by them, the owners of the data, the engineers who run the system, and legal, security and compliance reviewers. List what each needs and what each can block.",
+            "Functional requirements say what the system does, such as scoring every new order; non-functional requirements say how well: latency, throughput, availability, freshness of data and cost.",
+            "Latency and freshness decide the serving style early: a prediction needed while a customer waits calls for online serving, while predictions needed by tomorrow morning can come from a scheduled batch job.",
+            "Constraints come from data (what's collected and who owns it), law (privacy rules such as the GDPR), people (who labels and reviews) and operations (hardware, budget, cloud or on-premises).",
+            "Write conflicting needs down with the decision taken, such as accuracy against explainability or freshness against cost, so trade-offs aren't argued again every time the team changes."
+          ]
+        },
+        {
+          "title": "Success metrics and feasibility",
+          "minutes": 13,
+          "objectives": [
+            "Define success with a business metric, an offline model metric and guardrail metrics",
+            "Assess feasibility: data at prediction time, labels, signal, cost and failure modes"
+          ],
+          "key_points": [
+            "Use three layers of metrics: a business metric (cost of late deliveries per week), an offline model metric that tracks it (recall at an acceptable precision), and guardrails that mustn't get worse (latency, complaint rate, fairness between groups).",
+            "Choose the model metric from the cost of each kind of error. When a missed positive costs far more than a false alarm, judge recall at a workable precision or expected cost, not accuracy, which looks high on imbalanced data.",
+            "Expected cost turns a confusion matrix into money or effort: multiply each outcome's count by its cost. Compare it with the trivial strategies, such as acting on every case or on none.",
+            "Feasibility asks four questions: do the inputs exist at prediction time, do labels exist or can they be collected, is there signal (does a quick baseline beat chance), and is the value worth building and running the system?",
+            "Plan for failure from the start: what happens when the model is wrong, slow, unavailable or out of date, and which fallback rule or human review takes over."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Frame the problem and set the baselines",
+        "tool": "Python 3 and pandas",
+        "minutes": 70,
+        "goal": "A delivery company wants to warn customers before an order arrives late. Size the problem from 3,000 past orders, cost the trivial strategies and a rule-based baseline, and write sections 1 to 5 of the system's design document.",
+        "setup": [
+          "Python 3.10 or newer with pandas installed (pip install pandas)",
+          "Download the lab files into a new folder: make_deliveries.py, baseline.py and design_doc_template.md"
+        ],
+        "steps": [
+          {
+            "do": "Generate the course data in the lab folder. It's the same every time: the generator uses a fixed seed.",
+            "code": "python make_deliveries.py",
+            "lang": "bash",
+            "see": "deliveries.csv: 3000 orders from 2025-03-03 to 2025-04-27, 27.3% late"
+          },
+          {
+            "do": "Open baseline.py. Warning a customer costs 2 units (a message and a small voucher); a late order nobody warned about costs 10 (refund, complaint handling, lost goodwill). Complete cost_per_1000() so it returns the expected cost per 1,000 orders."
+          },
+          {
+            "do": "In main(), print the number of orders, how many were late and the base rate.",
+            "see": "Orders: 3000  Late: 820  Base rate: 0.273"
+          },
+          {
+            "do": "Report the two trivial strategies: warn nobody, and warn everyone.",
+            "see": "Warning nobody costs 2733 per 1,000 orders; warning everyone costs 2000, so even the crude strategy of always warning beats doing nothing."
+          },
+          {
+            "do": "Write the rule baseline: warn when distance_km is 8 or more, the weather is storm, or the order was placed between 12:00-13:59 or 18:00-20:59. Report it.",
+            "code": "hour = df[\"order_time\"].dt.hour\nrush = hour.between(12, 13) | hour.between(18, 20)\nrule = (df[\"distance_km\"] >= 8) | (df[\"weather\"] == \"storm\") | rush",
+            "lang": "python",
+            "see": "rule           warned  68.6%  precision 0.35  recall 0.89  cost per 1,000 orders    1679"
+          },
+          {
+            "do": "Try one rule of your own and report it as \"my rule\". Can you beat 1679 with a rule that warns fewer customers?"
+          },
+          {
+            "do": "Copy design_doc_template.md to design_doc.md and fill in sections 1 to 5 for the late-delivery system: the decision, target, unit and prediction time; at least four stakeholders; the requirements; three layers of metrics; and feasibility, including what happens when the model is unavailable."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The base rate is computed: 820 of the 3,000 orders were late.",
+            "look_for": [
+              "Base rate: 0.273",
+              "Late: 820"
+            ]
+          },
+          {
+            "text": "Both trivial strategies are costed: 2733 per 1,000 orders for warning nobody, 2000 for warning everyone.",
+            "look_for": [
+              "2733",
+              "2000"
+            ]
+          },
+          {
+            "text": "The rule baseline gives precision 0.35, recall 0.89 and a cost of 1679 per 1,000 orders.",
+            "look_for": [
+              "precision 0.35",
+              "recall 0.89",
+              "1679"
+            ]
+          },
+          {
+            "text": "Section 1 names the decision, the target, the unit of prediction and the prediction time, with the rule as the baseline to beat.",
+            "look_for": [
+              "Decision the prediction supports:",
+              "Prediction time"
+            ]
+          },
+          {
+            "text": "Section 4 has a business metric, a model metric justified by the costs of errors, and at least one guardrail.",
+            "look_for": [
+              "Business metric:",
+              "Model metric",
+              "Guardrail"
+            ]
+          },
+          {
+            "text": "Section 5 covers data at prediction time, labels, signal, value and a fallback for failures.",
+            "look_for": [
+              "Feasibility",
+              "Failure modes"
+            ]
+          }
+        ],
+        "submit": "Paste the output of baseline.py (including your own rule) and sections 1 to 5 of design_doc.md.",
+        "files": [
+          {
+            "path": "make_deliveries.py",
+            "content": "\"\"\"Write the course's synthetic delivery data: deliveries.csv (8 weeks of orders) and new_orders.csv (week 9).\n\nThe data is generated with a fixed seed (NumPy's RandomState, whose stream never changes between versions),\nso everyone who runs this file gets exactly the same rows.  Run:  python make_deliveries.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nZONES = {\"Z1\": 2.5, \"Z2\": 3.5, \"Z3\": 4.5, \"Z4\": 5.5, \"Z5\": 6.5, \"Z6\": 8.0, \"Z7\": 9.5, \"Z8\": 11.0}\n\n\ndef make_orders(rng, start, days, n, drift=False):\n    day = rng.randint(0, days, n)\n    hour = rng.choice(np.arange(10, 23), n, p=np.array([4, 7, 10, 10, 6, 4, 4, 6, 10, 11, 9, 6, 13]) / 100)\n    minute = rng.randint(0, 60, n)\n    order_time = pd.Timestamp(start) + pd.to_timedelta(day, unit=\"D\") + pd.to_timedelta(hour, unit=\"h\") \\\n        + pd.to_timedelta(minute, unit=\"m\")\n    zone = rng.choice(list(ZONES), n, p=[0.16, 0.16, 0.14, 0.14, 0.12, 0.11, 0.09, 0.08])\n    base = np.array([ZONES[z] for z in zone])\n    if drift:                                   # week 9: a new suburb opens and orders travel further\n        base = base * 1.35\n    distance = np.round(np.clip(base * rng.lognormal(0, 0.35, n), 0.4, 25), 2)\n    items = rng.randint(1, 13, n)\n    rain_p = 0.45 if drift else 0.25\n    day_weather = rng.choice([\"clear\", \"rain\", \"storm\"], days, p=[0.95 - rain_p, rain_p, 0.05])\n    weather = day_weather[day]\n    driver_num = rng.randint(1, 81, n)\n    driver_id = np.array([f\"D{d:03d}\" for d in driver_num])\n    skill = np.random.RandomState(7).normal(0, 4, 81)[driver_num]   # each driver's typical delay, in minutes\n    new_driver = driver_num > 68                                     # 12 newest drivers have no rating yet\n    rating = np.round(np.clip(4.6 - skill / 10 + rng.normal(0, 0.15, n), 3.0, 5.0), 1)\n    rating = np.where(new_driver, np.nan, rating)\n    promised = np.where(distance < 4, 30, np.where(distance < 9, 45, 60))\n    rush = ((hour >= 12) & (hour <= 13)) | ((hour >= 18) & (hour <= 20))\n    actual = (4 + distance * 3.4 + rush * 7 + (weather == \"rain\") * 6 + (weather == \"storm\") * 14\n              + items * 0.6 + new_driver * 6 + skill + rng.normal(0, 7, n))\n    actual = np.round(np.clip(actual, 6, None)).astype(int)\n    late = (actual > promised).astype(int)\n    complaint = (rng.rand(n) < np.where(late == 1, 0.45, 0.04)).astype(int)\n    df = pd.DataFrame({\n        \"order_time\": order_time, \"zone\": zone, \"distance_km\": distance, \"items\": items, \"weather\": weather,\n        \"driver_id\": driver_id, \"driver_rating\": rating, \"promised_minutes\": promised,\n        \"actual_minutes\": actual, \"customer_complaint\": complaint, \"late\": late,\n    }).sort_values(\"order_time\", kind=\"stable\").reset_index(drop=True)\n    return df\n\n\nif __name__ == \"__main__\":\n    rng = np.random.RandomState(42)\n    orders = make_orders(rng, \"2025-03-03\", 56, 3000)\n    orders.insert(0, \"order_id\", np.arange(100001, 100001 + len(orders)))\n    orders.to_csv(\"deliveries.csv\", index=False)\n    new = make_orders(rng, \"2025-04-28\", 7, 500, drift=True)\n    new.insert(0, \"order_id\", np.arange(200001, 200001 + len(new)))\n    new.drop(columns=[\"actual_minutes\", \"customer_complaint\", \"late\"]).to_csv(\"new_orders.csv\", index=False)\n    print(f\"deliveries.csv: {len(orders)} orders from {orders.order_time.min():%Y-%m-%d} \"\n          f\"to {orders.order_time.max():%Y-%m-%d}, {orders.late.mean():.1%} late\")\n    print(f\"new_orders.csv: {len(new)} orders from {new.order_time.min():%Y-%m-%d} to {new.order_time.max():%Y-%m-%d}\")\n"
+          },
+          {
+            "path": "baseline.py",
+            "content": "\"\"\"Lab 1: size the problem and set the baselines a model has to beat.\"\"\"\n\nimport pandas as pd\n\nWARN_COST = 2      # cost units: an SMS warning plus a small voucher, for every order warned about\nMISSED_COST = 10   # cost units: a late order nobody warned about (refund, complaint handling, lost goodwill)\n\n\ndef cost_per_1000(warned, late):\n    \"\"\"Expected cost per 1,000 orders when the customers in `warned` are warned (both are boolean Series).\"\"\"\n    # TODO: every warned order costs WARN_COST; every late order that was NOT warned costs MISSED_COST.\n    #       Add them up and scale to 1,000 orders: 1000 * cost / len(late)\n    return 0.0\n\n\ndef report(name, warned, late):\n    tp = (warned & late).sum()\n    precision = tp / warned.sum() if warned.sum() else 0.0\n    recall = tp / late.sum()\n    print(f\"{name:<14} warned {warned.mean():6.1%}  precision {precision:.2f}  recall {recall:.2f}  \"\n          f\"cost per 1,000 orders {cost_per_1000(warned, late):7.0f}\")\n\n\ndef main():\n    df = pd.read_csv(\"deliveries.csv\", parse_dates=[\"order_time\"])\n    late = df[\"late\"] == 1\n    # TODO: print the number of orders, the number late, and the base rate, like:\n    #       Orders: 3000  Late: ...  Base rate: 0.xxx\n\n    # TODO: the rule baseline: warn when distance_km >= 8, OR the weather is \"storm\", OR the order was\n    #       placed in a rush hour (12:00-13:59 or 18:00-20:59). Hint: df[\"order_time\"].dt.hour.between(12, 13)\n\n    # TODO: call report() for three baselines: \"warn nobody\" (all False), \"warn everyone\" (all True), and \"rule\".\n    #       pd.Series(False, index=df.index) makes a Series of False values.\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "design_doc_template.md",
+            "content": "# Design document: <name of the system>\n\nStatus: draft | in review | approved      Author(s):      Last updated:\n\n## 1. Problem statement\n- Business objective:\n- Decision the prediction supports:\n- Prediction target:\n- Unit of prediction (one row per ...):\n- Prediction time (when the prediction is made, and what is known then):\n- Current process and baseline to beat:\n\n## 2. Stakeholders\n| Stakeholder | What they need from the system | What they can block or veto |\n|---|---|---|\n\n## 3. Requirements and constraints\n- Functional requirements:\n- Non-functional requirements (latency, throughput, freshness, availability, cost):\n- Constraints (data, privacy and law, people, hardware and budget):\n- Conflicting needs, and the decision taken:\n\n## 4. Success metrics\n- Business metric:\n- Model metric (offline), and why it matches the cost of errors:\n- Guardrail metrics (must not get worse):\n\n## 5. Feasibility and risks\n- Data available at prediction time:\n- Labels (where they come from, how late they arrive):\n- Signal (does a quick baseline beat chance?):\n- Cost and value:\n- Failure modes, their cost, and the fallback:\n\n## 6. Data\n- Sources and collection:\n- Storage and formats:\n- Versioning (snapshot, hash or checksum, manifest):\n- Missing data and how it is handled:\n\n## 7. Features\n| Feature | Source | Known at | Transformation | Leakage risk |\n|---|---|---|---|---|\n\n## 8. Models and evaluation\n- Candidates and baseline:\n- Validation scheme (and why it matches production):\n- Tuning:\n- Metrics, threshold and expected cost:\n\n## 9. Deployment\n- Strategy (batch, online or edge) and why:\n- Serving and packaging:\n- Rollout (shadow, canary, A/B) and rollback:\n- Fallback when the model fails:\n\n## 10. Monitoring and retraining\n| Signal | Threshold | Owner | Action |\n|---|---|---|---|\n- Retraining triggers:\n\n## 11. Decision log\n| Date | Decision | Alternatives considered | Reason |\n|---|---|---|---|\n"
+          }
+        ],
+        "hints": [
+          "cost = WARN_COST * warned.sum() + MISSED_COST * (late & ~warned).sum(); ~ means not for a boolean Series.",
+          "A late order arrives after the promised time, so its label is known only once it's delivered: that is why the prediction time is when the order is placed, and why actual_minutes can't be a feature."
+        ]
+      }
+    },
+    {
+      "title": "Data Engineering and Management",
+      "summary": "Plan where training data comes from and how it is labelled, stored, versioned and cleaned, so any model can be traced to the exact data it learnt from.",
+      "instructor": "hiroshi-yamada",
+      "lessons": [
+        {
+          "title": "Collecting data and labels",
+          "minutes": 12,
+          "objectives": [
+            "Compare ways of collecting training data and labels",
+            "Log features at prediction time so they can be joined to outcomes later",
+            "Spot sampling bias and label quality problems early"
+          ],
+          "key_points": [
+            "Training data comes from logs of the current process, from instrumenting a product to record events, from manual labelling, from partners, or from synthetic data; each differs in cost, freshness and bias.",
+            "Labels are explicit (a person marks a ticket as urgent) or implicit, observed later from outcomes (an order arrived late). Implicit labels arrive with a delay, which sets how soon a model can be evaluated and retrained.",
+            "Log the features exactly as they were at prediction time, with a request or entity ID and a timestamp, so they can be joined to the outcome later. Rebuilding them afterwards from current tables quietly mixes in later values.",
+            "Sampling bias appears when the data doesn't represent the cases the model will meet: only cities already served, or only approved loans, because rejected applicants never show their outcome.",
+            "Check label quality before modelling: measure agreement between labellers on a sample, write labelling guidelines with examples, and store the guideline version with each label."
+          ]
+        },
+        {
+          "title": "Storing data for ML: databases, warehouses, lakes and Parquet",
+          "minutes": 13,
+          "objectives": [
+            "Choose between operational databases, warehouses and data lakes for ML workloads",
+            "Explain why columnar formats such as Parquet suit training data",
+            "Use partitioning to keep large scans cheap"
+          ],
+          "key_points": [
+            "Operational (OLTP) databases serve an application one row at a time; analytical stores scan millions of rows and a few columns, which is how training sets are built. Train from an analytical copy, never by hammering the production database.",
+            "A data warehouse holds structured, modelled tables queried with SQL; a data lake holds files of any kind in cheap object storage; a lakehouse adds transactional table formats to the lake, combining the two.",
+            "Parquet stores data by column, with types, compression and per-column statistics, so a query that needs 3 of 50 columns reads only those 3, and files are usually several times smaller than the same data as CSV.",
+            "Partition big tables by a column most queries filter on, usually a date, so a job reading one week skips the other files. Thousands of tiny partitions slow everything down, so choose the grain with care.",
+            "DuckDB runs SQL in-process over CSV and Parquet files on a laptop, which makes it a practical way to prototype the queries that will later build training sets in a warehouse or lakehouse."
+          ],
+          "walkthrough": {
+            "tool": "Python and DuckDB",
+            "title": "Convert a CSV to Parquet and see column pruning",
+            "steps": [
+              {
+                "do": "In a folder with deliveries.csv (from make_deliveries.py), start Python and connect to an in-memory DuckDB database.",
+                "code": "import duckdb, os\ncon = duckdb.connect()",
+                "lang": "python"
+              },
+              {
+                "do": "Write the CSV out as Parquet with a single COPY statement.",
+                "code": "con.sql(\"COPY (SELECT * FROM 'deliveries.csv') TO 'deliveries.parquet' (FORMAT parquet)\")",
+                "lang": "python"
+              },
+              {
+                "do": "Compare the sizes of the two files.",
+                "code": "os.path.getsize('deliveries.csv'), os.path.getsize('deliveries.parquet')",
+                "lang": "python",
+                "see": "About 185,000 bytes of CSV against under 60,000 of Parquet: about a third of the size."
+              },
+              {
+                "do": "Check the types Parquet stored with the data.",
+                "code": "con.sql(\"DESCRIBE SELECT * FROM 'deliveries.parquet'\")",
+                "lang": "python",
+                "see": "order_time is a TIMESTAMP and distance_km a DOUBLE: types travel with a Parquet file, unlike a CSV, where every reader guesses them again."
+              },
+              {
+                "do": "Ask for a plan of a query that needs two columns.",
+                "code": "print(con.sql(\"EXPLAIN SELECT zone, avg(late) FROM 'deliveries.parquet' GROUP BY zone\").fetchall()[0][1])",
+                "lang": "python",
+                "see": "The Parquet scan at the bottom of the plan lists only zone and late as its projections: the other columns are never read."
+              },
+              {
+                "do": "Run the query itself.",
+                "code": "con.sql(\"SELECT zone, round(avg(late), 3) AS late_rate FROM 'deliveries.parquet' GROUP BY zone ORDER BY zone\")",
+                "lang": "python",
+                "see": "Eight zones; Z7 and Z8, the furthest out, have the highest late rates (0.363 and 0.384)."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Versioning data and handling missing values",
+          "minutes": 14,
+          "objectives": [
+            "Version datasets so any model can be traced to the exact data it was trained on",
+            "Choose a strategy for missing values from their cause",
+            "Impute without leaking information from validation or test data"
+          ],
+          "key_points": [
+            "Data versioning means a model can name the exact data it learnt from: write immutable snapshots (new files, never edits), record a hash of the inputs and a checksum of the content, and keep a manifest with the model.",
+            "Hash the bytes of source files, but fingerprint Parquet snapshots by their content (row count and column sums), because writers of different versions produce different bytes for the same rows.",
+            "Tools such as DVC and lakeFS, and table formats with time travel such as Delta Lake and Apache Iceberg, version data at scale; the idea is the same as a hash in a manifest.",
+            "Missing values have causes: completely at random, related to another observed value, or related to the missing value itself, such as new drivers having no rating yet. The cause decides whether simple imputation is safe.",
+            "Options include dropping rows (only when few and random), imputing a statistic such as the median, imputing from other features, and adding a missing-indicator column so the model can learn from the fact that a value was absent.",
+            "Fit imputers on the training data only, then apply the same fitted imputer to validation, test and production data; computing the median over all the data leaks information from the test set."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a versioned training snapshot with DuckDB",
+        "tool": "Python 3 and DuckDB",
+        "minutes": 75,
+        "goal": "Load the raw orders into DuckDB, check them, write an immutable, partitioned Parquet snapshot of the training weeks with a manifest, and find out whether the missing driver ratings are missing at random.",
+        "setup": [
+          "Python 3.10 or newer with duckdb installed (pip install duckdb)",
+          "Download the lab files into a new folder: make_deliveries.py and snapshot.py"
+        ],
+        "steps": [
+          {
+            "do": "Generate the course data in the lab folder. It's the same every time: the generator uses a fixed seed.",
+            "code": "python make_deliveries.py",
+            "lang": "bash",
+            "see": "deliveries.csv: 3000 orders from 2025-03-03 to 2025-04-27, 27.3% late"
+          },
+          {
+            "do": "Run snapshot.py once before changing anything: load_and_check() already loads the CSV into a DuckDB table and checks for duplicates.",
+            "code": "python snapshot.py",
+            "lang": "bash",
+            "see": "Rows in raw table: 3000  Duplicate order ids: 0  From 2025-03-03 to 2025-04-27"
+          },
+          {
+            "do": "Finish load_and_check(): count the missing values in three columns with one query.",
+            "code": "SELECT count(*) FILTER (WHERE driver_rating IS NULL) AS driver_rating,\n       count(*) FILTER (WHERE weather IS NULL)       AS weather,\n       count(*) FILTER (WHERE distance_km IS NULL)   AS distance_km\nFROM orders_raw",
+            "lang": "sql",
+            "see": "Missing values: driver_rating 434, weather 0, distance_km 0"
+          },
+          {
+            "do": "In write_snapshot(), write the training weeks (orders before 2025-04-14) to snapshots/v1 as Parquet, partitioned by ISO week.",
+            "code": "COPY (<query>) TO 'snapshots/v1' (FORMAT parquet, PARTITION_BY (order_week))",
+            "lang": "sql"
+          },
+          {
+            "do": "Read the snapshot back, compute its row count and a content checksum, write manifest.json and print a summary.",
+            "see": "Snapshot v1: 2262 rows in 6 partitions (order_week=10 to order_week=15) and a content checksum of {'sum_order_id': 228759453, 'sum_distance_km': 13551.07}."
+          },
+          {
+            "do": "Make write_snapshot() refuse to overwrite an existing version. The script calls it twice.",
+            "see": "The second call prints that v1 already exists and that a new version must be created instead."
+          },
+          {
+            "do": "In missing_data(), compare the late rate of orders with and without a driver rating, and print the median rating of the snapshot.",
+            "see": "Late rate 0.242 with a rating and 0.522 without: ratings are missing for new drivers, who are late more often, so the gap carries signal. The median is 4.6."
+          },
+          {
+            "do": "Open snapshots/v1/manifest.json and note what each field would let a colleague check a year from now. Then add a short Data section (section 6) to your design document."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The raw data is checked: 3,000 rows, no duplicate IDs, and 434 missing driver ratings.",
+            "look_for": [
+              "Duplicate order ids: 0",
+              "driver_rating 434"
+            ]
+          },
+          {
+            "text": "The snapshot holds the 2,262 training orders in 6 weekly partitions.",
+            "look_for": [
+              "2262 rows in 6 partitions"
+            ]
+          },
+          {
+            "text": "The manifest records the source hash, the query, the row count and a content checksum.",
+            "look_for": [
+              "source_sha256",
+              "228759453",
+              "13551.07"
+            ]
+          },
+          {
+            "text": "An existing snapshot is never overwritten.",
+            "look_for": [
+              "already exists"
+            ]
+          },
+          {
+            "text": "Missingness is analysed: 0.242 late with a rating, 0.522 without, so the data is not missing at random and an indicator column is justified.",
+            "look_for": [
+              "0.242",
+              "0.522",
+              "4.6"
+            ]
+          }
+        ],
+        "submit": "Paste your snapshot.py, everything it printed, your manifest.json and your design document's section 6, including how you'll handle missing driver ratings and why.",
+        "files": [
+          {
+            "path": "make_deliveries.py",
+            "content": "\"\"\"Write the course's synthetic delivery data: deliveries.csv (8 weeks of orders) and new_orders.csv (week 9).\n\nThe data is generated with a fixed seed (NumPy's RandomState, whose stream never changes between versions),\nso everyone who runs this file gets exactly the same rows.  Run:  python make_deliveries.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nZONES = {\"Z1\": 2.5, \"Z2\": 3.5, \"Z3\": 4.5, \"Z4\": 5.5, \"Z5\": 6.5, \"Z6\": 8.0, \"Z7\": 9.5, \"Z8\": 11.0}\n\n\ndef make_orders(rng, start, days, n, drift=False):\n    day = rng.randint(0, days, n)\n    hour = rng.choice(np.arange(10, 23), n, p=np.array([4, 7, 10, 10, 6, 4, 4, 6, 10, 11, 9, 6, 13]) / 100)\n    minute = rng.randint(0, 60, n)\n    order_time = pd.Timestamp(start) + pd.to_timedelta(day, unit=\"D\") + pd.to_timedelta(hour, unit=\"h\") \\\n        + pd.to_timedelta(minute, unit=\"m\")\n    zone = rng.choice(list(ZONES), n, p=[0.16, 0.16, 0.14, 0.14, 0.12, 0.11, 0.09, 0.08])\n    base = np.array([ZONES[z] for z in zone])\n    if drift:                                   # week 9: a new suburb opens and orders travel further\n        base = base * 1.35\n    distance = np.round(np.clip(base * rng.lognormal(0, 0.35, n), 0.4, 25), 2)\n    items = rng.randint(1, 13, n)\n    rain_p = 0.45 if drift else 0.25\n    day_weather = rng.choice([\"clear\", \"rain\", \"storm\"], days, p=[0.95 - rain_p, rain_p, 0.05])\n    weather = day_weather[day]\n    driver_num = rng.randint(1, 81, n)\n    driver_id = np.array([f\"D{d:03d}\" for d in driver_num])\n    skill = np.random.RandomState(7).normal(0, 4, 81)[driver_num]   # each driver's typical delay, in minutes\n    new_driver = driver_num > 68                                     # 12 newest drivers have no rating yet\n    rating = np.round(np.clip(4.6 - skill / 10 + rng.normal(0, 0.15, n), 3.0, 5.0), 1)\n    rating = np.where(new_driver, np.nan, rating)\n    promised = np.where(distance < 4, 30, np.where(distance < 9, 45, 60))\n    rush = ((hour >= 12) & (hour <= 13)) | ((hour >= 18) & (hour <= 20))\n    actual = (4 + distance * 3.4 + rush * 7 + (weather == \"rain\") * 6 + (weather == \"storm\") * 14\n              + items * 0.6 + new_driver * 6 + skill + rng.normal(0, 7, n))\n    actual = np.round(np.clip(actual, 6, None)).astype(int)\n    late = (actual > promised).astype(int)\n    complaint = (rng.rand(n) < np.where(late == 1, 0.45, 0.04)).astype(int)\n    df = pd.DataFrame({\n        \"order_time\": order_time, \"zone\": zone, \"distance_km\": distance, \"items\": items, \"weather\": weather,\n        \"driver_id\": driver_id, \"driver_rating\": rating, \"promised_minutes\": promised,\n        \"actual_minutes\": actual, \"customer_complaint\": complaint, \"late\": late,\n    }).sort_values(\"order_time\", kind=\"stable\").reset_index(drop=True)\n    return df\n\n\nif __name__ == \"__main__\":\n    rng = np.random.RandomState(42)\n    orders = make_orders(rng, \"2025-03-03\", 56, 3000)\n    orders.insert(0, \"order_id\", np.arange(100001, 100001 + len(orders)))\n    orders.to_csv(\"deliveries.csv\", index=False)\n    new = make_orders(rng, \"2025-04-28\", 7, 500, drift=True)\n    new.insert(0, \"order_id\", np.arange(200001, 200001 + len(new)))\n    new.drop(columns=[\"actual_minutes\", \"customer_complaint\", \"late\"]).to_csv(\"new_orders.csv\", index=False)\n    print(f\"deliveries.csv: {len(orders)} orders from {orders.order_time.min():%Y-%m-%d} \"\n          f\"to {orders.order_time.max():%Y-%m-%d}, {orders.late.mean():.1%} late\")\n    print(f\"new_orders.csv: {len(new)} orders from {new.order_time.min():%Y-%m-%d} to {new.order_time.max():%Y-%m-%d}\")\n"
+          },
+          {
+            "path": "snapshot.py",
+            "content": "\"\"\"Lab 2: load raw orders into DuckDB, check them, write a versioned training snapshot and study missing data.\"\"\"\n\nimport hashlib\nimport json\nfrom pathlib import Path\n\nimport duckdb\n\nSOURCE = Path(\"deliveries.csv\")\nSNAPSHOTS = Path(\"snapshots\")\nCUTOFF = \"2025-04-14\"          # training data: orders before this date (weeks 1-6)\n\n\ndef sha256(path):\n    return hashlib.sha256(path.read_bytes()).hexdigest()\n\n\ndef load_and_check(con):\n    con.execute(f\"CREATE OR REPLACE TABLE orders_raw AS SELECT * FROM read_csv('{SOURCE}', header=true)\")\n    rows = con.execute(\"SELECT count(*) FROM orders_raw\").fetchone()[0]\n    dupes = con.execute(\"SELECT count(*) - count(DISTINCT order_id) FROM orders_raw\").fetchone()[0]\n    first, last = con.execute(\"SELECT min(order_time)::DATE, max(order_time)::DATE FROM orders_raw\").fetchone()\n    print(f\"Rows in raw table: {rows}  Duplicate order ids: {dupes}  From {first} to {last}\")\n    # TODO: count the missing values in driver_rating, weather and distance_km with one query\n    #       (count(*) FILTER (WHERE driver_rating IS NULL) ...) and print them:\n    #       Missing values: driver_rating ..., weather ..., distance_km ...\n\n\ndef write_snapshot(con, version):\n    target = SNAPSHOTS / version\n    # TODO: if target already exists, print a message and return: a snapshot is never overwritten\n    SNAPSHOTS.mkdir(exist_ok=True)\n    query = f\"\"\"SELECT *, week(order_time) AS order_week\n                FROM orders_raw WHERE order_time < TIMESTAMP '{CUTOFF}'\"\"\"\n    # TODO: write the query's result to target as Parquet, partitioned by order_week:\n    #       COPY (<query>) TO '<target>' (FORMAT parquet, PARTITION_BY (order_week))\n    snap = f\"read_parquet('{target}/*/*.parquet', hive_partitioning=true)\"\n    # TODO: read the snapshot back and compute its row count, sum(order_id) and round(sum(distance_km), 2):\n    #       a content checksum that doesn't depend on how the Parquet bytes were written\n    # TODO: write target / \"manifest.json\" with: snapshot, source_file, source_sha256 (use sha256()),\n    #       the query (\" \".join(query.split())), rows, content_checksum and the list of partition folders\n    # TODO: print \"Snapshot v1: <rows> rows in <n> partitions (...)\" and the first 12 characters of the hash\n\n\ndef missing_data(con, version):\n    snap = f\"read_parquet('{SNAPSHOTS / version}/*/*.parquet', hive_partitioning=true)\"\n    # TODO: for orders with and without a driver_rating, print the number of orders and the late rate\n    #       (GROUP BY driver_rating IS NULL), then print the median driver_rating of the snapshot\n\n\nif __name__ == \"__main__\":\n    con = duckdb.connect()\n    load_and_check(con)\n    write_snapshot(con, \"v1\")\n    write_snapshot(con, \"v1\")      # the second call must refuse to overwrite v1\n    missing_data(con, \"v1\")\n"
+          }
+        ],
+        "hints": [
+          "Python formats a multi-line SQL string in an f-string happily: f\"COPY ({query}) TO '{target}' (FORMAT parquet, PARTITION_BY (order_week))\".",
+          "The partition folders are the directories inside snapshots/v1: [p.name for p in target.iterdir() if p.is_dir()].",
+          "GROUP BY driver_rating IS NULL groups the rows into rated and unrated orders."
+        ]
+      }
+    },
+    {
+      "title": "Advanced Feature Engineering",
+      "summary": "Build features that carry signal and exist at prediction time: extraction from raw records, leakage detection, categorical encodings, scaling and selection, all fitted inside pipelines.",
+      "instructor": "wei-cheng-liu",
+      "lessons": [
+        {
+          "title": "Extracting features from raw data",
+          "minutes": 12,
+          "objectives": [
+            "Extract features from timestamps, transactions and text",
+            "Build time-window aggregates that use only past data",
+            "Explain training-serving skew and how shared feature code prevents it"
+          ],
+          "key_points": [
+            "Feature extraction turns raw records into numbers a model can use: parts of a date and time since an event from timestamps, counts and ratios from transactions, lengths and keyword flags from text.",
+            "Aggregates over a time window (orders in the last 7 days, average basket over 30 days) are often the strongest features, and each must be computed only from data before the prediction time.",
+            "Encode domain knowledge directly: a rush-hour flag lets a linear model capture a peak that a raw hour-of-day number can't, because the effect isn't a straight line in the hour.",
+            "Cyclical values such as hour of day or month can be encoded with sine and cosine so 23:00 and 00:00 end up close together; whether that helps depends on the shape of the real effect.",
+            "Training-serving skew happens when a feature is computed one way for training and another way in production. Define each feature once, in shared code or a feature store, and use it in both places."
+          ]
+        },
+        {
+          "title": "Data leakage: how it happens and how to catch it",
+          "minutes": 14,
+          "objectives": [
+            "Name the main kinds of data leakage with an example of each",
+            "Detect leakage with an availability audit, a single-feature screen and a time-based split"
+          ],
+          "key_points": [
+            "Data leakage is information in training that won't exist when the model is used. It inflates offline scores, and the model then disappoints in production.",
+            "Target leakage: a feature recorded after, or because of, the outcome, such as the actual delivery minutes or a complaint flag when predicting lateness.",
+            "Preprocessing leakage: fitting scalers, imputers, encoders or feature selection on all the data before splitting lets test rows shape training. Put them in a Pipeline so each is fitted on training data only.",
+            "Temporal leakage: a random split of time-ordered data trains on the future. Split by time, and compute history features such as a driver's late rate only from earlier rows.",
+            "Group leakage: rows from the same customer or patient in both training and test let a model memorise individuals; split by entity, for example with GroupKFold.",
+            "Catch leaks with an availability audit (when is each column known?), a screen for single features with suspiciously high scores, and an honest time-based evaluation. A score that looks too good usually is."
+          ]
+        },
+        {
+          "title": "Encoding categories and scaling numbers",
+          "minutes": 12,
+          "objectives": [
+            "Choose an encoding for low- and high-cardinality categorical features",
+            "Decide when scaling matters and which scaler to use"
+          ],
+          "key_points": [
+            "One-hot encoding makes a 0-or-1 column per category and suits a handful of categories; set handle_unknown=\"ignore\" so a category first seen in production doesn't break the model.",
+            "Ordinal encoding suits categories with a real order (small, medium, large). For unordered categories it invents an order that a linear model will take literally.",
+            "High-cardinality categories, such as thousands of postcodes or product IDs, need another approach: group rare levels into \"other\", hash them into a fixed number of buckets, target-encode them, or learn an embedding.",
+            "Target encoding replaces a category with the average target for it, so it must be fitted out of fold; scikit-learn's TargetEncoder uses cross-fitting inside fit_transform for exactly this reason.",
+            "Standardisation (mean 0, standard deviation 1) matters for distance-based models, regularised linear models and neural networks; tree-based models split on thresholds and don't need it. RobustScaler resists outliers."
+          ]
+        },
+        {
+          "title": "Selecting features",
+          "minutes": 12,
+          "objectives": [
+            "Compare filter, wrapper and embedded methods of feature selection",
+            "Use permutation importance on held-out data to judge a feature's value"
+          ],
+          "key_points": [
+            "Selecting features removes ones that add cost, noise or risk without adding signal: fewer features mean faster training and serving, fewer data dependencies and less to explain.",
+            "Filter methods score each feature on its own (correlation, mutual information); wrapper methods such as recursive feature elimination refit with subsets; embedded methods select while training, as L1 regularisation does.",
+            "Permutation importance measures how much a model's score drops when one feature's values are shuffled; computed on held-out data it works for any model and avoids the bias of impurity-based tree importances.",
+            "Selection is part of training: do it inside cross-validation, because choosing features with all the labels before splitting leaks the test set into the choice.",
+            "Every feature in production is a dependency to maintain. Prefer features whose source is reliable, available at prediction time and permitted for this use."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Catch data leakage and engineer a better feature",
+        "tool": "Python 3 and scikit-learn",
+        "minutes": 90,
+        "goal": "Build a deliberately leaky model of late deliveries, detect its leaks three ways, then build an honest pipeline, improve it with an engineered rush-hour feature, and measure how much a leaky history feature would have flattered it.",
+        "setup": [
+          "Python 3.10 or newer with pandas and scikit-learn installed (pip install pandas scikit-learn)",
+          "Download the lab files into a new folder: make_deliveries.py, leakage_lab.py and data_dictionary.csv"
+        ],
+        "steps": [
+          {
+            "do": "Generate the course data in the lab folder. It's the same every time: the generator uses a fixed seed.",
+            "code": "python make_deliveries.py",
+            "lang": "bash",
+            "see": "deliveries.csv: 3000 orders from 2025-03-03 to 2025-04-27, 27.3% late"
+          },
+          {
+            "do": "Run leakage_lab.py as it is. leaky_model() uses outcome columns, fits its scaler and feature selection on every row, and splits at random.",
+            "code": "python leakage_lab.py",
+            "lang": "bash",
+            "see": "1. Leaky model AUC: 0.977"
+          },
+          {
+            "do": "Complete availability_audit(): return every column used whose known_at in data_dictionary.csv isn't \"order\".",
+            "see": "2. Availability audit, not known when the order is placed: ['actual_minutes', 'customer_complaint']"
+          },
+          {
+            "do": "Complete single_feature_screen(): the AUC of each feature on its own, flagging 0.8 or more.",
+            "see": "actual_minutes scores 0.855 on its own and is flagged; customer_complaint scores 0.693 and slips through. Screens catch blatant leaks; the audit catches the rest."
+          },
+          {
+            "do": "Complete honest_auc(): a Pipeline of a ColumnTransformer (median imputing with an indicator, then scaling, for numbers; one-hot encoding for zone and weather) and logistic regression, fitted on weeks 1-6 and scored on weeks 7-8.",
+            "see": "4. Honest model AUC (time split, pipeline fitted on training weeks): 0.855"
+          },
+          {
+            "do": "Add a rush_hour feature in load() (1 for 12:00-13:59 and 18:00-20:59) and score it.",
+            "see": "5. Adding the rush_hour feature: 0.883"
+          },
+          {
+            "do": "Complete the past-only driver_late_rate in add_driver_late_rate(), then compare it with the version averaged over all orders.",
+            "see": "6. Adding driver_late_rate from all orders: 0.896   from earlier orders only: 0.884"
+          },
+          {
+            "do": "Fill in section 7 of your design document: a features table with each feature's source, known-at time, transformation and leakage risk."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The leaky model's inflated score is reproduced.",
+            "look_for": [
+              "Leaky model AUC: 0.977"
+            ]
+          },
+          {
+            "text": "The availability audit finds both outcome columns.",
+            "look_for": [
+              "'actual_minutes', 'customer_complaint'"
+            ]
+          },
+          {
+            "text": "The single-feature screen flags actual_minutes (0.855) and the submission explains why customer_complaint (0.693) is still a leak.",
+            "look_for": [
+              "0.855",
+              "0.693"
+            ]
+          },
+          {
+            "text": "The honest pipeline is fitted on the training weeks only and scores 0.855, rising to 0.883 with rush_hour.",
+            "look_for": [
+              "Honest model AUC",
+              "0.883"
+            ]
+          },
+          {
+            "text": "The leaky driver_late_rate (0.896) and the past-only one (0.884) are compared, and the gap is explained as temporal and target leakage.",
+            "look_for": [
+              "0.896",
+              "0.884"
+            ]
+          },
+          {
+            "text": "Section 7 lists each feature with the time it is known and its leakage risk.",
+            "look_for": [
+              "Known at"
+            ]
+          }
+        ],
+        "submit": "Paste your leakage_lab.py, its full output, two or three sentences on what each of the three detection methods caught and missed, and section 7 of your design document.",
+        "files": [
+          {
+            "path": "make_deliveries.py",
+            "content": "\"\"\"Write the course's synthetic delivery data: deliveries.csv (8 weeks of orders) and new_orders.csv (week 9).\n\nThe data is generated with a fixed seed (NumPy's RandomState, whose stream never changes between versions),\nso everyone who runs this file gets exactly the same rows.  Run:  python make_deliveries.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nZONES = {\"Z1\": 2.5, \"Z2\": 3.5, \"Z3\": 4.5, \"Z4\": 5.5, \"Z5\": 6.5, \"Z6\": 8.0, \"Z7\": 9.5, \"Z8\": 11.0}\n\n\ndef make_orders(rng, start, days, n, drift=False):\n    day = rng.randint(0, days, n)\n    hour = rng.choice(np.arange(10, 23), n, p=np.array([4, 7, 10, 10, 6, 4, 4, 6, 10, 11, 9, 6, 13]) / 100)\n    minute = rng.randint(0, 60, n)\n    order_time = pd.Timestamp(start) + pd.to_timedelta(day, unit=\"D\") + pd.to_timedelta(hour, unit=\"h\") \\\n        + pd.to_timedelta(minute, unit=\"m\")\n    zone = rng.choice(list(ZONES), n, p=[0.16, 0.16, 0.14, 0.14, 0.12, 0.11, 0.09, 0.08])\n    base = np.array([ZONES[z] for z in zone])\n    if drift:                                   # week 9: a new suburb opens and orders travel further\n        base = base * 1.35\n    distance = np.round(np.clip(base * rng.lognormal(0, 0.35, n), 0.4, 25), 2)\n    items = rng.randint(1, 13, n)\n    rain_p = 0.45 if drift else 0.25\n    day_weather = rng.choice([\"clear\", \"rain\", \"storm\"], days, p=[0.95 - rain_p, rain_p, 0.05])\n    weather = day_weather[day]\n    driver_num = rng.randint(1, 81, n)\n    driver_id = np.array([f\"D{d:03d}\" for d in driver_num])\n    skill = np.random.RandomState(7).normal(0, 4, 81)[driver_num]   # each driver's typical delay, in minutes\n    new_driver = driver_num > 68                                     # 12 newest drivers have no rating yet\n    rating = np.round(np.clip(4.6 - skill / 10 + rng.normal(0, 0.15, n), 3.0, 5.0), 1)\n    rating = np.where(new_driver, np.nan, rating)\n    promised = np.where(distance < 4, 30, np.where(distance < 9, 45, 60))\n    rush = ((hour >= 12) & (hour <= 13)) | ((hour >= 18) & (hour <= 20))\n    actual = (4 + distance * 3.4 + rush * 7 + (weather == \"rain\") * 6 + (weather == \"storm\") * 14\n              + items * 0.6 + new_driver * 6 + skill + rng.normal(0, 7, n))\n    actual = np.round(np.clip(actual, 6, None)).astype(int)\n    late = (actual > promised).astype(int)\n    complaint = (rng.rand(n) < np.where(late == 1, 0.45, 0.04)).astype(int)\n    df = pd.DataFrame({\n        \"order_time\": order_time, \"zone\": zone, \"distance_km\": distance, \"items\": items, \"weather\": weather,\n        \"driver_id\": driver_id, \"driver_rating\": rating, \"promised_minutes\": promised,\n        \"actual_minutes\": actual, \"customer_complaint\": complaint, \"late\": late,\n    }).sort_values(\"order_time\", kind=\"stable\").reset_index(drop=True)\n    return df\n\n\nif __name__ == \"__main__\":\n    rng = np.random.RandomState(42)\n    orders = make_orders(rng, \"2025-03-03\", 56, 3000)\n    orders.insert(0, \"order_id\", np.arange(100001, 100001 + len(orders)))\n    orders.to_csv(\"deliveries.csv\", index=False)\n    new = make_orders(rng, \"2025-04-28\", 7, 500, drift=True)\n    new.insert(0, \"order_id\", np.arange(200001, 200001 + len(new)))\n    new.drop(columns=[\"actual_minutes\", \"customer_complaint\", \"late\"]).to_csv(\"new_orders.csv\", index=False)\n    print(f\"deliveries.csv: {len(orders)} orders from {orders.order_time.min():%Y-%m-%d} \"\n          f\"to {orders.order_time.max():%Y-%m-%d}, {orders.late.mean():.1%} late\")\n    print(f\"new_orders.csv: {len(new)} orders from {new.order_time.min():%Y-%m-%d} to {new.order_time.max():%Y-%m-%d}\")\n"
+          },
+          {
+            "path": "leakage_lab.py",
+            "content": "\"\"\"Lab 3: build a leaky model, detect the leaks, then fix them and engineer a better feature.\"\"\"\n\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.feature_selection import SelectKBest, f_classif\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import roc_auc_score\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nSPLIT_DATE = \"2025-04-14\"     # train on weeks 1-6, test on weeks 7-8\nNUMERIC = [\"distance_km\", \"items\", \"driver_rating\", \"promised_minutes\"]\nCATEGORICAL = [\"zone\", \"weather\"]\n\n\ndef load():\n    df = pd.read_csv(\"deliveries.csv\", parse_dates=[\"order_time\"])\n    df[\"hour\"] = df[\"order_time\"].dt.hour\n    # TODO (step 5): add rush_hour: 1 when hour is 12-13 or 18-20, otherwise 0\n    return df\n\n\ndef leaky_model(df):\n    \"\"\"Everything wrong at once: outcome columns, preprocessing fitted on all rows, a random split.\"\"\"\n    cols = NUMERIC + [\"hour\", \"actual_minutes\", \"customer_complaint\"]\n    X = SimpleImputer(strategy=\"median\").fit_transform(df[cols])\n    X = StandardScaler().fit_transform(X)                                    # fitted on every row\n    X = SelectKBest(f_classif, k=4).fit_transform(X, df[\"late\"])            # chooses features using every label\n    X_tr, X_te, y_tr, y_te = train_test_split(X, df[\"late\"], test_size=0.25, random_state=0)\n    model = LogisticRegression(max_iter=1000).fit(X_tr, y_tr)\n    return roc_auc_score(y_te, model.predict_proba(X_te)[:, 1])\n\n\ndef availability_audit(columns, dictionary):\n    # TODO: return the columns whose known_at in the data dictionary is not \"order\"\n    return []\n\n\ndef single_feature_screen(train, columns, threshold=0.8):\n    flagged = []\n    for c in columns:\n        # TODO: compute the ROC AUC of the column on its own (fill gaps with its median first);\n        #       use max(auc, 1 - auc), print it, and flag the column when it is >= threshold\n        pass\n    return flagged\n\n\ndef add_driver_late_rate(df, leaky):\n    df = df.sort_values(\"order_time\", kind=\"stable\").copy()\n    if leaky:   # average over ALL of the driver's orders: includes the future and the order's own label\n        df[\"driver_late_rate\"] = df.groupby(\"driver_id\")[\"late\"].transform(\"mean\")\n    else:\n        # TODO: average over the driver's EARLIER orders only:\n        #       groupby(\"driver_id\")[\"late\"].transform(lambda s: s.shift(1).expanding().mean())\n        df[\"driver_late_rate\"] = float(\"nan\")\n    return df\n\n\ndef honest_auc(df, extra=()):\n    train, test = df[df[\"order_time\"] < SPLIT_DATE], df[df[\"order_time\"] >= SPLIT_DATE]\n    numeric = NUMERIC + [\"hour\"] + list(extra)\n    # TODO: build a Pipeline: a ColumnTransformer (median imputing with add_indicator=True, then scaling, for\n    #       the numeric columns; OneHotEncoder(handle_unknown=\"ignore\") for CATEGORICAL) followed by\n    #       LogisticRegression(max_iter=1000). Fit it on train only and return the ROC AUC on test.\n    return float(\"nan\")\n\n\ndef main():\n    df = load()\n    dictionary = pd.read_csv(\"data_dictionary.csv\")\n    print(f\"1. Leaky model AUC: {leaky_model(df):.3f}\")\n\n    used = NUMERIC + [\"hour\", \"actual_minutes\", \"customer_complaint\"]\n    print(f\"2. Availability audit, not known when the order is placed: {availability_audit(used, dictionary)}\")\n\n    print(\"3. Single-feature screen on the training weeks:\")\n    train = df[df[\"order_time\"] < SPLIT_DATE]\n    print(f\"   Flagged: {single_feature_screen(train, used)}\")\n\n    print(f\"4. Honest model AUC (time split, pipeline fitted on training weeks): {honest_auc(df):.3f}\")\n    # TODO (step 5): print the honest AUC with extra=[\"rush_hour\"]\n    # TODO (step 6): print the AUC with extra=[\"rush_hour\", \"driver_late_rate\"], once with the leaky\n    #                driver_late_rate and once with the past-only one\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "data_dictionary.csv",
+            "content": "column,known_at,description\norder_id,order,Unique order number\norder_time,order,When the customer placed the order\nzone,order,Delivery zone of the address\ndistance_km,order,Route distance from the kitchen to the address\nitems,order,Number of items in the order\nweather,order,Weather recorded for the day at opening time\ndriver_id,order,Driver assigned when the order is placed\ndriver_rating,order,Driver's average customer rating so far (empty for new drivers)\npromised_minutes,order,Delivery time promised to the customer\nactual_minutes,delivery,Minutes from order to doorstep\ncustomer_complaint,after_delivery,1 if the customer complained about the order\nlate,delivery,Target: 1 if actual_minutes > promised_minutes\n"
+          }
+        ],
+        "hints": [
+          "dictionary.set_index(\"column\")[\"known_at\"] gives a lookup from column name to the time it's known.",
+          "For the screen, roc_auc_score(train[\"late\"], train[c].fillna(train[c].median())) scores one column; a feature with an AUC of 0.2 is as informative as one with 0.8, which is why max(auc, 1 - auc) is used.",
+          "Fit the whole pipeline with model.fit(train[cols], train[\"late\"]); never call fit on test rows."
+        ]
+      }
+    },
+    {
+      "title": "Model Development and Evaluation",
+      "summary": "Choose candidate models, validate them the way they'll be used, tune them without fooling yourself, and judge them with metrics and thresholds that reflect what errors cost.",
+      "instructor": "wei-cheng-liu",
+      "lessons": [
+        {
+          "title": "Choosing a model family",
+          "minutes": 12,
+          "objectives": [
+            "Compare model families for tabular, text and image problems",
+            "Weigh serving cost, interpretability and maintenance alongside the score"
+          ],
+          "key_points": [
+            "Start with a baseline and a simple model such as logistic or linear regression, then try stronger families. A more complex model has to beat the simple one by enough to justify its extra cost.",
+            "On tabular data, gradient-boosted trees (scikit-learn's HistGradientBoostingClassifier, XGBoost, LightGBM) are usually strong; neural networks pay off mainly on images, audio, text and very large datasets.",
+            "A simple model can win: when the signal is mostly additive and the features are well engineered, a regularised linear model can match or beat boosted trees, and it is faster and easier to explain.",
+            "Selection weighs more than the score: prediction latency and memory, training cost, how much data the model needs, interpretability, and how easily it can be retrained and debugged.",
+            "Record each candidate's validation score, spread, training time and latency in the design document, so the choice is explained rather than just made."
+          ]
+        },
+        {
+          "title": "Cross-validation that matches production",
+          "minutes": 12,
+          "objectives": [
+            "Explain k-fold, stratified, grouped and time-series cross-validation",
+            "Choose a validation scheme that copies how the model will be used"
+          ],
+          "key_points": [
+            "K-fold cross-validation trains k models, each validated on a different fold, and reports the mean and spread of their scores; the spread shows how far a single split's score can be trusted.",
+            "Stratified folds keep each class's share the same in every fold, which matters when one class is rare.",
+            "The split must copy production: TimeSeriesSplit always trains on earlier rows and validates on the next block; GroupKFold keeps every row of an entity, such as a customer, in a single fold.",
+            "Keep a final test set untouched and use it once. Choosing models or settings on it turns it into another validation set, and its score becomes optimistic.",
+            "Put all preprocessing in a Pipeline passed to cross_validate or a search, so each fold fits its own imputers, encoders and scalers."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "See which rows each time-series fold uses",
+            "steps": [
+              {
+                "do": "Start Python and split ten time-ordered rows with TimeSeriesSplit.",
+                "code": "import numpy as np\nfrom sklearn.model_selection import TimeSeriesSplit\nfor i, (tr, va) in enumerate(TimeSeriesSplit(n_splits=4).split(np.arange(10)), 1):\n    print(f\"fold {i}: train {tr.tolist()}  validate {va.tolist()}\")",
+                "lang": "python"
+              },
+              {
+                "do": "Read the folds.",
+                "see": "fold 1: train [0, 1]  validate [2, 3], growing to fold 4: train [0, 1, 2, 3, 4, 5, 6, 7]  validate [8, 9]. Every validation block comes after its training rows."
+              },
+              {
+                "do": "Compare with KFold, which validates on blocks taken from anywhere, including the middle of the timeline.",
+                "code": "from sklearn.model_selection import KFold\nprint([va.tolist() for _, va in KFold(n_splits=5).split(np.arange(10))])",
+                "lang": "python",
+                "see": "[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]]: the first fold validates on the earliest rows with a model trained on later ones."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Tuning hyperparameters",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish hyperparameters from learnt parameters",
+            "Compare grid search, random search and adaptive search",
+            "Tune inside cross-validation and know when to stop"
+          ],
+          "key_points": [
+            "Hyperparameters are set before training (tree depth, learning rate, regularisation strength C); parameters are learnt from the data (coefficients, split thresholds).",
+            "Grid search tries every combination, so its cost multiplies with each hyperparameter; random search samples the space and usually finds good settings faster when only a few hyperparameters matter.",
+            "Adaptive methods spend more of the budget on promising settings: successive halving (HalvingGridSearchCV, still experimental in scikit-learn) and Bayesian optimisation tools such as Optuna.",
+            "Tune inside cross-validation on the training data only. Nested cross-validation, an outer loop around the whole search, estimates how well the tuning procedure itself generalises.",
+            "Fix random seeds, log every trial's settings and scores, and stop when improvements are smaller than the spread of the cross-validation scores."
+          ]
+        },
+        {
+          "title": "Metrics and thresholds that match the decision",
+          "minutes": 13,
+          "objectives": [
+            "Choose classification and regression metrics for a decision",
+            "Pick a decision threshold from the costs of errors",
+            "Check calibration and per-segment performance"
+          ],
+          "key_points": [
+            "Accuracy misleads on imbalanced data: when 5% of cases are positive, predicting \"no\" every time scores 95%.",
+            "Precision is the share of predicted positives that are right; recall is the share of real positives found. The threshold trades one for the other, so choose it from the cost of each error on validation data, never on the test set.",
+            "ROC AUC measures how well the model ranks positives above negatives across all thresholds; average precision summarises the precision-recall curve and is more informative when positives are rare.",
+            "Calibration checks that predicted probabilities match observed frequencies. Class weights and some models shift probabilities, which is fine for ranking but matters when probabilities feed costs; CalibratedClassifierCV can recalibrate them.",
+            "For regression, MAE is in the target's units, RMSE punishes large errors more, and MAPE breaks down near zero. Evaluate per segment too, because a good average can hide a group the model serves badly."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Select, tune and evaluate with time-aware validation",
+        "tool": "Python 3 and scikit-learn",
+        "minutes": 90,
+        "goal": "Compare a baseline, logistic regression and gradient boosting with time-series cross-validation, tune them, choose a warning threshold by expected cost on validation folds, and test the chosen model once on the last two weeks.",
+        "setup": [
+          "Python 3.10 or newer with pandas and scikit-learn installed",
+          "Download the lab files into a new folder: make_deliveries.py and select_model.py"
+        ],
+        "steps": [
+          {
+            "do": "Generate the course data in the lab folder. It's the same every time: the generator uses a fixed seed.",
+            "code": "python make_deliveries.py",
+            "lang": "bash",
+            "see": "deliveries.csv: 3000 orders from 2025-03-03 to 2025-04-27, 27.3% late"
+          },
+          {
+            "do": "Open select_model.py. load() splits off weeks 7-8 as the test set; candidates() builds three pipelines. Complete the cross-validation loop with TimeSeriesSplit(n_splits=4).",
+            "see": "baseline 0.500, logistic regression mean 0.894 (std 0.020), gradient boosting mean 0.859 (std 0.030)."
+          },
+          {
+            "do": "Tune logistic regression with GridSearchCV over C and class_weight, with the same folds.",
+            "see": "Logistic regression, best settings: {'C': 10.0, 'class_weight': 'balanced'}  CV AUC 0.897"
+          },
+          {
+            "do": "Run the random search for gradient boosting that's already written, and keep whichever search scored higher.",
+            "see": "Gradient boosting, best of 6 random settings: CV AUC 0.873, so logistic regression is chosen."
+          },
+          {
+            "do": "Choose the threshold on out-of-fold predictions: fit the chosen pipeline on each fold's training rows, predict its validation rows, then try thresholds from 0.05 to 0.90.",
+            "see": "Threshold chosen on validation folds: 0.40 (cost 1205 per 1,000 orders)"
+          },
+          {
+            "do": "Run the whole script. The final model is refitted on weeks 1-6 and tested once.",
+            "code": "python select_model.py",
+            "lang": "bash",
+            "see": "Test weeks 7-8: AUC 0.882, average precision 0.732; at 0.40, precision 0.56, recall 0.82 and a cost of 1149 per 1,000 orders, against 2000 for warning everyone."
+          },
+          {
+            "do": "Fill in section 8 of your design document: the candidates, the validation scheme and why it matches production, the tuning, and the chosen threshold with its expected cost."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Candidates are compared with time-series cross-validation, reporting mean and spread.",
+            "look_for": [
+              "mean 0.894",
+              "mean 0.859"
+            ]
+          },
+          {
+            "text": "Logistic regression is tuned with a grid search over C and class_weight.",
+            "look_for": [
+              "'C': 10.0",
+              "balanced",
+              "0.897"
+            ]
+          },
+          {
+            "text": "The threshold is chosen on validation folds, not the test weeks.",
+            "look_for": [
+              "Threshold chosen on validation folds: 0.40"
+            ]
+          },
+          {
+            "text": "The chosen model is tested once on weeks 7-8.",
+            "look_for": [
+              "AUC 0.882",
+              "recall 0.82",
+              "1149"
+            ]
+          },
+          {
+            "text": "Section 8 explains why a simple model was chosen and why the validation scheme copies production.",
+            "look_for": [
+              "TimeSeriesSplit"
+            ]
+          }
+        ],
+        "submit": "Paste your select_model.py, its full output, and section 8 of your design document.",
+        "files": [
+          {
+            "path": "make_deliveries.py",
+            "content": "\"\"\"Write the course's synthetic delivery data: deliveries.csv (8 weeks of orders) and new_orders.csv (week 9).\n\nThe data is generated with a fixed seed (NumPy's RandomState, whose stream never changes between versions),\nso everyone who runs this file gets exactly the same rows.  Run:  python make_deliveries.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nZONES = {\"Z1\": 2.5, \"Z2\": 3.5, \"Z3\": 4.5, \"Z4\": 5.5, \"Z5\": 6.5, \"Z6\": 8.0, \"Z7\": 9.5, \"Z8\": 11.0}\n\n\ndef make_orders(rng, start, days, n, drift=False):\n    day = rng.randint(0, days, n)\n    hour = rng.choice(np.arange(10, 23), n, p=np.array([4, 7, 10, 10, 6, 4, 4, 6, 10, 11, 9, 6, 13]) / 100)\n    minute = rng.randint(0, 60, n)\n    order_time = pd.Timestamp(start) + pd.to_timedelta(day, unit=\"D\") + pd.to_timedelta(hour, unit=\"h\") \\\n        + pd.to_timedelta(minute, unit=\"m\")\n    zone = rng.choice(list(ZONES), n, p=[0.16, 0.16, 0.14, 0.14, 0.12, 0.11, 0.09, 0.08])\n    base = np.array([ZONES[z] for z in zone])\n    if drift:                                   # week 9: a new suburb opens and orders travel further\n        base = base * 1.35\n    distance = np.round(np.clip(base * rng.lognormal(0, 0.35, n), 0.4, 25), 2)\n    items = rng.randint(1, 13, n)\n    rain_p = 0.45 if drift else 0.25\n    day_weather = rng.choice([\"clear\", \"rain\", \"storm\"], days, p=[0.95 - rain_p, rain_p, 0.05])\n    weather = day_weather[day]\n    driver_num = rng.randint(1, 81, n)\n    driver_id = np.array([f\"D{d:03d}\" for d in driver_num])\n    skill = np.random.RandomState(7).normal(0, 4, 81)[driver_num]   # each driver's typical delay, in minutes\n    new_driver = driver_num > 68                                     # 12 newest drivers have no rating yet\n    rating = np.round(np.clip(4.6 - skill / 10 + rng.normal(0, 0.15, n), 3.0, 5.0), 1)\n    rating = np.where(new_driver, np.nan, rating)\n    promised = np.where(distance < 4, 30, np.where(distance < 9, 45, 60))\n    rush = ((hour >= 12) & (hour <= 13)) | ((hour >= 18) & (hour <= 20))\n    actual = (4 + distance * 3.4 + rush * 7 + (weather == \"rain\") * 6 + (weather == \"storm\") * 14\n              + items * 0.6 + new_driver * 6 + skill + rng.normal(0, 7, n))\n    actual = np.round(np.clip(actual, 6, None)).astype(int)\n    late = (actual > promised).astype(int)\n    complaint = (rng.rand(n) < np.where(late == 1, 0.45, 0.04)).astype(int)\n    df = pd.DataFrame({\n        \"order_time\": order_time, \"zone\": zone, \"distance_km\": distance, \"items\": items, \"weather\": weather,\n        \"driver_id\": driver_id, \"driver_rating\": rating, \"promised_minutes\": promised,\n        \"actual_minutes\": actual, \"customer_complaint\": complaint, \"late\": late,\n    }).sort_values(\"order_time\", kind=\"stable\").reset_index(drop=True)\n    return df\n\n\nif __name__ == \"__main__\":\n    rng = np.random.RandomState(42)\n    orders = make_orders(rng, \"2025-03-03\", 56, 3000)\n    orders.insert(0, \"order_id\", np.arange(100001, 100001 + len(orders)))\n    orders.to_csv(\"deliveries.csv\", index=False)\n    new = make_orders(rng, \"2025-04-28\", 7, 500, drift=True)\n    new.insert(0, \"order_id\", np.arange(200001, 200001 + len(new)))\n    new.drop(columns=[\"actual_minutes\", \"customer_complaint\", \"late\"]).to_csv(\"new_orders.csv\", index=False)\n    print(f\"deliveries.csv: {len(orders)} orders from {orders.order_time.min():%Y-%m-%d} \"\n          f\"to {orders.order_time.max():%Y-%m-%d}, {orders.late.mean():.1%} late\")\n    print(f\"new_orders.csv: {len(new)} orders from {new.order_time.min():%Y-%m-%d} to {new.order_time.max():%Y-%m-%d}\")\n"
+          },
+          {
+            "path": "select_model.py",
+            "content": "\"\"\"Lab 4: compare models with time-aware cross-validation, tune the best, pick a threshold by cost, test once.\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.base import clone\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.dummy import DummyClassifier\nfrom sklearn.ensemble import HistGradientBoostingClassifier\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import average_precision_score, roc_auc_score\nfrom sklearn.model_selection import GridSearchCV, RandomizedSearchCV, TimeSeriesSplit, cross_validate\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nSPLIT_DATE = \"2025-04-14\"\nNUMERIC = [\"distance_km\", \"items\", \"driver_rating\", \"promised_minutes\", \"hour\", \"rush_hour\"]\nCATEGORICAL = [\"zone\", \"weather\"]\nWARN_COST, MISSED_COST = 2, 10\n\n\ndef load():\n    df = pd.read_csv(\"deliveries.csv\", parse_dates=[\"order_time\"]).sort_values(\"order_time\", kind=\"stable\")\n    df[\"hour\"] = df[\"order_time\"].dt.hour\n    df[\"rush_hour\"] = (df[\"hour\"].between(12, 13) | df[\"hour\"].between(18, 20)).astype(int)\n    return df[df[\"order_time\"] < SPLIT_DATE], df[df[\"order_time\"] >= SPLIT_DATE]\n\n\ndef candidates():\n    linear_prep = ColumnTransformer([\n        (\"num\", make_pipeline(SimpleImputer(strategy=\"median\", add_indicator=True), StandardScaler()), NUMERIC),\n        (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), CATEGORICAL),\n    ])\n    tree_prep = ColumnTransformer([\n        (\"num\", \"passthrough\", NUMERIC),        # histogram gradient boosting handles missing values itself\n        (\"cat\", OneHotEncoder(handle_unknown=\"ignore\", sparse_output=False), CATEGORICAL),\n    ])\n    return {\n        \"baseline (prior)\": make_pipeline(linear_prep, DummyClassifier(strategy=\"prior\")),\n        \"logistic regression\": make_pipeline(linear_prep, LogisticRegression(max_iter=1000)),\n        \"gradient boosting\": make_pipeline(tree_prep, HistGradientBoostingClassifier(random_state=0)),\n    }\n\n\ndef cost_per_1000(y, warned):\n    y, warned = np.asarray(y), np.asarray(warned)\n    return 1000 * (WARN_COST * warned.sum() + MISSED_COST * ((y == 1) & ~warned).sum()) / len(y)\n\n\ndef main():\n    train, test = load()\n    X, y = train[NUMERIC + CATEGORICAL], train[\"late\"]\n    cv = TimeSeriesSplit(n_splits=4)               # always validate on weeks after the ones trained on\n    print(\"Time-aware cross-validation (4 folds), ROC AUC:\")\n    # TODO: for each candidate, run cross_validate(model, X, y, cv=cv, scoring=\"roc_auc\") and print\n    #       the mean and standard deviation of result[\"test_score\"]\n\n    # TODO: tune the logistic regression with GridSearchCV over\n    #       logisticregression__C in [0.01, 0.1, 1.0, 10.0] and logisticregression__class_weight in [None, \"balanced\"],\n    #       with cv=cv and scoring=\"roc_auc\"; print the best settings and grid.best_score_\n    grid = None\n\n    search = RandomizedSearchCV(\n        candidates()[\"gradient boosting\"],\n        {\"histgradientboostingclassifier__learning_rate\": [0.03, 0.05, 0.1],\n         \"histgradientboostingclassifier__max_depth\": [2, 3, 4],\n         \"histgradientboostingclassifier__max_iter\": [100, 200]},\n        n_iter=6, cv=cv, scoring=\"roc_auc\", random_state=0)\n    search.fit(X, y)\n    print(f\"Gradient boosting, best of 6 random settings: CV AUC {search.best_score_:.3f}\")\n    # TODO: once grid exists, keep whichever search scored higher\n    chosen = search.best_estimator_\n    print(f\"Chosen: {chosen.steps[-1][0]}\")\n\n    # TODO: choose the threshold on out-of-fold predictions for the later folds, never on the test weeks:\n    #       for each (tr, va) in cv.split(X), fit clone(chosen) on X.iloc[tr] and predict probabilities for X.iloc[va];\n    #       then try thresholds np.arange(0.05, 0.95, 0.05) and keep the one with the lowest cost_per_1000\n    threshold = 0.5\n    print(f\"Threshold chosen on validation folds: {threshold:.2f}\")\n\n    final = clone(chosen).fit(X, y)           # refit on all training weeks, then test once\n    p_test = final.predict_proba(test[NUMERIC + CATEGORICAL])[:, 1]\n    warned = p_test >= threshold\n    tp = (warned & (test[\"late\"] == 1)).sum()\n    print(f\"Test weeks 7-8: AUC {roc_auc_score(test['late'], p_test):.3f}  \"\n          f\"average precision {average_precision_score(test['late'], p_test):.3f}\")\n    print(f\"At {threshold:.2f}: precision {tp / warned.sum():.2f}  recall {tp / test['late'].sum():.2f}  \"\n          f\"cost per 1,000 orders {cost_per_1000(test['late'], warned):.0f} \"\n          f\"(warn everyone: {cost_per_1000(test['late'], np.ones(len(test), bool)):.0f})\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "cross_validate(model, X, y, cv=cv, scoring=\"roc_auc\")[\"test_score\"] holds one score per fold.",
+          "Out-of-fold predictions only exist for the rows each fold validates on; start with proba = np.full(len(y), np.nan) and score only the rows that aren't NaN.",
+          "class_weight=\"balanced\" pushes probabilities up for the rarer class, which is why the best threshold isn't 0.5: choose it on validation data, as here."
+        ]
+      }
+    },
+    {
+      "title": "Deployment and Monitoring",
+      "summary": "Choose how predictions reach the people and systems that use them, release new models safely, and plan the monitoring and retraining that keep a model useful.",
+      "instructor": "hiroshi-yamada",
+      "lessons": [
+        {
+          "title": "Deployment strategies: batch, online and edge",
+          "minutes": 12,
+          "objectives": [
+            "Compare batch, online and edge prediction",
+            "Choose a strategy from freshness, volume, latency and connectivity requirements"
+          ],
+          "key_points": [
+            "Batch prediction scores many rows on a schedule and stores the results for lookup; it is simple and cheap, but predictions are only as fresh as the last run and new entities have none.",
+            "Online prediction scores each request when it arrives, behind an API; it handles new inputs and fresh features, at the cost of latency targets, scaling and someone on call.",
+            "Edge prediction runs the model on a phone, vehicle or machine: it works without a network and keeps data local, but limits the model's size and makes updates slower to roll out.",
+            "Choose by the requirements: how fresh predictions must be, how many there are, how quickly they are needed, and whether the inputs are known in advance.",
+            "Many systems mix them: precompute what can be precomputed in batch, and compute only request-time features and the final score online."
+          ]
+        },
+        {
+          "title": "Serving a model and releasing it safely",
+          "minutes": 12,
+          "objectives": [
+            "Package a model so serving applies exactly the training-time transformations",
+            "Compare shadow, canary, blue-green and A/B releases"
+          ],
+          "key_points": [
+            "Package the whole pipeline, preprocessing and model, as one versioned artefact with its threshold and the facts about its training data, so serving can't apply different transformations.",
+            "A model service loads the artefact once at start-up, validates each request against a schema, and returns the prediction with the version of the model that made it.",
+            "A shadow deployment runs a new model on live traffic without acting on its answers, so it can be compared with the current one; a canary release then sends it a small share of real traffic first.",
+            "Blue-green deployment keeps the old version running beside the new one for instant rollback; an A/B test splits traffic at random to measure the effect on a business metric, with enough traffic to detect the difference that matters.",
+            "Always keep a fallback: the previous model, a cached prediction or a simple rule that answers when the model fails or times out."
+          ]
+        },
+        {
+          "title": "Monitoring and retraining",
+          "minutes": 13,
+          "objectives": [
+            "Plan monitoring of the service, the data and the model",
+            "Measure distribution shift with the population stability index",
+            "Choose retraining triggers and a gate for new models"
+          ],
+          "key_points": [
+            "Monitor three levels: the service (latency, errors, throughput), the data (missing values, ranges, shifts in inputs and predictions) and the model (accuracy once labels arrive, and the business metric).",
+            "Data drift is a change in the inputs' distribution; concept drift is a change in the relationship between inputs and target. Labels often arrive late, so input and prediction drift are the early warnings.",
+            "The population stability index compares a live window with a reference, bin by bin. A common rule of thumb reads under 0.1 as stable, 0.1 to 0.25 as worth watching, and over 0.25 as a large shift.",
+            "Read the counts behind every alert: a category that vanishes for a week, such as no storms, makes the index jump, and seasonal swings can look like drift. Set thresholds from historical variation.",
+            "Retrain on a schedule, when a monitored metric crosses its threshold, or when enough new labels arrive; every retrained model must beat the current one on fresh data before it replaces it."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Package, batch-score, shadow and monitor",
+        "tool": "Python 3, scikit-learn and DuckDB",
+        "minutes": 80,
+        "goal": "Package the chosen model as a versioned artefact, batch-score week 9's orders into a Parquet file the dispatch app can read, compare a shadow candidate without acting on it, and check week 9 for drift.",
+        "setup": [
+          "Python 3.10 or newer with pandas, scikit-learn, joblib and duckdb installed",
+          "Download the lab files into a new folder: make_deliveries.py and deploy_monitor.py"
+        ],
+        "steps": [
+          {
+            "do": "Generate the data. new_orders.csv holds week 9's orders, which have no outcomes yet.",
+            "code": "python make_deliveries.py",
+            "lang": "bash",
+            "see": "new_orders.csv: 500 orders from 2025-04-28 to 2025-05-04"
+          },
+          {
+            "do": "Read package(): the joblib bundle holds the fitted pipeline, its threshold, the feature list and facts about the training data. Run the script to package late-v1 and a candidate that doesn't use driver ratings.",
+            "code": "python deploy_monitor.py",
+            "lang": "bash",
+            "see": "Packaged late-v1: trained on {'rows': 3000, 'from': '2025-03-03', 'to': '2025-04-27'}"
+          },
+          {
+            "do": "Write the batch predictions to predictions/week_2025_18.parquet with DuckDB, then read the file back and summarise it by model version.",
+            "see": "[('late-v1', 500, 0.492)]: 500 orders scored, 49.2% to be warned."
+          },
+          {
+            "do": "Complete the shadow comparison: the share of orders where the candidate's decision matches the current model's.",
+            "see": "Shadow late-v2-candidate: agrees on 80.8% of orders, warns 54.8% vs 49.2%"
+          },
+          {
+            "do": "Complete psi() and rerun to see the drift report.",
+            "see": "distance_km 0.295 ACT, weather 1.491 ACT, items, driver_rating and hour under 0.02, and the scores themselves only 0.056."
+          },
+          {
+            "do": "Investigate the two alerts: compare week 9's distances and weather with the training data (value_counts and describe). Which alert reflects a lasting change, and which a single unusual week?"
+          },
+          {
+            "do": "Complete sections 9 and 10 of your design document: the deployment strategy, release plan, fallback, and a monitoring table with signals, thresholds, owners and actions."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Week 9 is batch-scored into Parquet with the model version on every row.",
+            "look_for": [
+              "'late-v1', 500, 0.492"
+            ]
+          },
+          {
+            "text": "The shadow candidate is compared without acting on its answers.",
+            "look_for": [
+              "agrees on 80.8%"
+            ]
+          },
+          {
+            "text": "PSI is computed per feature and for the scores.",
+            "look_for": [
+              "0.295",
+              "0.056"
+            ]
+          },
+          {
+            "text": "The alerts are investigated: longer distances from a new area are a lasting shift; the weather alert comes from a week with no storms, read from the counts.",
+            "look_for": [
+              "distance",
+              "storm"
+            ]
+          },
+          {
+            "text": "Sections 9 and 10 cover the deployment strategy, rollout, fallback and a monitoring table.",
+            "look_for": [
+              "Fallback",
+              "Threshold",
+              "Owner"
+            ]
+          }
+        ],
+        "submit": "Paste your deploy_monitor.py, its full output, your investigation of the two alerts, and sections 9 and 10 of your design document.",
+        "files": [
+          {
+            "path": "make_deliveries.py",
+            "content": "\"\"\"Write the course's synthetic delivery data: deliveries.csv (8 weeks of orders) and new_orders.csv (week 9).\n\nThe data is generated with a fixed seed (NumPy's RandomState, whose stream never changes between versions),\nso everyone who runs this file gets exactly the same rows.  Run:  python make_deliveries.py\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nZONES = {\"Z1\": 2.5, \"Z2\": 3.5, \"Z3\": 4.5, \"Z4\": 5.5, \"Z5\": 6.5, \"Z6\": 8.0, \"Z7\": 9.5, \"Z8\": 11.0}\n\n\ndef make_orders(rng, start, days, n, drift=False):\n    day = rng.randint(0, days, n)\n    hour = rng.choice(np.arange(10, 23), n, p=np.array([4, 7, 10, 10, 6, 4, 4, 6, 10, 11, 9, 6, 13]) / 100)\n    minute = rng.randint(0, 60, n)\n    order_time = pd.Timestamp(start) + pd.to_timedelta(day, unit=\"D\") + pd.to_timedelta(hour, unit=\"h\") \\\n        + pd.to_timedelta(minute, unit=\"m\")\n    zone = rng.choice(list(ZONES), n, p=[0.16, 0.16, 0.14, 0.14, 0.12, 0.11, 0.09, 0.08])\n    base = np.array([ZONES[z] for z in zone])\n    if drift:                                   # week 9: a new suburb opens and orders travel further\n        base = base * 1.35\n    distance = np.round(np.clip(base * rng.lognormal(0, 0.35, n), 0.4, 25), 2)\n    items = rng.randint(1, 13, n)\n    rain_p = 0.45 if drift else 0.25\n    day_weather = rng.choice([\"clear\", \"rain\", \"storm\"], days, p=[0.95 - rain_p, rain_p, 0.05])\n    weather = day_weather[day]\n    driver_num = rng.randint(1, 81, n)\n    driver_id = np.array([f\"D{d:03d}\" for d in driver_num])\n    skill = np.random.RandomState(7).normal(0, 4, 81)[driver_num]   # each driver's typical delay, in minutes\n    new_driver = driver_num > 68                                     # 12 newest drivers have no rating yet\n    rating = np.round(np.clip(4.6 - skill / 10 + rng.normal(0, 0.15, n), 3.0, 5.0), 1)\n    rating = np.where(new_driver, np.nan, rating)\n    promised = np.where(distance < 4, 30, np.where(distance < 9, 45, 60))\n    rush = ((hour >= 12) & (hour <= 13)) | ((hour >= 18) & (hour <= 20))\n    actual = (4 + distance * 3.4 + rush * 7 + (weather == \"rain\") * 6 + (weather == \"storm\") * 14\n              + items * 0.6 + new_driver * 6 + skill + rng.normal(0, 7, n))\n    actual = np.round(np.clip(actual, 6, None)).astype(int)\n    late = (actual > promised).astype(int)\n    complaint = (rng.rand(n) < np.where(late == 1, 0.45, 0.04)).astype(int)\n    df = pd.DataFrame({\n        \"order_time\": order_time, \"zone\": zone, \"distance_km\": distance, \"items\": items, \"weather\": weather,\n        \"driver_id\": driver_id, \"driver_rating\": rating, \"promised_minutes\": promised,\n        \"actual_minutes\": actual, \"customer_complaint\": complaint, \"late\": late,\n    }).sort_values(\"order_time\", kind=\"stable\").reset_index(drop=True)\n    return df\n\n\nif __name__ == \"__main__\":\n    rng = np.random.RandomState(42)\n    orders = make_orders(rng, \"2025-03-03\", 56, 3000)\n    orders.insert(0, \"order_id\", np.arange(100001, 100001 + len(orders)))\n    orders.to_csv(\"deliveries.csv\", index=False)\n    new = make_orders(rng, \"2025-04-28\", 7, 500, drift=True)\n    new.insert(0, \"order_id\", np.arange(200001, 200001 + len(new)))\n    new.drop(columns=[\"actual_minutes\", \"customer_complaint\", \"late\"]).to_csv(\"new_orders.csv\", index=False)\n    print(f\"deliveries.csv: {len(orders)} orders from {orders.order_time.min():%Y-%m-%d} \"\n          f\"to {orders.order_time.max():%Y-%m-%d}, {orders.late.mean():.1%} late\")\n    print(f\"new_orders.csv: {len(new)} orders from {new.order_time.min():%Y-%m-%d} to {new.order_time.max():%Y-%m-%d}\")\n"
+          },
+          {
+            "path": "deploy_monitor.py",
+            "content": "\"\"\"Lab 5: package the model, batch-score week 9, compare a shadow candidate, and check for drift.\"\"\"\n\nfrom pathlib import Path\n\nimport duckdb\nimport joblib\nimport numpy as np\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nNUMERIC = [\"distance_km\", \"items\", \"driver_rating\", \"promised_minutes\", \"hour\", \"rush_hour\"]\nCATEGORICAL = [\"zone\", \"weather\"]\nTHRESHOLD = 0.40                 # chosen on validation folds in lab 4\n\n\ndef add_features(df):\n    df = df.copy()\n    df[\"hour\"] = df[\"order_time\"].dt.hour\n    df[\"rush_hour\"] = (df[\"hour\"].between(12, 13) | df[\"hour\"].between(18, 20)).astype(int)\n    return df\n\n\ndef build(numeric):\n    prep = ColumnTransformer([\n        (\"num\", make_pipeline(SimpleImputer(strategy=\"median\", add_indicator=True), StandardScaler()), numeric),\n        (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), CATEGORICAL),\n    ])\n    return make_pipeline(prep, LogisticRegression(C=10.0, class_weight=\"balanced\", max_iter=1000))\n\n\ndef package(train, version, numeric):\n    pipeline = build(numeric).fit(train[numeric + CATEGORICAL], train[\"late\"])\n    bundle = {\"version\": version, \"pipeline\": pipeline, \"threshold\": THRESHOLD, \"features\": numeric + CATEGORICAL,\n              \"trained_on\": {\"rows\": len(train), \"from\": str(train[\"order_time\"].min().date()),\n                             \"to\": str(train[\"order_time\"].max().date())}}\n    Path(\"models\").mkdir(exist_ok=True)\n    joblib.dump(bundle, f\"models/{version}.joblib\")\n    return bundle\n\n\ndef score(bundle, df):\n    p = bundle[\"pipeline\"].predict_proba(df[bundle[\"features\"]])[:, 1]\n    return pd.DataFrame({\"order_id\": df[\"order_id\"], \"p_late\": p.round(4), \"warn\": p >= bundle[\"threshold\"],\n                         \"model_version\": bundle[\"version\"]})\n\n\ndef psi(reference, live, bins=10):\n    \"\"\"Population stability index of a numeric column, with bins cut at the reference quantiles.\"\"\"\n    reference, live = pd.Series(reference).dropna(), pd.Series(live).dropna()\n    # TODO: cut bins at the reference quantiles: edges = np.unique(np.quantile(reference, np.linspace(0, 1, bins + 1)))\n    #       and open the outer edges (edges[0], edges[-1] = -np.inf, np.inf);\n    #       share of reference and live values in each bin: np.histogram(values, edges)[0] / len(values);\n    #       clip both shares at 1e-4 so empty bins don't divide by zero;\n    #       return sum((live_share - ref_share) * ln(live_share / ref_share))\n    return 0.0\n\n\ndef psi_categorical(reference, live):\n    cats = sorted(set(reference) | set(live))\n    ref = np.clip(pd.Series(reference).value_counts(normalize=True).reindex(cats, fill_value=0).to_numpy(), 1e-4, None)\n    cur = np.clip(pd.Series(live).value_counts(normalize=True).reindex(cats, fill_value=0).to_numpy(), 1e-4, None)\n    return float(np.sum((cur - ref) * np.log(cur / ref)))\n\n\ndef main():\n    train = add_features(pd.read_csv(\"deliveries.csv\", parse_dates=[\"order_time\"]))\n    week9 = add_features(pd.read_csv(\"new_orders.csv\", parse_dates=[\"order_time\"]))\n\n    current = package(train, \"late-v1\", NUMERIC)\n    candidate = package(train, \"late-v2-candidate\", [c for c in NUMERIC if c != \"driver_rating\"])\n    print(f\"Packaged {current['version']}: trained on {current['trained_on']}\")\n\n    # batch scoring: write the week's predictions where the dispatch app can look them up\n    Path(\"predictions\").mkdir(exist_ok=True)\n    scored = score(joblib.load(\"models/late-v1.joblib\"), week9)\n    # TODO: write scored to predictions/week_2025_18.parquet with DuckDB, which can query a pandas DataFrame\n    #       by its variable name: duckdb.sql(\"SELECT * FROM scored\").write_parquet(...)\n    # TODO: read the file back with DuckDB and print model_version, count(*) and the share warned:\n    #       SELECT model_version, count(*) AS orders, round(avg(warn::INT), 3) AS share_warned\n    #       FROM 'predictions/week_2025_18.parquet' GROUP BY model_version\n\n    # shadow comparison: the candidate scores the same orders, but nobody acts on its answers\n    shadow = score(candidate, week9)\n    # TODO: the share of orders where the shadow's warn decision equals the current model's\n    agree = 0.0\n    print(f\"Shadow {candidate['version']}: agrees on {agree:.1%} of orders, \"\n          f\"warns {shadow['warn'].mean():.1%} vs {scored['warn'].mean():.1%}\")\n\n    # drift: compare week 9 with the training data, feature by feature, and the scores themselves\n    print(\"Drift (PSI; under 0.1 stable, 0.1-0.25 watch, over 0.25 act):\")\n    report = {c: psi(train[c], week9[c]) for c in [\"distance_km\", \"items\", \"driver_rating\", \"hour\"]}\n    report[\"weather\"] = psi_categorical(train[\"weather\"], week9[\"weather\"])\n    report[\"p_late (scores)\"] = psi(score(current, train)[\"p_late\"], scored[\"p_late\"])\n    for name, value in report.items():\n        flag = \"ACT\" if value > 0.25 else \"watch\" if value > 0.1 else \"ok\"\n        print(f\"  {name:<16} {value:6.3f}  {flag}\")\n    if any(v > 0.25 for v in report.values()):\n        print(\"Decision: open a retraining ticket and check week 9's lateness as soon as its labels arrive\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "np.histogram(values, edges)[0] counts the values in each bin; divide by len(values) to get shares.",
+          "PSI uses the reference's quantiles as bin edges, so each reference bin holds about a tenth of the training values.",
+          "The shadow's decisions are never sent to customers: only its agreement and its warn rate are logged."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Frame the late-delivery problem, cost the baselines, and write sections 1 to 5 of the design document.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Plan data collection, storage and versioning, and build the DuckDB snapshot with its manifest.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Engineer and select features, and catch the three leaks in the module 3 lab.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Compare, tune and evaluate models with time-aware validation, and set the threshold by cost.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Choose a deployment strategy, then package, batch-score, shadow and monitor the model.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Design and prototype the support-ticket system for the capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Design and prototype an SLA-breach prediction system",
+    "minutes": 600,
+    "brief": "A software company's support team misses its resolution deadlines (SLAs) on about a third of tickets and wants to know, the moment a ticket is created, which ones are at risk, so a team lead can reassign or escalate them. make_tickets.py generates ten weeks of tickets with their outcomes (tickets.csv) and a new week without outcomes (new_tickets.csv); tickets_data_dictionary.csv says when each column becomes known. Design the system in a design document (all eleven sections of the template) and build a working prototype: ingest the CSV into a versioned Parquet snapshot with a manifest, audit the columns for leakage (several are known only after the ticket is answered or resolved), engineer features, compare at least three candidates with time-aware cross-validation, choose a threshold from costs you justify, test once on the last two weeks, batch-score the new week with a versioned artefact, and compute drift between the training data and the new week. Then recommend batch or online serving for this system, with a release and monitoring plan.",
+    "deliverables": [
+      "A design document with all eleven sections completed, including a stakeholder table, three layers of metrics, a features table with known-at times, and a decision log",
+      "An ingestion script that writes a partitioned Parquet snapshot and a manifest with a source hash and a content checksum",
+      "A leakage audit naming each excluded column and the evidence (data dictionary, single-feature screen or honest evaluation)",
+      "A training script with time-aware cross-validation of at least three candidates, tuning, a cost-based threshold chosen on validation folds, and one final test",
+      "A batch scoring script that loads the packaged model and writes the new week's predictions with the model version",
+      "A drift report for the new week with PSI per feature and a recommended action",
+      "A README explaining how to run each script in order"
+    ],
+    "rubric": [
+      {
+        "name": "Problem framing and requirements",
+        "points": 15,
+        "description": "The decision, target, unit and prediction time are precise; stakeholders, requirements and three layers of metrics are specific to the support team."
+      },
+      {
+        "name": "Data pipeline and versioning",
+        "points": 15,
+        "description": "The snapshot is immutable and partitioned, and its manifest lets someone verify the exact data later; missing values are analysed and handled for a stated reason."
+      },
+      {
+        "name": "Leakage audit and features",
+        "points": 20,
+        "description": "first_response_minutes, resolved_at and csat_score are excluded with evidence, no preprocessing is fitted on test rows, and at least one engineered feature is justified."
+      },
+      {
+        "name": "Model selection and evaluation",
+        "points": 20,
+        "description": "Validation copies production (time-ordered), candidates include a baseline, the threshold comes from justified costs on validation folds, and the test set is used once."
+      },
+      {
+        "name": "Deployment and monitoring plan",
+        "points": 20,
+        "description": "The batch-or-online decision follows from the requirements, the release plan includes a shadow or canary stage and a fallback, and the drift report leads to a concrete action with an owner."
+      },
+      {
+        "name": "Reproducibility and clarity",
+        "points": 10,
+        "description": "Scripts run in order from the README with fixed seeds, and the document's decision log explains the main trade-offs."
+      }
+    ],
+    "submit": "Paste your design document, each script with its file name, the output of a full run (snapshot summary, leakage audit, cross-validation table, threshold, test result, batch summary and drift report) and your README.",
+    "files": [
+      {
+        "path": "make_tickets.py",
+        "content": "\"\"\"Write the capstone's synthetic support tickets: tickets.csv (10 weeks, with outcomes) and new_tickets.csv\n(week 11, just created, no outcomes yet). Fixed seed: everyone gets the same rows.  Run: python make_tickets.py\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nSLA_HOURS = {\"urgent\": 4, \"high\": 8, \"normal\": 24, \"low\": 72}\n\n\ndef make(rng, start, days, n, week11=False):\n    created = (pd.Timestamp(start) + pd.to_timedelta(rng.randint(0, days, n), unit=\"D\")\n               + pd.to_timedelta(rng.randint(7 * 60, 21 * 60, n), unit=\"m\"))\n    channel = rng.choice([\"email\", \"chat\", \"phone\", \"web\"], n, p=[0.35, 0.3, 0.15, 0.2])\n    product = rng.choice([\"billing\", \"app\", \"delivery\", \"account\"], n, p=[0.3, 0.3, 0.25, 0.15])\n    tier = rng.choice([\"free\", \"plus\", \"business\"], n, p=[0.55, 0.3, 0.15])\n    priority = rng.choice(list(SLA_HOURS), n, p=[0.08, 0.22, 0.5, 0.2])\n    length = np.round(rng.lognormal(5.3, 0.6, n)).astype(int)\n    attachments = rng.poisson(0.6, n)\n    queue = rng.poisson(28 if week11 else 18, n) + (created.dayofweek.to_numpy() == 0) * 10\n    team = rng.choice(list(\"ABCDEF\"), n)\n    sla = np.array([SLA_HOURS[p] for p in priority])\n    effort = (np.log1p(length) * 0.25 + attachments * 0.3 + (product == \"billing\") * 0.6\n              + (channel == \"email\") * 0.5 - (tier == \"business\") * 0.4 + queue * 0.045\n              + (team == \"E\") * 0.7 + rng.normal(0, 0.7, n))\n    resolution_hours = np.round(np.exp(effort) * np.where(sla <= 8, 0.3, 1.0) + rng.exponential(1.0, n), 1)\n    breached = (resolution_hours > sla).astype(int)\n    first_response = np.round(np.clip(rng.gamma(2, 15 + queue * 1.5, n) * (1 + breached * 0.8), 1, None)).astype(int)\n    csat = np.where(rng.rand(n) < 0.4, np.clip(np.round(4.3 - breached * 1.6 + rng.normal(0, 0.8, n)), 1, 5), np.nan)\n    df = pd.DataFrame({\n        \"created_at\": created, \"channel\": channel, \"product\": product, \"customer_tier\": tier,\n        \"priority\": priority, \"description_length\": length, \"attachments\": attachments,\n        \"queue_size_at_creation\": queue, \"agent_team\": team, \"sla_hours\": sla,\n        \"first_response_minutes\": first_response,\n        \"resolved_at\": created + pd.to_timedelta(resolution_hours, unit=\"h\"),\n        \"csat_score\": csat, \"breached_sla\": breached,\n    }).sort_values(\"created_at\", kind=\"stable\").reset_index(drop=True)\n    df[\"resolved_at\"] = df[\"resolved_at\"].dt.floor(\"min\")\n    return df\n\n\nif __name__ == \"__main__\":\n    rng = np.random.RandomState(2025)\n    tickets = make(rng, \"2025-06-02\", 70, 2400)\n    tickets.insert(0, \"ticket_id\", [f\"T{i:05d}\" for i in range(1, len(tickets) + 1)])\n    tickets.to_csv(\"tickets.csv\", index=False)\n    new = make(rng, \"2025-08-11\", 7, 300, week11=True)\n    new.insert(0, \"ticket_id\", [f\"T{i:05d}\" for i in range(len(tickets) + 1, len(tickets) + len(new) + 1)])\n    new.drop(columns=[\"first_response_minutes\", \"resolved_at\", \"csat_score\", \"breached_sla\"]).to_csv(\n        \"new_tickets.csv\", index=False)\n    print(f\"tickets.csv: {len(tickets)} tickets, {tickets.breached_sla.mean():.1%} breached their SLA\")\n    print(f\"new_tickets.csv: {len(new)} tickets created {new.created_at.min():%Y-%m-%d} to {new.created_at.max():%Y-%m-%d}\")\n"
+      },
+      {
+        "path": "tickets_data_dictionary.csv",
+        "content": "column,known_at,description\nticket_id,creation,Unique ticket number\ncreated_at,creation,When the customer opened the ticket\nchannel,creation,\"How it arrived: email, chat, phone or web form\"\nproduct,creation,\"Area of the product: billing, app, delivery or account\"\ncustomer_tier,creation,\"Customer's plan: free, plus or business\"\npriority,creation,\"Priority set by the triage rules: urgent, high, normal or low\"\ndescription_length,creation,Characters in the customer's first message\nattachments,creation,Number of files attached to the first message\nqueue_size_at_creation,creation,Open tickets in the team's queue when this one arrived\nagent_team,creation,Team the ticket was routed to\nsla_hours,creation,\"Hours allowed to resolve, from the priority\"\nfirst_response_minutes,first_response,Minutes until an agent first replied\nresolved_at,resolution,When the ticket was resolved\ncsat_score,after_resolution,Customer satisfaction 1-5 from the follow-up survey (empty when not answered)\nbreached_sla,resolution,Target: 1 if resolution took longer than sla_hours\n"
+      },
+      {
+        "path": "design_doc_template.md",
+        "content": "# Design document: <name of the system>\n\nStatus: draft | in review | approved      Author(s):      Last updated:\n\n## 1. Problem statement\n- Business objective:\n- Decision the prediction supports:\n- Prediction target:\n- Unit of prediction (one row per ...):\n- Prediction time (when the prediction is made, and what is known then):\n- Current process and baseline to beat:\n\n## 2. Stakeholders\n| Stakeholder | What they need from the system | What they can block or veto |\n|---|---|---|\n\n## 3. Requirements and constraints\n- Functional requirements:\n- Non-functional requirements (latency, throughput, freshness, availability, cost):\n- Constraints (data, privacy and law, people, hardware and budget):\n- Conflicting needs, and the decision taken:\n\n## 4. Success metrics\n- Business metric:\n- Model metric (offline), and why it matches the cost of errors:\n- Guardrail metrics (must not get worse):\n\n## 5. Feasibility and risks\n- Data available at prediction time:\n- Labels (where they come from, how late they arrive):\n- Signal (does a quick baseline beat chance?):\n- Cost and value:\n- Failure modes, their cost, and the fallback:\n\n## 6. Data\n- Sources and collection:\n- Storage and formats:\n- Versioning (snapshot, hash or checksum, manifest):\n- Missing data and how it is handled:\n\n## 7. Features\n| Feature | Source | Known at | Transformation | Leakage risk |\n|---|---|---|---|---|\n\n## 8. Models and evaluation\n- Candidates and baseline:\n- Validation scheme (and why it matches production):\n- Tuning:\n- Metrics, threshold and expected cost:\n\n## 9. Deployment\n- Strategy (batch, online or edge) and why:\n- Serving and packaging:\n- Rollout (shadow, canary, A/B) and rollback:\n- Fallback when the model fails:\n\n## 10. Monitoring and retraining\n| Signal | Threshold | Owner | Action |\n|---|---|---|---|\n- Retraining triggers:\n\n## 11. Decision log\n| Date | Decision | Alternatives considered | Reason |\n|---|---|---|---|\n"
+      }
+    ]
+  }
+}

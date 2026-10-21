@@ -1,0 +1,969 @@
+{
+ "slug": "rag-and-agentic-systems",
+ "title": "Building RAG and Agentic Systems",
+ "subtitle": "Build retrieval-augmented and agentic AI systems that hold up: measured retrieval, hybrid search and re-ranking, tool-using agents with memory and plans, and multi-agent teams that check each other's work.",
+ "category": "Generative AI",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "luis-ferreiras",
+  "layla-al-mansouri"
+ ],
+ "skills": [
+  "Retrieval-augmented generation",
+  "Chunking and indexing",
+  "Hybrid search",
+  "Re-ranking",
+  "Retrieval evaluation",
+  "Tool calling",
+  "Agent loops",
+  "Agent memory",
+  "Planning and reflection",
+  "Multi-agent orchestration"
+ ],
+ "tools": [
+  "Python 3",
+  "Anthropic Python SDK",
+  "scikit-learn",
+  "NumPy",
+  "Pydantic",
+  "SQLite",
+  "sentence-transformers"
+ ],
+ "outcomes": [
+  "Build RAG pipelines with chunking, embeddings, vector indexes and grounded, cited generation",
+  "Measure and improve retrieval with recall@k and MRR, hybrid search, re-ranking and metadata filters",
+  "Build tool-using agents with validated inputs, retries, approval gates and loop budgets",
+  "Give agents short-term and long-term memory, and plans they validate and repair",
+  "Design multi-agent systems with typed hand-offs, orchestration and peer review",
+  "Diagnose RAG and agent failures from traces and evaluation results"
+ ],
+ "prerequisites": "Engineering with Foundation Models, and Prompting and LLM Application Design, whose RAG and ReAct basics this course builds on; Vector Databases and Semantic Search helps with module 1. Install Python 3.10+ and pip install numpy scikit-learn pydantic anthropic (sentence-transformers is optional and downloads small models). Labs run without an API key; their live steps and the capstone need a Claude Console API key with credit and CLAUDE_MODEL set to a current model ID.",
+ "description": "Retrieval-augmented generation and agents are how language models get to work on real knowledge and real tasks, and how they most often fail in production: the right passage isn't retrieved, a tool is called with invented arguments, an agent loops until the budget runs out, or one agent's mistake is repeated confidently by the next. This course builds both kinds of system from the parts up, measuring each part as you go. You'll index a handbook and measure retrieval with recall@k and MRR, compare exact and approximate vector search, then improve retrieval with chunking, BM25, hybrid fusion, re-ranking and metadata filters. You'll build an agent loop that validates inputs, retries what's safe to retry, asks before acting and stops itself; give agents memory and plans they check and repair; and finish with a researcher, writer and reviewer team that won't sign off an unsupported sentence.\n\nThe labs run on a laptop without an API key, on recorded model turns, so every check is exact, and each has live steps for the Claude API and optional steps with open embedding and re-ranking models. The capstone is an autonomous research assistant: a Researcher agent that calls retrieval and web search tools, and a Writer that turns its notes into a cited report.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "RAG Fundamentals",
+   "summary": "How retrieval-augmented generation grounds a model in a knowledge base: the indexing and query pipelines, embeddings and vector search, exact and approximate indexes, and why answer quality depends on retrieval quality.",
+   "instructor": "layla-al-mansouri",
+   "lessons": [
+    {
+     "title": "The RAG architecture: indexing and query time",
+     "minutes": 12,
+     "objectives": [
+      "Describe the indexing and query pipelines of a RAG system",
+      "Explain what RAG offers over relying on a model's training data"
+     ],
+     "key_points": [
+      "Retrieval-augmented generation (RAG) combines a retriever, which finds passages relevant to a question in a knowledge base, with a generative model, which answers from them; the name comes from a 2020 paper by Lewis and colleagues that paired a neural retriever with a sequence-to-sequence generator.",
+      "Indexing happens ahead of time: load and clean documents, split them into chunks, embed or index each chunk, and store it with its text, ID and metadata such as source, date and access rights.",
+      "At query time the system embeds or parses the question, retrieves the top chunks, optionally re-ranks and filters them, assembles a prompt with numbered sources, and generates an answer with citations.",
+      "RAG keeps knowledge outside the model, so updating a document updates the answers without retraining, and private or recent information can be used and cited.",
+      "Each stage can fail on its own, so log what was retrieved for every answer: a wrong answer is either a retrieval miss or a generation error, and they need different fixes."
+     ]
+    },
+    {
+     "title": "Embeddings and semantic search",
+     "minutes": 12,
+     "objectives": [
+      "Explain how embeddings support semantic search",
+      "Compare dense retrieval with keyword retrieval"
+     ],
+     "key_points": [
+      "An embedding model maps text to a dense vector so that texts with similar meanings lie close together; closeness is usually measured with cosine similarity, the dot product of length-normalised vectors.",
+      "Bi-encoder retrieval embeds the documents once, ahead of time, and only the query at search time, which makes it fast; the same model must embed both, and some models expect prefixes, such as 'query: ' and 'passage: ' for the E5 family.",
+      "Dense retrieval finds paraphrases that keyword search misses, such as 'live alone' for 'the only adult in your home', but can miss exact identifiers, codes and rare names, which keyword search handles well.",
+      "Choose an embedding model for your languages and domain and evaluate it on your own queries; its dimensions, speed and cost matter at scale, and changing the model means re-embedding the corpus.",
+      "Latent semantic analysis (LSA), reducing a TF-IDF matrix with SVD, also gives dense vectors, but it only knows words that appear in your corpus, so it can't bridge to new vocabulary as a pretrained model can."
+     ]
+    },
+    {
+     "title": "Vector databases and approximate search",
+     "minutes": 12,
+     "objectives": [
+      "Explain how approximate nearest-neighbour indexes trade recall for speed",
+      "Choose and tune a vector store for an application"
+     ],
+     "key_points": [
+      "Exact nearest-neighbour search compares the query with every vector: perfectly accurate, but its cost grows with the collection. Approximate nearest-neighbour (ANN) indexes give up a little recall for far less work.",
+      "IVF indexes cluster the vectors with k-means and search only the nprobe clusters nearest the query; HNSW builds a layered graph of neighbours and walks it greedily; product quantisation compresses vectors to save memory.",
+      "Each index has a recall-speed setting, such as nprobe for IVF or efSearch for HNSW, so measure recall@k against exact search on a sample of queries when choosing its value.",
+      "Options range from libraries such as FAISS, through database extensions such as pgvector for PostgreSQL, to dedicated vector databases such as Qdrant, Weaviate, Milvus and Chroma; they differ in filtering, updates, scale and operations.",
+      "Store each vector with its chunk's ID, text and metadata, plan for updates and deletions, and record the embedding model and version with the index; Vector Databases and Semantic Search covers indexes in depth."
+     ]
+    },
+    {
+     "title": "Retrieval quality limits answer quality",
+     "minutes": 12,
+     "objectives": [
+      "Measure retrieval with recall@k and mean reciprocal rank",
+      "Separate retrieval failures from generation failures"
+     ],
+     "key_points": [
+      "If the passage with the answer isn't retrieved, the model can only decline or guess, so retrieval quality caps answer quality: measure it on its own with labelled question-passage pairs.",
+      "recall@k is the share of questions whose relevant passage is in the top k; mean reciprocal rank (MRR) averages 1 divided by the rank of the first relevant passage, so it rewards putting the answer near the top.",
+      "Generation needs its own measures: faithfulness (is every claim supported by the retrieved passages?) and answer relevance (does it answer the question?), checked by people or a validated LLM judge.",
+      "Sending more passages raises recall but adds tokens, cost and distraction, so tune the number of chunks with your evaluation set rather than guessing.",
+      "Start error analysis from the failures: for each wrong answer, check whether the right passage was retrieved, where it ranked, and whether the model used it."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build a RAG pipeline and measure its retrieval",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Chunk a residents' handbook by section with metadata, retrieve with TF-IDF and with dense LSA vectors, measure recall@k and MRR on 14 labelled questions, compare exact search with an IVF index, and build a grounded prompt (and optionally compare a pretrained embedding model).",
+    "setup": [
+     "Python 3.10 or newer with pip install numpy scikit-learn (and anthropic for --live)",
+     "Download rag_pipeline.py, handbook.md, queries.json and embed_search.py into one folder",
+     "Optional: pip install sentence-transformers for embed_search.py, which downloads a small embedding model (about 90 MB) on first run"
+    ],
+    "steps": [
+     {
+      "do": "Read handbook.md and load_chunks(): one chunk per ### section, carrying its ## topic, department and date as metadata."
+     },
+     {
+      "do": "Complete TODO 1 in evaluate(): find the rank of the relevant section and add to recall@1, recall@k and the reciprocal rank.",
+      "code": "rank = ids.index(q[\"relevant\"]) + 1\nhits1 += rank == 1\nhitsk += rank <= k\nrr += 1 / rank",
+      "lang": "python"
+     },
+     {
+      "do": "Run the pipeline.",
+      "code": "python rag_pipeline.py",
+      "lang": "bash",
+      "see": "15 chunks; TF-IDF and LSA both at recall@3 0.86; the wrong top hits for q05, q06 and q12; then three IVF lines in which recall@10 rises (about 0.48, 0.72 and 0.92) as more cells are scanned."
+     },
+     {
+      "do": "Read the three missed questions: what do they have in common with their sections' wording?"
+     },
+     {
+      "do": "Optional: run python embed_search.py, which scores the same questions with a pretrained embedding model.",
+      "code": "python embed_search.py",
+      "lang": "bash",
+      "see": "With all-MiniLM-L6-v2, q05 and q06 now find their sections, and recall@1 rises to about 0.93 (figures can vary slightly with library versions)."
+     },
+     {
+      "do": "Optional, with a key: python rag_pipeline.py --live generates an answer from the grounded prompt."
+     },
+     {
+      "do": "Write a line that starts Retrieval: explaining why TF-IDF and LSA missed the same questions, and which nprobe you would choose and why."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The handbook is chunked by section, with metadata.",
+      "look_for": [
+       "15 chunks",
+       "bin-collection-days (environment, updated 2026-03-01)"
+      ]
+     },
+     {
+      "text": "Retrieval is measured with recall@1, recall@3 and MRR.",
+      "look_for": [
+       "recall@1 0.50",
+       "recall@3 0.86",
+       "MRR 0.64"
+      ]
+     },
+     {
+      "text": "The vocabulary-mismatch failures are visible.",
+      "look_for": [
+       "q06 tfidf top hit: bin-collection-days"
+      ]
+     },
+     {
+      "text": "Exact and IVF search are compared at three nprobe values, with the work each one does.",
+      "look_for": [
+       "IVF nprobe=1",
+       "IVF nprobe=16",
+       "of 20000"
+      ]
+     },
+     {
+      "text": "A Retrieval: line explains that LSA is built from the same corpus words as TF-IDF, so it can't match words the handbook never uses, and justifies an nprobe choice by recall and cost.",
+      "look_for": [
+       "Retrieval:"
+      ]
+     }
+    ],
+    "submit": "Paste your evaluate() code, the full output of rag_pipeline.py (and embed_search.py if you ran it), and your Retrieval: line.",
+    "files": [
+     {
+      "path": "rag_pipeline.py",
+      "content": "\"\"\"A minimal RAG pipeline over handbook.md: chunk by section, index two ways, measure retrieval, compare exact\nand approximate nearest-neighbour search, and build a grounded prompt.\n\nRun: python rag_pipeline.py   (add --live, with ANTHROPIC_API_KEY and CLAUDE_MODEL set, to also generate an answer)\n\"\"\"\n\nimport json\nimport re\nimport sys\n\nimport numpy as np\nfrom sklearn.cluster import KMeans\nfrom sklearn.decomposition import TruncatedSVD\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.metrics.pairwise import cosine_similarity\n\n\ndef slug(title):\n    return re.sub(r\"[^a-z0-9]+\", \"-\", title.lower()).strip(\"-\")\n\n\ndef load_chunks(path=\"handbook.md\"):\n    \"\"\"One chunk per ### section, with its ## topic, department and date as metadata.\"\"\"\n    chunks, topic, meta = [], None, {}\n    with open(path, encoding=\"utf-8\") as f:\n        text = f.read()\n    for block in re.split(r\"\\n(?=#{2,3} )\", text):\n        lines = block.strip().splitlines()\n        if lines[0].startswith(\"## \"):\n            topic = lines[0][3:]\n            m = re.search(r\"department: (\\w+); updated: ([\\d-]+)\", block)\n            meta = {\"department\": m.group(1), \"updated\": m.group(2)} if m else {}\n        elif lines[0].startswith(\"### \"):\n            title = lines[0][4:]\n            chunks.append({\"id\": slug(title), \"topic\": topic, \"title\": title,\n                           \"text\": \" \".join(lines[1:]).strip(), **meta})\n    return chunks\n\n\nclass Retriever:\n    \"\"\"TF-IDF (sparse) and LSA (dense: TF-IDF reduced with SVD, a stand-in for an embedding model).\"\"\"\n\n    def __init__(self, chunks, dims=12):\n        self.chunks = chunks\n        docs = [f\"{c['topic']}. {c['title']}. {c['text']}\" for c in chunks]\n        self.tfidf = TfidfVectorizer(stop_words=\"english\", sublinear_tf=True)\n        self.sparse = self.tfidf.fit_transform(docs)\n        self.svd = TruncatedSVD(n_components=dims, random_state=0)\n        self.dense = self._normalise(self.svd.fit_transform(self.sparse))\n\n    @staticmethod\n    def _normalise(m):\n        norms = np.linalg.norm(m, axis=1, keepdims=True)\n        return m / np.where(norms == 0, 1, norms)  # a query with no known words stays all zeros\n\n    def search(self, question, k=3, method=\"tfidf\"):\n        q = self.tfidf.transform([question])\n        if method == \"tfidf\":\n            scores = cosine_similarity(q, self.sparse)[0]\n        else:\n            scores = self.dense @ self._normalise(self.svd.transform(q))[0]\n        order = sorted(range(len(self.chunks)), key=lambda i: (-scores[i], i))[:k]\n        return [(float(scores[i]), self.chunks[i]) for i in order]\n\n\ndef evaluate(retriever, queries, method, k=3):\n    \"\"\"recall@1, recall@k (the relevant section is in the top k) and mean reciprocal rank (MRR).\"\"\"\n    hits1 = hitsk = rr = 0.0\n    for q in queries:\n        ids = [c[\"id\"] for _, c in retriever.search(q[\"question\"], k=len(retriever.chunks), method=method)]\n        # TODO 1: find the rank (1-based) of q[\"relevant\"] in ids; add 1 to hits1 if it's first, to hitsk\n        #         if it's in the top k, and 1/rank to rr\n        pass\n    n = len(queries)\n    return hits1 / n, hitsk / n, rr / n\n\n\ndef ivf_demo(n=20000, dims=64, clusters=64, k=10, seed=0):\n    \"\"\"Exact search against an IVF index (k-means cells; search only the nprobe nearest cells).\"\"\"\n    rng = np.random.default_rng(seed)\n    centres = rng.normal(size=(clusters, dims)) * 0.5  # overlapping clusters, like real embeddings\n    data = centres[rng.integers(0, clusters, n)] + rng.normal(size=(n, dims))\n    data /= np.linalg.norm(data, axis=1, keepdims=True)\n    queries = data[rng.choice(n, 50, replace=False)] + rng.normal(scale=0.05, size=(50, dims))\n    exact = np.argsort(-(queries @ data.T), axis=1)[:, :k]\n    km = KMeans(n_clusters=clusters, n_init=1, random_state=seed).fit(data)\n    for nprobe in (1, 4, 16):\n        found, scanned = 0, 0\n        for q, truth in zip(queries, exact):\n            cells = np.argsort(-(km.cluster_centers_ @ q))[:nprobe]\n            members = np.flatnonzero(np.isin(km.labels_, cells))\n            scanned += len(members)\n            best = members[np.argsort(-(data[members] @ q))[:k]]\n            found += len(set(best) & set(truth))\n        print(f\"IVF nprobe={nprobe:<2}: recall@{k} {found / (k * len(queries)):.2f}, \"\n              f\"vectors scanned per query {scanned / len(queries):.0f} of {n}\")\n\n\ndef build_prompt(question, hits):\n    sources = \"\\n\".join(f'<source id=\"{c[\"id\"]}\" title=\"{c[\"title\"]}\">{c[\"text\"]}</source>' for _, c in hits)\n    return (f\"<sources>\\n{sources}\\n</sources>\\n<question>{question}</question>\\n\"\n            \"Answer from the sources only, citing source ids in square brackets after each claim. \"\n            \"If they don't answer the question, say so.\")\n\n\ndef generate(prompt):\n    \"\"\"The only function that talks to the API.\"\"\"\n    import os\n\n    import anthropic\n\n    client = anthropic.Anthropic()\n    reply = client.messages.create(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=1024,\n                                   messages=[{\"role\": \"user\", \"content\": prompt}])\n    return \"\".join(b.text for b in reply.content if b.type == \"text\")\n\n\ndef main():\n    chunks = load_chunks()\n    with open(\"queries.json\", encoding=\"utf-8\") as f:\n        queries = json.load(f)[\"queries\"]\n    print(f\"{len(chunks)} chunks; first: {chunks[0]['id']} ({chunks[0]['department']}, updated {chunks[0]['updated']})\")\n    retriever = Retriever(chunks)\n    for method in (\"tfidf\", \"dense\"):\n        r1, r3, mrr = evaluate(retriever, queries, method)\n        print(f\"{method:<6} recall@1 {r1:.2f}  recall@3 {r3:.2f}  MRR {mrr:.2f}\")\n    for qid in (\"q05\", \"q06\", \"q12\"):\n        q = next(x for x in queries if x[\"id\"] == qid)\n        top = retriever.search(q[\"question\"], 1, \"tfidf\")[0][1][\"id\"]\n        print(f\"{qid} tfidf top hit: {top} (relevant: {q['relevant']})\")\n    ivf_demo()\n    question = queries[7][\"question\"]\n    prompt = build_prompt(question, retriever.search(question, 3))\n    print(prompt.splitlines()[1][:110] + \"...\")\n    if \"--live\" in sys.argv:\n        print(generate(prompt))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "handbook.md",
+      "content": "# Lanternfield City Council: residents' handbook\n\nLanternfield is a fictional city; this handbook was written for the course.\n\n## Waste and recycling\n<!-- department: environment; updated: 2026-03-01 -->\n\n### Bin collection days\nHousehold waste is collected every week on the same weekday. Grey bins (general waste) and blue bins (recycling) are emptied on alternate weeks, and the brown food-waste caddy every week. Put bins out by 7:00 on collection day and take them in by the end of the day. Check your collection day by postcode on the council website.\n\n### What goes in the blue bin\nThe blue bin takes clean paper, cardboard, glass bottles and jars, food and drink cans, and plastic bottles, tubs and trays. Rinse containers and flatten boxes. Plastic bags, nappies, food waste and textiles must not go in the blue bin: a contaminated bin is tagged and left unemptied.\n\n### Bulky waste collection\nLarge items such as sofas, mattresses and fridges can be collected for a fee: book online and choose up to five items per collection. Collections take place within 10 working days of booking, and items must be at the kerb by 7:00 on the collection day.\n\n## Parking\n<!-- department: transport; updated: 2025-11-15 -->\n\n### Resident parking permits\nResidents in a controlled parking zone can apply online for a resident permit for each vehicle registered at their address, up to two per household. You need proof of address and the vehicle's registration document. Permits last 12 months and must be renewed before they expire.\n\n### Visitor parking permits\nEach household in a controlled parking zone can buy up to 50 visitor permits a year. A visitor permit covers one vehicle for one day, from 8:00 to 18:30, and is activated in the parking app with the visitor's registration number.\n\n### Parking fines and appeals\nIf you receive a penalty charge notice, you can pay it at a 50% discount within 14 days, or challenge it online within 28 days, giving your reasons and any photos. The discount period is held while a challenge is considered. If the challenge is rejected, you can appeal to an independent adjudicator.\n\n## Council tax\n<!-- department: finance; updated: 2026-04-01 -->\n\n### Paying council tax\nCouncil tax is billed each April and can be paid in 10 monthly instalments from April to January, or in 12 instalments on request. Direct Debit payments can be taken on the 1st, 15th or 28th of the month. Pay online, by phone or at a post office with the barcode on your bill.\n\n### Discounts and exemptions\nIf you are the only adult in your home, you get a 25% single person discount. Full-time students are exempt and must send a certificate from their place of study. People on a low income can apply for council tax support, which is assessed on household income and savings.\n\n### Moving home\nTell the council within 21 days when you move into, out of or within Lanternfield, giving your moving date and new address. Your bill is recalculated from the moving date, and any overpayment is refunded or moved to your new account.\n\n## Libraries\n<!-- department: culture; updated: 2026-06-10 -->\n\n### Library opening hours\nThe Central Library opens from 9:00 to 20:00 Monday to Friday and from 10:00 to 17:00 on Saturdays. Branch libraries open from 10:00 to 18:00 Tuesday to Saturday. All libraries close on Sundays and public holidays; e-books and audiobooks are available at any time in the library app.\n\n### Borrowing and renewals\nLibrary membership is free. Members can borrow up to 15 items for three weeks and renew each item up to three times online, unless another member has reserved it. There are no fines for returning children's books late.\n\n## Housing repairs\n<!-- department: housing; updated: 2026-02-20 -->\n\n### Reporting a repair\nCouncil tenants report repairs online, in the housing app or by phone. Routine repairs, such as a dripping tap or a broken cupboard door, are completed within 20 working days. Tenants get a text message with the appointment date and can rearrange it once.\n\n### Emergency repairs\nEmergencies, such as a gas smell, no heating or hot water in winter, flooding or a front door that won't lock, must be reported by phone, day or night. An engineer attends within 4 hours to make the home safe. If you smell gas, leave the property and call the national gas emergency number first.\n\n## Planning\n<!-- department: planning; updated: 2025-09-30 -->\n\n### Do I need planning permission?\nMany small projects, such as some rear extensions, loft conversions and garden sheds, may not need planning permission, but listed buildings and homes in conservation areas have stricter rules. Use the council's free pre-application advice service if you are unsure, and allow 15 working days for a reply.\n\n### Commenting on a planning application\nAnyone can comment on a planning application online during its 21-day consultation period. Comments must be about planning matters, such as design, overlooking or traffic, not property values or private disputes. Comments are published with your name but not your address.\n"
+     },
+     {
+      "path": "queries.json",
+      "content": "{\"_note\": \"Questions residents asked, each with the handbook section that answers it.\",\n \"queries\": [\n  {\"id\": \"q01\", \"question\": \"When do I put my bins out?\", \"relevant\": \"bin-collection-days\"},\n  {\"id\": \"q02\", \"question\": \"Can I put plastic bags in the recycling bin?\", \"relevant\": \"what-goes-in-the-blue-bin\"},\n  {\"id\": \"q03\", \"question\": \"How do I get rid of an old mattress?\", \"relevant\": \"bulky-waste-collection\"},\n  {\"id\": \"q04\", \"question\": \"How many visitor parking permits can we buy?\", \"relevant\": \"visitor-parking-permits\"},\n  {\"id\": \"q05\", \"question\": \"I got a parking ticket. Can I dispute it?\", \"relevant\": \"parking-fines-and-appeals\"},\n  {\"id\": \"q06\", \"question\": \"Is there a reduction if I live alone?\", \"relevant\": \"discounts-and-exemptions\"},\n  {\"id\": \"q07\", \"question\": \"On which dates can a council tax direct debit be taken?\", \"relevant\": \"paying-council-tax\"},\n  {\"id\": \"q08\", \"question\": \"What time does the central library close on Saturday?\", \"relevant\": \"library-opening-hours\"},\n  {\"id\": \"q09\", \"question\": \"How long can I keep a library book?\", \"relevant\": \"borrowing-and-renewals\"},\n  {\"id\": \"q10\", \"question\": \"My heating stopped working in January. Who do I call?\", \"relevant\": \"emergency-repairs\"},\n  {\"id\": \"q11\", \"question\": \"Do I need permission to build a shed?\", \"relevant\": \"do-i-need-planning-permission\"},\n  {\"id\": \"q12\", \"question\": \"How long do I have to object to my neighbour's extension plans?\", \"relevant\": \"commenting-on-a-planning-application\"},\n  {\"id\": \"q13\", \"question\": \"I'm moving out of the city. What do I need to tell the council?\", \"relevant\": \"moving-home\"},\n  {\"id\": \"q14\", \"question\": \"How do I renew the permit for my car?\", \"relevant\": \"resident-parking-permits\"}\n ]}\n"
+     },
+     {
+      "path": "embed_search.py",
+      "content": "\"\"\"Optional: the same retrieval evaluation with a pretrained embedding model instead of LSA.\n\nNeeds pip install sentence-transformers, which downloads the all-MiniLM-L6-v2 model (about 90 MB) on first run.\nRun: python embed_search.py\n\"\"\"\n\nimport json\n\nimport numpy as np\nfrom sentence_transformers import SentenceTransformer\n\nfrom rag_pipeline import load_chunks\n\nchunks = load_chunks()\nwith open(\"queries.json\", encoding=\"utf-8\") as f:\n    queries = json.load(f)[\"queries\"]\nmodel = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\")\ndocs = model.encode([f\"{c['topic']}. {c['title']}. {c['text']}\" for c in chunks], normalize_embeddings=True)\nhits1 = hits3 = rr = 0.0\nfor q in queries:\n    scores = docs @ model.encode(q[\"question\"], normalize_embeddings=True)\n    ids = [chunks[i][\"id\"] for i in np.argsort(-scores)]\n    rank = ids.index(q[\"relevant\"]) + 1\n    hits1, hits3, rr = hits1 + (rank == 1), hits3 + (rank <= 3), rr + 1 / rank\n    if q[\"id\"] in (\"q05\", \"q06\", \"q12\"):\n        print(f\"{q['id']} embedding top hit: {ids[0]}\")\nn = len(queries)\nprint(f\"embeddings recall@1 {hits1 / n:.2f}  recall@3 {hits3 / n:.2f}  MRR {rr / n:.2f}\")\n"
+     }
+    ],
+    "hints": [
+     "ids holds every chunk ID in ranked order, so ids.index(...) always finds the relevant one.",
+     "The IVF figures depend on k-means, which can vary a little between scikit-learn versions; the pattern matters more than the exact numbers.",
+     "A query made only of words the corpus never uses gets an all-zero TF-IDF vector, so every chunk scores 0 and the first chunk wins the tie."
+    ]
+   }
+  },
+  {
+   "title": "Advanced Retrieval Techniques",
+   "summary": "Make retrieval better, and prove it: chunking strategies, BM25 and hybrid search with reciprocal rank fusion, re-ranking with cross-encoders or LLMs, metadata filters and query transformations.",
+   "instructor": "layla-al-mansouri",
+   "lessons": [
+    {
+     "title": "Chunking strategies",
+     "minutes": 12,
+     "objectives": [
+      "Compare fixed-size, structure-aware and parent-child chunking",
+      "Use contextual headers to make chunks findable"
+     ],
+     "key_points": [
+      "Chunk size sets the granularity of what's retrieved: small chunks match precisely but can lose the context needed to answer, while large ones keep context but dilute the match and spend tokens on irrelevant text.",
+      "Fixed-size chunks, by tokens or words with some overlap, are simple and predictable; structure-aware chunking splits on headings, paragraphs or sentences, so each chunk is one coherent unit.",
+      "Contextual headers prepend the document and section titles to each chunk before indexing, so a chunk saying 'Permits last 12 months' is still found for 'parking permits'; Anthropic's contextual retrieval goes further, with a model writing a short context for every chunk.",
+      "Parent-child retrieval indexes small chunks for precise matching but sends their larger parent section to the model, combining precision with context.",
+      "Keep a table's header with its rows and don't split code blocks; then choose between strategies with recall@k on your own questions."
+     ]
+    },
+    {
+     "title": "Hybrid search: keywords plus vectors",
+     "minutes": 12,
+     "objectives": [
+      "Explain how BM25 scores documents",
+      "Combine keyword and dense results with reciprocal rank fusion"
+     ],
+     "key_points": [
+      "BM25 scores a document by the query terms it contains, weighting rare terms by inverse document frequency, saturating repeated terms through k1 and normalising for length through b; k1 = 1.2 and b = 0.75 are common defaults.",
+      "Keyword search excels at exact terms such as product codes, names, numbers and jargon; dense search excels at paraphrase, so combining them usually covers more questions than either alone.",
+      "Reciprocal rank fusion (RRF) merges ranked lists by adding 1 / (k + rank) for every list an item appears in, with k often 60; it needs no score calibration because it uses only ranks.",
+      "Fusion isn't automatically better: blending a strong retriever with a much weaker one can pull the strong one's results down, so choose and weight the methods using your evaluation set."
+     ]
+    },
+    {
+     "title": "Re-ranking",
+     "minutes": 12,
+     "objectives": [
+      "Explain two-stage retrieval with a re-ranker",
+      "Compare cross-encoder and LLM re-ranking"
+     ],
+     "key_points": [
+      "Re-ranking is a second stage: retrieve a generous candidate list cheaply, such as the top 20 to 100, then score each candidate against the query with a more accurate model and keep the best few.",
+      "A cross-encoder reads the query and the passage together, so it judges relevance more accurately than comparing separate embeddings, but it must run once per candidate, which is why it re-ranks a short list instead of searching the whole collection.",
+      "Options include open cross-encoders trained on the MS MARCO dataset, hosted re-ranking APIs, and an LLM asked to grade each candidate; LLM grading is flexible but slower and more expensive.",
+      "Measure the gain with a ranking metric such as MRR or nDCG at the cut-off you send to the model, and check that the added latency fits your budget."
+     ]
+    },
+    {
+     "title": "Metadata filters and query transformation",
+     "minutes": 12,
+     "objectives": [
+      "Filter retrieval by metadata, and enforce permissions with filters",
+      "Rewrite, expand and decompose queries when retrieval needs help"
+     ],
+     "key_points": [
+      "Metadata such as source, department, date, language and access level narrows a search, for example to current finance pages, and enforces permissions: filter on what the user may see before anything reaches the prompt.",
+      "Pre-filtering applies the filter before or during the search, so you still get k results; post-filtering the top k of an unfiltered search can leave fewer than k, or none.",
+      "Query rewriting uses the conversation to turn a follow-up, such as 'what about for students?', into a standalone query before retrieval.",
+      "Multi-query expansion retrieves with several rephrasings and fuses the results; HyDE (Gao and colleagues, 2022) embeds a hypothetical answer written by a model instead of the question; decomposition splits a multi-part question into sub-queries.",
+      "Each transformation adds a model call and latency, so add the ones your failure analysis shows you need."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Chunking, hybrid search, re-ranking and filters",
+    "tool": "Python",
+    "minutes": 75,
+    "goal": "Measure section chunks against fixed windows, implement BM25 and reciprocal rank fusion, re-rank the top five with relevance grades, and see why pre-filtering beats post-filtering (with an optional run using a real embedding model and cross-encoder).",
+    "setup": [
+     "Your finished module 1 files in this folder: rag_pipeline.py, handbook.md and queries.json",
+     "Download retrieval_lab.py, grades.json and neural_rerank.py into the same folder",
+     "Optional: pip install sentence-transformers for neural_rerank.py (it downloads two small models)"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 in BM25.scores(): the BM25 term weight.",
+      "code": "s += self.idf[w] * tf[w] * (self.k1 + 1) / (tf[w] + self.k1 * (1 - self.b + self.b * len(d) / self.avgdl))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete TODO 2, rrf(): add 1 / (k + rank) for each item in each ranking."
+     },
+     {
+      "do": "Complete TODO 3 in main(): re-order each question's top five by grade, keeping the first-stage order for ties.",
+      "code": "reranked[qid] = sorted(top, key=lambda c: -grades[qid].get(c, 0)) + ids[5:]",
+      "lang": "python"
+     },
+     {
+      "do": "Run the lab.",
+      "code": "python retrieval_lab.py",
+      "lang": "bash",
+      "see": "Section chunks beat 40-word windows; TF-IDF, BM25 and LSA tie at recall@1 0.50; re-ranking lifts recall@1 to 0.86; post-filtering leaves 1 result where pre-filtering returns 3."
+     },
+     {
+      "do": "Optional: run python neural_rerank.py.",
+      "code": "python neural_rerank.py",
+      "lang": "bash",
+      "see": "Embeddings alone reach recall@1 about 0.93, fusing them with BM25 lowers that to about 0.79, and the cross-encoder brings it back to about 0.93 (figures can vary slightly with library versions)."
+     },
+     {
+      "do": "Write a line that starts Hybrid: explaining why fusing BM25 with LSA barely helped while re-ranking helped a lot, and what the optional run says about fusing a strong retriever with a weak one."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Section chunks with headers retrieve better than fixed windows.",
+      "look_for": [
+       "sections with headers recall@3 0.86",
+       "40-word windows recall@3 0.71"
+      ]
+     },
+     {
+      "text": "BM25 and reciprocal rank fusion are implemented and measured.",
+      "look_for": [
+       "RRF(BM25, LSA)",
+       "MRR 0.67"
+      ]
+     },
+     {
+      "text": "Re-ranking the top five lifts recall@1 and MRR.",
+      "look_for": [
+       "recall@1 0.50 -> 0.86",
+       "MRR 0.67 -> 0.87"
+      ]
+     },
+     {
+      "text": "Post-filtering loses results that pre-filtering keeps.",
+      "look_for": [
+       "post-filtering the top 3 leaves 1",
+       "pre-filtering returns 3"
+      ]
+     },
+     {
+      "text": "A Hybrid: line explains that the lexical methods share the same blind spots, that re-ranking adds new information, and that fusion with a weaker retriever can hurt.",
+      "look_for": [
+       "Hybrid:"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed TODOs, the output of retrieval_lab.py (and neural_rerank.py if you ran it), and your Hybrid: line.",
+    "files": [
+     {
+      "path": "retrieval_lab.py",
+      "content": "\"\"\"Advanced retrieval on handbook.md: chunking strategies, BM25, reciprocal rank fusion, re-ranking and\nmetadata filters, each measured with the same labelled questions.\n\nNeeds handbook.md, queries.json and rag_pipeline.py from the module 1 lab, plus grades.json.\nRun: python retrieval_lab.py\n\"\"\"\n\nimport json\nimport math\nimport re\nfrom collections import Counter\n\nfrom sklearn.feature_extraction.text import ENGLISH_STOP_WORDS\n\nfrom rag_pipeline import Retriever, load_chunks, slug\n\n\ndef tokens(text):\n    return [w for w in re.findall(r\"[a-z0-9]+\", text.lower()) if w not in ENGLISH_STOP_WORDS]\n\n\nclass BM25:\n    def __init__(self, docs, k1=1.2, b=0.75):\n        self.docs = [tokens(d) for d in docs]\n        self.k1, self.b = k1, b\n        self.avgdl = sum(len(d) for d in self.docs) / len(self.docs)\n        df = Counter(w for d in self.docs for w in set(d))\n        n = len(self.docs)\n        self.idf = {w: math.log(1 + (n - f + 0.5) / (f + 0.5)) for w, f in df.items()}\n\n    def scores(self, query):\n        out = []\n        for d in self.docs:\n            tf = Counter(d)\n            s = 0.0\n            for w in tokens(query):\n                if w in tf:\n                    # TODO 1: add idf * tf * (k1 + 1) / (tf + k1 * (1 - b + b * len(d) / avgdl)): term frequency\n                    #         saturates with k1, and b normalises for document length\n                    pass\n            out.append(s)\n        return out\n\n\ndef ranking(scores):\n    return sorted(range(len(scores)), key=lambda i: (-scores[i], i))\n\n\ndef rrf(rankings, k=60):\n    \"\"\"Reciprocal rank fusion: each list adds 1 / (k + rank) for every item in it.\"\"\"\n    fused = Counter()\n    for order in rankings:\n        # TODO 2: for each position (rank from 1) in order, add 1 / (k + rank) to that item's fused score\n        pass\n    return sorted(fused, key=lambda i: (-fused[i], i))\n\n\ndef mrr(rankings_by_query, relevant_by_query):\n    total = 0.0\n    for qid, ids in rankings_by_query.items():\n        total += 1 / (ids.index(relevant_by_query[qid]) + 1) if relevant_by_query[qid] in ids else 0\n    return total / len(rankings_by_query)\n\n\ndef recall_at(rankings_by_query, relevant_by_query, k):\n    return sum(relevant_by_query[q] in ids[:k] for q, ids in rankings_by_query.items()) / len(rankings_by_query)\n\n\ndef windows(chunks, size=40, overlap=10):\n    \"\"\"Fixed-size word windows over the whole handbook, ignoring headings. Each window is labelled with the\n    section most of its words come from, so it can be scored against the same answers.\"\"\"\n    words, owner = [], []\n    for c in chunks:\n        w = c[\"text\"].split()\n        words += w\n        owner += [c[\"id\"]] * len(w)\n    out = []\n    for start in range(0, len(words), size - overlap):\n        part = owner[start:start + size]\n        out.append({\"id\": Counter(part).most_common(1)[0][0], \"text\": \" \".join(words[start:start + size])})\n        if start + size >= len(words):\n            break\n    return out\n\n\ndef best_by_section(order, items):\n    \"\"\"Collapse a ranking of windows to a ranking of distinct section ids.\"\"\"\n    seen = []\n    for i in order:\n        if items[i][\"id\"] not in seen:\n            seen.append(items[i][\"id\"])\n    return seen\n\n\ndef main():\n    chunks = load_chunks()\n    with open(\"queries.json\", encoding=\"utf-8\") as f:\n        queries = json.load(f)[\"queries\"]\n    with open(\"grades.json\", encoding=\"utf-8\") as f:\n        grades = json.load(f)[\"grades\"]\n    relevant = {q[\"id\"]: q[\"relevant\"] for q in queries}\n\n    # 1. Chunking: section chunks with a contextual header, against plain 40-word windows (both scored with BM25)\n    sectioned = BM25([f\"{c['topic']}. {c['title']}. {c['text']}\" for c in chunks])\n    wins = windows(chunks)\n    windowed = BM25([w[\"text\"] for w in wins])\n    by_section = {q[\"id\"]: [chunks[i][\"id\"] for i in ranking(sectioned.scores(q[\"question\"]))] for q in queries}\n    by_window = {q[\"id\"]: best_by_section(ranking(windowed.scores(q[\"question\"])), wins) for q in queries}\n    print(f\"Chunking: {len(chunks)} sections with headers recall@3 {recall_at(by_section, relevant, 3):.2f} \"\n          f\"MRR {mrr(by_section, relevant):.2f} | {len(wins)} 40-word windows recall@3 \"\n          f\"{recall_at(by_window, relevant, 3):.2f} MRR {mrr(by_window, relevant):.2f}\")\n\n    # 2. Keyword, dense and hybrid retrieval over the section chunks\n    dense = Retriever(chunks)\n    by_dense = {q[\"id\"]: [c[\"id\"] for _, c in dense.search(q[\"question\"], len(chunks), \"dense\")] for q in queries}\n    by_tfidf = {q[\"id\"]: [c[\"id\"] for _, c in dense.search(q[\"question\"], len(chunks), \"tfidf\")] for q in queries}\n    by_hybrid = {qid: rrf([by_section[qid], by_dense[qid]]) for qid in by_section}\n    for name, runs in ((\"TF-IDF\", by_tfidf), (\"BM25\", by_section), (\"LSA\", by_dense), (\"RRF(BM25, LSA)\", by_hybrid)):\n        print(f\"{name:<15} recall@1 {recall_at(runs, relevant, 1):.2f}  recall@3 {recall_at(runs, relevant, 3):.2f}  \"\n              f\"MRR {mrr(runs, relevant):.2f}\")\n\n    # 3. Re-ranking the top 5 hybrid results with relevance grades from a second-stage model\n    reranked = {}\n    for qid, ids in by_hybrid.items():\n        top = ids[:5]\n        # TODO 3: sort the top 5 by their grade, grades[qid].get(id, 0), highest first, keeping the\n        #         first-stage order for ties, then append the rest of ids unchanged\n        reranked[qid] = ids\n    print(f\"Re-ranking the top 5: recall@1 {recall_at(by_hybrid, relevant, 1):.2f} -> {recall_at(reranked, relevant, 1):.2f}, \"\n          f\"MRR {mrr(by_hybrid, relevant):.2f} -> {mrr(reranked, relevant):.2f}\")\n\n    # 4. Metadata filters: finance pages updated in 2026, applied after or before ranking\n    question = \"I'm moving house soon. What do I need to sort out?\"\n    allowed = {c[\"id\"] for c in chunks if c[\"department\"] == \"finance\" and c[\"updated\"] >= \"2026-01-01\"}\n    order = [chunks[i][\"id\"] for i in ranking(sectioned.scores(question))]\n    post = [c for c in order[:3] if c in allowed]\n    pre = [c for c in order if c in allowed][:3]\n    print(f\"Filter finance, updated 2026 or later: post-filtering the top 3 leaves {len(post)} {post}; \"\n          f\"pre-filtering returns {len(pre)} {pre}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "grades.json",
+      "content": "{\"_note\": \"Relevance grades (0 to 3) of the kind a cross-encoder or an LLM re-ranker gives each question-passage pair, written for this lab. Missing pairs are 0.\", \"grades\": {\"q01\": {\"bin-collection-days\": 3, \"what-goes-in-the-blue-bin\": 1, \"bulky-waste-collection\": 1}, \"q02\": {\"what-goes-in-the-blue-bin\": 3, \"bin-collection-days\": 1, \"bulky-waste-collection\": 1}, \"q03\": {\"bulky-waste-collection\": 3, \"bin-collection-days\": 1, \"what-goes-in-the-blue-bin\": 1}, \"q04\": {\"visitor-parking-permits\": 3, \"resident-parking-permits\": 1, \"parking-fines-and-appeals\": 1}, \"q05\": {\"parking-fines-and-appeals\": 3, \"resident-parking-permits\": 1, \"visitor-parking-permits\": 1}, \"q06\": {\"discounts-and-exemptions\": 3, \"paying-council-tax\": 1, \"moving-home\": 1}, \"q07\": {\"paying-council-tax\": 3, \"discounts-and-exemptions\": 1, \"moving-home\": 1}, \"q08\": {\"library-opening-hours\": 3, \"borrowing-and-renewals\": 1}, \"q09\": {\"borrowing-and-renewals\": 3, \"library-opening-hours\": 1}, \"q10\": {\"emergency-repairs\": 3, \"reporting-a-repair\": 1}, \"q11\": {\"do-i-need-planning-permission\": 3, \"commenting-on-a-planning-application\": 1}, \"q12\": {\"commenting-on-a-planning-application\": 3, \"do-i-need-planning-permission\": 1}, \"q13\": {\"moving-home\": 3, \"paying-council-tax\": 1, \"discounts-and-exemptions\": 1}, \"q14\": {\"resident-parking-permits\": 3, \"visitor-parking-permits\": 1, \"parking-fines-and-appeals\": 1}}}\n"
+     },
+     {
+      "path": "neural_rerank.py",
+      "content": "\"\"\"Optional: hybrid search with a pretrained embedding model, then re-ranking with a cross-encoder.\n\nNeeds pip install sentence-transformers; the first run downloads two small models (roughly 90 MB each).\nRun: python neural_rerank.py\n\"\"\"\n\nimport json\n\nimport numpy as np\nfrom sentence_transformers import CrossEncoder, SentenceTransformer\n\nfrom rag_pipeline import load_chunks\nfrom retrieval_lab import BM25, mrr, ranking, recall_at, rrf\n\nchunks = load_chunks()\nwith open(\"queries.json\", encoding=\"utf-8\") as f:\n    queries = json.load(f)[\"queries\"]\nrelevant = {q[\"id\"]: q[\"relevant\"] for q in queries}\ntexts = [f\"{c['topic']}. {c['title']}. {c['text']}\" for c in chunks]\nbm25 = BM25(texts)\nembedder = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\")\ndoc_vectors = embedder.encode(texts, normalize_embeddings=True)\nreranker = CrossEncoder(\"cross-encoder/ms-marco-MiniLM-L6-v2\")\n\nruns = {\"BM25\": {}, \"embeddings\": {}, \"RRF(BM25, embeddings)\": {}, \"RRF + cross-encoder\": {}}\nfor q in queries:\n    keyword = [chunks[i][\"id\"] for i in ranking(bm25.scores(q[\"question\"]))]\n    dense = [chunks[i][\"id\"] for i in np.argsort(-(doc_vectors @ embedder.encode(q[\"question\"], normalize_embeddings=True)))]\n    fused = rrf([keyword, dense])\n    top = fused[:5]\n    scores = reranker.predict([(q[\"question\"], texts[[c[\"id\"] for c in chunks].index(cid)]) for cid in top])\n    runs[\"BM25\"][q[\"id\"]], runs[\"embeddings\"][q[\"id\"]], runs[\"RRF(BM25, embeddings)\"][q[\"id\"]] = keyword, dense, fused\n    runs[\"RRF + cross-encoder\"][q[\"id\"]] = [top[i] for i in np.argsort(-scores)] + fused[5:]\nfor name, run in runs.items():\n    print(f\"{name:<22} recall@1 {recall_at(run, relevant, 1):.2f}  recall@3 {recall_at(run, relevant, 3):.2f}  \"\n          f\"MRR {mrr(run, relevant):.2f}\")\n"
+     }
+    ],
+    "hints": [
+     "Python's sort is stable, so sorting by the negative grade keeps the first-stage order for ties.",
+     "ModuleNotFoundError: rag_pipeline means the module 1 file isn't in this folder.",
+     "grades.json holds grades of the kind a re-ranking model gives; a missing pair counts as 0."
+    ]
+   }
+  },
+  {
+   "title": "Agent Architecture and Tool Use",
+   "summary": "From answering to acting: what makes a system an agent, how to design tools a model can use well, the agent loop in code, and the error handling that keeps agents reliable.",
+   "instructor": "luis-ferreiras",
+   "lessons": [
+    {
+     "title": "From workflows to agents",
+     "minutes": 12,
+     "objectives": [
+      "Explain what makes a system an agent",
+      "Decide when an agent is worth its cost over a workflow"
+     ],
+     "key_points": [
+      "An agent uses an LLM as its reasoning engine in a loop: it decides on an action, such as calling a tool, observes the result and decides again, until the goal is met or it stops.",
+      "Workflows follow paths written in code; agents choose their own steps. Agents suit open-ended tasks whose steps can't be predicted, where mistakes can be caught and the extra cost and latency are acceptable.",
+      "The building block is an augmented LLM, a model with retrieval, tools and memory; many systems called agents are better built as workflows that call one at fixed points.",
+      "Agents trade predictability for flexibility, so start with the simplest design, add autonomy only where it measurably helps, and keep a person in the loop for consequential actions.",
+      "An agent's behaviour comes from its model, prompt, tools and environment together, so evaluate whole trajectories, not just final answers: which tools it called, with what inputs, in how many steps."
+     ]
+    },
+    {
+     "title": "Function calling and tool design",
+     "minutes": 12,
+     "objectives": [
+      "Design tools, schemas and results that a model uses correctly",
+      "Separate read tools from write tools"
+     ],
+     "key_points": [
+      "Function calling lets the model request a tool by name with JSON arguments matching the tool's schema; your code runs it and returns the result, so the model can use live data and take actions.",
+      "Design tools as you would an API for a new colleague: a clear name, a description of what it does, when to use it and what it returns, and typed parameters with enums, patterns and examples.",
+      "Prefer a few well-scoped tools to many overlapping ones, and return concise, structured results with IDs the model can use in later calls, paginating large results instead of dumping them.",
+      "Separate reads from writes: reads can be retried and run in parallel, while writes, such as changing a booking or sending a message, should be idempotent where possible and confirmed by the user.",
+      "The Model Context Protocol (MCP), an open standard Anthropic introduced in 2024, lets applications expose tools and data to models through one common interface that many clients understand."
+     ]
+    },
+    {
+     "title": "The agent loop in code",
+     "minutes": 12,
+     "objectives": [
+      "Implement the tool-calling loop with correct message handling",
+      "Handle every stop reason an agent can meet"
+     ],
+     "key_points": [
+      "The loop: send the conversation and tools; when stop_reason is tool_use, append the whole assistant reply, run each tool_use block, and return every result as a tool_result with the matching tool_use_id in one user message; repeat until end_turn.",
+      "Handle every stop reason: end_turn is a final answer; max_tokens means the reply was cut off, so a tool call in it may be incomplete; refusal means the model declined; pause_turn, from server-side tools, means send the conversation again so it can continue.",
+      "One reply can request several tools; independent read-only calls can run in parallel, but all their results go back together in the next user message.",
+      "SDK tool runners, such as the Python SDK's beta tool runner, run this loop for you; write it yourself when you need full control over approvals, logging or retries.",
+      "Keep the loop's state explicit (messages, turn count, tool calls and tokens used) so it can be logged, inspected and resumed."
+     ]
+    },
+    {
+     "title": "Error handling and reliability",
+     "minutes": 14,
+     "objectives": [
+      "Validate tool inputs and return errors the model can recover from",
+      "Apply retries, budgets, loop detection and approval gates"
+     ],
+     "key_points": [
+      "Validate every tool input against its schema and business rules before running it, and return failures as tool_result blocks with is_error set and a message saying what to change, so the model can correct itself.",
+      "Retry temporary failures, such as timeouts and rate limits, with exponential backoff and a cap, but only for idempotent operations: a retried payment or booking change could happen twice.",
+      "Guard against runaway loops with budgets: a maximum number of turns and tool calls, a token or cost limit, a wall-clock timeout, and detection of the same call repeated with the same input.",
+      "Gate irreversible or costly actions behind human approval, and design the refusal path: the agent should explain what it wants to do and ask, not look for another way round.",
+      "Typical failures are the wrong tool, invented arguments, stopping too early, looping, and obeying instructions hidden in tool output; logging every step makes each of them visible."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "An agent loop that survives failures",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Complete a travel-support agent loop that validates inputs, retries only safe calls, refuses an unapproved booking change, detects a model repeating itself and enforces budgets, then replay two scripted conversations (and optionally the real model).",
+    "setup": [
+     "Python 3.10 or newer with pip install pydantic (and anthropic for --live)",
+     "Download agent_loop.py into a new folder"
+    ],
+    "steps": [
+     {
+      "do": "Read the three tool models and TOOLS: each tool has an input model, a function and a read-only flag. FlakyFlightService times out on its first call."
+     },
+     {
+      "do": "Complete TODO 1 in run_tool(): a tool that isn't read-only needs approve() to return True, and a refusal goes back to the model as an error asking it to get confirmation."
+     },
+     {
+      "do": "Complete TODO 2: run read-only tools through with_retries() and write tools exactly once."
+     },
+     {
+      "do": "Complete TODO 3 in run_agent(): stop when the same call has been made max_repeats times or the tool-call budget is spent, saying why."
+     },
+     {
+      "do": "Run both scenarios.",
+      "code": "python agent_loop.py",
+      "lang": "bash",
+      "see": "Scenario A: an invalid reference rejected, a retry after a timeout, the change refused without approval, and an answer asking the customer to confirm. Scenario B stops on the repeated search."
+     },
+     {
+      "do": "Run it again with --approve and compare scenario A's fourth turn."
+     },
+     {
+      "do": "Optional, with a key: python agent_loop.py --live, then with --live --approve, and compare the real model's choices with the script's."
+     },
+     {
+      "do": "Write a line that starts Reliability: explaining why search_flights may be retried but change_booking must not be, and what else you would budget in production."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Invalid input is rejected with a message the model can act on.",
+      "look_for": [
+       "ERROR Invalid input: booking_ref: String should match pattern"
+      ]
+     },
+     {
+      "text": "The flaky read-only tool is retried after its timeout.",
+      "look_for": [
+       "retry 1 after TimeoutError"
+      ]
+     },
+     {
+      "text": "The booking change is refused without approval, and the agent asks the customer instead.",
+      "look_for": [
+       "ERROR Not approved",
+       "answered after 5 turns, 4 tool calls, 2 errors"
+      ]
+     },
+     {
+      "text": "The repeated call is detected and the run stopped.",
+      "look_for": [
+       "stopped: search_flights was called 3 times with the same input"
+      ]
+     },
+     {
+      "text": "The run reports its retries and refusals.",
+      "look_for": [
+       "Retries: 1, actions refused without approval: 1"
+      ]
+     },
+     {
+      "text": "A Reliability: line explains that retrying a non-idempotent write could change the booking twice, and names further budgets such as tokens, cost or time.",
+      "look_for": [
+       "Reliability:"
+      ]
+     }
+    ],
+    "submit": "Paste your completed TODOs, the output with and without --approve, and your Reliability: line.",
+    "files": [
+     {
+      "path": "agent_loop.py",
+      "content": "\"\"\"A travel-support agent loop that survives real failures: invalid arguments, a flaky service, an action that\nneeds the customer's approval, a model that repeats itself, and a budget.\n\nOffline it replays two scripted conversations. With ANTHROPIC_API_KEY and CLAUDE_MODEL set,\npython agent_loop.py --live sends the same loop to the real model (add --approve to allow the booking change).\n\"\"\"\n\nimport json\nimport sys\nimport time\nfrom types import SimpleNamespace as NS\nfrom typing import Literal\n\nfrom pydantic import BaseModel, Field, ValidationError\n\nAirport = Literal[\"LIS\", \"OPO\", \"MAD\", \"BCN\"]\nDay = Literal[\"Mon\", \"Tue\", \"Wed\", \"Thu\", \"Fri\", \"Sat\", \"Sun\"]\n\n\nclass GetBooking(BaseModel):\n    \"\"\"Look up a booking by its six-letter reference. Use it before searching or changing anything.\"\"\"\n    booking_ref: str = Field(pattern=r\"^[A-Z]{6}$\", description=\"Six capital letters, e.g. QXPLMR\")\n\n\nclass SearchFlights(BaseModel):\n    \"\"\"Search flights between two airports on a day of the week.\"\"\"\n    origin: Airport\n    destination: Airport\n    day: Day\n\n\nclass ChangeBooking(BaseModel):\n    \"\"\"Move a booking to another flight. Only call this after the customer has confirmed the new flight.\"\"\"\n    booking_ref: str = Field(pattern=r\"^[A-Z]{6}$\")\n    flight_id: str = Field(pattern=r\"^AH\\d{3}$\")\n\n\nBOOKINGS = {\"QXPLMR\": {\"passenger\": \"R. Silva\", \"flight\": \"AH101\", \"origin\": \"LIS\", \"destination\": \"OPO\", \"day\": \"Thu\"}}\nFLIGHTS = [{\"id\": \"AH101\", \"origin\": \"LIS\", \"destination\": \"OPO\", \"day\": \"Thu\", \"departs\": \"08:10\"},\n           {\"id\": \"AH204\", \"origin\": \"LIS\", \"destination\": \"OPO\", \"day\": \"Fri\", \"departs\": \"09:40\"},\n           {\"id\": \"AH206\", \"origin\": \"LIS\", \"destination\": \"OPO\", \"day\": \"Fri\", \"departs\": \"18:05\"}]\n\n\nclass FlakyFlightService:\n    \"\"\"Stands in for a remote API that times out on its first call.\"\"\"\n\n    def __init__(self):\n        self.calls = 0\n\n    def search(self, args):\n        self.calls += 1\n        if self.calls == 1:\n            raise TimeoutError(\"flight service timed out\")\n        return [f for f in FLIGHTS if (f[\"origin\"], f[\"destination\"], f[\"day\"]) == (args.origin, args.destination, args.day)]\n\n\nSERVICE = FlakyFlightService()\nTOOLS = {  # name: (input model, function, read_only)\n    \"get_booking\": (GetBooking, lambda a: BOOKINGS.get(a.booking_ref) or {\"error\": \"no such booking\"}, True),\n    \"search_flights\": (SearchFlights, SERVICE.search, True),\n    \"change_booking\": (ChangeBooking, lambda a: {\"booking_ref\": a.booking_ref, \"new_flight\": a.flight_id,\n                                                 \"status\": \"changed\"}, False),\n}\nTOOL_DEFINITIONS = [{\"name\": n, \"description\": m.__doc__, \"input_schema\": m.model_json_schema()}\n                    for n, (m, _, _) in TOOLS.items()]\nSTATS = {\"retries\": 0, \"refused\": 0}\n\n\ndef with_retries(function, args, attempts=3, base_delay=0.0):\n    \"\"\"Retry temporary failures with exponential backoff (base_delay is 0 offline so the script runs instantly).\"\"\"\n    for attempt in range(1, attempts + 1):\n        try:\n            return function(args)\n        except TimeoutError as e:\n            if attempt == attempts:\n                raise\n            STATS[\"retries\"] += 1\n            print(f\"         retry {attempt} after {type(e).__name__}\")\n            time.sleep(base_delay * 2 ** (attempt - 1))\n\n\ndef run_tool(name, tool_input, approve):\n    \"\"\"Returns (result text, is_error). Validates first; retries only read-only tools; gates the rest.\"\"\"\n    if name not in TOOLS:\n        return f\"Unknown tool {name}. Available: {', '.join(TOOLS)}\", True\n    model, function, read_only = TOOLS[name]\n    try:\n        args = model.model_validate(tool_input)\n    except ValidationError as e:\n        return \"Invalid input: \" + \"; \".join(f\"{'.'.join(map(str, x['loc']))}: {x['msg']}\" for x in e.errors()), True\n    # TODO 1: a tool that isn't read-only needs approve(name, tool_input) first: if it returns False, count it in\n    #         STATS[\"refused\"] and return an error telling the model to ask the customer to confirm first\n    pass\n    try:\n        # TODO 2: run read-only tools through with_retries(function, args) and others once (a retried write\n        #         could happen twice); return json.dumps(result) and False\n        result = function(args)\n    except Exception as e:  # report the failure to the model instead of crashing the loop\n        return f\"{type(e).__name__}: {e}\", True\n    return json.dumps(result), False\n\n\ndef run_agent(question, create, approve, max_turns=8, max_tool_calls=10, max_repeats=3):\n    messages = [{\"role\": \"user\", \"content\": question}]\n    calls, errors, seen = 0, 0, {}\n    for turn in range(1, max_turns + 1):\n        reply = create(tools=TOOL_DEFINITIONS, messages=messages)\n        messages.append({\"role\": \"assistant\", \"content\": reply.content})\n        if reply.stop_reason == \"end_turn\":\n            text = \"\".join(b.text for b in reply.content if b.type == \"text\")\n            return f\"answered after {turn} turns, {calls} tool calls, {errors} errors: {text}\"\n        if reply.stop_reason in (\"max_tokens\", \"refusal\"):\n            return f\"stopped: stop_reason {reply.stop_reason} is not a finished answer\"\n        results = []\n        for block in (b for b in reply.content if b.type == \"tool_use\"):\n            key = (block.name, json.dumps(block.input, sort_keys=True))\n            seen[key] = seen.get(key, 0) + 1\n            # TODO 3: stop the run if this exact call has now been made max_repeats times, or if calls has\n            #         reached max_tool_calls, returning a message that says why\n            pass\n            output, is_error = run_tool(block.name, block.input, approve)\n            calls, errors = calls + 1, errors + is_error\n            print(f\"turn {turn}: {block.name} {json.dumps(block.input)} -> {'ERROR ' if is_error else ''}{output[:80]}\")\n            results.append({\"type\": \"tool_result\", \"tool_use_id\": block.id, \"content\": output, \"is_error\": is_error})\n        messages.append({\"role\": \"user\", \"content\": results})\n    return f\"stopped: no answer within {max_turns} turns\"\n\n\ndef call(i, name, args):\n    return NS(type=\"tool_use\", id=f\"call_{i}\", name=name, input=args)\n\n\nSCENARIOS = {\n    \"A\": (\"My booking QXPLMR is on Thursday. Can I move to a Friday morning flight?\", [\n        [call(1, \"get_booking\", {\"booking_ref\": \"qxplmr\"})],\n        [call(2, \"get_booking\", {\"booking_ref\": \"QXPLMR\"})],\n        [call(3, \"search_flights\", {\"origin\": \"LIS\", \"destination\": \"OPO\", \"day\": \"Fri\"})],\n        [call(4, \"change_booking\", {\"booking_ref\": \"QXPLMR\", \"flight_id\": \"AH204\"})],\n        [NS(type=\"text\", text=\"AH204 leaves Lisbon for Porto on Friday at 09:40. Shall I move your booking to it?\")],\n    ]),\n    \"B\": (\"Are there any flights from Madrid to Barcelona on Sunday?\", [\n        [call(i, \"search_flights\", {\"origin\": \"MAD\", \"destination\": \"BCN\", \"day\": \"Sun\"})] for i in range(1, 6)\n    ]),\n}\n\n\ndef scripted(turns):\n    replies = iter(NS(content=c, stop_reason=\"tool_use\" if c[0].type == \"tool_use\" else \"end_turn\") for c in turns)\n    return lambda **kwargs: next(replies)\n\n\ndef live_create():\n    \"\"\"The only function that talks to the API.\"\"\"\n    import os\n\n    import anthropic\n\n    client = anthropic.Anthropic()\n    system = \"You help customers of Atlantic Hop, a small airline, change their bookings. Be brief.\"\n    return lambda **kw: client.messages.create(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=1024, system=system, **kw)\n\n\ndef main():\n    approve = (lambda name, args: True) if \"--approve\" in sys.argv else (lambda name, args: False)\n    for name, (question, turns) in SCENARIOS.items():\n        print(f\"Scenario {name}: {question}\")\n        create = live_create() if \"--live\" in sys.argv else scripted(turns)\n        print(\"Result:\", run_agent(question, create, approve))\n    print(f\"Retries: {STATS['retries']}, actions refused without approval: {STATS['refused']}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "seen counts each (tool name, input) pair, so compare seen[key] with max_repeats before running the tool.",
+     "with_retries() re-raises after its last attempt; run_tool() turns any exception into an error result.",
+     "The scripted model doesn't react to your results, so the scenarios replay the same turns however your tools respond."
+    ]
+   }
+  },
+  {
+   "title": "Planning and Memory in Agents",
+   "summary": "Give agents memory within a session and across sessions, plans they can check and run in the right order, and the reflection that lets them recover from mistakes.",
+   "instructor": "luis-ferreiras",
+   "lessons": [
+    {
+     "title": "Short-term memory: managing the context window",
+     "minutes": 12,
+     "objectives": [
+      "Explain how an agent's context grows and why it must be managed",
+      "Trim and summarise history within a token budget"
+     ],
+     "key_points": [
+      "Short-term memory is the conversation and tool results in the context window: everything the model can see in this session, which grows with every turn and tool result.",
+      "As it grows, quality, cost and latency suffer, so manage it: drop or shorten old tool results, summarise earlier turns into a short note, and keep a compact state object with the goal and the decisions so far.",
+      "Trim from the oldest end, but keep the system prompt, the current task and anything still needed; the history must still start with a user turn and keep each tool result with its tool call.",
+      "Count tokens with the provider's counter rather than character estimates when you're near a limit, and keep the stable prefix unchanged so prompt caching still works.",
+      "Some platforms manage this for you, with server-side compaction or context editing that clears old tool results, so check what your API offers before building your own."
+     ]
+    },
+    {
+     "title": "Long-term memory across sessions",
+     "minutes": 12,
+     "objectives": [
+      "Decide what an agent should remember, and how to store it",
+      "Recall memories by relevance, recency and importance"
+     ],
+     "key_points": [
+      "Long-term memory persists between sessions in a store such as SQLite, a key-value database or a vector index, so an agent can remember preferences, past requests and their outcomes.",
+      "Decide what to write: stable preferences and facts the user states, decisions and outcomes, not every message; a model can propose memories with an importance score, and code applies the rules about what may be kept.",
+      "Recall by combining relevance to the current request, recency (for example decaying with a half-life) and importance; the Generative Agents study (Park and colleagues, 2023) scored memories this way.",
+      "Memories go stale or prove wrong, so update or replace them, record where each came from, and let users see and delete what's stored about them.",
+      "Treat memory as personal data: store only what's needed, keep it secure, set retention periods, honour deletion requests, and never store secrets such as passwords."
+     ]
+    },
+    {
+     "title": "Planning: from goal to steps",
+     "minutes": 12,
+     "objectives": [
+      "Represent a plan as structured steps with dependencies",
+      "Validate a plan and run it in dependency order"
+     ],
+     "key_points": [
+      "Planning breaks a goal into steps the agent can carry out: plan-and-execute has the model write the whole plan first and then runs it, while ReAct-style agents plan one step at a time as they go.",
+      "Write plans as structured output, such as a list of steps, each with an ID, a tool, its arguments and the steps it depends on, so code can check and run them.",
+      "Validate a plan before running it: every tool must exist, every dependency must be a real step, there must be no cycles, and costly steps may need approval.",
+      "Dependencies form a directed acyclic graph, so a topological sort gives a valid order, and steps whose dependencies are complete can run in parallel batches.",
+      "When a step fails or returns something unexpected, re-plan from the current state rather than pushing on with the old plan."
+     ]
+    },
+    {
+     "title": "Reflection and self-correction",
+     "minutes": 12,
+     "objectives": [
+      "Use reflection to improve an agent's next attempt",
+      "Keep reflection grounded in external signals and bounded"
+     ],
+     "key_points": [
+      "Reflection lets an agent critique its own output or trajectory and try again; Reflexion (Shinn and colleagues, 2023) had agents write lessons from failed attempts into memory to improve the next one.",
+      "Reflection works best with an external signal, such as a validation error, a failing test or a tool error, rather than the model judging its own work with nothing to check it against.",
+      "Feed back specific problems, such as 'step s1 uses unknown tool lookup_postcode', not 'try again', so the model has something definite to fix.",
+      "Cap the number of attempts and escalate when they run out: models can repeat a mistake or talk themselves into a worse answer.",
+      "Evaluator-optimiser loops, in which one model generates and another critiques against criteria, apply the same idea across agents."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Plans, memory and a context budget",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Validate a planner's plan, send back specific feedback, run the corrected plan in parallel batches, store and recall long-term memories in SQLite by relevance, recency and importance, and keep a conversation inside a token budget.",
+    "setup": [
+     "Python 3.10 or newer with pip install scikit-learn (graphlib and sqlite3 come with Python)",
+     "Download planner.py, plans.json, memory.py and context.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 in planner.py's validate(): detect cycles with graphlib.",
+      "code": "try:\n    TopologicalSorter({s[\"id\"]: s[\"depends_on\"] for s in plan[\"steps\"]}).prepare()\nexcept CycleError as e:\n    problems.append(\"cycle between \" + \" -> \".join(e.args[1]))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete TODO 2, batches(): take the ready steps, record them as a batch and mark them done, until none are left."
+     },
+     {
+      "do": "Run the planner.",
+      "code": "python planner.py",
+      "lang": "bash",
+      "see": "Plan 1 rejected for an unknown tool and a cycle, the reflection prompt, then plan 2 in three batches."
+     },
+     {
+      "do": "Complete TODO 1 in memory.py's recall(): the recency decay and the weighted score."
+     },
+     {
+      "do": "Run the memory demo.",
+      "code": "python memory.py",
+      "lang": "bash",
+      "see": "5 of 6 messages stored (not the small talk), the three best memories for the repair question, and one deleted on request."
+     },
+     {
+      "do": "Complete TODO 1 in context.py's fit_to_budget(): keep the newest messages that fit, leaving room for the summary."
+     },
+     {
+      "do": "Run the context demo.",
+      "code": "python context.py",
+      "lang": "bash",
+      "see": "Kept 7 messages (about 197 tokens), summarised 6, with the summary first."
+     },
+     {
+      "do": "Write a line that starts Memory: saying which of the tenant's memories you would never store without asking, and how long you would keep the others."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The invalid plan is rejected with specific problems for the planner to fix.",
+      "look_for": [
+       "s1 uses unknown tool lookup_postcode",
+       "cycle between s3 -> s4 -> s3"
+      ]
+     },
+     {
+      "text": "The valid plan runs in dependency order, with independent steps batched together.",
+      "look_for": [
+       "runs in 3 batches: s1+s2 then s3 then s4"
+      ]
+     },
+     {
+      "text": "Memories are filtered on write and recalled with the combined score.",
+      "look_for": [
+       "Stored 5 of 6 messages",
+       "#2 I work night shifts"
+      ]
+     },
+     {
+      "text": "A memory is deleted on request.",
+      "look_for": [
+       "deleted 1 memory"
+      ]
+     },
+     {
+      "text": "The conversation is fitted to the budget with a summary of what was dropped.",
+      "look_for": [
+       "Kept 7 messages",
+       "summarised 6",
+       "Earlier in this conversation:"
+      ]
+     },
+     {
+      "text": "A Memory: line names sensitive memories that need consent and sets a retention period.",
+      "look_for": [
+       "Memory:"
+      ]
+     }
+    ],
+    "submit": "Paste your four completed TODOs, the output of all three scripts, and your Memory: line.",
+    "files": [
+     {
+      "path": "planner.py",
+      "content": "\"\"\"Plan-and-execute with reflection: validate a model's plan, explain what's wrong so it can fix it, then run\nthe steps in dependency order, in parallel batches where possible.\n\nThe plans are recorded in plans.json. Run: python planner.py\n\"\"\"\n\nimport json\nfrom graphlib import CycleError, TopologicalSorter\n\n\ndef validate(plan, tools):\n    \"\"\"Return a list of problems: unknown tools, duplicate ids, missing dependencies, and cycles.\"\"\"\n    problems = []\n    ids = [s[\"id\"] for s in plan[\"steps\"]]\n    if len(ids) != len(set(ids)):\n        problems.append(\"duplicate step ids\")\n    for s in plan[\"steps\"]:\n        if s[\"tool\"] not in tools:\n            problems.append(f\"{s['id']} uses unknown tool {s['tool']}\")\n        for d in s[\"depends_on\"]:\n            if d not in ids:\n                problems.append(f\"{s['id']} depends on missing step {d}\")\n    # TODO 1: build a TopologicalSorter from {step id: its depends_on} and call prepare(); if it raises CycleError,\n    #         add \"cycle between \" + the ids in the cycle (e.args[1]) to problems\n    pass\n    return problems\n\n\ndef batches(plan):\n    \"\"\"Groups of steps that can run at the same time: every step's dependencies are in earlier groups.\"\"\"\n    sorter = TopologicalSorter({s[\"id\"]: s[\"depends_on\"] for s in plan[\"steps\"]})\n    sorter.prepare()\n    groups = []\n    # TODO 2: while sorter.is_active(): take sorter.get_ready() (sorted, for a stable order), append it to groups\n    #         and mark each as done with sorter.done(...)\n    pass\n    return groups\n\n\ndef reflection_prompt(goal, problems, tools):\n    \"\"\"What goes back to the planner model: the goal, what was wrong, and the rules.\"\"\"\n    return (f\"Your plan for '{goal}' can't run: \" + \"; \".join(problems) + \". Use only these tools: \"\n            + \", \".join(tools) + \". Every dependency must be an earlier step, with no cycles. Reply with a corrected plan.\")\n\n\ndef main():\n    with open(\"plans.json\", encoding=\"utf-8\") as f:\n        data = json.load(f)\n    for n, plan in enumerate(data[\"attempts\"], 1):\n        problems = validate(plan, data[\"tools\"])\n        if problems:\n            print(f\"Plan {n}: {len(problems)} problems: \" + \"; \".join(problems))\n            print(\"Reflection sent to the planner:\", reflection_prompt(data[\"goal\"], problems, data[\"tools\"])[:120] + \"...\")\n            continue\n        groups = batches(plan)\n        print(f\"Plan {n}: valid; runs in {len(groups)} batches: \" + \" then \".join(\"+\".join(g) for g in groups))\n        break\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "plans.json",
+      "content": "{\n \"_note\": \"Two plans a planner model might write for the goal, recorded for this lab. The first breaks the rules.\",\n \"goal\": \"Get rid of my old sofa and fridge, and email my landlord the collection date. My postcode is LF1 2AB.\",\n \"tools\": [\"search_handbook\", \"get_bin_day\", \"book_bulky_collection\", \"send_email\"],\n \"attempts\": [\n  {\"steps\": [\n    {\"id\": \"s1\", \"tool\": \"lookup_postcode\", \"args\": {\"postcode\": \"LF1 2AB\"}, \"depends_on\": []},\n    {\"id\": \"s2\", \"tool\": \"search_handbook\", \"args\": {\"query\": \"bulky waste collection\"}, \"depends_on\": []},\n    {\"id\": \"s3\", \"tool\": \"book_bulky_collection\", \"args\": {\"items\": [\"sofa\", \"fridge\"]}, \"depends_on\": [\"s2\", \"s4\"]},\n    {\"id\": \"s4\", \"tool\": \"send_email\", \"args\": {\"to\": \"landlord\", \"about\": \"collection date\"}, \"depends_on\": [\"s3\"]}]},\n  {\"steps\": [\n    {\"id\": \"s1\", \"tool\": \"search_handbook\", \"args\": {\"query\": \"bulky waste collection\"}, \"depends_on\": []},\n    {\"id\": \"s2\", \"tool\": \"get_bin_day\", \"args\": {\"postcode\": \"LF1 2AB\"}, \"depends_on\": []},\n    {\"id\": \"s3\", \"tool\": \"book_bulky_collection\", \"args\": {\"items\": [\"sofa\", \"fridge\"], \"postcode\": \"LF1 2AB\"}, \"depends_on\": [\"s1\"]},\n    {\"id\": \"s4\", \"tool\": \"send_email\", \"args\": {\"to\": \"landlord\", \"about\": \"collection date\"}, \"depends_on\": [\"s3\"]}]}\n ]\n}\n"
+     },
+     {
+      "path": "memory.py",
+      "content": "\"\"\"Long-term memory for an agent, in SQLite: what to store, and how to recall it by relevance, recency and\nimportance (the scoring Generative Agents used). Run: python memory.py\n\"\"\"\n\nimport re\nimport sqlite3\n\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.metrics.pairwise import cosine_similarity\n\nHALF_LIFE_DAYS = 30\nWEIGHTS = {\"relevance\": 0.5, \"recency\": 0.3, \"importance\": 0.2}\n\n\ndef should_remember(text):\n    \"\"\"A stand-in for the model's decision: keep stated preferences and facts about the person, not small talk.\"\"\"\n    return bool(re.search(r\"\\b(prefer|always|never|please don't|I work|my )\", text, re.IGNORECASE))\n\n\ndef open_store():\n    db = sqlite3.connect(\":memory:\")  # use a file path to keep memories between sessions\n    db.execute(\"CREATE TABLE memories (id INTEGER PRIMARY KEY, user TEXT, text TEXT, importance INTEGER, day INTEGER)\")\n    return db\n\n\ndef recall(db, user, query, today, k=3):\n    rows = db.execute(\"SELECT id, text, importance, day FROM memories WHERE user = ?\", (user,)).fetchall()\n    vectorizer = TfidfVectorizer(stop_words=\"english\").fit([r[1] for r in rows] + [query])\n    relevance = cosine_similarity(vectorizer.transform([query]), vectorizer.transform([r[1] for r in rows]))[0]\n    scored = []\n    for (mid, text, importance, day), rel in zip(rows, relevance):\n        # TODO 1: recency is 0.5 ** ((today - day) / HALF_LIFE_DAYS); combine relevance, recency and importance / 10\n        #         with WEIGHTS into one score\n        score = 0.0\n        scored.append((round(float(score), 3), mid, text))\n    return sorted(scored, reverse=True)[:k]\n\n\ndef main():\n    db = open_store()\n    said = [  # (day, what the tenant said, importance a model might assign from 1 to 10)\n        (0, \"Please always text me: don't phone.\", 7),\n        (40, \"I work night shifts, so repair appointments before 13:00 are hard for me.\", 8),\n        (52, \"Lovely weather today!\", 1),\n        (55, \"My kitchen tap has been dripping for a week.\", 4),\n        (58, \"My dog barks at visitors, so knock loudly.\", 5),\n        (59, \"Can you collect my old sofa?\", 3),\n    ]\n    for day, text, importance in said:\n        if should_remember(text):\n            db.execute(\"INSERT INTO memories (user, text, importance, day) VALUES (?, ?, ?, ?)\",\n                       (\"tenant-17\", text, importance, day))\n    print(f\"Stored {db.execute('SELECT COUNT(*) FROM memories').fetchone()[0]} of {len(said)} messages\")\n    for score, mid, text in recall(db, \"tenant-17\", \"When should we book repair appointments for the dripping tap, and should we phone or text?\", today=60):\n        print(f\"  {score:.3f}  #{mid} {text}\")\n    deleted = db.execute(\"DELETE FROM memories WHERE user = ? AND text LIKE ?\", (\"tenant-17\", \"%dog%\")).rowcount\n    print(f\"Forget request: deleted {deleted} memory; {db.execute('SELECT COUNT(*) FROM memories').fetchone()[0]} remain\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "context.py",
+      "content": "\"\"\"Short-term memory: keep a conversation inside a token budget by summarising the oldest turns.\n\nToken counts here are a rough estimate (characters / 4); use your provider's token counter for real limits.\nRun: python context.py\n\"\"\"\n\nimport math\n\n\ndef estimate_tokens(text):\n    return math.ceil(len(text) / 4)\n\n\ndef summarise(messages):\n    \"\"\"The only place a model would be called: offline, a stand-in that keeps each dropped user turn's opening words.\"\"\"\n    return \"Earlier in this conversation: \" + \"; \".join(m[\"content\"].split(\":\")[0] for m in messages if m[\"role\"] == \"user\")\n\n\ndef fit_to_budget(messages, budget):\n    \"\"\"Keep the most recent turns that fit, and replace everything older with one summary message.\"\"\"\n    kept, used = [], 0\n    # TODO 1: walk messages from the newest backwards, adding each to the front of kept while used plus its\n    #         estimate_tokens() stays within budget minus 60 (room for the summary); stop at the first that doesn't fit\n    kept = list(messages)\n    if kept and kept[0][\"role\"] == \"assistant\":  # the history must start with a user turn\n        kept = kept[1:]\n    dropped = messages[: len(messages) - len(kept)]\n    if dropped:\n        kept.insert(0, {\"role\": \"user\", \"content\": summarise(dropped)})\n    return kept, dropped\n\n\ndef main():\n    topics = [\"Bin not emptied on Monday\", \"Blue bin rules for glass\", \"Bulky waste booking for a sofa\",\n              \"Visitor parking permit for Saturday\", \"Council tax direct debit date\", \"Dripping kitchen tap\"]\n    messages = []\n    for t in topics:\n        messages.append({\"role\": \"user\", \"content\": f\"{t}: can you help, please? I've checked the website and couldn't find it.\"})\n        messages.append({\"role\": \"assistant\", \"content\": f\"Of course. Here is what the handbook says about that, with the \"\n                                                         \"steps to follow and who to contact if that doesn't solve it.\"})\n    total = sum(estimate_tokens(m[\"content\"]) for m in messages)\n    kept, dropped = fit_to_budget(messages, budget=250)\n    print(f\"{len(messages)} messages, about {total} tokens; budget 250\")\n    print(f\"Kept {len(kept)} messages (about {sum(estimate_tokens(m['content']) for m in kept)} tokens), \"\n          f\"summarised {len(dropped)}\")\n    print(kept[0][\"content\"][:120] + \"...\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "CycleError's second argument lists the nodes in the cycle, with the first repeated at the end.",
+     "sorter.done() takes the step IDs as separate arguments: sorter.done(*ready).",
+     "In fit_to_budget(), walk reversed(messages) and stop at the first message that doesn't fit, so the kept turns stay contiguous."
+    ]
+   }
+  },
+  {
+   "title": "Multi-Agent Systems",
+   "summary": "Teams of specialised agents: when several agents beat one, how they hand work to each other, how to orchestrate them, and how debate and peer review catch mistakes before users see them.",
+   "instructor": "luis-ferreiras",
+   "lessons": [
+    {
+     "title": "When to use several agents",
+     "minutes": 12,
+     "objectives": [
+      "Explain what multi-agent systems offer and what they cost",
+      "Choose an orchestration pattern for a task"
+     ],
+     "key_points": [
+      "A multi-agent system divides a task among agents with specialised roles, prompts and tools, such as a researcher, a writer and a reviewer, coordinated by an orchestrator or by passing work along a pipeline.",
+      "Benefits include focused prompts and tool sets, parallel work on independent subtasks, and separate context windows, so each agent sees only what its job needs.",
+      "Costs include many more model calls and tokens, more latency, harder debugging and new failures at every hand-off, so use several agents only when one agent with good tools demonstrably falls short.",
+      "Common patterns are orchestrator-workers (a lead agent delegates subtasks and combines the results), sequential pipelines and hierarchies of teams; open group chats between peers are the hardest to control."
+     ]
+    },
+    {
+     "title": "Communication protocols and hand-offs",
+     "minutes": 12,
+     "objectives": [
+      "Design typed messages for hand-offs between agents",
+      "Describe shared state, message passing and open agent protocols"
+     ],
+     "key_points": [
+      "Agents communicate through messages, so define them like an API: a task with its objective, inputs, expected output, permitted tools and limits; a result with its sources and status.",
+      "Typed messages, such as dataclasses or JSON schemas, make hand-offs checkable; free-text hand-offs lose details and let misunderstandings spread.",
+      "Agents can share state through a common store, sometimes called a blackboard, or pass everything in messages; either way, record which agent produced each piece and from what sources.",
+      "Open protocols standardise the plumbing: MCP connects agents to tools and data, and the Agent2Agent (A2A) protocol, introduced by Google in 2025, defines how agents from different systems exchange tasks and results.",
+      "Log every message with its sender, receiver, size and time, so a failed run can be traced to the hand-off where it went wrong."
+     ]
+    },
+    {
+     "title": "Orchestration frameworks",
+     "minutes": 12,
+     "objectives": [
+      "Explain what an orchestration layer does",
+      "Decide between plain code and an agent framework"
+     ],
+     "key_points": [
+      "Orchestration decides which agent runs when, what each receives and when the work is finished; it can be plain code, a state machine or a framework.",
+      "Frameworks such as LangGraph (graphs of steps over shared state), CrewAI (role-based crews), AutoGen (conversations between agents) and model providers' agent SDKs handle routing, state, retries and tracing.",
+      "Frameworks change quickly and add abstractions to learn and debug, so prototype the flow in plain code and adopt a framework when features such as checkpoints, human-in-the-loop steps or tracing save real effort.",
+      "Whatever you use, keep state explicit, make steps resumable from checkpoints, bound every loop and agent with budgets, and trace each run from end to end."
+     ]
+    },
+    {
+     "title": "Debate, peer review and failure modes",
+     "minutes": 12,
+     "objectives": [
+      "Use debate and peer review to improve a multi-agent system's accuracy",
+      "Recognise and counter multi-agent failure modes"
+     ],
+     "key_points": [
+      "In multi-agent debate, several model instances propose answers, read each other's and revise over rounds; Du and colleagues (2023) found this improved factual accuracy and reasoning on several tasks.",
+      "Peer review gives a critic agent the job of checking another agent's work against evidence, such as whether every sentence is supported by its cited source, and sends it back with specific problems until it passes or a limit is reached.",
+      "Critics work best with different instructions, information or models from the agent they check; agents with the same blind spots tend to agree with each other's mistakes.",
+      "Typical failures are errors that spread and grow from agent to agent, conformity, endless delegation or revision loops, duplicated work, details lost in hand-offs and runaway cost.",
+      "Counter them with verifiable outputs such as citations, independent checks, budgets and stopping rules for every loop, and escalation to a person when agents can't agree."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "A researcher, a writer and a reviewer",
+    "tool": "Python",
+    "minutes": 60,
+    "goal": "Run a three-agent pipeline with typed hand-offs: a researcher gathers sourced notes with BM25, a writer drafts from them, and a reviewer you complete checks every sentence and sends the draft back until it's supported.",
+    "setup": [
+     "Your finished rag_pipeline.py and handbook.md (module 1) and retrieval_lab.py (module 2) in this folder",
+     "Download multi_agent.py and drafts.json into the same folder",
+     "Optional: ANTHROPIC_API_KEY and CLAUDE_MODEL to let the model write with --live"
+    ],
+    "steps": [
+     {
+      "do": "Read the message dataclasses and send(): every hand-off is typed and logged."
+     },
+     {
+      "do": "Complete TODO 1 in Reviewer.run(): flag a sentence when a number in it is missing from its cited notes, or when fewer than half of its content words appear in them.",
+      "code": "missing_numbers = [x for x in re.findall(r\"\\d+\", claim) if not re.search(rf\"\\b{x}\\b\", evidence)]\nwords = tokens(claim)\nsupport = sum(w in set(tokens(evidence)) for w in words) / max(1, len(words))",
+      "lang": "python"
+     },
+     {
+      "do": "Run the pipeline.",
+      "code": "python multi_agent.py",
+      "lang": "bash",
+      "see": "Notes from three sections, draft 1 sent back with two unsupported sentences, draft 2 approved, and the trace of hand-offs."
+     },
+     {
+      "do": "Optional, with a key: python multi_agent.py --live, and see how many revisions the real writer needs."
+     },
+     {
+      "do": "Write a line that starts Review: naming an unsupported claim your reviewer would still pass, and how a second reviewer, with different instructions or a different model, could catch it."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The researcher's notes come from the relevant sections.",
+      "look_for": [
+       "Notes from: moving-home, paying-council-tax, bin-collection-days"
+      ]
+     },
+     {
+      "text": "The reviewer catches both unsupported sentences in draft 1.",
+      "look_for": [
+       "unsupported (12)",
+       "free of charge"
+      ]
+     },
+     {
+      "text": "The revised draft is approved.",
+      "look_for": [
+       "Draft 2: approved"
+      ]
+     },
+     {
+      "text": "Every hand-off is typed and logged.",
+      "look_for": [
+       "list of Note",
+       "reviewer -> orchestrator: Review"
+      ]
+     },
+     {
+      "text": "A Review: line names a claim the word-overlap check would pass, such as a negation or a mixed-up figure, and a way to catch it.",
+      "look_for": [
+       "Review:"
+      ]
+     }
+    ],
+    "submit": "Paste your completed Reviewer.run(), the output, and your Review: line (and any live output).",
+    "files": [
+     {
+      "path": "multi_agent.py",
+      "content": "\"\"\"Three agents with one job each: a researcher gathers sourced notes, a writer drafts an answer from them, and a\nreviewer checks every sentence against the notes, sending drafts back until they pass.\n\nOffline the writer replays drafts.json; with ANTHROPIC_API_KEY and CLAUDE_MODEL set, --live lets the model write.\nNeeds handbook.md, rag_pipeline.py (module 1 lab) and retrieval_lab.py (module 2 lab). Run: python multi_agent.py\n\"\"\"\n\nimport json\nimport re\nimport sys\nfrom dataclasses import dataclass, field\n\nfrom rag_pipeline import load_chunks\nfrom retrieval_lab import BM25, ranking, tokens\n\n\n@dataclass\nclass Task:\n    question: str\n    max_sources: int = 3\n\n\n@dataclass\nclass Note:\n    source: str\n    text: str\n\n\n@dataclass\nclass Draft:\n    text: str\n    revision: int\n\n\n@dataclass\nclass Review:\n    approved: bool\n    problems: list = field(default_factory=list)\n\n\nTRACE = []\n\n\ndef send(sender, receiver, message):\n    \"\"\"Every hand-off goes through here, so the whole conversation between agents is logged.\"\"\"\n    kind = f\"list of {type(message[0]).__name__}\" if isinstance(message, list) else type(message).__name__\n    TRACE.append(f\"{sender} -> {receiver}: {kind}\")\n    return message\n\n\nclass Researcher:\n    def __init__(self):\n        self.chunks = load_chunks()\n        self.index = BM25([f\"{c['topic']}. {c['title']}. {c['text']}\" for c in self.chunks])\n\n    def run(self, task):\n        top = ranking(self.index.scores(task.question))[:task.max_sources]\n        return [Note(self.chunks[i][\"id\"], self.chunks[i][\"text\"]) for i in top]\n\n\nclass Writer:\n    def __init__(self, live):\n        self.live = live\n        with open(\"drafts.json\", encoding=\"utf-8\") as f:\n            self.recorded = json.load(f)[\"drafts\"]\n\n    def run(self, task, notes, review, revision):\n        if not self.live:\n            return Draft(self.recorded[min(revision, len(self.recorded) - 1)], revision)\n        return Draft(write_with_model(task, notes, review), revision)\n\n\ndef write_with_model(task, notes, review):\n    \"\"\"The only function that talks to the API.\"\"\"\n    import os\n\n    import anthropic\n\n    sources = \"\\n\".join(f'<note source=\"{n.source}\">{n.text}</note>' for n in notes)\n    feedback = (\"\\nFix these problems from the reviewer: \" + \"; \".join(review.problems)) if review else \"\"\n    prompt = (f\"{sources}\\n<question>{task.question}</question>\\nAnswer in two or three sentences, using only the \"\n              f\"notes, and end every sentence with its source in square brackets, like [moving-home].{feedback}\")\n    client = anthropic.Anthropic()\n    reply = client.messages.create(model=os.environ[\"CLAUDE_MODEL\"], max_tokens=1024,\n                                   messages=[{\"role\": \"user\", \"content\": prompt}])\n    return \"\".join(b.text for b in reply.content if b.type == \"text\")\n\n\nclass Reviewer:\n    def run(self, draft, notes):\n        texts = {n.source: n.text for n in notes}\n        problems = []\n        for sentence in re.split(r\"(?<=[.!?\\]])\\s+(?=[A-Z])\", draft.text.strip()):\n            cited = re.findall(r\"\\[([a-z0-9-]+)\\]\", sentence)\n            claim = re.sub(r\"\\s*\\[[a-z0-9-]+\\]\", \"\", sentence)\n            if not cited or any(c not in texts for c in cited):\n                problems.append(f\"no valid source: {claim.strip()[:50]}\")\n                continue\n            evidence = \" \".join(texts[c] for c in cited)\n            # TODO 1: flag the sentence if any number in it is missing from evidence, or if fewer than half of its\n            #         content words (tokens(claim)) appear in tokens(evidence)\n            pass\n        return Review(not problems, problems)\n\n\ndef orchestrate(question, live=False, max_revisions=2):\n    task = send(\"orchestrator\", \"researcher\", Task(question))\n    notes = send(\"researcher\", \"orchestrator\", Researcher().run(task))\n    print(\"Notes from:\", \", \".join(n.source for n in notes))\n    writer, reviewer, review = Writer(live), Reviewer(), None\n    for revision in range(max_revisions + 1):\n        draft = send(\"writer\", \"reviewer\", writer.run(task, notes, review, revision))\n        review = send(\"reviewer\", \"orchestrator\", reviewer.run(draft, notes))\n        print(f\"Draft {revision + 1}: \" + (\"approved\" if review.approved else \"; \".join(review.problems)))\n        if review.approved:\n            return draft\n    return None\n\n\ndef main():\n    final = orchestrate(\"I'm moving out of Lanternfield next month. What do I need to do about council tax and my bins?\",\n                        live=\"--live\" in sys.argv)\n    print(\"Final answer:\", final.text if final else \"none approved: escalate to a person\")\n    print(\"Trace:\", \" | \".join(TRACE))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "drafts.json",
+      "content": "{\"_note\": \"Drafts a writer model might produce, recorded for this lab: the first has two unsupported sentences.\",\n \"drafts\": [\n  \"Tell the council within 21 days of your move [moving-home]. Your bill is recalculated from the moving date, and any overpayment is refunded [moving-home]. Your final bin collection is free of charge [bin-collection-days]. You can pay what's left in 12 instalments [moving-home].\",\n  \"Tell the council within 21 days of your move, giving your moving date and new address [moving-home]. Your bill is recalculated from the moving date, and any overpayment is refunded or moved to your new account [moving-home]. Until you go, put your bins out by 7:00 on your collection day [bin-collection-days].\"\n ]}\n"
+     }
+    ],
+    "hints": [
+     "tokens() comes from retrieval_lab.py: it lower-cases words and drops stop words.",
+     "A citation like [moving-home] is removed from the sentence before checking its words.",
+     "If draft 2 is also rejected, check that numbers are matched as whole words, so 7 doesn't match 17."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "RAG fundamentals: the pipeline, embeddings, vector indexes and retrieval metrics; finish the module 1 lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Advanced retrieval: chunking, BM25 and hybrid search, re-ranking and filters; finish the retrieval lab.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Agents and tools: tool design, the agent loop and error handling; finish the agent-loop lab.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Planning and memory: context budgets, long-term memory, plans and reflection; finish the planning and memory lab.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Multi-agent systems: roles, hand-offs, orchestration and peer review; finish the three-agent lab and start the capstone.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build, evaluate and submit the research assistant capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Autonomous research assistant",
+  "minutes": 720,
+  "brief": "Build a multi-agent research assistant that answers this question for Lanternfield, a fictional city: 'What should Lanternfield do next to reduce summer heat in its city centre, and what has worked so far?' A Researcher agent must use tool calling on the Claude API, in a loop you write or the SDK's tool runner, with the two tools in tools.py: search_reports, retrieval over eight local reports (BM25 to start; replace it with embeddings in a vector store such as Chroma or pgvector if you like), and web_search, a stand-in for a search API over a snapshot of web pages, one of them about another town. The Researcher returns structured notes, each with its source ID and the text it relies on. A Writer agent then synthesises a report of 400 to 600 words with a citation after every claim, and a Reviewer, in code, with a model or both, checks each sentence against the notes and sends the draft back until it passes or a revision limit is reached. Keep each model call in its own function, log every tool call and hand-off, set budgets for turns, tool calls and revisions, and handle tool errors. Then evaluate: recall@3 on the retrieval checks in eval_points.json, how many of its seven required points the report covers, citation precision (the share of cited sentences whose source really supports them, checked by you), and any facts borrowed from the other town. Finally, change one thing, such as the retriever, the Researcher's prompt or the review rules, and compare the results.",
+  "deliverables": [
+   "The Researcher, Writer, Reviewer and orchestrator code, with each model call in its own function",
+   "The final report with citations, and the structured notes it was written from",
+   "A trace of one full run: every tool call, hand-off and revision",
+   "An evaluation table: retrieval recall@3, required points covered, citation precision, and errors such as facts about the wrong town",
+   "A short write-up of one change and its measured effect",
+   "README.md: setup, environment variables and how to run everything"
+  ],
+  "rubric": [
+   {
+    "name": "Researcher and tool use",
+    "points": 20,
+    "description": "The Researcher calls both tools sensibly through a correct loop, validates inputs, handles errors and returns structured, sourced notes."
+   },
+   {
+    "name": "Retrieval quality",
+    "points": 15,
+    "description": "Retrieval is measured with recall@3 and improved or justified; the other town's page is recognised and not used as evidence about Lanternfield."
+   },
+   {
+    "name": "Writer and citations",
+    "points": 20,
+    "description": "The report answers the question, covers the required points and cites a real source after every claim."
+   },
+   {
+    "name": "Review and orchestration",
+    "points": 20,
+    "description": "Typed hand-offs, a reviewer that catches unsupported sentences, revision limits and budgets, and a readable trace."
+   },
+   {
+    "name": "Evaluation and improvement",
+    "points": 15,
+    "description": "All four measures are reported, one change is tested, and its effect is explained honestly."
+   },
+   {
+    "name": "Code quality and README",
+    "points": 10,
+    "description": "Readable, organised code and a README that lets someone else run it."
+   }
+  ],
+  "submit": "Paste your code (each file with its name), the final report, the notes, the trace of one run, your evaluation table, the write-up of your change, and your README.",
+  "files": [
+   {
+    "path": "tools.py",
+    "content": "\"\"\"Ready-made tools for the research assistant capstone: BM25 search over the local reports (the RAG side),\na stand-in web search over web_snapshot.json, and tool definitions to give the Researcher agent.\n\nRun python tools.py to check retrieval on the labelled queries (no API key needed).\n\"\"\"\n\nimport json\nimport math\nimport re\nfrom collections import Counter\n\nSTOP = set(\"a an and are as at be by for from has have how in is it of on or that the their them they this to was \"\n           \"were what when which who will with do did does\".split())\n\n\ndef tokens(text):\n    return [w for w in re.findall(r\"[a-z0-9]+\", text.lower()) if w not in STOP]\n\n\nclass BM25:\n    def __init__(self, texts, k1=1.2, b=0.75):\n        self.docs = [tokens(t) for t in texts]\n        self.k1, self.b = k1, b\n        self.avgdl = sum(map(len, self.docs)) / len(self.docs)\n        df = Counter(w for d in self.docs for w in set(d))\n        self.idf = {w: math.log(1 + (len(self.docs) - f + 0.5) / (f + 0.5)) for w, f in df.items()}\n\n    def search(self, query, k):\n        scores = []\n        for d in self.docs:\n            tf = Counter(d)\n            scores.append(sum(self.idf[w] * tf[w] * (self.k1 + 1) / (tf[w] + self.k1 * (1 - self.b + self.b * len(d) / self.avgdl))\n                              for w in tokens(query) if w in tf))\n        return [(round(s, 3), i) for s, i in sorted(((s, i) for i, s in enumerate(scores)), key=lambda x: (-x[0], x[1]))[:k] if s > 0]\n\n\ndef load(path, key):\n    with open(path, encoding=\"utf-8\") as f:\n        return json.load(f)[key]\n\n\nDOCS = load(\"corpus.json\", \"documents\")\nPAGES = load(\"web_snapshot.json\", \"pages\")\nDOC_INDEX = BM25([f\"{d['title']}. {d['text']}\" for d in DOCS])\nWEB_INDEX = BM25([f\"{p['title']}. {p['text']}\" for p in PAGES])\n\n\ndef search_reports(query, k=3):\n    \"\"\"Local council reports: the vector-database side of the capstone (BM25 here; swap in embeddings if you like).\"\"\"\n    return [{\"source\": DOCS[i][\"id\"], \"title\": DOCS[i][\"title\"], \"year\": DOCS[i][\"year\"], \"score\": s,\n             \"text\": DOCS[i][\"text\"]} for s, i in DOC_INDEX.search(query, k)]\n\n\ndef web_search(query, k=3):\n    \"\"\"Stands in for a web search API. Results can be about other places: check before using them.\"\"\"\n    return [{\"source\": PAGES[i][\"url\"], \"title\": PAGES[i][\"title\"], \"score\": s, \"text\": PAGES[i][\"text\"]}\n            for s, i in WEB_INDEX.search(query, k)]\n\n\nTOOL_DEFINITIONS = [\n    {\"name\": \"search_reports\", \"description\": \"Search Lanternfield council's own reports on heat, trees, roofs, Market \"\n     \"Square, cool spaces and budgets. Use it first for anything about Lanternfield.\",\n     \"input_schema\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"},\n                      \"k\": {\"type\": \"integer\", \"minimum\": 1, \"maximum\": 5}}, \"required\": [\"query\"],\n                      \"additionalProperties\": False}},\n    {\"name\": \"web_search\", \"description\": \"Search the web for general evidence (how cooling measures work) or local news. \"\n     \"Results may be about other towns: only use what is clearly relevant, and cite the URL.\",\n     \"input_schema\": {\"type\": \"object\", \"properties\": {\"query\": {\"type\": \"string\"}}, \"required\": [\"query\"],\n                      \"additionalProperties\": False}},\n]\nTOOLS = {\"search_reports\": search_reports, \"web_search\": web_search}\n\nif __name__ == \"__main__\":\n    checks = load(\"eval_points.json\", \"retrieval_checks\")\n    found = 0\n    for c in checks:\n        ids = [r[\"source\"] for r in search_reports(c[\"query\"])]\n        found += c[\"relevant\"] in ids\n        print(f\"{c['query'][:48]:<48} -> {ids}\")\n    print(f\"recall@3 on the labelled queries: {found}/{len(checks)}\")\n    print(\"web_search('Market Square traders'):\", [r[\"source\"] for r in web_search(\"Market Square traders\")])\n"
+   },
+   {
+    "path": "corpus.json",
+    "content": "{\"_note\": \"Lanternfield is a fictional city: these local reports were written for the capstone.\",\n \"documents\": [\n  {\"id\": \"heat-monitoring-2025\", \"title\": \"Heat in the city centre: 2025 monitoring summary\", \"year\": 2026,\n   \"text\": \"Sensors on 40 lamp posts recorded city-centre air temperatures up to 4 °C higher than in Riverside Park on the hottest summer afternoons. The hottest streets were around Market Square and the bus station, both with little shade and dark paving.\"},\n  {\"id\": \"street-trees\", \"title\": \"Street trees programme\", \"year\": 2025,\n   \"text\": \"The council planted 600 street trees between 2022 and 2025, mostly in residential streets. Mature trees shade pavements and cool the air around them through evaporation. Young trees need watering for their first three summers, and 12% of the new trees died in the dry summer of 2025.\"},\n  {\"id\": \"cool-roofs-pilot\", \"title\": \"Cool roofs pilot\", \"year\": 2026,\n   \"text\": \"Six council buildings had their roofs painted with a reflective coating in 2024. Top-floor indoor temperatures fell by 1 to 2 °C on hot days, and the coating needs renewing about every ten years.\"},\n  {\"id\": \"market-square-consultation\", \"title\": \"Market Square redesign consultation\", \"year\": 2026,\n   \"text\": \"Residents asked for more shade, drinking fountains and seating in Market Square. The draft design replaces half the dark paving with lighter stone and adds 30 trees in planters and a water feature. Traders raised concerns about access for delivery vans.\"},\n  {\"id\": \"heat-health-advice\", \"title\": \"Heat and health: advice for residents\", \"year\": 2025,\n   \"text\": \"Older people, babies and people with long-term illnesses are most at risk in hot weather. During heat alerts the cool spaces scheme opens libraries and community centres as places to cool down.\"},\n  {\"id\": \"cool-spaces-review\", \"title\": \"Cool spaces scheme: 2025 review\", \"year\": 2026,\n   \"text\": \"During four heat alerts in summer 2025, 1,900 visits were recorded at 14 cool spaces. Visitors valued free water and seating, but many said they hadn't known the scheme existed until they arrived.\"},\n  {\"id\": \"bus-shelter-roofs\", \"title\": \"Green roofs on bus shelters\", \"year\": 2025,\n   \"text\": \"Twenty bus shelters near the bus station were fitted with planted roofs in 2025. They give a little shade and support pollinators, but their cooling effect on the surrounding street was too small to measure.\"},\n  {\"id\": \"adaptation-budget\", \"title\": \"Council budget 2026/27: climate adaptation\", \"year\": 2026,\n   \"text\": \"The climate adaptation budget proposes funding for tree maintenance, the Market Square works and a second phase of cool roofs, subject to the council's final budget vote.\"}\n ]}\n"
+   },
+   {
+    "path": "web_snapshot.json",
+    "content": "{\"_note\": \"A made-up stand-in for web search results, so the capstone runs offline. Every page is fictional.\",\n \"pages\": [\n  {\"url\": \"https://urban-cooling-guide.example/trees\", \"title\": \"How street trees cool cities\",\n   \"text\": \"Trees cool streets mainly through shade and through evaporation from their leaves. The effect is largest where the canopy covers paved areas, and it depends on trees being watered and maintained.\"},\n  {\"url\": \"https://urban-cooling-guide.example/surfaces\", \"title\": \"Cool and reflective surfaces\",\n   \"text\": \"Light-coloured paving and reflective roofs absorb less sunlight than dark surfaces, so they stay cooler. Glare and maintenance need planning.\"},\n  {\"url\": \"https://heat-health.example/alerts\", \"title\": \"Heat-health alerts\",\n   \"text\": \"Heat-health alert systems warn health services and the public before hot weather, so that cooling centres, checks on vulnerable people and public messages can start in time.\"},\n  {\"url\": \"https://othertown-news.example/fountains\", \"title\": \"Othertown opens 50 drinking fountains\",\n   \"text\": \"Othertown council has installed 50 new drinking fountains in its parks this summer.\"},\n  {\"url\": \"https://lanternfield-gazette.example/market-square\", \"title\": \"Traders worry about Market Square plans\",\n   \"text\": \"Market traders told the Lanternfield Gazette they support more shade but want guaranteed delivery access during the works.\"},\n  {\"url\": \"https://lanternfield-gazette.example/cool-spaces\", \"title\": \"Few residents knew about cool spaces\",\n   \"text\": \"A Gazette survey of 200 residents found that most had not heard of the council's cool spaces scheme.\"}\n ]}\n"
+   },
+   {
+    "path": "eval_points.json",
+    "content": "{\"question\": \"What should Lanternfield do next to reduce summer heat in its city centre, and what has worked so far?\",\n \"required_points\": [\n  \"The city centre measured up to 4 °C hotter than the park, worst around Market Square and the bus station\",\n  \"Street trees cool by shade and evaporation but need watering, and 12% of new trees died in 2025\",\n  \"Cool roofs lowered top-floor temperatures by 1 to 2 °C\",\n  \"The Market Square design adds lighter paving, trees and water, and traders worry about delivery access\",\n  \"Cool spaces were used (1,900 visits) but few residents knew about them\",\n  \"Bus-shelter green roofs had no measurable cooling effect\",\n  \"Funding for next steps depends on the council's budget vote\"],\n \"retrieval_checks\": [\n  {\"query\": \"How much hotter is the city centre than the park?\", \"relevant\": \"heat-monitoring-2025\"},\n  {\"query\": \"Did the new street trees survive?\", \"relevant\": \"street-trees\"},\n  {\"query\": \"What did painting roofs achieve?\", \"relevant\": \"cool-roofs-pilot\"},\n  {\"query\": \"What do traders think of the Market Square plans?\", \"relevant\": \"market-square-consultation\"},\n  {\"query\": \"Did people use the cool spaces during heat alerts?\", \"relevant\": \"cool-spaces-review\"}]}\n"
+   }
+  ]
+ }
+}

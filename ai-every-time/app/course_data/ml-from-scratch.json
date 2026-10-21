@@ -1,0 +1,1600 @@
+{
+  "slug": "ml-from-scratch",
+  "title": "Machine Learning from Scratch",
+  "subtitle": "Build gradient descent, k-NN, k-means, Naive Bayes, linear and logistic regression and decision trees in NumPy, and prove each one matches scikit-learn.",
+  "category": "Machine Learning",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "nataliya-kovalenko",
+    "chukwuemeka-obieche"
+  ],
+  "skills": [
+    "NumPy",
+    "Vectorisation",
+    "Gradient descent",
+    "k-nearest neighbours",
+    "k-means clustering",
+    "Naive Bayes",
+    "Linear regression",
+    "Logistic regression",
+    "Decision trees",
+    "Model evaluation"
+  ],
+  "tools": [
+    "JupyterLab",
+    "Python 3",
+    "NumPy",
+    "scikit-learn",
+    "matplotlib",
+    "pytest"
+  ],
+  "outcomes": [
+    "Write machine learning maths as vectorised NumPy code, and check every gradient numerically",
+    "Train models with batch, stochastic and mini-batch gradient descent, choosing learning rates and scaling features",
+    "Implement k-nearest neighbours, k-means and Naive Bayes from scratch, with smoothing and log probabilities",
+    "Implement linear and logistic regression with MSE, log-loss and L2 penalties, and decision trees with entropy and information gain",
+    "Evaluate models with metrics you write yourself, and verify every implementation against scikit-learn",
+    "Package your algorithms as a tested library with one consistent API, and benchmark it on standard datasets"
+  ],
+  "prerequisites": "Python Foundations for Data Science (or comfortable Python with functions, classes and NumPy arrays) and Foundations of Probability and Statistics (conditional probability, the normal distribution, means and variances). Machine Learning Foundations with Python helps: this course rebuilds the models it uses. Install Python 3 with NumPy, scikit-learn, matplotlib, pytest and JupyterLab; every dataset comes with scikit-learn or the labs.",
+  "description": "Machine learning libraries make models easy to use and easy to misunderstand. In this course you build the classic algorithms yourself, in Python with NumPy, so you know exactly what fit and predict do. You start with the maths as code: vectors, matrices and broadcasting, then gradients and gradient descent, checked numerically and tuned through the learning rate, feature scaling and mini-batches. Then you build k-nearest neighbours and k-means clustering on fast distance computations, Naive Bayes for word counts and for continuous measurements with Laplace smoothing and log probabilities, linear and logistic regression trained by gradient descent with an L2 penalty, and a decision tree grown with entropy and information gain.\n\nscikit-learn is used only to load data, split it and check you: every lab ends with a script that compares your model with scikit-learn's on its built-in datasets, so you see your predictions, coefficients and metrics agree, and learn why they sometimes differ (tied splits, 32-bit thresholds, regularisation conventions). Every lesson has a JupyterLab walkthrough that runs its ideas on real numbers. In the capstone you gather everything into a small, tested library with one consistent API and benchmark it against scikit-learn.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Linear Algebra and Gradient Descent",
+      "summary": "Write the maths of machine learning as vectorised NumPy code, then minimise a loss with gradient descent, checking every gradient numerically and seeing how the learning rate, feature scaling and batch size change the path to the minimum.",
+      "instructor": "nataliya-kovalenko",
+      "lessons": [
+        {
+          "title": "Vectors, matrices and vectorised NumPy",
+          "minutes": 12,
+          "objectives": [
+            "Represent a dataset as a matrix and a linear model's weights as a vector",
+            "Replace loops over rows with vectorised NumPy and broadcasting",
+            "Predict the shape of a result before running the code"
+          ],
+          "key_points": [
+            "A dataset is an n × d matrix X, one row per example and one column per feature. A linear model's weights form a vector w of length d, and the matrix product X @ w gives all n predictions at once, one dot product per row.",
+            "The dot product a · b = Σ a_j b_j is a weighted sum. The Euclidean norm ‖a‖ = √(a · a) is a vector's length, so ‖a − b‖ is the distance between two points; np.linalg.norm computes it.",
+            "Broadcasting lines shapes up from the right and stretches any dimension of size 1, so X − X.mean(axis=0) subtracts each column's mean from every row of an (n, d) array without a loop.",
+            "Shape mistakes often fail silently: an (n, 1) column minus an (n,) vector broadcasts to an (n, n) matrix instead of raising an error. Check .shape as you go, and use reshape(-1, 1) or ravel() on purpose.",
+            "Vectorised NumPy runs its loops in compiled code, so it is usually many times faster than a Python loop over rows; %timeit in a notebook measures the difference on your own computer.",
+            "Adding a column of ones to X, as in np.column_stack([np.ones(n), X]), turns the intercept into one more weight, so the whole linear model is the single product X @ w."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Vectorise a linear model in a notebook",
+            "steps": [
+              {
+                "do": "In a terminal, install the course's packages and start JupyterLab in your course folder.",
+                "code": "python -m pip install numpy scikit-learn matplotlib pytest jupyterlab\njupyter lab",
+                "lang": "bash",
+                "see": "JupyterLab opens in your browser at its Launcher."
+              },
+              {
+                "do": "Click Python 3 under Notebook in the Launcher (or choose File | New | Notebook). Type a tiny dataset and a weight vector into the first cell, and run it.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nX = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])\nw = np.array([0.5, -1.0])\nprint(X.shape, w.shape, X @ w)",
+                "lang": "python",
+                "see": "(3, 2) (2,) [-1.5 -2.5 -3.5]"
+              },
+              {
+                "do": "Centre every column with broadcasting, and measure the distance between the first two rows.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "centred = X - X.mean(axis=0)\nprint(centred.mean(axis=0), np.linalg.norm(X[0] - X[1]))",
+                "lang": "python",
+                "see": "[0. 0.] 2.828..., the square root of 8."
+              },
+              {
+                "do": "Make the silent shape bug happen: a column of predictions minus a flat vector of targets.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "y = np.array([1.0, 2.0, 3.0])\ncolumn = (X @ w).reshape(-1, 1)\nprint((column - y).shape, (column.ravel() - y).shape)",
+                "lang": "python",
+                "see": "(3, 3) (3,): a 3 × 3 matrix, not three errors."
+              },
+              {
+                "do": "Time a Python loop over rows against one matrix product. %timeit is a notebook magic: it works in JupyterLab, not in a plain .py file.",
+                "code": "big = np.random.default_rng(0).normal(size=(100_000, 10))\nweights = np.ones(10)\n%timeit [row @ weights for row in big]\n%timeit big @ weights",
+                "lang": "python",
+                "see": "The matrix product is many times faster; the times depend on your computer."
+              },
+              {
+                "do": "Add a column of ones, so that the intercept becomes the first weight.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "Xb = np.column_stack([np.ones(len(X)), X])\nprint(Xb @ np.array([2.0, 0.5, -1.0]))",
+                "lang": "python",
+                "see": "[ 0.5 -0.5 -1.5]: the old predictions plus 2."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Loss functions, gradients and gradient descent",
+          "minutes": 12,
+          "objectives": [
+            "Write the mean squared error of a linear model and its gradient in matrix form",
+            "Explain why a step against the gradient lowers the loss",
+            "Check an analytic gradient against central differences"
+          ],
+          "key_points": [
+            "A loss function turns a model's errors into one number to minimise. For a linear model the mean squared error is L(w) = (1/n) Σ (x_i · w − y_i)², which is (1/n) ‖Xw − y‖² in matrix form.",
+            "The gradient ∇L(w) is the vector of partial derivatives ∂L/∂w_j. It points in the direction in which L increases fastest, so a small enough step the opposite way lowers the loss.",
+            "For mean squared error the gradient is (2/n) Xᵀ(Xw − y): the residuals Xw − y, multiplied by each feature and averaged, all in one matrix product.",
+            "Gradient descent starts from a guess such as w = 0 and repeats w ← w − η ∇L(w), where η (eta) is the learning rate, for a set number of steps or until the gradient is close to zero.",
+            "Check a derived gradient numerically: central differences (L(w + h e_j) − L(w − h e_j)) / 2h, with h around 1e-5, should match it; a relative error of about 1e-7 or less means the formula and the code are right.",
+            "For a linear model the mean squared error is convex, so every minimum is a global one: gradient descent with a small enough learning rate approaches the same answer as least squares (np.linalg.lstsq)."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Derive a gradient, check it, then descend",
+            "steps": [
+              {
+                "do": "In a new notebook, set up four points on the line y = 2x + 1, the mean squared error and its gradient.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nx = np.array([1.0, 2.0, 3.0, 4.0])\ny = 2 * x + 1                                  # 3, 5, 7, 9\nX = np.column_stack([np.ones(len(x)), x])      # a column of ones for the intercept\n\ndef loss(w):\n    r = X @ w - y\n    return r @ r / len(y)\n\ndef grad(w):\n    return 2 / len(y) * X.T @ (X @ w - y)\n\nw = np.zeros(2)\nprint(loss(w), grad(w))",
+                "lang": "python",
+                "see": "41.0 [-12. -35.]: both partial derivatives are negative, so the weights should grow."
+              },
+              {
+                "do": "Check the formula with central differences, one coordinate at a time.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "h = 1e-5\nnumeric = np.array([(loss(w + h * e) - loss(w - h * e)) / (2 * h) for e in np.eye(2)])\nprint(numeric.round(6), np.allclose(numeric, grad(w)))",
+                "lang": "python",
+                "see": "[-12. -35.] True"
+              },
+              {
+                "do": "Take 1,000 steps with a learning rate of 0.05, then compare with least squares.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "history = []\nfor step in range(1000):\n    history.append(loss(w))\n    w = w - 0.05 * grad(w)\nprint(w.round(4), history[0], f\"{history[-1]:.1e}\")\nprint(np.linalg.lstsq(X, y, rcond=None)[0].round(4))",
+                "lang": "python",
+                "see": "[1. 2.] 41.0 and a final loss of about 1e-15, then [1. 2.] from least squares: intercept 1, slope 2."
+              },
+              {
+                "do": "Plot the loss on a log scale.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import matplotlib.pyplot as plt\n\nplt.semilogy(history)\nplt.xlabel(\"step\")\nplt.ylabel(\"mean squared error\")\nplt.show()",
+                "lang": "python",
+                "see": "A straight falling line: the error shrinks by about the same factor every step."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Learning rates, feature scaling and stochastic gradient descent",
+          "minutes": 12,
+          "objectives": [
+            "Choose a learning rate by watching the loss, and recognise divergence",
+            "Explain why standardised features make gradient descent faster",
+            "Compare batch, stochastic and mini-batch gradient descent"
+          ],
+          "key_points": [
+            "The learning rate sets the step size. Too small and the loss falls slowly; too large and each step overshoots the minimum, so the loss bounces and can grow without limit, which is called divergence.",
+            "For mean squared error the safe range comes from the data: gradient descent converges only when η is below 2 / λ_max, where λ_max is the largest eigenvalue of the Hessian (2/n) XᵀX.",
+            "Features on very different scales stretch the loss surface into a long, narrow valley, where a step that is safe across the valley crawls along it. Standardising each feature to mean 0 and standard deviation 1 evens out the curvature, so far fewer steps are needed.",
+            "Batch gradient descent uses every row for every step. Stochastic gradient descent (SGD) steps after each single example, with a cheap but noisy estimate of the gradient; mini-batch gradient descent averages over small batches, such as 32 rows.",
+            "An epoch is one pass through the training data. Shuffle the rows every epoch; with a fixed learning rate SGD keeps jittering around the minimum, which is why learning rates are often reduced as training goes on.",
+            "Mini-batches are the usual choice in practice: each step is cheap, the noise is moderate and vectorised code handles a whole batch at once, so the same passes over the data buy many more updates than batch gradient descent."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Learning rates and the shape of the bowl",
+            "steps": [
+              {
+                "do": "Work out the largest stable learning rate for the four points from the last lesson.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nx = np.array([1.0, 2.0, 3.0, 4.0])\ny = 2 * x + 1\nX = np.column_stack([np.ones(4), x])\nH = 2 / len(y) * X.T @ X                         # the Hessian of the mean squared error\neig = np.linalg.eigvalsh(H)\nprint(eig.round(3), \"largest stable learning rate:\", round(2 / eig.max(), 3))",
+                "lang": "python",
+                "see": "[ 0.299 16.701] largest stable learning rate: 0.12"
+              },
+              {
+                "do": "Run 50 steps at four learning rates, two either side of the limit.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "def descend(X, y, lr, steps=50):\n    w = np.zeros(X.shape[1])\n    for _ in range(steps):\n        w = w - lr * 2 / len(y) * X.T @ (X @ w - y)\n    return np.mean((X @ w - y) ** 2)\n\nfor lr in (0.01, 0.05, 0.11, 0.13):\n    print(lr, f\"{descend(X, y, lr):.3g}\")",
+                "lang": "python",
+                "see": "0.01 still at 0.0102, 0.05 at 0.00304, 0.11 at 0.000483, and 0.13, just over the limit, at 2.96e+08."
+              },
+              {
+                "do": "Measure x in centimetres instead and compare the condition numbers: the ratio of the largest to the smallest curvature.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "X_cm = np.column_stack([np.ones(4), 100 * x])\nH_cm = 2 / len(y) * X_cm.T @ X_cm\nprint(\"condition number, metres:\", round(np.linalg.cond(H)), \" centimetres:\", round(np.linalg.cond(H_cm)))",
+                "lang": "python",
+                "see": "56 in metres and 450010 in centimetres: a far narrower valley."
+              },
+              {
+                "do": "Standardise x instead. The bowl becomes perfectly round, and a single step of 0.5 lands on the minimum.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "z = (x - x.mean()) / x.std()\nZ = np.column_stack([np.ones(4), z])\nH_z = 2 / len(y) * Z.T @ Z\nprint(np.linalg.eigvalsh(H_z), f\"{descend(Z, y, lr=0.5, steps=1):.1g}\")",
+                "lang": "python",
+                "see": "[2. 2.] and a loss of about 1e-31 after one step."
+              },
+              {
+                "do": "Try mini-batch gradient descent on 1,000 noisy points: shuffle each epoch and step once per batch of about 32 rows.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "rng = np.random.default_rng(0)\nx = rng.uniform(0, 10, 1000)\ny = 2 * x + 1 + rng.normal(0, 1, 1000)\nZ = np.column_stack([np.ones(1000), (x - x.mean()) / x.std()])\nw = np.zeros(2)\nfor epoch in range(3):\n    for rows in np.array_split(rng.permutation(1000), 1000 // 32):\n        w = w - 0.1 * 2 / len(rows) * Z[rows].T @ (Z[rows] @ w - y[rows])\n    print(epoch, w.round(3), round(np.mean((Z @ w - y) ** 2), 3))",
+                "lang": "python",
+                "see": "After one epoch, 31 updates, the loss is already 1.061, close to the noise variance of 1, and later epochs only jitter around it."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Gradient descent from scratch",
+        "tool": "JupyterLab",
+        "minutes": 150,
+        "goal": "Write the mean squared error, its gradient, a numerical gradient check, batch gradient descent and mini-batch SGD with NumPy only, then use them to see how the learning rate, feature scaling and batch size change the path to the least-squares answer.",
+        "setup": [
+          "Python 3 with NumPy, scikit-learn, matplotlib and JupyterLab (python -m pip install numpy scikit-learn matplotlib jupyterlab)",
+          "Download the starter files gradient_descent.py and check_lab1.py into one folder, and start JupyterLab there with jupyter lab"
+        ],
+        "steps": [
+          {
+            "do": "Open gradient_descent.py from JupyterLab's file browser. Write add_bias, mse and mse_gradient first, with no Python loop over rows: each needs one or two lines."
+          },
+          {
+            "do": "Write numerical_gradient: central differences, one coordinate at a time, with a fresh step vector for each coordinate."
+          },
+          {
+            "do": "Open a terminal in JupyterLab (File | New | Terminal), where each run imports your latest code, and run the checker.",
+            "code": "python check_lab1.py",
+            "lang": "bash",
+            "see": "Design matrix: (200, 4) and Gradient check passed: True, then NotImplementedError from the first function you haven't written yet."
+          },
+          {
+            "do": "Write gradient_descent and run the checker again.",
+            "see": "Least squares and Gradient descent both print [ 3.982  1.955 -3.048  0.527], and the loss falls from 27.526 to 0.2500."
+          },
+          {
+            "do": "Read the learning-rate table.",
+            "see": "Largest stable learning rate: 0.906. With lr=0.01 the loss is still 0.8877 after 100 steps, 0.1 to 0.8 reach 0.2500, and lr=1.0 explodes to 1.63e+15."
+          },
+          {
+            "do": "Read the scaling experiment: the same data with the third feature measured in centimetres.",
+            "see": "Unscaled: largest stable lr 1.05e-04, and the loss is still 23.044 after 500 steps; standardised, it reaches 0.2500."
+          },
+          {
+            "do": "Write minibatch_sgd and run the checker once more.",
+            "see": "batch_size=1 makes 4000 updates and reaches 0.2692; batch_size=16, 260 updates and 0.2508; batch_size=200, only 20 updates and 0.7999."
+          },
+          {
+            "do": "In a notebook in the same folder, plot the loss history for three learning rates on a log scale.",
+            "code": "import matplotlib.pyplot as plt\nimport numpy as np\n\nfrom gradient_descent import add_bias, gradient_descent\n\nrng = np.random.default_rng(0)\nX = rng.normal(size=(200, 3))\ny = 4 + X @ np.array([2.0, -3.0, 0.5]) + rng.normal(scale=0.5, size=200)\nfor lr in (0.01, 0.1, 0.8):\n    _, history = gradient_descent(add_bias(X), y, lr=lr, n_iters=100)\n    plt.semilogy(history, label=f\"lr={lr}\")\nplt.xlabel(\"step\")\nplt.ylabel(\"mean squared error\")\nplt.legend()\nplt.show()",
+            "lang": "python",
+            "see": "lr=0.01 falls slowly; 0.1 and 0.8 drop to the floor of 0.25, the noise in the data, within a few dozen steps."
+          },
+          {
+            "do": "Write three sentences: why lr=1.0 diverges here, why measuring one feature in centimetres slowed gradient descent so much, and what the three batch sizes show about the number of updates and how noisy they are."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The analytic gradient agrees with the numerical one.",
+            "look_for": [
+              "Gradient check passed: True"
+            ]
+          },
+          {
+            "text": "Batch gradient descent reaches the least-squares weights, with the loss falling to the minimum.",
+            "look_for": [
+              "Gradient descent: [ 3.982  1.955 -3.048  0.527]",
+              "27.526"
+            ]
+          },
+          {
+            "text": "The learning-rate table shows the stable limit and a divergence above it.",
+            "look_for": [
+              "Largest stable learning rate: 0.906",
+              "1.63e+15"
+            ]
+          },
+          {
+            "text": "Unscaled features stall gradient descent, while standardised features converge.",
+            "look_for": [
+              "1.05e-04",
+              "23.044",
+              "Standardised: lr 0.1, loss after 500 steps 0.2500"
+            ]
+          },
+          {
+            "text": "Mini-batch SGD is written and compared at three batch sizes.",
+            "look_for": [
+              "updates=4000 loss 0.2692",
+              "updates=260  loss 0.2508",
+              "updates=20   loss 0.7999"
+            ]
+          },
+          {
+            "text": "The sentences link the divergence to the 0.906 limit, the slow progress to the narrow valley that unscaled features create, and the batch sizes to the trade between more updates and noisier ones.",
+            "look_for": [
+              "diverge"
+            ]
+          }
+        ],
+        "submit": "Paste your gradient_descent.py, the full output of check_lab1.py and your three sentences.",
+        "hints": [
+          "mse_gradient needs no loop: 2 / len(y) * X.T @ (X @ w - y).",
+          "If the gradient check fails, test mse first: at w = 0 it must equal np.mean(y ** 2).",
+          "In numerical_gradient, make a new zero vector for every coordinate; changing one vector in place carries the step into the next coordinate.",
+          "In a notebook, %run check_lab1.py works too, but Python caches imported modules: run %load_ext autoreload and %autoreload 2 first, or restart the kernel after each edit."
+        ],
+        "files": [
+          {
+            "path": "gradient_descent.py",
+            "content": "\"\"\"Gradient descent from scratch, with NumPy only. Fill in each TODO, then run check_lab1.py.\"\"\"\n\nimport numpy as np\n\n\ndef add_bias(X):\n    \"\"\"Return X with a column of ones in front, so that w[0] acts as the intercept.\"\"\"\n    # TODO: put a column of ones before the columns of X (np.column_stack or np.c_)\n    raise NotImplementedError\n\n\ndef mse(w, X, y):\n    \"\"\"Mean squared error of the linear model X @ w.\"\"\"\n    # TODO: the mean of the squared differences between X @ w and y, as a float\n    raise NotImplementedError\n\n\ndef mse_gradient(w, X, y):\n    \"\"\"The gradient of mse with respect to w: (2 / n) X^T (X w - y).\"\"\"\n    # TODO: one expression, no loop\n    raise NotImplementedError\n\n\ndef numerical_gradient(f, w, h=1e-5):\n    \"\"\"Estimate the gradient of f at w by central differences, one coordinate at a time.\"\"\"\n    # TODO: for each j: (f(w + h e_j) - f(w - h e_j)) / (2 h), where e_j is 1 at position j and 0 elsewhere\n    raise NotImplementedError\n\n\ndef gradient_descent(X, y, lr=0.1, n_iters=500):\n    \"\"\"Batch gradient descent from w = 0. Returns the weights and the loss before each step.\"\"\"\n    w = np.zeros(X.shape[1])\n    history = []\n    # TODO: n_iters times: append mse(w, X, y) to history, then take a step: w = w - lr * mse_gradient(w, X, y)\n    raise NotImplementedError\n    return w, history\n\n\ndef minibatch_sgd(X, y, lr=0.05, n_epochs=20, batch_size=16, seed=0):\n    \"\"\"Mini-batch stochastic gradient descent from w = 0, reshuffling the rows every epoch.\n    batch_size=1 is plain SGD; batch_size=len(y) is batch gradient descent.\"\"\"\n    rng = np.random.default_rng(seed)\n    w = np.zeros(X.shape[1])\n    # TODO: for each epoch: order = rng.permutation(len(y)); then for start in range(0, len(y), batch_size),\n    #       rows = order[start:start + batch_size] and w = w - lr * mse_gradient(w, X[rows], y[rows])\n    raise NotImplementedError\n    return w\n"
+          },
+          {
+            "path": "check_lab1.py",
+            "content": "\"\"\"Run this after filling in gradient_descent.py. Every number it prints comes from your code.\"\"\"\n\nimport numpy as np\n\nfrom gradient_descent import add_bias, gradient_descent, minibatch_sgd, mse, mse_gradient, numerical_gradient\n\nrng = np.random.default_rng(0)\nX = rng.normal(size=(200, 3))\ny = 4 + X @ np.array([2.0, -3.0, 0.5]) + rng.normal(scale=0.5, size=200)\nXb = add_bias(X)\nprint(\"Design matrix:\", Xb.shape, \"first row:\", np.round(Xb[0], 3))\n\n# 1. Is the analytic gradient right? Compare it with central differences at a random point.\nw0 = rng.normal(size=4)\nanalytic = mse_gradient(w0, Xb, y)\nnumeric = numerical_gradient(lambda w: mse(w, Xb, y), w0)\nrel = np.linalg.norm(analytic - numeric) / np.linalg.norm(analytic + numeric)\nprint(\"Gradient check passed:\", bool(rel < 1e-7), f\"(relative error {rel:.0e})\")\n\n# 2. Gradient descent against the least-squares answer.\nw_best = np.linalg.lstsq(Xb, y, rcond=None)[0]\nw, history = gradient_descent(Xb, y, lr=0.1, n_iters=500)\nprint(\"Least squares:   \", np.round(w_best, 3))\nprint(\"Gradient descent:\", np.round(w, 3))\nprint(f\"Loss before steps 1, 11, 101 and 500: {history[0]:.3f} {history[10]:.3f} {history[100]:.4f} {history[499]:.4f}\")\n\n# 3. Learning rates: the largest stable one is 2 / (largest eigenvalue of the Hessian (2/n) X^T X).\nH = 2 / len(y) * Xb.T @ Xb\nprint(f\"Largest stable learning rate: {2 / np.linalg.eigvalsh(H).max():.3f}\")\nfor lr in (0.01, 0.1, 0.5, 0.8, 1.0):\n    with np.errstate(over=\"ignore\", invalid=\"ignore\"):\n        w, history = gradient_descent(Xb, y, lr=lr, n_iters=100)\n    loss = mse(w, Xb, y)\n    print(f\"lr={lr:<4}  loss after 100 steps: \" + (f\"{loss:.4f}\" if loss < 1e6 else f\"{loss:.2e}\"))\n\n# 4. Scaling: measure the third feature in centimetres instead of metres.\nX_cm = X * np.array([1, 1, 100])\nXb_cm = add_bias(X_cm)\nlr_max = 2 / np.linalg.eigvalsh(2 / len(y) * Xb_cm.T @ Xb_cm).max()\nw, history = gradient_descent(Xb_cm, y, lr=0.9 * lr_max, n_iters=500)\nprint(f\"Unscaled: largest stable lr {lr_max:.2e}, loss after 500 steps {history[-1]:.3f}\")\nZ = (X_cm - X_cm.mean(axis=0)) / X_cm.std(axis=0)\nw, history = gradient_descent(add_bias(Z), y, lr=0.1, n_iters=500)\nprint(f\"Standardised: lr 0.1, loss after 500 steps {history[-1]:.4f}; best possible {mse(w_best, Xb, y):.4f}\")\n\n# 5. Stochastic and mini-batch gradient descent: 20 passes (epochs) over the data each.\nfor bs in (1, 16, 200):\n    w = minibatch_sgd(Xb, y, lr=0.05, n_epochs=20, batch_size=bs, seed=0)\n    print(f\"batch_size={bs:<3} updates={20 * -(-200 // bs):<4} loss {mse(w, Xb, y):.4f}  w {np.round(w, 2)}\")\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "k-Nearest Neighbours (k-NN)",
+      "summary": "Build a k-nearest neighbours classifier on distances computed for whole arrays at once, see why scaling and the choice of k matter, and reuse the same distances, without labels, to cluster data with k-means.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Distances and the k-NN classifier",
+          "minutes": 12,
+          "objectives": [
+            "Compute every pairwise Euclidean distance with one matrix product",
+            "Implement k-NN prediction: find the nearest neighbours and take a majority vote"
+          ],
+          "key_points": [
+            "k-nearest neighbours predicts a new point's class by a majority vote of the k training points closest to it; for regression it averages their target values instead.",
+            "Euclidean distance √Σ(a_j − b_j)² is the usual measure, and Manhattan distance Σ|a_j − b_j| the other common one; both are Minkowski distances, with p = 2 and p = 1.",
+            "Every squared distance between m queries and n training rows comes from one identity, ‖a − b‖² = ‖a‖² − 2 a·b + ‖b‖²: two sets of row norms and one matrix product, A @ B.T. Clip the tiny negative values that rounding can leave to zero.",
+            "np.argsort(d, axis=1)[:, :k] gives each query's k nearest rows (np.argpartition finds them without a full sort), and np.bincount(votes).argmax() counts the votes, returning the smallest label when two classes tie, as scikit-learn does.",
+            "Squared distances rank neighbours exactly as distances do, because the square root keeps the order, so the square root can be skipped when only the ranking matters.",
+            "Use an odd k for two classes to avoid tied votes; with more classes ties can still happen, so an implementation needs a rule, such as the smaller label or the nearer neighbours."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Distances for a whole array at once",
+            "steps": [
+              {
+                "do": "Compute the distance from two queries to five training points with broadcasting.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\ntrain = np.array([[1.0, 1.0], [2.0, 1.0], [4.0, 3.0], [5.0, 4.0], [1.5, 2.0]])\nlabels = np.array([0, 0, 1, 1, 0])\nqueries = np.array([[1.5, 1.5], [4.5, 3.0]])\ndiff = queries[:, None, :] - train[None, :, :]        # every query minus every training row\ndist = np.sqrt((diff ** 2).sum(axis=2))\nprint(diff.shape)\nprint(dist.round(2))",
+                "lang": "python",
+                "see": "(2, 5, 2), then a 2 × 5 table of distances. The 3-D array gets big for large data."
+              },
+              {
+                "do": "Get the same squared distances from the norms-and-dot-products identity, with no 3-D array.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "sq = (queries ** 2).sum(axis=1)[:, None] - 2 * queries @ train.T + (train ** 2).sum(axis=1)[None, :]\nprint(np.allclose(np.sqrt(np.maximum(sq, 0)), dist))",
+                "lang": "python",
+                "see": "True"
+              },
+              {
+                "do": "Find each query's three nearest training rows, take the vote, and check with scikit-learn.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.neighbors import KNeighborsClassifier\n\nnearest = np.argsort(sq, axis=1)[:, :3]\nprint(nearest, [int(np.bincount(labels[row]).argmax()) for row in nearest])\nprint(KNeighborsClassifier(n_neighbors=3).fit(train, labels).predict(queries))",
+                "lang": "python",
+                "see": "Neighbours [[4 0 1] [2 3 4]] and votes [0, 1], then [0 1] from scikit-learn."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Choosing k, scaling, and the cost of a lazy learner",
+          "minutes": 12,
+          "objectives": [
+            "Explain the bias-variance trade-off in the choice of k",
+            "Explain why k-NN needs standardised features and how its cost grows",
+            "Write accuracy and a confusion matrix from scratch"
+          ],
+          "key_points": [
+            "A small k follows the training data closely: k = 1 has low bias but high variance and is thrown by noisy points. A larger k smooths more and raises the bias; with k equal to the size of the training set, every prediction is the majority class.",
+            "Choose k with data the model wasn't fitted on, such as a validation set or cross-validation on the training set, never with the test set.",
+            "Distances are dominated by the features with the largest ranges, so standardise first with the training set's means and standard deviations: on the wine data in the lab, k = 5 scores 0.722 on raw features and 0.963 after standardising.",
+            "k-NN is a lazy learner: fit only stores the data, and every prediction compares the query with all n training rows, about n × d work per query by brute force. KD-trees and ball trees speed this up in low dimensions.",
+            "In high dimensions the distances between points become similar to one another, part of the curse of dimensionality, so the nearest neighbours carry less information and k-NN weakens.",
+            "Accuracy is the share of correct predictions, np.mean(y_pred == y_true). A confusion matrix counts each (true, predicted) pair, and np.add.at(m, (y_true, y_pred), 1) builds it in one call."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "One feature can own the distance",
+            "steps": [
+              {
+                "do": "Load the wine data and compare the ranges of two features.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.datasets import load_wine\n\nwine = load_wine()\nX, names = wine.data, list(wine.feature_names)\nfor name in (\"proline\", \"hue\"):\n    col = X[:, names.index(name)]\n    print(f\"{name:8} from {col.min():7.2f} to {col.max():7.2f}\")",
+                "lang": "python",
+                "see": "proline from 278.00 to 1680.00, hue from 0.48 to 1.71."
+              },
+              {
+                "do": "Work out how much of the squared distance between two wines comes from proline alone, before and after standardising.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "parts = (X[0] - X[100]) ** 2\nprint(f\"proline's share: {parts[names.index('proline')] / parts.sum():.4f}\")\nZ = (X - X.mean(axis=0)) / X.std(axis=0)\nparts = (Z[0] - Z[100]) ** 2\nprint(f\"after standardising: {parts[names.index('proline')] / parts.sum():.4f}\")",
+                "lang": "python",
+                "see": "0.9928 before: proline decides the distance almost alone. 0.0452 after, one voice among 13."
+              },
+              {
+                "do": "Choose k by 5-fold cross-validation on the training set only, with the scaling inside a pipeline so each fold is scaled on its own training part.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.model_selection import cross_val_score, train_test_split\nfrom sklearn.neighbors import KNeighborsClassifier\nfrom sklearn.pipeline import make_pipeline\nfrom sklearn.preprocessing import StandardScaler\n\nX_train, X_test, y_train, y_test = train_test_split(X, wine.target, test_size=0.3, random_state=0,\n                                                    stratify=wine.target)\nfor k in (1, 5, 15, 45, 85):\n    model = make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=k))\n    print(k, cross_val_score(model, X_train, y_train, cv=5).mean().round(3))",
+                "lang": "python",
+                "see": "0.92 for k = 1, 0.944 for 5 and 15, 0.96 for 45, then 0.403 for 85, nearly a whole fold, where the vote is just the majority class."
+              }
+            ]
+          }
+        },
+        {
+          "title": "k-means: the same distances, without labels",
+          "minutes": 12,
+          "objectives": [
+            "Implement Lloyd's algorithm for k-means clustering",
+            "Explain k-means++ initialisation and why several starts are run"
+          ],
+          "key_points": [
+            "k-means clustering splits unlabelled data into k groups, each represented by its centroid, the mean of its points. It is unsupervised, and its k is the number of clusters, not of neighbours.",
+            "Lloyd's algorithm alternates two steps until nothing changes: assign every point to its nearest centroid, then move every centroid to the mean of the points assigned to it.",
+            "Neither step can raise the inertia, the sum of squared distances from points to their own centroids, so the algorithm always stops, but at a local minimum that depends on the starting centroids.",
+            "k-means++ spreads the starting centroids out: the first is a random point, and each next one is drawn with probability proportional to its squared distance from the nearest centroid chosen so far.",
+            "Run several starts and keep the one with the lowest inertia. In scikit-learn's KMeans, n_init sets how many; since version 1.4 its default, 'auto', means one run for k-means++ and ten for random starts.",
+            "A cluster that loses all its points needs a rule, such as keeping its old centroid or moving it to a far point; and like k-NN, k-means needs standardised features."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Lloyd's two steps, and a bad start",
+            "steps": [
+              {
+                "do": "Make three well-separated blobs and start k-means from the first three points.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.datasets import make_blobs\n\nX, _ = make_blobs(n_samples=300, centers=3, random_state=42)\nstart = X[[0, 1, 2]]\ncentroids = start.copy()\nfor step in range(4):\n    d = ((X[:, None, :] - centroids[None, :, :]) ** 2).sum(axis=2)\n    labels = d.argmin(axis=1)                                               # assign\n    print(step, round(d[np.arange(len(X)), labels].sum(), 1), np.bincount(labels))\n    centroids = np.array([X[labels == j].mean(axis=0) for j in range(3)])   # move",
+                "lang": "python",
+                "see": "Inertia 8325.1, then 5696.4 and 5696.3, with clusters of 59, 41 and 200 points: two centroids started in the same blob, so one cluster swallowed two blobs. A local minimum."
+              },
+              {
+                "do": "Give scikit-learn the same start: it lands in the same place.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.cluster import KMeans\n\nkm = KMeans(n_clusters=3, init=start, n_init=1).fit(X)\nprint(round(km.inertia_, 1), km.n_iter_)",
+                "lang": "python",
+                "see": "5696.3 3"
+              },
+              {
+                "do": "Now let k-means++ choose the start.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "km = KMeans(n_clusters=3, random_state=0).fit(X)\nprint(round(km.inertia_, 1), np.bincount(km.labels_))",
+                "lang": "python",
+                "see": "566.9 [100 100 100]: one blob per cluster, with a tenth of the inertia."
+              },
+              {
+                "do": "On the standardised iris measurements, random starts reach different local minima.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_iris\n\nZ = load_iris().data\nZ = (Z - Z.mean(axis=0)) / Z.std(axis=0)\nprint([round(KMeans(n_clusters=3, init=\"random\", n_init=1, random_state=s).fit(Z).inertia_, 2) for s in range(8)])\nprint(round(KMeans(n_clusters=3, n_init=10, random_state=0).fit(Z).inertia_, 2))",
+                "lang": "python",
+                "see": "Inertias of 140.9, 140.08, 191.02 and 139.82 from different starts; keeping the best of ten k-means++ runs gives 139.82."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "k-NN and k-means from scratch",
+        "tool": "JupyterLab",
+        "minutes": 150,
+        "goal": "Build a standard scaler, vectorised distances, a k-NN classifier, accuracy, a confusion matrix and k-means with k-means++ in NumPy, and show that they make the same predictions and clusters as scikit-learn on the wine and iris data.",
+        "setup": [
+          "Your course folder, with NumPy, scikit-learn and JupyterLab installed",
+          "Download the starter files neighbours.py and check_lab2.py into it"
+        ],
+        "steps": [
+          {
+            "do": "In neighbours.py, write StandardScaler (fit stores mean_ and scale_, transform applies them), pairwise_sq_dists, accuracy and confusion_matrix."
+          },
+          {
+            "do": "Write KNNClassifier.predict: the distances to every training row, the k nearest with a stable argsort, and a vote with np.bincount."
+          },
+          {
+            "do": "Open a terminal in JupyterLab (File | New | Terminal), where each run imports your latest code, and run the checker.",
+            "code": "python check_lab2.py",
+            "lang": "bash",
+            "see": "Distances from the first point: [[0.0, 5.0, 10.0]] and a k table with True in every row; the k-means part raises NotImplementedError until you write it."
+          },
+          {
+            "do": "Compare raw and standardised features.",
+            "see": "k=5 on raw features: 0.722; on standardised features: 0.963, and a confusion matrix with 52 of the 54 test wines on its diagonal."
+          },
+          {
+            "do": "Write KMeans._lloyd, then rerun: fit with an init array must match scikit-learn's KMeans started from the same centroids.",
+            "see": "Same start: inertia 140.90, scikit-learn 140.90, same clusters: True"
+          },
+          {
+            "do": "Write _plus_plus and the n_init loop in fit, and rerun.",
+            "see": "k-means++, best of 10 runs: inertia 139.82; scikit-learn's best of 10: 139.82, then a table with setosa alone in one cluster and versicolor and virginica shared between the other two."
+          },
+          {
+            "do": "Read the last line, the inertia for k = 1 to 6, and the k=124 row of the k-NN table.",
+            "see": "[600.0, 222.4, 139.8, 114.1, 90.8, 80.7], and an accuracy of 0.389 for k=124."
+          },
+          {
+            "do": "Write two sentences: why inertia keeps falling as k grows, so it can't choose k on its own, and what a k-NN model with k=124, every training row, predicts."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Distances are computed for whole arrays at once.",
+            "look_for": [
+              "[[0.0, 5.0, 10.0]]"
+            ]
+          },
+          {
+            "text": "k-NN makes the same predictions as scikit-learn for every k.",
+            "look_for": [
+              "1    1.000     True",
+              "15   0.981     True",
+              "124  0.389     True"
+            ]
+          },
+          {
+            "text": "Standardising lifts k=5 from 0.722 to 0.963, and the confusion matrix is right.",
+            "look_for": [
+              "k=5 on raw features: 0.722",
+              "standardised features: 0.963",
+              "[ 1 19  1]"
+            ]
+          },
+          {
+            "text": "k-means from the same start matches scikit-learn's centroids and clusters.",
+            "look_for": [
+              "Same start: inertia 140.90, scikit-learn 140.90, same clusters: True"
+            ]
+          },
+          {
+            "text": "k-means++ with ten starts finds the lowest inertia.",
+            "look_for": [
+              "best of 10 runs: inertia 139.82"
+            ]
+          },
+          {
+            "text": "The inertia curve is printed, and the sentences explain that inertia always falls with more clusters and that k=124 predicts the majority class.",
+            "look_for": [
+              "[600.0, 222.4, 139.8, 114.1, 90.8, 80.7]"
+            ]
+          }
+        ],
+        "submit": "Paste your neighbours.py, the full output of check_lab2.py and your two sentences.",
+        "hints": [
+          "(A ** 2).sum(axis=1)[:, None] is a column of m squared norms and (B ** 2).sum(axis=1)[None, :] a row of n; A @ B.T is m × n.",
+          "If a k-NN row says False, check the tie rules: a stable argsort and np.bincount(...).argmax() match scikit-learn.",
+          "Cluster numbers are arbitrary: compare clusterings by inertia, or with a table of species by cluster, never by the label values.",
+          "If _lloyd never stops, compare the new centroids with the old ones before you replace them."
+        ],
+        "files": [
+          {
+            "path": "neighbours.py",
+            "content": "\"\"\"k-nearest neighbours and k-means from scratch, with NumPy only. Fill in each TODO, then run check_lab2.py.\"\"\"\n\nimport numpy as np\n\n\nclass StandardScaler:\n    \"\"\"Rescale every column to mean 0 and standard deviation 1, with statistics learned from the training data.\"\"\"\n\n    def fit(self, X):\n        # TODO: store the column means in self.mean_ and the column standard deviations in self.scale_\n        raise NotImplementedError\n        return self\n\n    def transform(self, X):\n        raise NotImplementedError\n\n\ndef pairwise_sq_dists(A, B):\n    \"\"\"Squared Euclidean distances from every row of A (m x d) to every row of B (n x d), as an m x n array.\"\"\"\n    # TODO: |a - b|^2 = |a|^2 - 2 a.b + |b|^2, with one matrix product for every a.b at once;\n    #       then clip the tiny negative values that rounding can leave to 0 with np.maximum\n    raise NotImplementedError\n\n\ndef accuracy(y_true, y_pred):\n    raise NotImplementedError\n\n\ndef confusion_matrix(y_true, y_pred, n_classes):\n    \"\"\"Counts of each (true class, predicted class) pair: rows are true classes, columns predicted ones.\"\"\"\n    # TODO: start from zeros; np.add.at(matrix, (y_true, y_pred), 1) adds 1 for every pair in one call\n    raise NotImplementedError\n\n\nclass KNNClassifier:\n    def __init__(self, k=5):\n        self.k = k\n\n    def fit(self, X, y):\n        \"\"\"A lazy learner: fitting only stores the training data.\"\"\"\n        self.X_ = np.asarray(X, dtype=float)\n        self.classes_, self.codes_ = np.unique(y, return_inverse=True)  # codes_: each label as 0..n_classes-1\n        return self\n\n    def predict(self, X):\n        # TODO: 1. squared distances from every row of X to every training row\n        #       2. each row's k nearest training rows: np.argsort(dists, axis=1, kind=\"stable\")[:, :self.k]\n        #       3. a majority vote of their codes: np.bincount(votes, minlength=n_classes).argmax()\n        #          (argmax returns the first maximum, so a tie goes to the smaller class, as in scikit-learn)\n        raise NotImplementedError\n\n    def score(self, X, y):\n        return accuracy(y, self.predict(X))\n\n\nclass KMeans:\n    def __init__(self, k=3, n_init=10, max_iter=300, seed=0):\n        self.k, self.n_init, self.max_iter, self.seed = k, n_init, max_iter, seed\n\n    def _plus_plus(self, X, rng):\n        \"\"\"k-means++: the first centroid is a random row; each next one is a row drawn with probability\n        proportional to its squared distance from the nearest centroid chosen so far.\"\"\"\n        # TODO: centroids = [X[rng.integers(len(X))]], then k - 1 times: d = squared distance of every row to its\n        #       nearest chosen centroid, and append X[rng.choice(len(X), p=d / d.sum())]\n        raise NotImplementedError\n\n    def _lloyd(self, X, centroids):\n        \"\"\"Lloyd's algorithm: assign every row to its nearest centroid, move every centroid to the mean of its\n        rows, and repeat until the centroids stop moving. Returns (centroids, labels, inertia).\"\"\"\n        # TODO: loop at most self.max_iter times; keep a centroid where it is if no row is assigned to it;\n        #       stop when np.allclose(new_centroids, centroids). Inertia is the sum of each row's squared\n        #       distance to its own centroid.\n        raise NotImplementedError\n\n    def fit(self, X, init=None):\n        \"\"\"Run once from the given initial centroids, or keep the best (lowest inertia) of n_init k-means++ runs.\"\"\"\n        X = np.asarray(X, dtype=float)\n        if init is not None:\n            self.cluster_centers_, self.labels_, self.inertia_ = self._lloyd(X, np.asarray(init, dtype=float))\n            return self\n        rng = np.random.default_rng(self.seed)\n        # TODO: n_init times, run self._lloyd(X, self._plus_plus(X, rng)); keep the run with the lowest inertia\n        raise NotImplementedError\n        return self\n\n    def predict(self, X):\n        return pairwise_sq_dists(np.asarray(X, dtype=float), self.cluster_centers_).argmin(axis=1)\n"
+          },
+          {
+            "path": "check_lab2.py",
+            "content": "\"\"\"Run this after filling in neighbours.py. scikit-learn is used only to load data, split it and check you.\"\"\"\n\nimport numpy as np\nfrom sklearn.cluster import KMeans as SkKMeans\nfrom sklearn.datasets import load_iris, load_wine\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.neighbors import KNeighborsClassifier\n\nfrom neighbours import KMeans, KNNClassifier, StandardScaler, accuracy, confusion_matrix, pairwise_sq_dists\n\nA = np.array([[0.0, 0.0], [3.0, 4.0], [6.0, 8.0]])\nprint(\"Distances from the first point:\", np.sqrt(pairwise_sq_dists(A[:1], A)).round(3).tolist())\n\nX, y = load_wine(return_X_y=True)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\nscaler = StandardScaler().fit(X_train)\nZ_train, Z_test = scaler.transform(X_train), scaler.transform(X_test)\n\nprint(\"k    accuracy  same predictions as scikit-learn\")\nfor k in (1, 3, 5, 9, 15, 51, 124):\n    mine = KNNClassifier(k).fit(Z_train, y_train).predict(Z_test)\n    theirs = KNeighborsClassifier(n_neighbors=k).fit(Z_train, y_train).predict(Z_test)\n    print(f\"{k:<4} {accuracy(y_test, mine):.3f}     {np.array_equal(mine, theirs)}\")\nraw = KNNClassifier(5).fit(X_train, y_train).score(X_test, y_test)\nscaled = KNNClassifier(5).fit(Z_train, y_train).score(Z_test, y_test)\nprint(f\"k=5 on raw features: {raw:.3f}; on standardised features: {scaled:.3f}\")\nprint(\"Confusion matrix, k=5, standardised:\")\nprint(confusion_matrix(y_test, KNNClassifier(5).fit(Z_train, y_train).predict(Z_test), 3))\n\niris = load_iris()\nZ = StandardScaler().fit(iris.data).transform(iris.data)\ninit = Z[np.random.default_rng(1).choice(len(Z), 3, replace=False)]\nmine = KMeans(k=3).fit(Z, init=init)\ntheirs = SkKMeans(n_clusters=3, init=init, n_init=1).fit(Z)\nprint(f\"Same start: inertia {mine.inertia_:.2f}, scikit-learn {theirs.inertia_:.2f}, \"\n      f\"same clusters: {np.array_equal(mine.labels_, theirs.labels_)}\")\nbest = KMeans(k=3, n_init=10, seed=0).fit(Z)\nprint(f\"k-means++, best of 10 runs: inertia {best.inertia_:.2f}; \"\n      f\"scikit-learn's best of 10: {SkKMeans(n_clusters=3, n_init=10, random_state=0).fit(Z).inertia_:.2f}\")\nprint(\"Species (rows) by cluster (columns):\")\nprint(confusion_matrix(iris.target, best.labels_, 3))\nprint(\"Inertia for k = 1 to 6:\", [round(KMeans(k=k, seed=0).fit(Z).inertia_, 1) for k in range(1, 7)])\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Naive Bayes",
+      "summary": "Turn Bayes' theorem into a classifier: estimate class priors and per-feature likelihoods from word counts or from normal distributions, smooth them, and work with log probabilities so tiny numbers don't vanish.",
+      "instructor": "nataliya-kovalenko",
+      "lessons": [
+        {
+          "title": "Bayes' theorem as a classifier",
+          "minutes": 12,
+          "objectives": [
+            "Compute a posterior probability from a prior and likelihoods",
+            "Explain the naive independence assumption",
+            "Score classes with log probabilities and the log-sum-exp trick"
+          ],
+          "key_points": [
+            "Bayes' theorem gives P(c | x) = P(x | c) P(c) / P(x): the posterior probability of class c is the likelihood of the features under c times the prior P(c), divided by the evidence P(x), which is the same for every class and only rescales.",
+            "The naive assumption is that features are conditionally independent given the class, so P(x | c) = Π_j P(x_j | c): d simple one-feature distributions replace one joint distribution that would need far more data to estimate.",
+            "The prior P(c) is estimated as the share of training examples in class c, and the prediction is the class with the largest posterior, the maximum a posteriori (MAP) choice.",
+            "Multiplying hundreds of probabilities underflows to exactly 0.0 in floating point, so add logs instead: score(c) = log P(c) + Σ_j log P(x_j | c). The logarithm keeps the order, so the arg max is unchanged.",
+            "To turn log scores back into probabilities, subtract the largest score before exponentiating and normalising, or use scipy.special.logsumexp: this log-sum-exp trick avoids overflow and 0/0.",
+            "Naive Bayes is a generative model: it describes how each class produces features and inverts that with Bayes' theorem. Logistic regression, in module 4, is discriminative: it models P(c | x) directly."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Bayes' rule, then logs",
+            "steps": [
+              {
+                "do": "Compute a posterior by hand for one word, with made-up probabilities.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "prior = {\"spam\": 0.4, \"ham\": 0.6}\np_free = {\"spam\": 0.3, \"ham\": 0.02}            # P(the word \"free\" appears | class): made-up numbers\njoint = {c: prior[c] * p_free[c] for c in prior}\nevidence = sum(joint.values())                 # P(\"free\"), the same for both classes\nprint({c: round(joint[c] / evidence, 3) for c in joint})",
+                "lang": "python",
+                "see": "{'spam': 0.909, 'ham': 0.091}: a prior of 0.4 becomes a posterior of 0.909."
+              },
+              {
+                "do": "Multiply 400 small probabilities, then add their logs instead.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nprobs = np.full(400, 0.01)\nprint(np.prod(probs), np.log(probs).sum())",
+                "lang": "python",
+                "see": "0.0 -1842.068...: the product underflows, the sum of logs is fine."
+              },
+              {
+                "do": "Turn two log scores back into probabilities, naively and with the shift.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "scores = np.array([-1000.0, -1001.0])          # log P(c) + sum of log P(x_j | c) for two classes\nprint(np.exp(scores) / np.exp(scores).sum())\nshifted = np.exp(scores - scores.max())\nprint((shifted / shifted.sum()).round(3))",
+                "lang": "python",
+                "see": "[nan nan] with a RuntimeWarning (0 divided by 0), then [0.731 0.269]; scipy.special.logsumexp does the same shift for you."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Multinomial Naive Bayes for text, and Laplace smoothing",
+          "minutes": 12,
+          "objectives": [
+            "Estimate word probabilities per class from a count matrix",
+            "Explain why smoothing is needed and what alpha does",
+            "Score many documents with one matrix product"
+          ],
+          "key_points": [
+            "Text becomes a count matrix: one row per document and one column per vocabulary word, holding how often the word appears. This bag of words ignores word order.",
+            "Multinomial Naive Bayes estimates P(word j | class c) = (N_cj + α) / (N_c + α V), where N_cj counts word j in class c's documents, N_c counts all their words and V is the vocabulary size.",
+            "Without smoothing (α = 0), a word never seen in a class gets probability 0 and a log of −∞, which rules the class out whatever the other words say. Laplace smoothing adds α = 1 to every count; 0 < α < 1 is called Lidstone smoothing.",
+            "Scores for every document and class come from one matrix product, X @ log_theta.T + log_prior, and words outside the training vocabulary are simply ignored.",
+            "It trains in one pass over the counts and works well with little data, so it is a strong, fast baseline for spam filtering and topic classification, even though words in real text are far from independent.",
+            "Its probabilities tend to be too extreme, because related words count as independent evidence, so trust its ranking of classes more than the numbers; a smaller α makes this worse."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Count, smooth and score",
+            "steps": [
+              {
+                "do": "Turn four short messages into a count matrix. CountVectorizer's default tokens are words of two or more letters, so 'a' disappears.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.feature_extraction.text import CountVectorizer\nfrom sklearn.naive_bayes import MultinomialNB\n\ndocs = [\"win a free prize now\", \"free cash now\", \"lunch now?\", \"are you free for lunch today?\"]\ny = np.array([1, 1, 0, 0])                                # 1 = spam\ncv = CountVectorizer()\nX = cv.fit_transform(docs).toarray()\nprint(cv.get_feature_names_out())\nprint(X)",
+                "lang": "python",
+                "see": "Ten words, from 'are' to 'you', and a 4 × 10 matrix of counts."
+              },
+              {
+                "do": "Count each word per class and take unsmoothed log probabilities.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "counts = np.array([X[y == c].sum(axis=0) for c in (0, 1)])\nprint(counts)\nprint(np.log(counts / counts.sum(axis=1, keepdims=True)).round(2))",
+                "lang": "python",
+                "see": "-inf, with a divide-by-zero warning, wherever a word never appeared in a class, such as 'cash' for ham."
+              },
+              {
+                "do": "Add Laplace smoothing and compare with scikit-learn's estimates.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "alpha = 1.0\nlog_theta = np.log((counts + alpha) / (counts + alpha).sum(axis=1, keepdims=True))\nprint(log_theta.round(2))\nprint(np.allclose(log_theta, MultinomialNB(alpha=alpha).fit(X, y).feature_log_prob_))",
+                "lang": "python",
+                "see": "Every entry finite, and True."
+              },
+              {
+                "do": "Score a new message with one matrix product. 'pizza' isn't in the vocabulary, so it is ignored.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "new = cv.transform([\"Win free cash, free pizza!\"]).toarray()\nprint(new)\njll = new @ log_theta.T + np.log([0.5, 0.5])\nprint(jll.round(3), MultinomialNB().fit(X, y).predict_proba(new).round(3))",
+                "lang": "python",
+                "see": "Counts of 1 for cash and win and 2 for free; scores [[-10.868  -8.442]], so spam, with a probability of 0.919."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Gaussian Naive Bayes for continuous features",
+          "minutes": 10,
+          "objectives": [
+            "Fit a normal distribution per feature and class",
+            "Explain variance smoothing and the cost of correlated features"
+          ],
+          "key_points": [
+            "For continuous features, Gaussian Naive Bayes models each feature in each class as a normal distribution with that class's mean μ and variance σ², estimated from the training rows.",
+            "Its log density is −½ log(2πσ²) − (x − μ)² / 2σ², summed over the features and added to log P(c); broadcasting computes it for every row, class and feature at once.",
+            "A feature that is constant within a class has variance 0 and would divide by zero, so a small amount is added to every variance: scikit-learn's GaussianNB adds var_smoothing (1e-9 by default) times the largest variance of any feature.",
+            "Training needs only counts, means and variances, one pass over the data, so it is fast and works with very small training sets.",
+            "Strongly correlated features break the naive assumption: their shared evidence is counted more than once, which pushes the probabilities towards 0 and 1 without adding any information."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Normal likelihoods, by hand and by library",
+            "steps": [
+              {
+                "do": "Estimate the mean and variance of petal length for each iris species.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.datasets import load_iris\n\nX, y = load_iris(return_X_y=True)\npetal = X[:, 2]                                           # petal length in cm\nmeans = np.array([petal[y == c].mean() for c in range(3)])\nvariances = np.array([petal[y == c].var() for c in range(3)])\nprint(means.round(3), variances.round(3))",
+                "lang": "python",
+                "see": "[1.462 4.26  5.552] [0.03  0.216 0.298]"
+              },
+              {
+                "do": "Compute the log density of a 4.9 cm petal under each species, and check it with SciPy.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from scipy.stats import norm\n\nx = 4.9\nlog_density = -0.5 * np.log(2 * np.pi * variances) - (x - means) ** 2 / (2 * variances)\nprint(log_density.round(3), np.allclose(log_density, norm.logpdf(x, means, np.sqrt(variances))))",
+                "lang": "python",
+                "see": "[-199.115   -1.1     -1.027] True: impossible for setosa, nearly level between the other two."
+              },
+              {
+                "do": "Count the same evidence several times by copying one feature, and watch the confidence grow.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.naive_bayes import GaussianNB\n\nrng = np.random.default_rng(0)\nx = np.concatenate([rng.normal(0, 1, 500), rng.normal(1, 1, 500)])\nlabel = np.repeat([0, 1], 500)\nfor copies in (1, 3, 5):\n    model = GaussianNB().fit(np.tile(x[:, None], copies), label)\n    print(copies, model.predict_proba(np.full((1, copies), 0.8)).round(3))",
+                "lang": "python",
+                "see": "P(class 1) for x = 0.8 rises from 0.599 to 0.769 and 0.881, with no new information."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Naive Bayes from scratch: a spam filter and a Gaussian model",
+        "tool": "JupyterLab",
+        "minutes": 120,
+        "goal": "Build a tokeniser, a vocabulary, a count matrix, a stable log-sum-exp, Multinomial Naive Bayes with Laplace smoothing and Gaussian Naive Bayes in NumPy; train a spam filter on 60 short messages and match scikit-learn's predictions and probabilities exactly.",
+        "setup": [
+          "Your course folder, with NumPy, scikit-learn and JupyterLab installed",
+          "Download the starter files naive_bayes.py, check_lab3.py and messages.csv: 60 short messages written for this course, 30 spam and 30 not spam (ham)"
+        ],
+        "steps": [
+          {
+            "do": "Open messages.csv to see the data, then write build_vocabulary and count_matrix in naive_bayes.py."
+          },
+          {
+            "do": "Write logsumexp: subtract the maximum along the axis, exponentiate, sum, take the log and add the maximum back."
+          },
+          {
+            "do": "Write MultinomialNB.fit and joint_log_likelihood from the formulas in their comments."
+          },
+          {
+            "do": "Open a terminal in JupyterLab (File | New | Terminal), where each run imports your latest code, and run the checker.",
+            "code": "python check_lab3.py",
+            "lang": "bash",
+            "see": "logsumexp([1000, 1000]): 1000.6931, a vocabulary of 223 words that matches CountVectorizer's, and True for both comparisons with scikit-learn."
+          },
+          {
+            "do": "Read the test results.",
+            "see": "Test accuracy: 0.933, with one message wrong, 'Remember to bring your laptop to the meeting', which the model calls spam; the most spam-like words are now, free, claim, win, text and reply."
+          },
+          {
+            "do": "Compare the two smoothing lines.",
+            "see": "alpha=1: log P('tickets' | ham) = -6.1, with 3 of 15 test messages above 0.9999 sure; alpha=1e-10: -28.4 and 13 of 15, with the same accuracy."
+          },
+          {
+            "do": "Write GaussianNB, with var_smoothing in fit and broadcasting in joint_log_likelihood, and rerun.",
+            "see": "Gaussian NB on wine: accuracy 0.963; same predictions as scikit-learn: True; log probabilities match: True"
+          },
+          {
+            "do": "Write two or three sentences: why the laptop message may look like spam to this model (search the spam messages for its words), and why near-zero smoothing makes the model far surer of itself without making it more accurate."
+          }
+        ],
+        "checks": [
+          {
+            "text": "A stable log-sum-exp handles large numbers.",
+            "look_for": [
+              "logsumexp([1000, 1000]): 1000.6931"
+            ]
+          },
+          {
+            "text": "The vocabulary matches CountVectorizer's.",
+            "look_for": [
+              "vocabulary of 223 words; same as CountVectorizer: True"
+            ]
+          },
+          {
+            "text": "Multinomial Naive Bayes matches scikit-learn's predictions and log probabilities.",
+            "look_for": [
+              "Same predictions as scikit-learn: True | log probabilities match: True"
+            ]
+          },
+          {
+            "text": "The spam filter is evaluated, with its mistake and its most spam-like words.",
+            "look_for": [
+              "Test accuracy: 0.933",
+              "Remember to bring your laptop",
+              "Most spam-like words: now, free, claim, win, text, reply"
+            ]
+          },
+          {
+            "text": "Smoothing is compared: near-zero alpha gives unseen words a huge penalty and makes predictions overconfident.",
+            "look_for": [
+              "-6.1",
+              "-28.4",
+              "13 of 15"
+            ]
+          },
+          {
+            "text": "Gaussian Naive Bayes matches scikit-learn on the wine data.",
+            "look_for": [
+              "Gaussian NB on wine: accuracy 0.963; same predictions as scikit-learn: True; log probabilities match: True"
+            ]
+          },
+          {
+            "text": "The sentences connect the laptop message's words to the spam messages, and explain that tiny alpha changes confidence rather than accuracy here.",
+            "look_for": [
+              "laptop"
+            ]
+          }
+        ],
+        "submit": "Paste your naive_bayes.py, the full output of check_lab3.py and your sentences.",
+        "hints": [
+          "feature_log_prob_ has one row per class and one column per word, and np.exp(feature_log_prob_).sum(axis=1) should be all ones.",
+          "In GaussianNB, X[:, None, :] - self.theta_ has shape (rows, classes, features); sum the log densities over axis=2.",
+          "If the vocabularies differ, check the tokeniser: lower-case first, then re.findall(r'[a-z0-9]+', text).",
+          "Compare floating-point results with np.allclose; == fails on rounding differences."
+        ],
+        "files": [
+          {
+            "path": "naive_bayes.py",
+            "content": "\"\"\"Naive Bayes from scratch, with NumPy only. Fill in each TODO, then run check_lab3.py.\"\"\"\n\nimport re\n\nimport numpy as np\n\n\ndef tokenise(text):\n    \"\"\"Lower-case words and numbers: 'Call 09061 NOW!' -> ['call', '09061', 'now'].\"\"\"\n    return re.findall(r\"[a-z0-9]+\", text.lower())\n\n\ndef build_vocabulary(docs):\n    \"\"\"Every token in the training documents, in alphabetical order, mapped to a column number.\"\"\"\n    # TODO: the sorted set of all tokens in docs, as a dict {token: index}\n    raise NotImplementedError\n\n\ndef count_matrix(docs, vocab):\n    \"\"\"One row per document, one column per vocabulary word: how often the word appears. Unknown words are skipped.\"\"\"\n    # TODO: start from np.zeros((len(docs), len(vocab))) and add 1 for each known token of each document\n    raise NotImplementedError\n\n\ndef logsumexp(a, axis=1):\n    \"\"\"log(sum(exp(a))) along an axis without overflow: subtract the maximum first, add it back after.\"\"\"\n    raise NotImplementedError\n\n\nclass MultinomialNB:\n    \"\"\"Naive Bayes for counts, such as word counts, with additive (Laplace) smoothing alpha.\"\"\"\n\n    def __init__(self, alpha=1.0):\n        self.alpha = alpha\n\n    def fit(self, X, y):\n        y = np.asarray(y)\n        self.classes_ = np.unique(y)\n        # TODO: class_log_prior_[c] = log(share of training rows in class c)\n        #       feature_log_prob_[c, j] = log((count of word j in class c + alpha) /\n        #                                     (all word counts in class c + alpha * vocabulary size))\n        raise NotImplementedError\n        return self\n\n    def joint_log_likelihood(self, X):\n        \"\"\"log P(c) + sum over words of count x log P(word | c), for every row and class: one matrix product.\"\"\"\n        raise NotImplementedError\n\n    def predict_log_proba(self, X):\n        jll = self.joint_log_likelihood(X)\n        return jll - logsumexp(jll, axis=1)[:, None]\n\n    def predict(self, X):\n        return self.classes_[self.joint_log_likelihood(X).argmax(axis=1)]\n\n\nclass GaussianNB:\n    \"\"\"Naive Bayes for continuous features: a normal distribution per feature and class.\"\"\"\n\n    def __init__(self, var_smoothing=1e-9):\n        self.var_smoothing = var_smoothing\n\n    def fit(self, X, y):\n        X, y = np.asarray(X, dtype=float), np.asarray(y)\n        self.classes_ = np.unique(y)\n        # TODO: per class: the share of rows (prior), and each feature's mean (theta_) and variance (var_).\n        #       Add var_smoothing x the largest variance of any feature (over all rows) to every variance,\n        #       as scikit-learn does, so that no variance is 0.\n        raise NotImplementedError\n        return self\n\n    def joint_log_likelihood(self, X):\n        \"\"\"log P(c) + the sum over features of the normal log density: -0.5 log(2 pi var) - (x - mean)^2 / (2 var).\"\"\"\n        X = np.asarray(X, dtype=float)\n        # TODO: broadcast X[:, None, :] against theta_ and var_ (classes x features) and sum over features\n        raise NotImplementedError\n\n    def predict_log_proba(self, X):\n        jll = self.joint_log_likelihood(X)\n        return jll - logsumexp(jll, axis=1)[:, None]\n\n    def predict(self, X):\n        return self.classes_[self.joint_log_likelihood(X).argmax(axis=1)]\n"
+          },
+          {
+            "path": "check_lab3.py",
+            "content": "\"\"\"Run this after filling in naive_bayes.py. scikit-learn is used only to load data, split it and check you.\"\"\"\n\nimport csv\n\nimport numpy as np\nfrom sklearn import naive_bayes as sk\nfrom sklearn.datasets import load_wine\nfrom sklearn.feature_extraction.text import CountVectorizer\nfrom sklearn.model_selection import train_test_split\n\nfrom naive_bayes import GaussianNB, MultinomialNB, build_vocabulary, count_matrix, logsumexp\n\nprint(\"logsumexp([1000, 1000]):\", round(float(logsumexp(np.array([[1000.0, 1000.0]]))[0]), 4))\n\nwith open(\"messages.csv\", newline=\"\", encoding=\"utf-8\") as f:\n    rows = list(csv.DictReader(f))\ntexts, labels = [r[\"text\"] for r in rows], np.array([r[\"label\"] for r in rows])\ntr_x, te_x, tr_y, te_y = train_test_split(texts, labels, test_size=0.25, random_state=1, stratify=labels)\nvocab = build_vocabulary(tr_x)\nX_train, X_test = count_matrix(tr_x, vocab), count_matrix(te_x, vocab)\ncv = CountVectorizer(token_pattern=r\"[a-z0-9]+\").fit(tr_x)\nprint(f\"{len(tr_x)} training and {len(te_x)} test messages; vocabulary of {len(vocab)} words; \"\n      f\"same as CountVectorizer: {list(vocab) == list(cv.get_feature_names_out())}\")\n\nnb = MultinomialNB(alpha=1.0).fit(X_train, tr_y)\nref = sk.MultinomialNB(alpha=1.0).fit(X_train, tr_y)\nprint(\"Same predictions as scikit-learn:\", np.array_equal(nb.predict(X_test), ref.predict(X_test)),\n      \"| log probabilities match:\", np.allclose(nb.predict_log_proba(X_test), ref.predict_log_proba(X_test)))\npred = nb.predict(X_test)\nprint(f\"Test accuracy: {np.mean(pred == te_y):.3f}\")\nfor text, truth, p in zip(te_x, te_y, pred):\n    if truth != p:\n        print(f\"Wrong: {text!r} is {truth}, predicted {p}\")\n\nspam, ham = list(nb.classes_).index(\"spam\"), list(nb.classes_).index(\"ham\")\nratio = nb.feature_log_prob_[spam] - nb.feature_log_prob_[ham]\nwords = np.array(list(vocab))\nprint(\"Most spam-like words:\", \", \".join(words[np.argsort(ratio)[::-1][:6]]))\n\nfor alpha in (1.0, 1e-10):\n    m = MultinomialNB(alpha=alpha).fit(X_train, tr_y)\n    sure = int((np.exp(m.predict_log_proba(X_test)).max(axis=1) > 0.9999).sum())\n    print(f\"alpha={alpha:g}: log P('tickets' | ham) = {m.feature_log_prob_[ham, vocab['tickets']]:.1f}; \"\n          f\"accuracy {np.mean(m.predict(X_test) == te_y):.3f}; {sure} of {len(te_x)} test messages above 0.9999 sure\")\n\nX, y = load_wine(return_X_y=True)\nX_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\ng, g_ref = GaussianNB().fit(X_tr, y_tr), sk.GaussianNB().fit(X_tr, y_tr)\nprint(f\"Gaussian NB on wine: accuracy {np.mean(g.predict(X_te) == y_te):.3f}; same predictions as scikit-learn: \"\n      f\"{np.array_equal(g.predict(X_te), g_ref.predict(X_te))}; log probabilities match: \"\n      f\"{np.allclose(g.predict_log_proba(X_te), g_ref.predict_log_proba(X_te))}\")\n"
+          },
+          {
+            "path": "messages.csv",
+            "content": "label,text\nspam,WINNER! You have been selected for a free holiday. Call now to claim your prize\nham,Are we still meeting for lunch tomorrow?\nspam,\"Congratulations, you won a 500 pound voucher. Text CLAIM to 80888 now\"\nham,\"Running late, I will be there in ten minutes\"\nspam,URGENT: your account will be suspended. Verify your details at the link today\nham,Can you pick up some bread and milk on the way home?\nspam,\"Free entry to win a new phone. Reply WIN to enter, terms apply\"\nham,Happy birthday! Hope you have a lovely day\nspam,\"You have a cash prize waiting. Call 09061 now, lines close soon\"\nham,\"Thanks for the notes from the lecture, they really helped\"\nspam,\"Get cheap loans approved today, no credit check, reply YES\"\nham,What time does the match start on Saturday?\nspam,\"Limited offer: claim your free ringtones now, text TONES to 85555\"\nham,\"I left my keys at your place, can I come and get them tonight?\"\nspam,\"Your mobile number has won a prize draw, call now to collect\"\nham,\"Mum says dinner is at seven, do not be late\"\nspam,\"Exclusive deal just for you, 50 percent off, click the link to claim\"\nham,Did you finish the assignment? I am stuck on question three\nspam,You are a winner! Claim your free gift card before midnight\nham,\"Call me when you get home, no rush\"\nspam,\"Final notice: unpaid parcel fee, pay now to release your delivery\"\nham,\"The train is delayed again, see you at the station\"\nspam,\"Earn cash fast from home, no experience needed, reply now\"\nham,Shall we watch a film tonight or go for a walk?\nspam,\"Congratulations! Your number was chosen for a cash reward, call to claim\"\nham,\"Good luck with your interview tomorrow, you will do great\"\nspam,\"Win a luxury cruise for two, text CRUISE now, free entry\"\nham,Can you send me the photos from the weekend?\nspam,\"Your bank account needs urgent verification, click the link now\"\nham,\"I am at the library until five, then heading home\"\nspam,\"Claim your free bonus credit today, offer ends tonight\"\nham,Remember to bring your laptop to the meeting\nspam,Win great prizes every week with our free club. Text STOP to opt out\nham,\"Lunch was great today, let us do it again next week\"\nspam,\"You have been pre-approved for a credit card, apply now\"\nham,Is the meeting still at ten or did they move it?\nspam,Urgent prize notification: call now to claim your reward\nham,\"Sorry I missed your call, I was in class\"\nspam,\"Free trial of premium music, reply YES to start, cancel anytime\"\nham,We need to buy a present for Amina before Friday\nspam,\"Last chance to win a new laptop, text WIN now\"\nham,\"The doctor said I am fine, just need some rest\"\nspam,\"Your delivery is on hold, pay the small fee at the link to release it\"\nham,See you at the bus stop in five minutes\nspam,\"Cash reward waiting for you, reply CLAIM to collect\"\nham,\"Thanks for dinner last night, it was lovely\"\nspam,\"Lowest price guaranteed on phones, offer ends today, call now\"\nham,Have you seen my blue jacket anywhere?\nspam,You won tickets to the final! Claim them now at the link\nham,Let me know when you arrive so I can come down\nspam,\"Act now: limited free offer on gym membership, reply YES\"\nham,\"The kids loved the park today, thanks for coming\"\nspam,\"Get a free phone upgrade today, call our team now\"\nham,\"Our team won the match, what a game!\"\nspam,\"Your entry has won our weekly draw, text PRIZE to claim\"\nham,Can we move our call to tomorrow morning?\nspam,\"Double your money with this investment, guaranteed returns, reply now\"\nham,\"I will cook tonight, any requests?\"\nspam,\"Special offer: free delivery and a prize draw entry, click to claim\"\nham,Please water the plants while I am away\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Linear and Logistic Regression",
+      "summary": "Build the two workhorse linear models as classes with fit and predict: linear regression trained by gradient descent and checked against the closed-form least-squares answer, and logistic regression with the sigmoid, the log-loss and an L2 penalty, each scored with metrics you write yourself.",
+      "instructor": "nataliya-kovalenko",
+      "lessons": [
+        {
+          "title": "Linear regression: gradient descent and the closed form",
+          "minutes": 12,
+          "objectives": [
+            "Train linear regression by gradient descent with a separate intercept",
+            "Compare it with the least-squares solution and with scikit-learn",
+            "Convert coefficients learned on standardised features back to the original units"
+          ],
+          "key_points": [
+            "Linear regression predicts ŷ = Xw + b and minimises the mean squared error; its gradients are ∂L/∂w = (2/n) Xᵀ(ŷ − y) and ∂L/∂b = 2 · mean(ŷ − y).",
+            "Least squares also has a closed-form answer, the normal equations XᵀX w = Xᵀy. Solve them with np.linalg.lstsq or np.linalg.solve rather than by inverting XᵀX, which is slower and less accurate.",
+            "Gradient descent earns its place when there are too many rows or features to solve directly, or when a loss has no closed form, as for logistic regression.",
+            "Its speed depends on the condition number of XᵀX: correlated features, such as the diabetes data's blood measurements, create a narrow valley, so it can take thousands of steps to agree with least squares to many decimal places.",
+            "Coefficients learned on standardised features convert back to the original units with w_j = w′_j / σ_j and b = b′ − Σ w′_j μ_j / σ_j, which reproduces a model fitted on the raw data.",
+            "scikit-learn's LinearRegression solves least squares directly, so a correct gradient descent run to convergence matches its coef_ and intercept_."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "The closed form against gradient descent",
+            "steps": [
+              {
+                "do": "Standardise the diabetes features and solve least squares two ways.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn.datasets import load_diabetes\n\nX, y = load_diabetes(return_X_y=True)\nZ = (X - X.mean(axis=0)) / X.std(axis=0)\nZb = np.column_stack([np.ones(len(Z)), Z])\nw_lstsq = np.linalg.lstsq(Zb, y, rcond=None)[0]\nw_normal = np.linalg.solve(Zb.T @ Zb, Zb.T @ y)          # the normal equations\nprint(np.allclose(w_lstsq, w_normal), w_lstsq[:4].round(2))",
+                "lang": "python",
+                "see": "True [152.13  -0.48 -11.41  24.73]: the intercept is the mean of y, because the features are centred."
+              },
+              {
+                "do": "Check the condition number of ZbᵀZb.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "print(round(np.linalg.cond(Zb.T @ Zb), 1))",
+                "lang": "python",
+                "see": "470.1: a valley about 470 times steeper one way than another."
+              },
+              {
+                "do": "Run 20,000 steps of gradient descent and watch the gap to least squares close.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "w = np.zeros(Zb.shape[1])\nfor step in range(1, 20001):\n    w = w - 0.1 * 2 / len(y) * Zb.T @ (Zb @ w - y)\n    if step in (10, 100, 1000, 10000, 20000):\n        print(step, f\"{np.abs(w - w_lstsq).max():.2e}\")",
+                "lang": "python",
+                "see": "A gap of 35.7 after 10 steps and still 6.54 after 1,000, then 1.31e-06 after 10,000 and 1.78e-12 after 20,000."
+              },
+              {
+                "do": "Convert back to the original units and compare with scikit-learn fitted on the raw data.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.linear_model import LinearRegression\n\nref = LinearRegression().fit(X, y)\ncoef = w[1:] / X.std(axis=0)\nintercept = w[0] - (w[1:] * X.mean(axis=0) / X.std(axis=0)).sum()\nprint(np.allclose(coef, ref.coef_), round(intercept, 3), round(ref.intercept_, 3))",
+                "lang": "python",
+                "see": "True 152.133 152.133"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Logistic regression: the sigmoid and the log-loss",
+          "minutes": 12,
+          "objectives": [
+            "Turn a linear score into a probability with the sigmoid",
+            "Implement the log-loss and its gradient, stably",
+            "Explain why an L2 penalty keeps the weights finite"
+          ],
+          "key_points": [
+            "Logistic regression models P(y = 1 | x) = σ(w · x + b), with the sigmoid σ(z) = 1 / (1 + e^(−z)). Predicting 1 when the probability is at least 0.5 means predicting 1 when w · x + b ≥ 0: a linear decision boundary.",
+            "The log-loss, or binary cross-entropy, is −(1/n) Σ [y log p + (1 − y) log(1 − p)]. It punishes confident wrong answers heavily, and unlike the squared error of a sigmoid it is convex in w.",
+            "Its gradient has the same shape as linear regression's: ∂L/∂w = (1/n) Xᵀ(p − y) and ∂L/∂b = mean(p − y).",
+            "Compute it stably: np.exp(-z) overflows once z is below about −709, so compute σ(z) as exp(−log(1 + e^(−z))) with np.logaddexp, and clip probabilities away from exactly 0 and 1 before taking logs.",
+            "On separable data the unpenalised log-loss keeps falling as the weights grow without limit. An L2 penalty, λ‖w‖²/2, keeps them finite; scikit-learn's LogisticRegression uses one by default, with C = 1 / (λn), so a smaller C means a stronger penalty.",
+            "In scikit-learn 1.8 and later the kind of penalty is set with l1_ratio (0, the default, for L2; 1 for L1) and no penalty with C=np.inf; earlier versions use penalty='l1' or penalty=None."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Sigmoid, log-loss and separable data",
+            "steps": [
+              {
+                "do": "Take the log of a tiny sigmoid value the naive way, and the stable way.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nz = 1000.0\nwith np.errstate(over=\"ignore\", divide=\"ignore\"):\n    print(np.log(1 / (1 + np.exp(z))))                    # log of sigmoid(-1000), naively\nprint(-np.logaddexp(0, z))                                # the same quantity, computed stably",
+                "lang": "python",
+                "see": "-inf, then -1000.0."
+              },
+              {
+                "do": "Compare the log-loss of an unsure miss with a confident one.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "def log_loss(y, p):\n    return -np.mean(y * np.log(p) + (1 - y) * np.log(1 - p))\n\ny = np.array([1, 1, 0])\nprint(round(log_loss(y, np.array([0.9, 0.8, 0.2])), 4), round(log_loss(y, np.array([0.9, 0.01, 0.2])), 4))",
+                "lang": "python",
+                "see": "0.1839, then 1.6446 when one positive gets a probability of 0.01."
+              },
+              {
+                "do": "Fit four separable points with and without an L2 penalty.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "sigmoid = lambda s: np.exp(-np.logaddexp(0, -s))\nx = np.array([-2.0, -1.0, 1.0, 2.0])\nt = np.array([0, 0, 1, 1])                                # x > 0 means class 1\nfor lam in (0.0, 0.1):\n    w = 0.0\n    for step in range(1, 100001):\n        w -= 1.0 * (np.mean((sigmoid(w * x) - t) * x) + lam * w)\n        if step in (100, 10000, 100000):\n            print(lam, step, round(w, 2))",
+                "lang": "python",
+                "see": "Without a penalty the weight keeps growing, 4.02, 8.52, 10.82; with λ = 0.1 it settles at 1.46."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Metrics you write yourself",
+          "minutes": 12,
+          "objectives": [
+            "Implement MSE, RMSE, MAE and R² for regression",
+            "Implement precision, recall and F1 from confusion counts",
+            "Choose a metric and a threshold that match the cost of errors"
+          ],
+          "key_points": [
+            "Mean squared error averages the squared errors, so one large miss dominates it; RMSE, its square root, is in the target's units, and mean absolute error, the average size of the errors, is swayed less by a few large misses.",
+            "R² = 1 − Σ(y − ŷ)² / Σ(y − ȳ)² compares a model with always predicting the mean: 1 is perfect, 0 is no better than the mean, and it is negative for a model that does worse.",
+            "For 0/1 labels, boolean masks give the confusion counts: tp = sum((y == 1) & (pred == 1)), and likewise fp, fn and tn; accuracy is (tp + tn) / n.",
+            "Precision, tp / (tp + fp), is the share of predicted positives that are right; recall, tp / (tp + fn), is the share of real positives found; F1, 2PR / (P + R), is their harmonic mean.",
+            "Accuracy misleads when classes are imbalanced: with 5% positives, always predicting negative scores 0.95 accuracy and 0 recall. Raising the threshold usually trades recall for precision, so choose it from the cost of each kind of mistake.",
+            "Handle the empty cases on purpose (precision is undefined when nothing is predicted positive, and scikit-learn returns 0 with a warning), and check every metric against sklearn.metrics with np.isclose."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Metrics by hand, checked by scikit-learn",
+            "steps": [
+              {
+                "do": "Score five regression predictions, one of them a big miss, then two baselines.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\nfrom sklearn import metrics\n\ny = np.array([3.0, 5.0, 7.0, 9.0, 30.0])\np = np.array([2.5, 5.5, 7.0, 8.0, 20.0])\nmse = np.mean((y - p) ** 2)\nmae = np.mean(np.abs(y - p))\nr2 = 1 - ((y - p) ** 2).sum() / ((y - y.mean()) ** 2).sum()\nprint(mse, round(mse ** 0.5, 3), mae, round(r2, 4), round(metrics.r2_score(y, p), 4))\nprint(round(metrics.r2_score(y, np.full(5, y.mean())), 4), round(metrics.r2_score(y, np.zeros(5)), 3))",
+                "lang": "python",
+                "see": "20.3 4.506 2.4 0.7889 0.7889: the 10-unit miss supplies 100 of the 101.5 summed squared error. Then R² is 0.0 for always predicting the mean and -1.213 for always predicting zero."
+              },
+              {
+                "do": "Count the four outcomes for ten classifications, and compare with scikit-learn.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "y = np.array([1, 1, 1, 1, 0, 0, 0, 0, 0, 0])\npred = np.array([1, 1, 1, 0, 1, 0, 0, 0, 0, 0])\ntp = np.sum((y == 1) & (pred == 1)); fp = np.sum((y == 0) & (pred == 1))\nfn = np.sum((y == 1) & (pred == 0)); tn = np.sum((y == 0) & (pred == 0))\nprecision, recall = tp / (tp + fp), tp / (tp + fn)\nprint(int(tp), int(fp), int(fn), int(tn), precision, recall, 2 * precision * recall / (precision + recall))\nprint(metrics.confusion_matrix(y, pred).ravel(), metrics.f1_score(y, pred))",
+                "lang": "python",
+                "see": "3 1 1 5 0.75 0.75 0.75, then [5 1 1 3] 0.75: scikit-learn's ravel() order is tn, fp, fn, tp."
+              },
+              {
+                "do": "Move the threshold over some predicted probabilities.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "proba = np.array([0.95, 0.8, 0.6, 0.4, 0.45, 0.3, 0.2, 0.1, 0.05, 0.02])\nfor threshold in (0.7, 0.5, 0.35):\n    p = (proba >= threshold).astype(int)\n    print(threshold, round(metrics.precision_score(y, p), 2), metrics.recall_score(y, p))",
+                "lang": "python",
+                "see": "Precision 1.0 and recall 0.5 at 0.7, 1.0 and 0.75 at 0.5, then 0.8 and 1.0 at 0.35."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Linear and logistic regression from scratch",
+        "tool": "JupyterLab",
+        "minutes": 180,
+        "goal": "Build linear regression and L2-penalised logistic regression trained by gradient descent, a stable sigmoid and seven metrics in NumPy, and show they match scikit-learn's coefficients, predictions and metrics on the diabetes and breast cancer data.",
+        "setup": [
+          "Your course folder, with NumPy, scikit-learn and JupyterLab installed",
+          "Download the starter files linear_models.py and check_lab4.py into it"
+        ],
+        "steps": [
+          {
+            "do": "Write sigmoid with np.logaddexp, then the metric functions at the bottom of linear_models.py."
+          },
+          {
+            "do": "Write LinearRegressionGD.fit: gradient descent on the weights and the intercept together, stopping once the gradient's length falls below tol."
+          },
+          {
+            "do": "Open a terminal in JupyterLab (File | New | Terminal), where each run imports your latest code, and run the checker.",
+            "code": "python check_lab4.py",
+            "lang": "bash",
+            "see": "sigmoid of -1000, 0 and 1000: [0.  0.5 1. ] with no overflow warning, then the linear regression lines."
+          },
+          {
+            "do": "Read the linear regression results on the diabetes data, which uses the same split as Machine Learning Foundations with Python.",
+            "see": "coefficients within 1e-6 of scikit-learn's: True after about ten thousand steps; the loss after 1, 10, 100 and 1000 steps is [18908.3, 3188.8, 2890.3, 2869.3]; Test MSE 2900.2, RMSE 53.9, MAE 42.8, R2 0.453."
+          },
+          {
+            "do": "Write LogisticRegressionGD.fit with the L2 penalty, and rerun.",
+            "see": "coefficients within 1e-5 of scikit-learn's: True and Same predictions as scikit-learn: True."
+          },
+          {
+            "do": "Read the classification metrics and the threshold lines.",
+            "see": "Accuracy 0.965, precision 0.980, recall 0.925, F1 0.951, log-loss 0.0776, all matching scikit-learn; lowering the threshold to 0.3 raises recall."
+          },
+          {
+            "do": "Read the regularisation table.",
+            "see": "The largest coefficient grows from 0.24 at C=0.01 to 1.36 at C=1.0 and 9.21 at C=100.0, while test accuracy goes 0.951, 0.965 and 0.937."
+          },
+          {
+            "do": "Write three sentences: why gradient descent needed thousands of steps on the diabetes data, what C does to the weights and to test accuracy here, and which threshold you'd choose for a screening tool and why."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The sigmoid is stable at both extremes.",
+            "look_for": [
+              "sigmoid of -1000, 0 and 1000: [0.  0.5 1. ]"
+            ]
+          },
+          {
+            "text": "Linear regression by gradient descent converges to scikit-learn's coefficients.",
+            "look_for": [
+              "Linear regression:",
+              "coefficients within 1e-6 of scikit-learn's: True"
+            ]
+          },
+          {
+            "text": "The regression metrics are right and match scikit-learn.",
+            "look_for": [
+              "RMSE 53.9, MAE 42.8, R2 0.453",
+              "Regression metrics match scikit-learn: True"
+            ]
+          },
+          {
+            "text": "Logistic regression with C=1 matches scikit-learn's coefficients and predictions.",
+            "look_for": [
+              "coefficients within 1e-5 of scikit-learn's: True",
+              "Same predictions as scikit-learn: True"
+            ]
+          },
+          {
+            "text": "The classification metrics are right and match scikit-learn.",
+            "look_for": [
+              "Accuracy 0.965, precision 0.980, recall 0.925, F1 0.951, log-loss 0.0776",
+              "Classification metrics match scikit-learn: True"
+            ]
+          },
+          {
+            "text": "The threshold and regularisation experiments are reported.",
+            "look_for": [
+              "Threshold 0.3: precision",
+              "C=0.01   largest |coefficient|   0.24",
+              "C=100.0  largest |coefficient|   9.21"
+            ]
+          },
+          {
+            "text": "The sentences connect the slow convergence to correlated features, C to the size of the weights, and the threshold to the cost of a missed tumour.",
+            "look_for": [
+              "recall"
+            ]
+          }
+        ],
+        "submit": "Paste your linear_models.py, the full output of check_lab4.py and your three sentences.",
+        "hints": [
+          "Keep the intercept out of the penalty: add lam * coef_ to grad_w only.",
+          "If logistic regression's coefficients are close but not within 1e-5, check that the penalty is 1 / (C * n), with n the number of training rows.",
+          "precision and recall should return 0.0 rather than divide by zero when their denominator is 0.",
+          "np.sqrt(grad_w @ grad_w + grad_b ** 2) is the length of the whole gradient, weights and intercept together."
+        ],
+        "files": [
+          {
+            "path": "linear_models.py",
+            "content": "\"\"\"Linear and logistic regression from scratch, with NumPy only. Fill in each TODO, then run check_lab4.py.\"\"\"\n\nimport numpy as np\n\n\nclass StandardScaler:\n    \"\"\"Rescale every column to mean 0 and standard deviation 1, with statistics learned from the training data.\"\"\"\n\n    def fit(self, X):\n        X = np.asarray(X, dtype=float)\n        self.mean_, self.scale_ = X.mean(axis=0), X.std(axis=0)\n        return self\n\n    def transform(self, X):\n        return (np.asarray(X, dtype=float) - self.mean_) / self.scale_\n\n\nclass LinearRegressionGD:\n    \"\"\"Least-squares linear regression, trained by batch gradient descent on the mean squared error.\"\"\"\n\n    def __init__(self, lr=0.1, max_iter=100_000, tol=1e-8):\n        self.lr, self.max_iter, self.tol = lr, max_iter, tol\n\n    def fit(self, X, y):\n        X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float)\n        n, d = X.shape\n        self.coef_, self.intercept_, self.loss_history_ = np.zeros(d), 0.0, []\n        # TODO: up to max_iter times:\n        #   residual = X @ coef_ + intercept_ - y, and append its mean square to loss_history_\n        #   grad_w = (2 / n) X^T residual and grad_b = 2 * mean(residual)\n        #   if the gradient's length, sqrt(|grad_w|^2 + grad_b^2), is below tol, stop (break)\n        #   otherwise step: coef_ -= lr * grad_w and intercept_ -= lr * grad_b\n        # Keep the number of steps taken in self.n_iter_.\n        raise NotImplementedError\n        return self\n\n    def predict(self, X):\n        return np.asarray(X, dtype=float) @ self.coef_ + self.intercept_\n\n\ndef sigmoid(z):\n    \"\"\"1 / (1 + e^-z), without overflow: np.exp(-z) overflows once z is below about -709.\"\"\"\n    # TODO: use the identity sigmoid(z) = exp(-log(1 + e^-z)) = np.exp(-np.logaddexp(0, -z))\n    raise NotImplementedError\n\n\nclass LogisticRegressionGD:\n    \"\"\"Binary logistic regression, trained by gradient descent on the mean log-loss plus an L2 penalty.\n    The penalty is |w|^2 / (2 C n), which makes C mean what it means in scikit-learn: smaller C, more penalty.\"\"\"\n\n    def __init__(self, C=1.0, lr=0.5, max_iter=100_000, tol=1e-8):\n        self.C, self.lr, self.max_iter, self.tol = C, lr, max_iter, tol\n\n    def fit(self, X, y):\n        X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float)\n        n, d = X.shape\n        lam = 1 / (self.C * n)\n        self.coef_, self.intercept_ = np.zeros(d), 0.0\n        # TODO: as in LinearRegressionGD, but with p = sigmoid(X @ coef_ + intercept_):\n        #   grad_w = X^T (p - y) / n + lam * coef_   (the penalty's gradient; the intercept isn't penalised)\n        #   grad_b = mean(p - y)\n        raise NotImplementedError\n        return self\n\n    def predict_proba(self, X):\n        \"\"\"The probability of class 1 for each row.\"\"\"\n        return sigmoid(np.asarray(X, dtype=float) @ self.coef_ + self.intercept_)\n\n    def predict(self, X, threshold=0.5):\n        return (self.predict_proba(X) >= threshold).astype(int)\n\n\n# ---- Metrics: y is the truth, p a prediction (a number, a 0/1 class or a probability of class 1)\n\ndef mse(y, p):\n    raise NotImplementedError\n\n\ndef rmse(y, p):\n    return mse(y, p) ** 0.5\n\n\ndef mae(y, p):\n    raise NotImplementedError\n\n\ndef r2(y, p):\n    \"\"\"1 - (sum of squared errors) / (sum of squared differences from the mean of y).\"\"\"\n    raise NotImplementedError\n\n\ndef confusion_counts(y, pred):\n    \"\"\"(tn, fp, fn, tp) for 0/1 labels.\"\"\"\n    y, pred = np.asarray(y), np.asarray(pred)\n    raise NotImplementedError\n\n\ndef accuracy(y, pred):\n    tn, fp, fn, tp = confusion_counts(y, pred)\n    return (tp + tn) / (tn + fp + fn + tp)\n\n\ndef precision(y, pred):\n    # TODO: the share of predicted positives that are positive (0.0 if nothing is predicted positive)\n    raise NotImplementedError\n\n\ndef recall(y, pred):\n    # TODO: the share of real positives that are predicted positive\n    raise NotImplementedError\n\n\ndef f1(y, pred):\n    # TODO: the harmonic mean of precision and recall: 2 P R / (P + R), or 0.0 when both are 0\n    raise NotImplementedError\n\n\ndef log_loss(y, proba, eps=1e-15):\n    \"\"\"Mean of -[y log p + (1 - y) log(1 - p)], with p clipped away from exactly 0 and 1.\"\"\"\n    raise NotImplementedError\n"
+          },
+          {
+            "path": "check_lab4.py",
+            "content": "\"\"\"Run this after filling in linear_models.py. scikit-learn is used only to load data, split it and check you.\"\"\"\n\nimport numpy as np\nfrom sklearn import metrics\nfrom sklearn.datasets import load_breast_cancer, load_diabetes\nfrom sklearn.linear_model import LinearRegression, LogisticRegression\nfrom sklearn.model_selection import train_test_split\n\nfrom linear_models import (LinearRegressionGD, LogisticRegressionGD, StandardScaler, accuracy, f1, log_loss, mae,\n                           mse, precision, r2, recall, rmse, sigmoid)\n\nprint(\"sigmoid of -1000, 0 and 1000:\", sigmoid(np.array([-1000.0, 0.0, 1000.0])))\n\n# Linear regression: diabetes progression a year later, from 10 measurements\nX, y = load_diabetes(return_X_y=True)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\nscaler = StandardScaler().fit(X_train)\nZ_train, Z_test = scaler.transform(X_train), scaler.transform(X_test)\nlin = LinearRegressionGD(lr=0.1).fit(Z_train, y_train)\nref = LinearRegression().fit(Z_train, y_train)\ngap = np.abs(lin.coef_ - ref.coef_).max()\nprint(f\"Linear regression: {lin.n_iter_} steps; coefficients within 1e-6 of scikit-learn's: {bool(gap < 1e-6)}\")\nprint(\"Loss after 1, 10, 100 and 1000 steps:\", [round(lin.loss_history_[i], 1) for i in (1, 10, 100, 1000)])\npred = lin.predict(Z_test)\nprint(f\"Test MSE {mse(y_test, pred):.1f}, RMSE {rmse(y_test, pred):.1f}, MAE {mae(y_test, pred):.1f}, \"\n      f\"R2 {r2(y_test, pred):.3f}\")\npairs = [(mse, metrics.mean_squared_error), (mae, metrics.mean_absolute_error), (r2, metrics.r2_score)]\nprint(\"Regression metrics match scikit-learn:\", all(np.isclose(f(y_test, pred), g(y_test, pred)) for f, g in pairs))\n\n# Logistic regression: breast tumours, with 1 meaning malignant\ndata = load_breast_cancer()\nX, y = data.data, (data.target == 0).astype(int)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)\nscaler = StandardScaler().fit(X_train)\nZ_train, Z_test = scaler.transform(X_train), scaler.transform(X_test)\nclf = LogisticRegressionGD(C=1.0).fit(Z_train, y_train)\nref = LogisticRegression(C=1.0, tol=1e-10, max_iter=10_000).fit(Z_train, y_train)\ngap = np.abs(clf.coef_ - ref.coef_[0]).max()\nprint(f\"Logistic regression: {clf.n_iter_} steps; coefficients within 1e-5 of scikit-learn's: {bool(gap < 1e-5)}\")\nproba, pred = clf.predict_proba(Z_test), clf.predict(Z_test)\nprint(\"Same predictions as scikit-learn:\", np.array_equal(pred, ref.predict(Z_test)))\nprint(f\"Accuracy {accuracy(y_test, pred):.3f}, precision {precision(y_test, pred):.3f}, \"\n      f\"recall {recall(y_test, pred):.3f}, F1 {f1(y_test, pred):.3f}, log-loss {log_loss(y_test, proba):.4f}\")\npairs = [(accuracy, metrics.accuracy_score), (precision, metrics.precision_score), (recall, metrics.recall_score),\n         (f1, metrics.f1_score)]\nsame = all(np.isclose(f(y_test, pred), g(y_test, pred)) for f, g in pairs)\nsame = same and np.isclose(log_loss(y_test, proba), metrics.log_loss(y_test, proba))\nprint(\"Classification metrics match scikit-learn:\", same)\nfor t in (0.3, 0.5, 0.7):\n    p_t = (proba >= t).astype(int)\n    print(f\"Threshold {t}: precision {precision(y_test, p_t):.3f}, recall {recall(y_test, p_t):.3f}\")\nfor C in (0.01, 1.0, 100.0):\n    m = LogisticRegressionGD(C=C).fit(Z_train, y_train)\n    print(f\"C={C:<6} largest |coefficient| {np.abs(m.coef_).max():6.2f}  test accuracy {accuracy(y_test, m.predict(Z_test)):.3f}\")\n"
+          }
+        ]
+      }
+    },
+    {
+      "title": "Decision Trees",
+      "summary": "Grow a classification tree recursively: measure impurity with entropy or Gini, choose the split with the highest information gain, stop at a depth limit, and compare the tree you built with scikit-learn's, split by split.",
+      "instructor": "chukwuemeka-obieche",
+      "lessons": [
+        {
+          "title": "Entropy, Gini impurity and information gain",
+          "minutes": 12,
+          "objectives": [
+            "Calculate entropy and Gini impurity for a set of labels",
+            "Calculate the information gain of a split",
+            "List the candidate thresholds for a numeric feature"
+          ],
+          "key_points": [
+            "Entropy H(S) = −Σ p_c log₂ p_c measures how mixed a node's labels are: 0 for a pure node, 1 bit for an even mix of two classes, and log₂ k for k equally common classes.",
+            "Gini impurity, 1 − Σ p_c², is the chance that two labels drawn at random from the node disagree. scikit-learn's trees use it by default (criterion='gini'), and it usually chooses similar splits to entropy.",
+            "The information gain of a split is the parent's entropy minus the children's entropies weighted by their share of the rows: splitting 8 positives and 8 negatives into 6 v 2 and 2 v 6 gains 1 − 0.811 = 0.189 bits.",
+            "For a numeric feature the useful thresholds lie halfway between neighbouring distinct sorted values, as in scikit-learn, so a feature with m distinct values offers m − 1 splits.",
+            "The best split maximises the gain over every feature and threshold. When two splits tie, an implementation needs a rule, and different rules give different but equally good trees."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Impurity and gain by hand",
+            "steps": [
+              {
+                "do": "Write entropy and Gini and try them on four nodes.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\ndef entropy(y):\n    p = np.bincount(y) / len(y)\n    p = p[p > 0]\n    return float((p * np.log2(1 / p)).sum())\n\ndef gini(y):\n    p = np.bincount(y) / len(y)\n    return float(1 - (p ** 2).sum())\n\nfor counts in ([8, 8], [6, 2], [16, 0], [5, 5, 5]):\n    y = np.repeat(np.arange(len(counts)), counts)\n    print(counts, round(entropy(y), 3), round(gini(y), 3))",
+                "lang": "python",
+                "see": "[8, 8] 1.0 0.5, [6, 2] 0.811 0.375, [16, 0] 0.0 0.0 and [5, 5, 5] 1.585 0.667, which is log₂ 3."
+              },
+              {
+                "do": "Measure the gain of two splits of the same 16 rows.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "def gain(y, left):\n    n, nl = len(y), left.sum()\n    return entropy(y) - nl / n * entropy(y[left]) - (n - nl) / n * entropy(y[~left])\n\ny = np.repeat([1, 0], 8)                                                  # 8 positives, 8 negatives\nsplit_a = np.array([1] * 6 + [0] * 2 + [1] * 2 + [0] * 6, dtype=bool)   # 6 v 2 and 2 v 6\nsplit_b = np.array([1] * 8 + [0] * 8, dtype=bool)                       # a perfect split\nprint(round(gain(y, split_a), 3), round(gain(y, split_b), 3))",
+                "lang": "python",
+                "see": "0.189 1.0"
+              },
+              {
+                "do": "List the midpoint thresholds for a small age column and the gain of each.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "age = np.array([22, 25, 31, 35, 41, 48, 52, 60])\nbought = np.array([0, 0, 1, 1, 1, 0, 0, 0])\nvalues = np.unique(age)\nfor t in (values[:-1] + values[1:]) / 2:\n    print(t, round(gain(bought, age <= t), 3))",
+                "lang": "python",
+                "see": "Seven thresholds, from 23.5 to 56.0; the best is 44.5, with a gain of 0.348."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Growing a tree recursively",
+          "minutes": 12,
+          "objectives": [
+            "Write the recursive procedure that grows a tree",
+            "Represent a tree and use it to predict",
+            "Read a fitted scikit-learn tree's arrays"
+          ],
+          "key_points": [
+            "A tree grows recursively: at each node try every feature and threshold, keep the split with the highest gain, divide the rows, and grow each child the same way.",
+            "A node becomes a leaf when it is pure, has fewer than min_samples_split rows, has reached max_depth, or no split improves purity; a leaf predicts its majority class, and its class shares serve as probabilities.",
+            "The search is greedy, choosing the best split now without looking ahead: finding the best possible tree is computationally intractable, so practical algorithms such as CART grow trees this way.",
+            "To predict, start at the root and go left when x[feature] ≤ threshold, otherwise right, until a leaf; the cost is the tree's depth, not the size of the training set.",
+            "scikit-learn stores a fitted tree as arrays on tree_: feature, threshold, children_left, children_right and value, with nodes numbered depth first; a leaf has children −1 and feature −2.",
+            "Trees need no feature scaling, because each split compares one feature with a threshold. scikit-learn's trees work in 32-bit floats, so their thresholds can differ from a 64-bit implementation in the last printed digit."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Read a fitted tree",
+            "steps": [
+              {
+                "do": "Fit a depth-2 entropy tree to the iris data and print its rules.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_iris\nfrom sklearn.tree import DecisionTreeClassifier, export_text\n\niris = load_iris()\ntree = DecisionTreeClassifier(criterion=\"entropy\", max_depth=2, random_state=0).fit(iris.data, iris.target)\nprint(export_text(tree, feature_names=list(iris.feature_names)))",
+                "lang": "python",
+                "see": "petal width (cm) <= 0.80 isolates class 0, then petal width (cm) <= 1.75 separates classes 1 and 2."
+              },
+              {
+                "do": "Look at the arrays behind it.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "t = tree.tree_\nprint(t.node_count, t.feature, t.threshold.round(2))\nprint(t.children_left, t.children_right)",
+                "lang": "python",
+                "see": "5 nodes; feature [ 3 -2  3 -2 -2] (-2 marks a leaf), children_left [ 1 -1  3 -1 -1] and children_right [ 2 -1  4 -1 -1]."
+              },
+              {
+                "do": "Walk one flower down the tree by hand, and compare with apply and predict.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "x = iris.data[100]\nnode = 0\nwhile t.children_left[node] != -1:\n    node = t.children_left[node] if x[t.feature[node]] <= t.threshold[node] else t.children_right[node]\nprint(node, tree.apply(iris.data[[100]]), tree.predict(iris.data[[100]]))",
+                "lang": "python",
+                "see": "4 [4] [2]: leaf 4, class 2."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Overfitting, depth limits and pruning",
+          "minutes": 10,
+          "objectives": [
+            "Recognise an overfitted tree from its training and test scores",
+            "Constrain a tree with its depth, its leaf size or cost-complexity pruning"
+          ],
+          "key_points": [
+            "An unconstrained tree keeps splitting until every leaf is pure, so it can memorise the training data: on the breast cancer split in this lesson, training accuracy reaches 1.000 while test accuracy is 0.930.",
+            "Pre-pruning stops growth early with max_depth, min_samples_split, min_samples_leaf or min_impurity_decrease; choose their values with validation data or cross-validation, not the test set.",
+            "Post-pruning grows the full tree, then cuts back branches that don't pay for themselves: scikit-learn's cost-complexity pruning removes subtrees whose improvement is worth less than ccp_alpha per leaf, and cost_complexity_pruning_path lists the useful values.",
+            "Trees are unstable: a small change in the training data can change the first split and everything below it, which is why averaging many trees, as a random forest does, predicts better than one tree.",
+            "A shallow tree is easy to read and to explain, one reason trees stay popular where decisions must be justified; print it with export_text to check that its rules make sense."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Overfit, then prune",
+            "steps": [
+              {
+                "do": "Grow entropy trees of increasing depth on the breast cancer data.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "from sklearn.datasets import load_breast_cancer\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.tree import DecisionTreeClassifier\n\nX, y = load_breast_cancer(return_X_y=True)\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\nfor depth in (1, 2, 3, 5, None):\n    t = DecisionTreeClassifier(criterion=\"entropy\", max_depth=depth, random_state=0).fit(X_train, y_train)\n    print(depth, t.get_n_leaves(), round(t.score(X_train, y_train), 3), round(t.score(X_test, y_test), 3))",
+                "lang": "python",
+                "see": "Training accuracy climbs from 0.932 to 1.0 while test accuracy stops at 0.93; the full tree has 12 leaves."
+              },
+              {
+                "do": "Prune by cost complexity: list the useful alphas, then try a few.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "path = DecisionTreeClassifier(criterion=\"entropy\", random_state=0).cost_complexity_pruning_path(X_train, y_train)\nprint(len(path.ccp_alphas))\nfor a in (0.0, 0.01, 0.03, 0.1):\n    t = DecisionTreeClassifier(criterion=\"entropy\", ccp_alpha=a, random_state=0).fit(X_train, y_train)\n    print(a, t.get_n_leaves(), round(t.score(X_test, y_test), 3))",
+                "lang": "python",
+                "see": "11 alphas; ccp_alpha=0.01 cuts the tree to 10 leaves at the same 0.93, while 0.1 leaves 2 leaves and 0.889."
+              },
+              {
+                "do": "Refit a one-split tree on five bootstrap samples of the training data and see how the first split moves.",
+                "keys": {
+                  "mac": "Shift+Enter",
+                  "win": "Shift+Enter"
+                },
+                "code": "import numpy as np\n\nnames = load_breast_cancer().feature_names\nrng = np.random.default_rng(0)\nfor _ in range(5):\n    rows = rng.integers(0, len(X_train), len(X_train))\n    t = DecisionTreeClassifier(criterion=\"entropy\", max_depth=1, random_state=0).fit(X_train[rows], y_train[rows])\n    print(names[t.tree_.feature[0]], round(t.tree_.threshold[0], 2))",
+                "lang": "python",
+                "see": "worst perimeter at 110.05, 114.45, 104.0 and 108.45, and once mean concave points at 0.06."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Grow a decision tree",
+        "tool": "JupyterLab",
+        "minutes": 150,
+        "goal": "Build entropy, Gini, information gain, an exhaustive best-split search and a recursive DecisionTreeClassifier in NumPy, and show that its splits match scikit-learn's entropy tree on the breast cancer data while its training and test accuracy reveal overfitting.",
+        "setup": [
+          "Your course folder, with NumPy, scikit-learn and JupyterLab installed",
+          "Download the starter files tree.py and check_lab5.py into it"
+        ],
+        "steps": [
+          {
+            "do": "In tree.py, write entropy, gini and information_gain."
+          },
+          {
+            "do": "Open a terminal in JupyterLab (File | New | Terminal), where each run imports your latest code, and run the checker.",
+            "code": "python check_lab5.py",
+            "lang": "bash",
+            "see": "Entropy of 8 v 8: 1.000; of 6 v 2: 0.811; Gini of 8 v 8: 0.500, and a gain of 0.189, then NotImplementedError from best_split."
+          },
+          {
+            "do": "Write best_split: every feature, every midpoint threshold, keeping a split only when its gain is strictly better.",
+            "see": "Best first split for iris: petal length (cm) <= 2.45, gain 0.918, and a note that petal width (cm) <= 0.80 gains exactly as much."
+          },
+          {
+            "do": "Write _grow, the recursive part, with all four ways to stop, and rerun."
+          },
+          {
+            "do": "Read the depth table.",
+            "see": "True in the last column for depths 1, 2 and 3; training accuracy rising to 1.000 with no depth limit while test accuracy stays at 0.953."
+          },
+          {
+            "do": "Read the depth-2 tree printed at the end.",
+            "see": "|--- mean concave points <= 0.05 at the top, and, under mean concave points >  0.05, a split on worst perimeter whose two leaves are both class 1."
+          },
+          {
+            "do": "Optional, for speed: in best_split, sort each feature once per node and update the class counts as the threshold moves, instead of building a mask for every threshold. Time fit before and after with %time in a notebook."
+          },
+          {
+            "do": "Write two sentences: why the split on worst perimeter is worth making although both its leaves predict class 1, and why your depth-4 tree can differ from scikit-learn's and still be right."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Entropy, Gini and information gain are right.",
+            "look_for": [
+              "Entropy of 8 v 8: 1.000; of 6 v 2: 0.811; Gini of 8 v 8: 0.500",
+              "into 6 v 2 and 2 v 6: 0.189"
+            ]
+          },
+          {
+            "text": "best_split finds the iris root split and its tie.",
+            "look_for": [
+              "petal length (cm) <= 2.45, gain 0.918",
+              "petal width (cm) <= 0.80 gains 0.918 too"
+            ]
+          },
+          {
+            "text": "The tree's splits match scikit-learn's at depths 1 to 3.",
+            "look_for": [
+              "1      2       0.935  0.860  True",
+              "3      7       0.980  0.947  True"
+            ]
+          },
+          {
+            "text": "The unlimited tree fits its training data perfectly but not the test data.",
+            "look_for": [
+              "None   14      1.000  0.953"
+            ]
+          },
+          {
+            "text": "The depth-2 tree is printed in export_text's layout.",
+            "look_for": [
+              "|--- mean concave points <= 0.05",
+              "|   |--- worst perimeter >  115.00"
+            ]
+          },
+          {
+            "text": "The sentences explain that the split makes the leaves purer (more certain) even though the majority class is the same, and that deeper nodes have tied splits broken differently.",
+            "look_for": [
+              "tie"
+            ]
+          }
+        ],
+        "submit": "Paste your tree.py, the full output of check_lab5.py and your two sentences.",
+        "hints": [
+          "np.unique sorts, so (values[:-1] + values[1:]) / 2 gives the midpoints in order.",
+          "Test max_depth with 'is not None': None means no limit.",
+          "If your splits differ from scikit-learn's at depths 1 to 3, print the gain best_split finds at the root and the gain of scikit-learn's root split on the same rows.",
+          "p * np.log2(1 / p) gives 0.0 for a pure node, where -(p * np.log2(p)) gives -0.0."
+        ],
+        "files": [
+          {
+            "path": "tree.py",
+            "content": "\"\"\"A decision tree classifier from scratch, with NumPy only. Fill in each TODO, then run check_lab5.py.\"\"\"\n\nimport numpy as np\n\n\ndef entropy(y):\n    \"\"\"The sum of p log2(1/p) over the classes present in y (the same as -sum p log2 p): 0 for a pure node,\n    1 bit for a 50/50 mix of two classes.\"\"\"\n    raise NotImplementedError\n\n\ndef gini(y):\n    \"\"\"1 - sum of p^2: the chance that two labels drawn at random (with replacement) from y differ.\"\"\"\n    raise NotImplementedError\n\n\ndef information_gain(y, left, impurity=entropy):\n    \"\"\"The impurity of y minus the size-weighted impurity of its two parts; left is a boolean mask.\"\"\"\n    raise NotImplementedError\n\n\ndef best_split(X, y, impurity=entropy):\n    \"\"\"The (gain, feature, threshold) with the highest gain, trying every feature and every threshold halfway\n    between two neighbouring distinct values. (0.0, None, None) when no split improves purity.\"\"\"\n    best = (0.0, None, None)\n    # TODO: for each feature j: values = np.unique(X[:, j]); thresholds = (values[:-1] + values[1:]) / 2;\n    #       for each threshold t: gain = information_gain(y, X[:, j] <= t, impurity);\n    #       keep it only if gain > best gain + 1e-12, so that the first of two equal splits wins\n    raise NotImplementedError\n    return best\n\n\nclass DecisionTreeClassifier:\n    def __init__(self, max_depth=None, min_samples_split=2, criterion=\"entropy\"):\n        self.max_depth, self.min_samples_split = max_depth, min_samples_split\n        self.impurity = entropy if criterion == \"entropy\" else gini\n\n    def fit(self, X, y):\n        self.classes_, codes = np.unique(y, return_inverse=True)\n        self.root_ = self._grow(np.asarray(X, dtype=float), codes, depth=0)\n        return self\n\n    def _grow(self, X, y, depth):\n        \"\"\"A leaf is {\"counts\": class counts}; a split node also has feature, threshold, gain, left and right.\"\"\"\n        counts = np.bincount(y, minlength=len(self.classes_))\n        # TODO: return a leaf if the node is pure, has fewer than min_samples_split rows, is at max_depth\n        #       (when max_depth isn't None), or best_split finds no split. Otherwise split on the best feature\n        #       and threshold, and grow the left child from the rows with X[:, feature] <= threshold, the right\n        #       child from the rest, both at depth + 1.\n        raise NotImplementedError\n\n    def _leaf(self, x):\n        node = self.root_\n        while \"feature\" in node:\n            node = node[\"left\"] if x[node[\"feature\"]] <= node[\"threshold\"] else node[\"right\"]\n        return node\n\n    def predict_proba(self, X):\n        return np.array([self._leaf(x)[\"counts\"] / self._leaf(x)[\"counts\"].sum() for x in np.asarray(X, dtype=float)])\n\n    def predict(self, X):\n        return self.classes_[self.predict_proba(X).argmax(axis=1)]\n\n    def n_leaves(self, node=None):\n        node = node or self.root_\n        return 1 if \"feature\" not in node else self.n_leaves(node[\"left\"]) + self.n_leaves(node[\"right\"])\n\n    def splits(self, node=None):\n        \"\"\"Every node, depth first and left before right, as (feature, threshold); leaves are (-2, -2), as in\n        scikit-learn's tree_.feature and tree_.threshold arrays.\"\"\"\n        node = node or self.root_\n        if \"feature\" not in node:\n            return [(-2, -2.0)]\n        return [(node[\"feature\"], node[\"threshold\"])] + self.splits(node[\"left\"]) + self.splits(node[\"right\"])\n\n    def export_text(self, feature_names):\n        \"\"\"The tree laid out like sklearn.tree.export_text, so the two can be compared line by line.\"\"\"\n        lines = []\n\n        def walk(node, indent):\n            if \"feature\" not in node:\n                lines.append(f\"{indent}|--- class: {self.classes_[node['counts'].argmax()]}\")\n                return\n            name, t = feature_names[node[\"feature\"]], node[\"threshold\"]\n            lines.append(f\"{indent}|--- {name} <= {t:.2f}\")\n            walk(node[\"left\"], indent + \"|   \")\n            lines.append(f\"{indent}|--- {name} >  {t:.2f}\")\n            walk(node[\"right\"], indent + \"|   \")\n\n        walk(self.root_, \"\")\n        return \"\\n\".join(lines) + \"\\n\"\n"
+          },
+          {
+            "path": "check_lab5.py",
+            "content": "\"\"\"Run this after filling in tree.py. scikit-learn is used only to load data, split it and check you.\"\"\"\n\nimport numpy as np\nfrom sklearn.datasets import load_breast_cancer, load_iris\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.tree import DecisionTreeClassifier as SkTree\n\nfrom tree import DecisionTreeClassifier, best_split, entropy, gini, information_gain\n\ny = np.array([1] * 8 + [0] * 8)\nleft = np.array([True] * 6 + [False] * 2 + [True] * 2 + [False] * 6)\nprint(f\"Entropy of 8 v 8: {entropy(y):.3f}; of 6 v 2: {entropy(y[left]):.3f}; Gini of 8 v 8: {gini(y):.3f}\")\nprint(f\"Information gain of splitting 8 v 8 into 6 v 2 and 2 v 6: {information_gain(y, left):.3f}\")\n\niris = load_iris()\ngain, j, t = best_split(iris.data, iris.target)\nprint(f\"Best first split for iris: {iris.feature_names[j]} <= {t:.2f}, gain {gain:.3f}\")\ntie = information_gain(iris.target, iris.data[:, 3] <= 0.8)\nprint(f\"petal width (cm) <= 0.80 gains {tie:.3f} too: a tie, which scikit-learn breaks by its random feature order\")\n\ndata = load_breast_cancer()\nnames = list(data.feature_names)\nX, y = data.data, (data.target == 0).astype(int)  # 1 = malignant\nX_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\nprint(\"depth  leaves  train  test   same splits as scikit-learn\")\nfor depth in (1, 2, 3, 4, None):\n    tree = DecisionTreeClassifier(max_depth=depth).fit(X_train, y_train)\n    ref = SkTree(criterion=\"entropy\", max_depth=depth, random_state=0).fit(X_train, y_train)\n    mine = np.array(tree.splits())\n    same = (len(mine) == ref.tree_.node_count and np.array_equal(mine[:, 0], ref.tree_.feature)\n            and np.allclose(mine[:, 1], ref.tree_.threshold, rtol=1e-5))  # scikit-learn's trees use 32-bit floats\n    train_acc, test_acc = np.mean(tree.predict(X_train) == y_train), np.mean(tree.predict(X_test) == y_test)\n    print(f\"{str(depth):<6} {tree.n_leaves():<7} {train_acc:.3f}  {test_acc:.3f}  {same}\")\nprint(\"From depth 4, nodes of a few rows have several equally good splits; scikit-learn takes the first it meets\")\nprint(\"in a random feature order, you take the lowest feature number, so deeper trees can differ and both be right.\")\nprint(DecisionTreeClassifier(max_depth=2).fit(X_train, y_train).export_text(names))\n"
+          }
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Vectorised NumPy, gradients and gradient descent: work through module 1 and finish the gradient descent lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Distances, k-NN and k-means: build both in the module 2 lab and match scikit-learn.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Bayes' theorem, log probabilities and smoothing: build the spam filter and Gaussian Naive Bayes.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Linear regression by gradient descent and the regression metrics; write LinearRegressionGD and the metrics in the module 4 lab.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Logistic regression, the log-loss, L2 penalties and classification metrics; finish the module 4 lab.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Entropy, information gain and growing a tree: write best_split and _grow.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 7,
+      "focus": "Depth limits and pruning; finish the tree lab, then review and refine all five implementations: shared code, docstrings, and every check script passing again.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 8,
+      "focus": "Build, test and benchmark the capstone library, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Build your own machine learning library",
+    "minutes": 600,
+    "brief": "Turn the code from the five labs into one small Python package with a consistent, scikit-learn-like API, then prove it works. Name it what you like; the starter files call it mylearn. Every model has fit(X, y), which returns the model itself, predict(X) and score(X, y), plus predict_proba(X) where it makes sense; hyperparameters are set in __init__ and learned attributes end in an underscore, as in scikit-learn. Include KNNClassifier, KMeans, MultinomialNB, GaussianNB, LinearRegressionGD, LogisticRegressionGD and DecisionTreeClassifier, a metrics module with the regression and classification metrics you wrote, and a preprocessing module with StandardScaler and a train_test_split of your own. Share code through small base classes, such as one that gives every classifier the same score method. Test the library with pytest against scikit-learn on its built-in datasets, and benchmark it: a table of dataset, model, your score, scikit-learn's score and both fit times. Finish with a README and a short report on where your library matches scikit-learn, where it differs and why (tied splits, 32-bit thresholds, stopping tolerances), and how its speed compares. For extra polish: multiclass logistic regression with softmax, a k-NN regressor, or a faster best_split.",
+    "deliverables": [
+      "The package: modules for neighbours, naive_bayes, linear_models, tree, metrics and preprocessing, with shared base classes and docstrings",
+      "A pyproject.toml, so that the package installs with pip install -e .",
+      "A tests folder with at least 12 pytest tests, at least one per model and per metric, all passing",
+      "benchmark.py, printing a table for at least six dataset-and-model pairs across iris, wine, breast_cancer, digits and diabetes",
+      "README.md: how to install and test, the API with a short example, and the known differences from scikit-learn",
+      "A report of 300 to 500 words on correctness, differences and speed, including one optimisation you made or would make next"
+    ],
+    "rubric": [
+      {
+        "name": "Correct results",
+        "points": 25,
+        "description": "Every model matches scikit-learn where it should, with the same predictions or coefficients within a stated tolerance, and any differences are explained rather than hidden."
+      },
+      {
+        "name": "A consistent API",
+        "points": 20,
+        "description": "fit returns self, hyperparameters live in __init__, learned attributes end in an underscore, and classifiers and regressors share score through base classes."
+      },
+      {
+        "name": "Tests",
+        "points": 20,
+        "description": "At least 12 meaningful pytest tests: comparisons with scikit-learn, metric values worked out by hand, and edge cases such as a pure node or an empty cluster; all pass."
+      },
+      {
+        "name": "Benchmark and report",
+        "points": 15,
+        "description": "The table covers at least six dataset-and-model pairs with scores and fit times, and the report interprets it honestly."
+      },
+      {
+        "name": "Vectorised NumPy",
+        "points": 10,
+        "description": "Distances, scores and gradients use array operations rather than Python loops over rows, except where a loop is essential, such as growing a tree."
+      },
+      {
+        "name": "Packaging and documentation",
+        "points": 10,
+        "description": "It installs with pip install -e ., and its docstrings and README let someone else use it; no leftover debugging code."
+      }
+    ],
+    "submit": "Paste your package's modules (each with its file name), your tests and the pytest summary line, the benchmark table, your README and your report. A link to a public repository is welcome too.",
+    "files": [
+      {
+        "path": "benchmark.py",
+        "content": "\"\"\"Benchmark your library against scikit-learn on built-in datasets: python benchmark.py\n\nEach task: (dataset, loader, your model, scikit-learn's model, metric). Add a task for every model you build.\"\"\"\n\nimport time\n\nimport numpy as np\nfrom sklearn import datasets, linear_model, naive_bayes, neighbors\nfrom sklearn.model_selection import train_test_split\n\nimport mylearn  # your package; change the name here if you called it something else\n\nTASKS = [\n    (\"iris\", datasets.load_iris, lambda: mylearn.KNNClassifier(k=5),\n     lambda: neighbors.KNeighborsClassifier(n_neighbors=5), mylearn.accuracy),\n    (\"wine\", datasets.load_wine, lambda: mylearn.GaussianNB(), lambda: naive_bayes.GaussianNB(), mylearn.accuracy),\n    (\"diabetes\", datasets.load_diabetes, lambda: mylearn.LinearRegressionGD(),\n     lambda: linear_model.LinearRegression(), mylearn.r2),\n    # TODO: add breast_cancer with your LogisticRegressionGD and DecisionTreeClassifier, digits with\n    #       KNNClassifier, and any other model you build\n]\n\n\ndef timed_fit(model, X, y):\n    start = time.perf_counter()\n    model.fit(X, y)\n    return model, time.perf_counter() - start\n\n\ndef main():\n    print(f\"{'dataset':<10} {'model':<20} {'yours':>7} {'sklearn':>8} {'your fit s':>11} {'sklearn fit s':>14}\")\n    for name, loader, mine, theirs, metric in TASKS:\n        X, y = loader(return_X_y=True)\n        stratify = y if metric is mylearn.accuracy else None\n        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=stratify)\n        scaler = mylearn.StandardScaler().fit(X_train)\n        X_train, X_test = scaler.transform(X_train), scaler.transform(X_test)\n        m, t_mine = timed_fit(mine(), X_train, y_train)\n        r, t_ref = timed_fit(theirs(), X_train, y_train)\n        print(f\"{name:<10} {type(m).__name__:<20} {metric(y_test, m.predict(X_test)):7.3f} \"\n              f\"{metric(y_test, r.predict(X_test)):8.3f} {t_mine:11.4f} {t_ref:14.4f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+        "path": "test_models.py",
+        "content": "\"\"\"Example tests for your library: run  python -m pytest  in the project folder. Add tests for every model and metric.\"\"\"\n\nimport numpy as np\nimport pytest\nfrom sklearn.datasets import load_wine\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.neighbors import KNeighborsClassifier\n\nimport mylearn\n\n\n@pytest.fixture\ndef wine():\n    X, y = load_wine(return_X_y=True)\n    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0, stratify=y)\n    scaler = mylearn.StandardScaler().fit(X_train)\n    return scaler.transform(X_train), scaler.transform(X_test), y_train, y_test\n\n\n@pytest.mark.parametrize(\"k\", [1, 5, 15])\ndef test_knn_matches_sklearn(wine, k):\n    X_train, X_test, y_train, _ = wine\n    mine = mylearn.KNNClassifier(k=k).fit(X_train, y_train).predict(X_test)\n    ref = KNeighborsClassifier(n_neighbors=k).fit(X_train, y_train).predict(X_test)\n    assert np.array_equal(mine, ref)\n\n\ndef test_fit_returns_the_model(wine):\n    X_train, _, y_train, _ = wine\n    model = mylearn.KNNClassifier()\n    assert model.fit(X_train, y_train) is model\n\n\ndef test_accuracy_by_hand():\n    assert mylearn.accuracy([0, 1, 1, 0], [0, 1, 0, 0]) == pytest.approx(0.75)\n"
+      },
+      {
+        "path": "pyproject.toml",
+        "content": "[build-system]\nrequires = [\"setuptools>=64\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"mylearn\"\nversion = \"0.1.0\"\ndescription = \"Machine learning algorithms written from scratch with NumPy\"\nrequires-python = \">=3.10\"\ndependencies = [\"numpy\"]\n\n[project.optional-dependencies]\ndev = [\"pytest\", \"scikit-learn\"]\n\n[tool.setuptools]\npackages = [\"mylearn\"]\n"
+      }
+    ]
+  }
+}

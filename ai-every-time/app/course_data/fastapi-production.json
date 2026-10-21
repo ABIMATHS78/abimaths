@@ -1,0 +1,1112 @@
+{
+ "slug": "fastapi-production",
+ "title": "Advanced FastAPI and Production Deployment",
+ "subtitle": "Make FastAPI services production-ready: OAuth2 and JWT authentication with hashed passwords, SQLAlchemy and Alembic, background work, thorough tests, and Docker images served by Uvicorn workers behind Nginx.",
+ "category": "Software Development",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "chaiyapon-srisomboon",
+  "mouhamadouu-ba"
+ ],
+ "skills": [
+  "OAuth2 and JWT authentication",
+  "Password hashing (Argon2)",
+  "SQLAlchemy 2.0 ORM",
+  "Alembic migrations",
+  "Background tasks and job queues",
+  "API testing with pytest",
+  "Docker",
+  "Configuration with pydantic-settings",
+  "Structured logging",
+  "Reverse proxies (Nginx)"
+ ],
+ "tools": [
+  "FastAPI",
+  "SQLAlchemy",
+  "Alembic",
+  "PyJWT",
+  "pytest",
+  "Docker",
+  "Uvicorn",
+  "Nginx"
+ ],
+ "outcomes": [
+  "Secure an API with the OAuth2 password flow, Argon2-hashed passwords and short-lived JWT access tokens",
+  "Persist data with SQLAlchemy 2.0 and a session per request, and change the schema safely with Alembic migrations",
+  "Move slow work off the request path with background tasks and task queues, without blocking the event loop",
+  "Test endpoints, authentication, ownership and background work with TestClient, dependency overrides and isolated databases",
+  "Package the service in a Docker image configured by environment variables, with structured logs and health checks",
+  "Run it with Uvicorn or Gunicorn workers behind Nginx, with the forwarded headers and root path it needs"
+ ],
+ "prerequisites": "Introduction to FastAPI and Modern Web Services, or the same experience: routers, Pydantic models and dependencies. Comfort with pytest (CI/CD and Automated Testing covers it) and basic SQL. You need Python 3.11 or later, a terminal with curl, and Docker with Docker Compose for the last lab; Containerisation and Orchestration with Docker and Kubernetes is useful background but not required.",
+ "description": "Getting a FastAPI app to answer on localhost is the easy part. This course covers what it takes to run one for real users. You'll secure it with the OAuth2 password flow, passwords stored only as Argon2 hashes and expiring JSON Web Tokens, with dependencies that keep each user's data their own; persist it with SQLAlchemy 2.0 and evolve the schema with Alembic migrations; keep responses fast with background tasks and know when a task queue such as Celery is the better tool; and test the whole service against isolated databases with dependency overrides. Then you'll make it production-shaped: configuration and secrets from the environment, JSON logs with request IDs, liveness and readiness checks, a non-root Docker image, Uvicorn or Gunicorn workers, and Nginx in front with the forwarded headers set up correctly.\n\nThe labs build one service, TaskHub, step by step, with starter files, TODOs and the real output of every command, from alembic upgrade to a request logged through the proxy, checked against current FastAPI, SQLAlchemy 2.1, PyJWT and pwdlib. The capstone takes your own task API all the way to a secure, tested, containerised deployment.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Security and Authentication (JWT/OAuth2)",
+   "summary": "Secure an API the way FastAPI's security tools are designed for: the OAuth2 password flow with bearer tokens, passwords stored only as Argon2 hashes, signed JSON Web Tokens that expire, and dependencies that check who the caller is and what they may do.",
+   "instructor": "chaiyapon-srisomboon",
+   "lessons": [
+    {
+     "title": "OAuth2, tokens and the password flow",
+     "minutes": 12,
+     "objectives": [
+      "Explain how OAuth2 bearer tokens protect an API",
+      "Describe the password flow, where it fits and where it doesn't",
+      "Tell authentication from authorisation, and 401 from 403"
+     ],
+     "key_points": [
+      "OAuth2 is an authorisation framework: a client gets an access token from a token endpoint and sends it with every request as Authorization: Bearer <token>; the API checks the token, not a password, on each call.",
+      "In the password flow the client posts the username and password as form fields to the token URL and gets an access token back. It suits a first-party client you trust; OAuth security guidance (RFC 9700) advises against it in general, so third-party apps and single sign-on use the authorization code flow with PKCE.",
+      "fastapi.security.OAuth2PasswordBearer(tokenUrl=\"token\") is a dependency that reads the bearer token from the Authorization header and answers 401 with WWW-Authenticate: Bearer when it's missing; OAuth2PasswordRequestForm reads the login form, which needs python-multipart.",
+      "Authentication says who the caller is; authorisation decides what they may do. Answer 401 Unauthorized for missing or invalid credentials, and 403 Forbidden for a known caller who isn't allowed.",
+      "Swagger UI's Authorize button follows the tokenUrl: it posts the username and password, keeps the token and sends it with every request you try."
+     ]
+    },
+    {
+     "title": "Hashing passwords",
+     "minutes": 11,
+     "objectives": [
+      "Store passwords safely with a password-hashing algorithm",
+      "Verify logins without revealing which usernames exist"
+     ],
+     "key_points": [
+      "Never store passwords, even encrypted: store a slow, salted hash from a password-hashing algorithm such as Argon2id or bcrypt, never a fast general-purpose hash such as SHA-256 or MD5.",
+      "pwdlib (pip install \"pwdlib[argon2]\") is what FastAPI's documentation uses: PasswordHash.recommended() hashes with Argon2id, hash() returns one string holding the algorithm, its parameters, a random salt and the hash, and verify(password, hashed) checks a login.",
+      "Every hash has its own random salt, so the same password hashed twice gives two different strings: always compare with verify(), never by hashing again and comparing the strings.",
+      "Make an unknown username take as long as a wrong password, by verifying against a dummy hash, and give both the same error message, so attackers can't find out which accounts exist.",
+      "Passlib, used in many older tutorials, hasn't had a release since 2020. pwdlib's verify_and_update(password, hashed) also returns a new hash when the stored one uses outdated settings, so hashes can be upgraded at login."
+     ]
+    },
+    {
+     "title": "JSON Web Tokens",
+     "minutes": 13,
+     "objectives": [
+      "Read the parts of a JWT and say what its signature proves",
+      "Create and verify expiring tokens with PyJWT"
+     ],
+     "key_points": [
+      "A JWT is three base64url parts separated by dots: a header naming the algorithm, a payload of claims, such as sub (the subject), iat (issued at) and exp (expiry), and a signature. Anyone can read the payload, so never put secrets in it.",
+      "The signature proves the token was issued by whoever holds the key and hasn't been changed. HS256 uses one shared secret, fine when one service issues and checks tokens; RS256 and ES256 sign with a private key and verify with a public one, for separate services.",
+      "With PyJWT, jwt.encode({\"sub\": \"ana\", \"exp\": expires}, key, algorithm=\"HS256\") makes a token, and jwt.decode(token, key, algorithms=[\"HS256\"]) checks its signature and expiry, raising ExpiredSignatureError or another InvalidTokenError. Always pass the list of allowed algorithms.",
+      "Keep access tokens short-lived, minutes rather than days, and the key out of the code: make one with python -c \"import secrets; print(secrets.token_hex(32))\" and load it from the environment.",
+      "JWTs are stateless: the API doesn't store them, so it can't revoke one before it expires without extra machinery, such as a deny-list, or very short access tokens with refresh tokens."
+     ],
+     "walkthrough": {
+      "tool": "Python REPL",
+      "title": "Make, read and break a JWT",
+      "steps": [
+       {
+        "do": "With PyJWT installed (pip install pyjwt), start python3 and make a token that expires in 15 minutes.",
+        "code": "import secrets\nfrom datetime import UTC, datetime, timedelta\n\nimport jwt\n\nkey = secrets.token_hex(32)\ntoken = jwt.encode({\"sub\": \"ana\", \"exp\": datetime.now(UTC) + timedelta(minutes=15)}, key, algorithm=\"HS256\")\ntoken.count(\".\"), jwt.get_unverified_header(token)",
+        "lang": "python",
+        "see": "(2, {'alg': 'HS256', 'typ': 'JWT'}): three parts, and a header anyone can read."
+       },
+       {
+        "do": "Read the claims without the key: the payload is only encoded, not encrypted.",
+        "code": "jwt.decode(token, options={\"verify_signature\": False})",
+        "lang": "python",
+        "see": "{'sub': 'ana', 'exp': ...}"
+       },
+       {
+        "do": "Verify it properly, then with the wrong key.",
+        "code": "jwt.decode(token, key, algorithms=[\"HS256\"])[\"sub\"]\njwt.decode(token, secrets.token_hex(32), algorithms=[\"HS256\"])",
+        "lang": "python",
+        "see": "'ana', then InvalidSignatureError: Signature verification failed"
+       },
+       {
+        "do": "An expired token is refused, and so is a decode that doesn't say which algorithms are allowed.",
+        "code": "old = jwt.encode({\"sub\": \"ana\", \"exp\": datetime.now(UTC) - timedelta(seconds=1)}, key, algorithm=\"HS256\")\njwt.decode(old, key, algorithms=[\"HS256\"])\njwt.decode(token, key)",
+        "lang": "python",
+        "see": "ExpiredSignatureError: Signature has expired, then DecodeError: It is required that you pass in a value for the \"algorithms\" argument when calling decode(). All three errors are InvalidTokenError subclasses, so one except clause handles them."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Protecting routes: current user, roles and scopes",
+     "minutes": 12,
+     "objectives": [
+      "Protect routes with a current-user dependency and role checks",
+      "Know what scopes and CORS add, and what they don't"
+     ],
+     "key_points": [
+      "get_current_user(token = Depends(oauth2_scheme)) decodes the token, loads the user and raises 401 if anything fails; an endpoint then asks for user: Annotated[User, Depends(get_current_user)].",
+      "Chained dependencies add rules: get_active_user depends on get_current_user and rejects disabled accounts with 403, and require_admin depends on get_active_user and checks the role.",
+      "OAuth2 scopes let a token carry finer permissions, such as tasks:write: declare them with Security(get_current_user, scopes=[...]) and check them in the dependency through SecurityScopes.",
+      "Hide other users' data completely: answer 404, not 403, for someone else's task, so IDs reveal nothing about what exists.",
+      "Serve tokens only over HTTPS and never log Authorization headers. CORS (CORSMiddleware with explicit allow_origins) controls which websites may call the API from browser JavaScript; it isn't authentication."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Add OAuth2 and JWT authentication",
+    "tool": "FastAPI, pwdlib and PyJWT",
+    "minutes": 60,
+    "goal": "Finish an API that logs users in with the OAuth2 password flow, stores only Argon2 hashes, issues expiring JWTs, and protects its routes with dependencies that tell 401 from 403.",
+    "setup": [
+     "Python 3.11 or later and a terminal with curl",
+     "A folder ~/fastapi-lab/auth with the starter files main.py, security.py and test_auth.py"
+    ],
+    "steps": [
+     {
+      "do": "Create a virtual environment and install the packages.",
+      "code": "cd ~/fastapi-lab/auth\npython3 -m venv .venv\nsource .venv/bin/activate\npip install \"fastapi[standard]==0.146.0\" \"pwdlib[argon2]==0.3.1\" \"pyjwt==2.15.1\" pytest",
+      "lang": "bash"
+     },
+     {
+      "do": "Look at a hash: the algorithm and its parameters are stored with it.",
+      "code": "python -c \"from security import hash_password, verify_password; h = hash_password('correct horse battery'); print(h[:30]); print(verify_password('correct horse battery', h), verify_password('wrong', h))\"",
+      "lang": "bash",
+      "see": "$argon2id$v=19$m=65536,t=3,p=4, then True False"
+     },
+     {
+      "do": "Complete TODO 1 (authenticate, with the dummy hash), TODO 2 (get_current_user) and TODO 3 (require_admin) in main.py. Start the server.",
+      "code": "fastapi dev main.py",
+      "lang": "bash"
+     },
+     {
+      "do": "In a second terminal, try a wrong password.",
+      "code": "curl -s -X POST http://127.0.0.1:8000/token -d \"username=ana&password=wrong\"",
+      "lang": "bash",
+      "see": "{\"detail\":\"Incorrect username or password\"}"
+     },
+     {
+      "do": "Log in as bilal, keep the token, and call /users/me with it.",
+      "code": "TOKEN=$(curl -s -X POST http://127.0.0.1:8000/token -d \"username=bilal&password=staple paper clip\" | python3 -c \"import sys, json; print(json.load(sys.stdin)['access_token'])\")\ncurl -s http://127.0.0.1:8000/users/me -H \"Authorization: Bearer $TOKEN\"",
+      "lang": "bash",
+      "see": "{\"username\":\"bilal\",\"full_name\":\"Bilal Khan\",\"role\":\"member\",\"disabled\":false}: no hashed_password, because the response model leaves it out."
+     },
+     {
+      "do": "Read the token's claims, which anyone can do, and its lifetime in seconds.",
+      "code": "python -c \"import jwt, sys; c = jwt.decode(sys.argv[1], options={'verify_signature': False}); print(sorted(c), c['exp'] - c['iat'])\" \"$TOKEN\"",
+      "lang": "bash",
+      "see": "['exp', 'iat', 'role', 'sub'] 900"
+     },
+     {
+      "do": "Call without a token, with a damaged token, and as a member on the admin route.",
+      "code": "curl -s -i http://127.0.0.1:8000/users/me | head -n 1\ncurl -s http://127.0.0.1:8000/users/me -H \"Authorization: Bearer ${TOKEN%?}\"\ncurl -s http://127.0.0.1:8000/admin/users -H \"Authorization: Bearer $TOKEN\"",
+      "lang": "bash",
+      "see": "HTTP/1.1 401 Unauthorized; then {\"detail\":\"Could not validate credentials\"}; then {\"detail\":\"Admins only\"}"
+     },
+     {
+      "do": "Open http://127.0.0.1:8000/docs, choose Authorize, sign in as ana with the password correct horse battery, and try GET /admin/users.",
+      "see": "200 and the three users, without their password hashes."
+     },
+     {
+      "do": "Complete TODO 4 in test_auth.py, then run the tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "6 passed"
+     }
+    ],
+    "checks": [
+     {
+      "text": "Passwords are stored as salted Argon2id hashes.",
+      "look_for": [
+       "$argon2id$",
+       "True False"
+      ]
+     },
+     {
+      "text": "A wrong password is refused with a neutral message.",
+      "look_for": [
+       "Incorrect username or password"
+      ]
+     },
+     {
+      "text": "The token opens /users/me and lasts 15 minutes.",
+      "look_for": [
+       "\"username\":\"bilal\"",
+       "['exp', 'iat', 'role', 'sub'] 900"
+      ]
+     },
+     {
+      "text": "Missing and damaged tokens get 401, and a member gets 403 from the admin route.",
+      "look_for": [
+       "401 Unauthorized",
+       "Could not validate credentials",
+       "Admins only"
+      ]
+     },
+     {
+      "text": "All six tests pass.",
+      "look_for": [
+       "6 passed"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed functions and your test, and the output of steps 2 and 4 to 9.",
+    "files": [
+     {
+      "path": "main.py",
+      "content": "from typing import Annotated\n\nimport jwt\nfrom fastapi import Depends, FastAPI, HTTPException, status\nfrom fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm\nfrom pydantic import BaseModel\n\nfrom security import create_access_token, decode_access_token, hash_password, verify_password\n\napp = FastAPI(title=\"Auth lab\")\noauth2_scheme = OAuth2PasswordBearer(tokenUrl=\"token\")\n\n\nclass User(BaseModel):\n    username: str\n    full_name: str\n    role: str = \"member\"\n    disabled: bool = False\n\n\nclass UserInDB(User):\n    hashed_password: str\n\n\nclass Token(BaseModel):\n    access_token: str\n    token_type: str = \"bearer\"\n\n\n# Demo users with hashed passwords. Never store or log the passwords themselves.\nUSERS = {\n    \"ana\": UserInDB(username=\"ana\", full_name=\"Ana Lima\", role=\"admin\",\n                    hashed_password=hash_password(\"correct horse battery\")),\n    \"bilal\": UserInDB(username=\"bilal\", full_name=\"Bilal Khan\",\n                      hashed_password=hash_password(\"staple paper clip\")),\n    \"chen\": UserInDB(username=\"chen\", full_name=\"Chen Wei\", disabled=True,\n                     hashed_password=hash_password(\"blue river stone\")),\n}\nDUMMY_HASH = hash_password(\"a password nobody has\")\n\n\ndef authenticate(username: str, password: str) -> UserInDB | None:\n    \"\"\"The user if the password is right, otherwise None. Unknown names take as long as wrong passwords.\"\"\"\n    # TODO 1: look the user up in USERS. If there's no such user, still call verify_password with\n    #        DUMMY_HASH (so the answer takes as long) and return None. Otherwise return the user only if\n    #        verify_password(password, user.hashed_password) is true.\n    return None\n\n\n@app.post(\"/token\")\ndef login(form: Annotated[OAuth2PasswordRequestForm, Depends()]) -> Token:\n    \"\"\"The OAuth2 password flow: form fields username and password in, a bearer token out.\"\"\"\n    user = authenticate(form.username, form.password)\n    if user is None:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Incorrect username or password\",\n            headers={\"WWW-Authenticate\": \"Bearer\"},\n        )\n    return Token(access_token=create_access_token(user.username, role=user.role))\n\n\nCREDENTIALS_ERROR = HTTPException(\n    status_code=status.HTTP_401_UNAUTHORIZED,\n    detail=\"Could not validate credentials\",\n    headers={\"WWW-Authenticate\": \"Bearer\"},\n)\n\n\ndef get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> UserInDB:\n    # TODO 2: decode the token with decode_access_token; if that raises jwt.InvalidTokenError,\n    #        raise CREDENTIALS_ERROR. Then find USERS[claims[\"sub\"]], raising CREDENTIALS_ERROR if it isn't\n    #        there, and return the user.\n    raise CREDENTIALS_ERROR\n\n\ndef get_active_user(user: Annotated[UserInDB, Depends(get_current_user)]) -> UserInDB:\n    if user.disabled:\n        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=\"Account disabled\")\n    return user\n\n\ndef require_admin(user: Annotated[UserInDB, Depends(get_active_user)]) -> UserInDB:\n    # TODO 3: raise a 403 with the detail \"Admins only\" unless user.role is \"admin\"; return the user\n    return user\n\n\n@app.get(\"/users/me\")\ndef read_me(user: Annotated[UserInDB, Depends(get_active_user)]) -> User:\n    \"\"\"The signed-in user. The response model leaves out hashed_password.\"\"\"\n    return user\n\n\n@app.get(\"/admin/users\")\ndef list_users(admin: Annotated[UserInDB, Depends(require_admin)]) -> list[User]:\n    return list(USERS.values())\n"
+     },
+     {
+      "path": "security.py",
+      "content": "\"\"\"Password hashing with pwdlib (Argon2) and JSON Web Tokens with PyJWT.\"\"\"\nimport os\nfrom datetime import UTC, datetime, timedelta\n\nimport jwt\nfrom pwdlib import PasswordHash\n\n# A demo key so the lab runs as it is. Real services read it from the environment (module 5).\nSECRET_KEY = os.environ.get(\"SECRET_KEY\", \"5a0f3c1e9b7d24c68e1f0a9b3d7c5e2f4a6b8c0d1e3f5a7b9c2d4e6f8a0b1c3d\")\nALGORITHM = \"HS256\"\nACCESS_TOKEN_MINUTES = 15\n\npassword_hash = PasswordHash.recommended()\n\n\ndef hash_password(password: str) -> str:\n    return password_hash.hash(password)\n\n\ndef verify_password(password: str, hashed: str) -> bool:\n    return password_hash.verify(password, hashed)\n\n\ndef create_access_token(subject: str, minutes: int = ACCESS_TOKEN_MINUTES, **claims) -> str:\n    \"\"\"A signed token for subject that expires after the given number of minutes.\"\"\"\n    now = datetime.now(UTC)\n    payload = {\"sub\": subject, \"iat\": now, \"exp\": now + timedelta(minutes=minutes), **claims}\n    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)\n\n\ndef decode_access_token(token: str) -> dict:\n    \"\"\"The token's claims. Raises jwt.InvalidTokenError (ExpiredSignatureError included) if it's not valid.\"\"\"\n    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])\n"
+     },
+     {
+      "path": "test_auth.py",
+      "content": "import jwt\nfrom fastapi.testclient import TestClient\n\nfrom main import app\nfrom security import ALGORITHM, create_access_token, hash_password, verify_password\n\nclient = TestClient(app)\n\n\ndef login(username, password):\n    return client.post(\"/token\", data={\"username\": username, \"password\": password})\n\n\ndef bearer(token):\n    return {\"Authorization\": f\"Bearer {token}\"}\n\n\ndef test_hashes_are_salted_and_verifiable():\n    first, second = hash_password(\"s3cret words\"), hash_password(\"s3cret words\")\n    assert first != second\n    assert first.startswith(\"$argon2id$\")\n    assert verify_password(\"s3cret words\", first)\n    assert not verify_password(\"wrong\", first)\n\n\ndef test_wrong_password_and_unknown_user_get_the_same_answer():\n    for username, password in [(\"ana\", \"nope\"), (\"nobody\", \"nope\")]:\n        response = login(username, password)\n        assert response.status_code == 401\n        assert response.json() == {\"detail\": \"Incorrect username or password\"}\n\n\ndef test_the_token_opens_users_me_without_the_hash():\n    token = login(\"bilal\", \"staple paper clip\").json()[\"access_token\"]\n    response = client.get(\"/users/me\", headers=bearer(token))\n    assert response.json() == {\"username\": \"bilal\", \"full_name\": \"Bilal Khan\", \"role\": \"member\",\n                               \"disabled\": False}\n\n\ndef test_missing_expired_and_forged_tokens_are_401():\n    assert client.get(\"/users/me\").status_code == 401\n    expired = create_access_token(\"bilal\", minutes=-1)\n    forged = jwt.encode({\"sub\": \"ana\"}, \"f\" * 64, algorithm=ALGORITHM)\n    for token in [expired, forged, \"not-a-token\"]:\n        assert client.get(\"/users/me\", headers=bearer(token)).status_code == 401\n\n\ndef test_disabled_accounts_are_403():\n    token = login(\"chen\", \"blue river stone\").json()[\"access_token\"]\n    assert client.get(\"/users/me\", headers=bearer(token)).status_code == 403\n\n\n# TODO 4: test that a member (bilal) gets 403 from /admin/users and an admin (ana) gets 200\n"
+     }
+    ],
+    "hints": [
+     "jwt.InvalidTokenError covers expired, forged and malformed tokens alike.",
+     "${TOKEN%?} is the token without its last character, which breaks the signature.",
+     "Hashing is deliberately slow, so the demo users take a moment to set up when the app starts."
+    ]
+   }
+  },
+  {
+   "title": "Database Integration (SQLAlchemy)",
+   "summary": "Persist data properly: SQLAlchemy 2.0's typed models, one session per request through a dependency, ownership enforced in queries, schema changes managed with Alembic migrations, and when async database access is worth it.",
+   "instructor": "mouhamadouu-ba",
+   "lessons": [
+    {
+     "title": "SQLAlchemy 2.0: engines, models and sessions",
+     "minutes": 13,
+     "objectives": [
+      "Define typed ORM models in SQLAlchemy 2.0 style",
+      "Create, query and change rows with a Session"
+     ],
+     "key_points": [
+      "SQLAlchemy has two layers: Core, for SQL expressions and connections, and the ORM, which maps classes to tables. Version 2.0 brought the typed style used here: DeclarativeBase, Mapped[...] and mapped_column().",
+      "create_engine(\"sqlite:///./taskhub.db\") makes an engine, a pool of connections to one database. The URL chooses the database and driver, so moving to PostgreSQL (postgresql+psycopg://...) changes the URL, not the models.",
+      "A model is a class with __tablename__ and typed columns: id: Mapped[int] = mapped_column(primary_key=True), title: Mapped[str] = mapped_column(String(200)), and due: Mapped[date | None] for a nullable column; relationship() links models.",
+      "A Session tracks objects and turns changes into SQL inside a transaction: session.add(task), then session.commit(); session.get(Task, 1) loads by primary key, and session.scalars(select(Task).where(Task.owner_id == 1)).all() runs a query.",
+      "Base.metadata.create_all(engine) creates missing tables, which is handy for tests and demos, but it never changes tables that exist: use migrations for that."
+     ]
+    },
+    {
+     "title": "Sessions as dependencies, and layers",
+     "minutes": 12,
+     "objectives": [
+      "Give each request its own session through a dependency",
+      "Keep ORM models and API schemas apart, and handle database errors"
+     ],
+     "key_points": [
+      "Give each request its own session from a yield dependency: def get_session(): with SessionLocal() as session: yield session. The with block closes it even when the endpoint fails.",
+      "Within one request, every dependency that asks for the session gets the same one, so a lookup dependency and the endpoint share it and their changes are committed together.",
+      "FastAPI runs def endpoints in a thread pool, so a SQLite engine needs connect_args={\"check_same_thread\": False}; each request still uses a session of its own.",
+      "Keep ORM models (the tables) and Pydantic schemas (the API's contract) separate; model_config = ConfigDict(from_attributes=True) lets a response model read an ORM object's attributes.",
+      "Commit once per unit of work and roll back on errors, such as an IntegrityError from a unique constraint, answered with 409. Avoid N+1 queries: selectinload(User.tasks) loads a list's relationships in one extra query."
+     ]
+    },
+    {
+     "title": "Migrations with Alembic",
+     "minutes": 12,
+     "objectives": [
+      "Set up Alembic and generate migrations from the models",
+      "Apply, revert and deploy schema changes safely"
+     ],
+     "key_points": [
+      "Alembic versions the database schema: each migration is a Python file with upgrade() and downgrade(), applied in order and recorded in the alembic_version table.",
+      "alembic init migrations creates alembic.ini and a migrations folder. In migrations/env.py, set the URL from your settings and target_metadata = Base.metadata, after importing the models, so autogenerate can compare the models with the database.",
+      "alembic revision --autogenerate -m \"add archived flag\" writes a migration from the differences. Read it before applying it: autogenerate can't see everything, and a renamed column comes out as a drop and an add.",
+      "alembic upgrade head applies pending migrations, alembic downgrade -1 reverts the last one, and alembic current and alembic history show where a database stands.",
+      "A new NOT NULL column needs a server_default, so existing rows get a value; SQLite can't alter tables freely, so set render_as_batch=True and Alembic recreates the table when it has to.",
+      "Run migrations as a deployment step before the new code takes traffic, and keep them backward compatible: add first and remove in a later release, so old and new versions can run side by side."
+     ]
+    },
+    {
+     "title": "Async database access",
+     "minutes": 11,
+     "objectives": [
+      "Use SQLAlchemy's asyncio extension with an async driver",
+      "Decide when async database access is worth it"
+     ],
+     "key_points": [
+      "SQLAlchemy's asyncio extension provides create_async_engine and AsyncSession, used with await: result = await session.scalars(select(Task)).",
+      "It needs an async driver, aiosqlite for SQLite (sqlite+aiosqlite:///./app.db) or asyncpg or psycopg for PostgreSQL, and, from SQLAlchemy 2.1, the asyncio extra for greenlet: pip install \"sqlalchemy[asyncio]\".",
+      "async_sessionmaker(engine, expire_on_commit=False) makes sessions; without expire_on_commit=False, reading an attribute after a commit would need a new query, which async code can't run implicitly.",
+      "Lazy loading doesn't happen implicitly under asyncio (it raises MissingGreenlet): load relationships eagerly with selectinload(), or await obj.awaitable_attrs.tasks.",
+      "Async database access pays off when many requests wait on the database at once; a synchronous session in def endpoints, run in the thread pool, is simpler and serves many applications well."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Async SQLAlchemy in a script",
+      "steps": [
+       {
+        "do": "In a virtual environment, install SQLAlchemy with its asyncio extra and the async SQLite driver.",
+        "code": "pip install \"sqlalchemy[asyncio]\" aiosqlite",
+        "lang": "bash"
+       },
+       {
+        "do": "Create async_demo.py.",
+        "code": "import asyncio\n\nfrom sqlalchemy import String, select\nfrom sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine\nfrom sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column\n\n\nclass Base(DeclarativeBase):\n    pass\n\n\nclass Task(Base):\n    __tablename__ = \"tasks\"\n    id: Mapped[int] = mapped_column(primary_key=True)\n    title: Mapped[str] = mapped_column(String(200))\n\n\nengine = create_async_engine(\"sqlite+aiosqlite:///./async-demo.db\")\nSessionLocal = async_sessionmaker(engine, expire_on_commit=False)\n\n\nasync def get_session():\n    async with SessionLocal() as session:\n        yield session\n\n\nasync def main():\n    async with engine.begin() as conn:\n        await conn.run_sync(Base.metadata.drop_all)\n        await conn.run_sync(Base.metadata.create_all)\n    async with SessionLocal() as session:\n        session.add_all([Task(title=\"Write the release notes\"), Task(title=\"Fix the login bug\")])\n        await session.commit()\n        tasks = (await session.scalars(select(Task).order_by(Task.id))).all()\n        print([t.title for t in tasks])\n    await engine.dispose()\n\n\nasyncio.run(main())\n",
+        "lang": "python"
+       },
+       {
+        "do": "Run it. Without the asyncio extra, SQLAlchemy 2.1 stops with an ImportError naming greenlet.",
+        "code": "python async_demo.py",
+        "lang": "bash",
+        "see": "['Write the release notes', 'Fix the login bug']"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Persist tasks with SQLAlchemy and Alembic",
+    "tool": "SQLAlchemy and Alembic",
+    "minutes": 75,
+    "goal": "Build TaskHub's data layer: typed models, a session per request, users who only ever see their own tasks, and a schema created and changed by Alembic migrations, forwards and back.",
+    "setup": [
+     "Python 3.11 or later and a terminal with curl",
+     "A folder ~/fastapi-lab/taskhub with the starter files (requirements.txt and the app folder)"
+    ],
+    "steps": [
+     {
+      "do": "Install the pinned packages and create a .env file holding a new secret key (the settings refuse to start without one).",
+      "code": "cd ~/fastapi-lab/taskhub\npython3 -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\nprintf 'TASKHUB_SECRET_KEY=%s\\n' \"$(python -c 'import secrets; print(secrets.token_hex(32))')\" > .env",
+      "lang": "bash"
+     },
+     {
+      "do": "Complete TODO 1 in app/database.py (get_session) and TODO 2 in app/models.py (the Task columns). Then set up Alembic.",
+      "code": "alembic init migrations",
+      "lang": "bash",
+      "see": "Generating .../migrations/env.py ... done and Generating .../alembic.ini ... done."
+     },
+     {
+      "do": "Edit migrations/env.py in three places, so Alembic uses your settings and can see your models.",
+      "code": "# 1. Just below the line  config = context.config  add:\nfrom app import models  # noqa: E402, F401  (importing the models registers their tables)\nfrom app.config import get_settings  # noqa: E402\nfrom app.database import Base  # noqa: E402\n\nconfig.set_main_option(\"sqlalchemy.url\", get_settings().database_url)\n\n# 2. Replace  target_metadata = None  with:\ntarget_metadata = Base.metadata\n\n# 3. In run_migrations_online(), make the configure call:\n        context.configure(\n            connection=connection, target_metadata=target_metadata, render_as_batch=True\n        )",
+      "lang": "python"
+     },
+     {
+      "do": "Generate the first migration from the models, then read the new file in migrations/versions.",
+      "code": "alembic revision --autogenerate -m \"create users and tasks\"",
+      "lang": "bash",
+      "see": "Detected added table 'users', Detected added index 'ix_users_username', Detected added table 'tasks', Detected added index 'ix_tasks_owner_id', then Generating .../migrations/versions/<revision>_create_users_and_tasks.py ... done"
+     },
+     {
+      "do": "Apply it and check where the database stands.",
+      "code": "alembic upgrade head\nalembic current",
+      "lang": "bash",
+      "see": "Running upgrade  -> <revision>, create users and tasks; then <revision> (head)"
+     },
+     {
+      "do": "Complete TODO 3 (list_tasks) and TODO 4 (update_task) in app/tasks.py, start the server, and register two users, one of them twice.",
+      "code": "fastapi dev app/main.py\n# in a second terminal:\ncurl -s -i -X POST http://127.0.0.1:8000/auth/register -H \"Content-Type: application/json\" -d '{\"username\": \"ana\", \"password\": \"correct horse battery\"}'\ncurl -s -X POST http://127.0.0.1:8000/auth/register -H \"Content-Type: application/json\" -d '{\"username\": \"ana\", \"password\": \"correct horse battery\"}'\ncurl -s -X POST http://127.0.0.1:8000/auth/register -H \"Content-Type: application/json\" -d '{\"username\": \"bilal\", \"password\": \"staple paper clip\"}'",
+      "lang": "bash",
+      "see": "HTTP/1.1 201 Created and {\"id\":1,\"username\":\"ana\"}; then {\"detail\":\"Username already taken\"}; then {\"id\":2,\"username\":\"bilal\"}"
+     },
+     {
+      "do": "Log both in, create and finish a task as ana, then look for it as bilal.",
+      "code": "ANA=$(curl -s -X POST http://127.0.0.1:8000/auth/token -d \"username=ana&password=correct horse battery\" | python3 -c \"import sys, json; print(json.load(sys.stdin)['access_token'])\")\nBILAL=$(curl -s -X POST http://127.0.0.1:8000/auth/token -d \"username=bilal&password=staple paper clip\" | python3 -c \"import sys, json; print(json.load(sys.stdin)['access_token'])\")\ncurl -s -X POST http://127.0.0.1:8000/tasks -H \"Authorization: Bearer $ANA\" -H \"Content-Type: application/json\" -d '{\"title\": \"Ship the release\", \"priority\": 1, \"due\": \"2025-07-01\"}'\ncurl -s -X PATCH http://127.0.0.1:8000/tasks/1 -H \"Authorization: Bearer $ANA\" -H \"Content-Type: application/json\" -d '{\"done\": true}'\ncurl -s -o /dev/null -w \"%{http_code}\\n\" http://127.0.0.1:8000/tasks/1 -H \"Authorization: Bearer $BILAL\"\ncurl -s http://127.0.0.1:8000/tasks -H \"Authorization: Bearer $BILAL\"",
+      "lang": "bash",
+      "see": "Task 1 with \"owner_id\":1 and a created_at time; the same task with \"done\":true; then 404 and [] for bilal, who can't even tell that task 1 exists."
+     },
+     {
+      "do": "Change the schema: add an archived column to Task, then generate and apply a second migration.",
+      "code": "# at the top of app/models.py:\nfrom sqlalchemy import ForeignKey, String, false, func\n\n# in class Task, below created_at:\n    archived: Mapped[bool] = mapped_column(default=False, server_default=false())",
+      "lang": "python"
+     },
+     {
+      "do": "Generate it, read its upgrade(), which uses batch mode for SQLite, and apply it.",
+      "code": "alembic revision --autogenerate -m \"add archived flag to tasks\"\nalembic upgrade head",
+      "lang": "bash",
+      "see": "Detected added column 'tasks.archived', then Running upgrade <first> -> <second>, add archived flag to tasks"
+     },
+     {
+      "do": "Show the history, step back one migration and forward again.",
+      "code": "alembic history\nalembic downgrade -1\nalembic upgrade head",
+      "lang": "bash",
+      "see": "Both migrations, newest first; Running downgrade <second> -> <first>, add archived flag to tasks; then Running upgrade again."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Autogenerate found both tables from the models.",
+      "look_for": [
+       "Detected added table 'users'",
+       "Detected added table 'tasks'"
+      ]
+     },
+     {
+      "text": "The first migration was applied.",
+      "look_for": [
+       "Running upgrade  ->",
+       "create users and tasks"
+      ]
+     },
+     {
+      "text": "Registration works and a taken username is refused.",
+      "look_for": [
+       "\"id\":1,\"username\":\"ana\"",
+       "Username already taken"
+      ]
+     },
+     {
+      "text": "Users only ever see their own tasks.",
+      "look_for": [
+       "\"owner_id\":1",
+       "404"
+      ]
+     },
+     {
+      "text": "The second migration adds the column, and it can be reverted.",
+      "look_for": [
+       "Detected added column 'tasks.archived'",
+       "add archived flag to tasks",
+       "Running downgrade"
+      ]
+     }
+    ],
+    "submit": "Paste your get_session, Task model, list_tasks and update_task, your edited env.py lines, both migration files' upgrade() functions, and the output of steps 4 to 10.",
+    "files": [
+     {
+      "path": "requirements.txt",
+      "content": "fastapi[standard]==0.146.0\nsqlalchemy==2.1.5\nalembic==1.20.0\npydantic-settings==2.16.0\npyjwt==2.15.1\npwdlib[argon2]==0.3.1\n"
+     },
+     {
+      "path": "app/__init__.py",
+      "content": "\"\"\"TaskHub: a production-ready task API.\"\"\"\n"
+     },
+     {
+      "path": "app/config.py",
+      "content": "from functools import lru_cache\nfrom pathlib import Path\n\nfrom pydantic import SecretStr\nfrom pydantic_settings import BaseSettings, SettingsConfigDict\n\n\nclass Settings(BaseSettings):\n    \"\"\"Settings from environment variables named TASKHUB_..., or from a .env file in development.\"\"\"\n\n    model_config = SettingsConfigDict(env_prefix=\"TASKHUB_\", env_file=\".env\")\n\n    secret_key: SecretStr  # required: there is deliberately no default\n    database_url: str = \"sqlite:///./taskhub.db\"\n    access_token_minutes: int = 15\n    outbox_path: Path = Path(\"outbox.jsonl\")\n    log_level: str = \"INFO\"\n    log_json: bool = False\n\n\n@lru_cache\ndef get_settings() -> Settings:\n    \"\"\"Read the settings once; tests can override this dependency.\"\"\"\n    return Settings()\n"
+     },
+     {
+      "path": "app/database.py",
+      "content": "from collections.abc import Iterator\nfrom typing import Annotated\n\nfrom fastapi import Depends\nfrom sqlalchemy import create_engine\nfrom sqlalchemy.orm import DeclarativeBase, Session, sessionmaker\n\nfrom app.config import get_settings\n\n\nclass Base(DeclarativeBase):\n    pass\n\n\ndef make_engine(url: str):\n    # FastAPI runs def endpoints in a thread pool, so SQLite must allow use from other threads.\n    connect_args = {\"check_same_thread\": False} if url.startswith(\"sqlite\") else {}\n    return create_engine(url, connect_args=connect_args)\n\n\nengine = make_engine(get_settings().database_url)\nSessionLocal = sessionmaker(bind=engine)\n\n\ndef get_session_factory() -> sessionmaker[Session]:\n    \"\"\"The factory that makes sessions. Tests override this one dependency to use a test database.\"\"\"\n    return SessionLocal\n\n\ndef get_session(factory: Annotated[sessionmaker[Session], Depends(get_session_factory)]) -> Iterator[Session]:\n    \"\"\"One session per request, closed when the request is over.\"\"\"\n    # TODO 1: open a session with factory() in a with block and yield it, so it's always closed\n    raise NotImplementedError\n\n\nSessionDep = Annotated[Session, Depends(get_session)]\n"
+     },
+     {
+      "path": "app/models.py",
+      "content": "from datetime import date, datetime\n\nfrom sqlalchemy import ForeignKey, String, func\nfrom sqlalchemy.orm import Mapped, mapped_column, relationship\n\nfrom app.database import Base\n\n\nclass User(Base):\n    __tablename__ = \"users\"\n\n    id: Mapped[int] = mapped_column(primary_key=True)\n    username: Mapped[str] = mapped_column(String(50), unique=True, index=True)\n    hashed_password: Mapped[str] = mapped_column(String(200))\n    tasks: Mapped[list[\"Task\"]] = relationship(back_populates=\"owner\", cascade=\"all, delete-orphan\")\n\n\nclass Task(Base):\n    __tablename__ = \"tasks\"\n\n    # TODO 2: map the columns: id (primary key), title (String(200)), priority (an int, default 2),\n    #        done (a bool, default False), due (a date or None), owner_id (ForeignKey(\"users.id\"), indexed)\n    #        and created_at (a datetime with server_default=func.now())\n    owner: Mapped[User] = relationship(back_populates=\"tasks\")\n"
+     },
+     {
+      "path": "app/schemas.py",
+      "content": "from datetime import date, datetime\nfrom typing import Annotated\n\nfrom pydantic import BaseModel, ConfigDict, Field\n\nTitle = Annotated[str, Field(min_length=1, max_length=200)]\nPriority = Annotated[int, Field(ge=1, le=3)]\n\n\nclass UserCreate(BaseModel):\n    username: Annotated[str, Field(min_length=3, max_length=50, pattern=r\"^[a-z0-9_]+$\")]\n    password: Annotated[str, Field(min_length=12, max_length=128)]\n\n\nclass UserOut(BaseModel):\n    model_config = ConfigDict(from_attributes=True)\n\n    id: int\n    username: str\n\n\nclass Token(BaseModel):\n    access_token: str\n    token_type: str = \"bearer\"\n\n\nclass TaskCreate(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")\n\n    title: Title\n    priority: Priority = 2\n    due: date | None = None\n\n\nclass TaskUpdate(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")\n\n    title: Title | None = None\n    priority: Priority | None = None\n    due: date | None = None\n    done: bool | None = None\n\n\nclass TaskOut(BaseModel):\n    model_config = ConfigDict(from_attributes=True)\n\n    id: int\n    title: str\n    priority: int\n    done: bool\n    due: date | None\n    owner_id: int\n    created_at: datetime\n\n\nclass ReportJob(BaseModel):\n    job_id: str\n    status: str\n    result: dict[str, int] | None = None\n"
+     },
+     {
+      "path": "app/security.py",
+      "content": "from datetime import UTC, datetime, timedelta\nfrom typing import Annotated\n\nimport jwt\nfrom fastapi import Depends, HTTPException, status\nfrom fastapi.security import OAuth2PasswordBearer\nfrom pwdlib import PasswordHash\nfrom sqlalchemy import select\nfrom sqlalchemy.orm import Session\n\nfrom app.config import get_settings\nfrom app.database import SessionDep\nfrom app.models import User\n\nALGORITHM = \"HS256\"\npassword_hash = PasswordHash.recommended()\nDUMMY_HASH = password_hash.hash(\"a password nobody has\")\noauth2_scheme = OAuth2PasswordBearer(tokenUrl=\"/auth/token\")\n\nCREDENTIALS_ERROR = HTTPException(\n    status_code=status.HTTP_401_UNAUTHORIZED,\n    detail=\"Could not validate credentials\",\n    headers={\"WWW-Authenticate\": \"Bearer\"},\n)\n\n\ndef hash_password(password: str) -> str:\n    return password_hash.hash(password)\n\n\ndef create_access_token(subject: str, minutes: int | None = None) -> str:\n    settings = get_settings()\n    now = datetime.now(UTC)\n    expires = now + timedelta(minutes=settings.access_token_minutes if minutes is None else minutes)\n    payload = {\"sub\": subject, \"iat\": now, \"exp\": expires}\n    return jwt.encode(payload, settings.secret_key.get_secret_value(), algorithm=ALGORITHM)\n\n\ndef authenticate(session: Session, username: str, password: str) -> User | None:\n    user = session.scalar(select(User).where(User.username == username))\n    if user is None:\n        password_hash.verify(password, DUMMY_HASH)  # take as long as a real check\n        return None\n    return user if password_hash.verify(password, user.hashed_password) else None\n\n\ndef get_current_user(token: Annotated[str, Depends(oauth2_scheme)], session: SessionDep) -> User:\n    try:\n        claims = jwt.decode(token, get_settings().secret_key.get_secret_value(), algorithms=[ALGORITHM])\n    except jwt.InvalidTokenError:\n        raise CREDENTIALS_ERROR from None\n    user = session.scalar(select(User).where(User.username == claims.get(\"sub\")))\n    if user is None:\n        raise CREDENTIALS_ERROR\n    return user\n\n\nCurrentUser = Annotated[User, Depends(get_current_user)]\n"
+     },
+     {
+      "path": "app/auth.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, Depends, HTTPException, status\nfrom fastapi.security import OAuth2PasswordRequestForm\nfrom sqlalchemy.exc import IntegrityError\n\nfrom app.database import SessionDep\nfrom app.models import User\nfrom app.schemas import Token, UserCreate, UserOut\nfrom app.security import CurrentUser, authenticate, create_access_token, hash_password\n\nrouter = APIRouter(tags=[\"auth\"])\n\n\n@router.post(\"/auth/register\", status_code=201)\ndef register(data: UserCreate, session: SessionDep) -> UserOut:\n    \"\"\"Create an account. The password is stored only as an Argon2 hash.\"\"\"\n    user = User(username=data.username, hashed_password=hash_password(data.password))\n    session.add(user)\n    try:\n        session.commit()\n    except IntegrityError:  # the unique index on username\n        session.rollback()\n        raise HTTPException(status_code=409, detail=\"Username already taken\") from None\n    session.refresh(user)\n    return user\n\n\n@router.post(\"/auth/token\")\ndef login(form: Annotated[OAuth2PasswordRequestForm, Depends()], session: SessionDep) -> Token:\n    user = authenticate(session, form.username, form.password)\n    if user is None:\n        raise HTTPException(\n            status_code=status.HTTP_401_UNAUTHORIZED,\n            detail=\"Incorrect username or password\",\n            headers={\"WWW-Authenticate\": \"Bearer\"},\n        )\n    return Token(access_token=create_access_token(user.username))\n\n\n@router.get(\"/users/me\")\ndef read_me(user: CurrentUser) -> UserOut:\n    return user\n"
+     },
+     {
+      "path": "app/tasks.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, Depends, HTTPException, Query\nfrom sqlalchemy import select\n\nfrom app.database import SessionDep\nfrom app.models import Task\nfrom app.schemas import TaskCreate, TaskOut, TaskUpdate\nfrom app.security import CurrentUser\n\nrouter = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"])\n\n\ndef owned_task(task_id: int, user: CurrentUser, session: SessionDep) -> Task:\n    \"\"\"The caller's task, or 404: someone else's task gets the same answer as a missing one.\"\"\"\n    task = session.get(Task, task_id)\n    if task is None or task.owner_id != user.id:\n        raise HTTPException(status_code=404, detail=\"Task not found\")\n    return task\n\n\nOwnedTask = Annotated[Task, Depends(owned_task)]\n\n\n@router.get(\"\")\ndef list_tasks(\n    user: CurrentUser,\n    session: SessionDep,\n    done: bool | None = None,\n    limit: Annotated[int, Query(ge=1, le=100)] = 20,\n    offset: Annotated[int, Query(ge=0)] = 0,\n) -> list[TaskOut]:\n    # TODO 3: build select(Task) for the caller's tasks (Task.owner_id == user.id), ordered by Task.id,\n    #        with limit and offset, and Task.done == done added only when done isn't None; return\n    #        session.scalars(query).all()\n    return []\n\n\n@router.post(\"\", status_code=201)\ndef create_task(data: TaskCreate, user: CurrentUser, session: SessionDep) -> TaskOut:\n    task = Task(**data.model_dump(), owner_id=user.id)\n    session.add(task)\n    session.commit()\n    session.refresh(task)\n    return task\n\n\n@router.get(\"/{task_id}\")\ndef read_task(task: OwnedTask) -> TaskOut:\n    return task\n\n\n@router.patch(\"/{task_id}\")\ndef update_task(changes: TaskUpdate, task: OwnedTask, session: SessionDep) -> TaskOut:\n    # TODO 4: set each field the client sent (changes.model_dump(exclude_unset=True)) on the task\n    #        with setattr, then commit, refresh and return the task\n    raise NotImplementedError\n\n\n@router.delete(\"/{task_id}\", status_code=204)\ndef delete_task(task: OwnedTask, session: SessionDep) -> None:\n    session.delete(task)\n    session.commit()\n"
+     },
+     {
+      "path": "app/main.py",
+      "content": "from fastapi import FastAPI\n\nfrom app import auth, tasks\n\napp = FastAPI(title=\"TaskHub\", version=\"1.0.0\")\napp.include_router(auth.router)\napp.include_router(tasks.router)\n\n\n@app.get(\"/health\", tags=[\"service\"])\ndef health() -> dict[str, str]:\n    return {\"status\": \"ok\"}\n"
+     }
+    ],
+    "hints": [
+     "If Alembic says the target database is not up to date, run alembic upgrade head before generating the next migration.",
+     "If autogenerate finds no tables, check that env.py imports app.models before using Base.metadata.",
+     "Keep .env and taskhub.db out of Git: add them to .gitignore.",
+     "A select can be refined in any order: query.where(...) after .limit(...) still builds one query."
+    ]
+   }
+  },
+  {
+   "title": "Asynchronous Operations & Background Tasks",
+   "summary": "Keep responses fast without losing work: what really blocks the event loop and how to avoid it, lifespan set-up and shutdown, BackgroundTasks for short jobs after the response, and task queues such as Celery for work that must survive restarts.",
+   "instructor": "chaiyapon-srisomboon",
+   "lessons": [
+    {
+     "title": "The event loop, blocking code and lifespan",
+     "minutes": 12,
+     "objectives": [
+      "Keep blocking and CPU-heavy work off the event loop",
+      "Set up and clean up shared resources with a lifespan function"
+     ],
+     "key_points": [
+      "Blocking code inside async def stalls every request on that worker. Run it in the thread pool with await run_in_threadpool(func, *args) from fastapi.concurrency or await asyncio.to_thread(func, *args), or make the endpoint a plain def.",
+      "Call other services with an async client and reuse it: one httpx.AsyncClient for the application's lifetime keeps a pool of connections. Set a timeout on every call.",
+      "asyncio.gather runs independent awaits concurrently, and asyncio.timeout(seconds), from Python 3.11, bounds a group of them; return_exceptions=True stops one failure from cancelling the rest.",
+      "CPU-bound work, such as image processing or model inference, gains nothing from async: run it in more worker processes, a ProcessPoolExecutor or a task queue.",
+      "A lifespan function, @asynccontextmanager async def lifespan(app): ...; yield; ..., passed as FastAPI(lifespan=lifespan), runs set-up before the first request and clean-up at shutdown, replacing the older on_event handlers."
+     ]
+    },
+    {
+     "title": "BackgroundTasks",
+     "minutes": 11,
+     "objectives": [
+      "Run short jobs after the response with BackgroundTasks",
+      "Know the limits of in-process background work"
+     ],
+     "key_points": [
+      "BackgroundTasks runs a function after the response has been sent: add a background: BackgroundTasks parameter, call background.add_task(send_email, user.email, subject), and the client doesn't wait.",
+      "Background tasks run in the same process, in the order they were added: def functions in the thread pool and async def functions on the event loop. Dependencies can add tasks too.",
+      "They suit short, best-effort work, such as sending an email or a webhook, writing an audit record or warming a cache.",
+      "Give a background job its own database session, because the request's session is closed by the time it runs: pass IDs and a session factory, not ORM objects.",
+      "Tasks are lost if the process stops or crashes, have no retries or results, and their failures never reach the client, so log them. With TestClient, background tasks finish before the call returns, so tests can check their effects at once."
+     ]
+    },
+    {
+     "title": "Task queues: Celery and friends",
+     "minutes": 12,
+     "objectives": [
+      "Explain how a task queue moves work out of the API process",
+      "Choose between BackgroundTasks and a queue"
+     ],
+     "key_points": [
+      "A task queue moves work to separate worker processes through a message broker such as Redis or RabbitMQ: the API enqueues a job and answers at once, usually 202 Accepted with a job ID the client polls.",
+      "Celery is the long-established Python task queue: app = Celery(\"worker\", broker=\"redis://localhost:6379/0\"), @app.task on a function, build_report.delay(owner_id) to enqueue it, and celery -A worker worker --loglevel=INFO to run the workers.",
+      "Queues add retries with back-off, scheduled jobs (Celery beat), stored results and scaling by adding workers; lighter alternatives include RQ, Dramatiq and ARQ.",
+      "Make tasks idempotent and pass IDs, not objects: a retried task must not charge a card twice, and the worker should load fresh data from the database.",
+      "Keep job state where every process can see it: an in-memory dict works for one process only, and is lost on a restart or invisible to other workers.",
+      "Use BackgroundTasks for small in-process jobs, and a queue when work is slow, must survive restarts, needs retries or must run on other machines."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Background work done right",
+    "tool": "FastAPI BackgroundTasks",
+    "minutes": 45,
+    "goal": "Send notifications after the response instead of before it, run report jobs that answer 202 at once and are polled for their result, and see exactly what an in-memory job store can't do.",
+    "setup": [
+     "The taskhub project from the module 2 lab, migrated, with its .env file",
+     "The starter files app/notifications.py, app/tasks.py and app/main.py, which replace yours"
+    ],
+    "steps": [
+     {
+      "do": "Read app/notifications.py: notify_task_created sleeps for half a second, like a slow mail server, then appends a message to the outbox file. Complete TODO 2 in app/tasks.py so creating a task schedules it. Start the server.",
+      "code": "fastapi dev app/main.py",
+      "lang": "bash",
+      "see": "INFO app: TaskHub starting, from the lifespan."
+     },
+     {
+      "do": "Create a task and time the response, then look at the outbox at once and a second later.",
+      "code": "ANA=$(curl -s -X POST http://127.0.0.1:8000/auth/token -d \"username=ana&password=correct horse battery\" | python3 -c \"import sys, json; print(json.load(sys.stdin)['access_token'])\")\ncurl -s -o /dev/null -w \"POST /tasks answered in %{time_total}s\\n\" -X POST http://127.0.0.1:8000/tasks -H \"Authorization: Bearer $ANA\" -H \"Content-Type: application/json\" -d '{\"title\": \"Book the venue\"}'\ncat outbox.jsonl\npython3 -c \"import time; time.sleep(1)\"\ncat outbox.jsonl",
+      "lang": "bash",
+      "see": "An answer in a few hundredths of a second, well under the notification's half second; at first no outbox, or none for the new task; a second later {\"to\": \"ana\", \"subject\": \"Task N created\", \"body\": \"Book the venue\", ...}"
+     },
+     {
+      "do": "Complete TODO 1 in app/notifications.py, build_report, which opens its own session. Start a report and poll it.",
+      "code": "JOB=$(curl -s -X POST http://127.0.0.1:8000/reports -H \"Authorization: Bearer $ANA\")\necho \"$JOB\"\nID=$(echo \"$JOB\" | python3 -c \"import sys, json; print(json.load(sys.stdin)['job_id'])\")\ncurl -s http://127.0.0.1:8000/reports/$ID -H \"Authorization: Bearer $ANA\"",
+      "lang": "bash",
+      "see": "{\"job_id\":\"...\",\"status\":\"queued\",\"result\":null}, then the same job with \"status\":\"done\" and counts such as \"total\" and \"priority_1\"."
+     },
+     {
+      "do": "Read the server's log for the background work.",
+      "see": "INFO app.jobs: notified ana about task N and INFO app.jobs: report ... finished, logged after the requests that started them."
+     },
+     {
+      "do": "Stop the server with Ctrl+C, start it again, and ask for the same report.",
+      "code": "curl -s http://127.0.0.1:8000/reports/$ID -H \"Authorization: Bearer $ANA\"",
+      "lang": "bash",
+      "see": "INFO app: TaskHub stopping when it stops; then {\"detail\":\"Report not found\"}: the job lived in the old process's memory."
+     },
+     {
+      "do": "In a sentence or two, say where job state should live instead, and why that also matters once the app runs several workers."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The response comes back before the notification is written.",
+      "look_for": [
+       "answered in",
+       "Book the venue"
+      ]
+     },
+     {
+      "text": "A report job is accepted at once and polled until done.",
+      "look_for": [
+       "\"status\":\"queued\"",
+       "\"status\":\"done\""
+      ]
+     },
+     {
+      "text": "The background work is logged.",
+      "look_for": [
+       "notified ana about task",
+       "finished"
+      ]
+     },
+     {
+      "text": "The lifespan runs at start-up and shutdown.",
+      "look_for": [
+       "TaskHub starting",
+       "TaskHub stopping"
+      ]
+     },
+     {
+      "text": "A restart loses in-memory jobs, and the explanation says where they belong.",
+      "look_for": [
+       "Report not found",
+       "database"
+      ]
+     }
+    ],
+    "submit": "Paste your build_report and add_task lines, and the output of steps 2 to 5, with your answer to step 6.",
+    "files": [
+     {
+      "path": "app/notifications.py",
+      "content": "\"\"\"Work that runs after the response: notifications and report jobs.\"\"\"\n\nimport json\nimport logging\nimport time\nimport uuid\nfrom collections import Counter\nfrom datetime import UTC, datetime\nfrom pathlib import Path\n\nfrom sqlalchemy import select\nfrom sqlalchemy.orm import Session, sessionmaker\n\nfrom app.models import Task\n\nlog = logging.getLogger(\"app.jobs\")\n\n# Report jobs, kept in this process's memory. Fine for one process; with several workers or a\n# restart they're lost or invisible, which is why real systems keep job state in a database or Redis.\nJOBS: dict[str, dict] = {}\n\n\ndef notify_task_created(outbox: Path, username: str, task_id: int, title: str) -> None:\n    \"\"\"Pretend to send an email: slow, so it shouldn't make the client wait. Appends to an outbox file.\"\"\"\n    time.sleep(0.5)  # a slow mail server\n    message = {\"to\": username, \"subject\": f\"Task {task_id} created\", \"body\": title,\n               \"sent_at\": datetime.now(UTC).isoformat(timespec=\"seconds\")}\n    with outbox.open(\"a\", encoding=\"utf-8\") as f:\n        f.write(json.dumps(message) + \"\\n\")\n    log.info(\"notified %s about task %d\", username, task_id)\n\n\ndef new_job(owner_id: int) -> str:\n    job_id = uuid.uuid4().hex[:12]\n    JOBS[job_id] = {\"owner_id\": owner_id, \"status\": \"queued\", \"result\": None}\n    return job_id\n\n\ndef build_report(factory: sessionmaker[Session], job_id: str, owner_id: int) -> None:\n    \"\"\"A background job. It opens its own session: the request's session is closed by the time it runs.\"\"\"\n    # TODO 1: mark the job \"running\"; open a session with factory(); load the owner's tasks with\n    #        select(Task).where(Task.owner_id == owner_id); store counts of total, done and open tasks and\n    #        of each priority (priority_1 ...) in JOBS[job_id][\"result\"]; then mark it \"done\"\n    pass\n    log.info(\"report %s finished\", job_id)\n"
+     },
+     {
+      "path": "app/tasks.py",
+      "content": "from typing import Annotated\n\nfrom fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query\nfrom sqlalchemy import select\nfrom sqlalchemy.orm import Session, sessionmaker\n\nfrom app import notifications\nfrom app.config import Settings, get_settings\nfrom app.database import SessionDep, get_session_factory\nfrom app.models import Task\nfrom app.schemas import ReportJob, TaskCreate, TaskOut, TaskUpdate\nfrom app.security import CurrentUser\n\nrouter = APIRouter(prefix=\"/tasks\", tags=[\"tasks\"])\n\n\ndef owned_task(task_id: int, user: CurrentUser, session: SessionDep) -> Task:\n    \"\"\"The caller's task, or 404: someone else's task gets the same answer as a missing one.\"\"\"\n    task = session.get(Task, task_id)\n    if task is None or task.owner_id != user.id:\n        raise HTTPException(status_code=404, detail=\"Task not found\")\n    return task\n\n\nOwnedTask = Annotated[Task, Depends(owned_task)]\n\n\n@router.get(\"\")\ndef list_tasks(\n    user: CurrentUser,\n    session: SessionDep,\n    done: bool | None = None,\n    limit: Annotated[int, Query(ge=1, le=100)] = 20,\n    offset: Annotated[int, Query(ge=0)] = 0,\n) -> list[TaskOut]:\n    query = select(Task).where(Task.owner_id == user.id).order_by(Task.id).limit(limit).offset(offset)\n    if done is not None:\n        query = query.where(Task.done == done)\n    return session.scalars(query).all()\n\n\n@router.post(\"\", status_code=201)\ndef create_task(\n    data: TaskCreate,\n    user: CurrentUser,\n    session: SessionDep,\n    background: BackgroundTasks,\n    settings: Annotated[Settings, Depends(get_settings)],\n) -> TaskOut:\n    task = Task(**data.model_dump(), owner_id=user.id)\n    session.add(task)\n    session.commit()\n    session.refresh(task)\n    # TODO 2: schedule notifications.notify_task_created to run after the response, with\n    #        settings.outbox_path, user.username, task.id and task.title\n    return task\n\n\n@router.get(\"/{task_id}\")\ndef read_task(task: OwnedTask) -> TaskOut:\n    return task\n\n\n@router.patch(\"/{task_id}\")\ndef update_task(changes: TaskUpdate, task: OwnedTask, session: SessionDep) -> TaskOut:\n    for field, value in changes.model_dump(exclude_unset=True).items():\n        setattr(task, field, value)\n    session.commit()\n    session.refresh(task)\n    return task\n\n\n@router.delete(\"/{task_id}\", status_code=204)\ndef delete_task(task: OwnedTask, session: SessionDep) -> None:\n    session.delete(task)\n    session.commit()\n\n\nreports = APIRouter(prefix=\"/reports\", tags=[\"reports\"])\n\n\n@reports.post(\"\", status_code=202)\ndef start_report(\n    user: CurrentUser,\n    background: BackgroundTasks,\n    factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],\n) -> ReportJob:\n    \"\"\"Start building a summary of your tasks. Poll GET /reports/{job_id} for the result.\"\"\"\n    job_id = notifications.new_job(user.id)\n    background.add_task(notifications.build_report, factory, job_id, user.id)\n    return ReportJob(job_id=job_id, status=\"queued\")\n\n\n@reports.get(\"/{job_id}\")\ndef read_report(job_id: str, user: CurrentUser) -> ReportJob:\n    job = notifications.JOBS.get(job_id)\n    if job is None or job[\"owner_id\"] != user.id:\n        raise HTTPException(status_code=404, detail=\"Report not found\")\n    return ReportJob(job_id=job_id, status=job[\"status\"], result=job[\"result\"])\n"
+     },
+     {
+      "path": "app/main.py",
+      "content": "import logging\nfrom contextlib import asynccontextmanager\n\nfrom fastapi import FastAPI\n\nfrom app import auth, tasks\nfrom app.config import get_settings\n\nlog = logging.getLogger(\"app\")\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    \"\"\"Runs once at start-up (before yield) and once at shutdown (after it).\"\"\"\n    settings = get_settings()\n    logging.basicConfig(level=settings.log_level, format=\"%(levelname)s %(name)s: %(message)s\")\n    settings.outbox_path.parent.mkdir(parents=True, exist_ok=True)\n    log.info(\"TaskHub starting\")\n    yield\n    log.info(\"TaskHub stopping\")\n\n\napp = FastAPI(title=\"TaskHub\", version=\"1.0.0\", lifespan=lifespan)\napp.include_router(auth.router)\napp.include_router(tasks.router)\napp.include_router(tasks.reports)\n\n\n@app.get(\"/health\", tags=[\"service\"])\ndef health() -> dict[str, str]:\n    return {\"status\": \"ok\"}\n"
+     }
+    ],
+    "hints": [
+     "background.add_task(function, arg1, arg2, ...) takes the function itself, not a call to it.",
+     "build_report is a def function, so FastAPI runs it in the thread pool, where blocking is fine.",
+     "Counter(f\"priority_{task.priority}\" for task in tasks) counts tasks per priority."
+    ]
+   }
+  },
+  {
+   "title": "Testing FastAPI Applications",
+   "summary": "Test the whole service with confidence: TestClient against the real app, dependency overrides for the database, settings and outside services, isolated in-memory databases, async tests, and coverage.",
+   "instructor": "chaiyapon-srisomboon",
+   "lessons": [
+    {
+     "title": "TestClient and test structure",
+     "minutes": 12,
+     "objectives": [
+      "Test endpoints in-process with TestClient",
+      "Organise a FastAPI test suite with fixtures in conftest.py"
+     ],
+     "key_points": [
+      "TestClient, from fastapi.testclient, wraps the app in an HTTPX client that calls it in-process, with no server: client.post(\"/auth/token\", data={...}) returns a response with .status_code, .headers and .json().",
+      "Use it as a context manager, with TestClient(app) as client:, so the lifespan's start-up and shutdown run as they would in production.",
+      "Share set-up through fixtures in conftest.py: a client, a test database, and a factory such as make_user() that registers a user and returns the Authorization header.",
+      "Test behaviour through the HTTP interface, including the failure paths: 401 without a token, 404 for another user's task, 409 for a taken username and 422 for invalid input.",
+      "Settings are often read at import time, so set test values, such as a test secret key and database URL, in conftest.py before importing the app."
+     ]
+    },
+    {
+     "title": "Overriding dependencies",
+     "minutes": 12,
+     "objectives": [
+      "Swap dependencies for tests with dependency_overrides",
+      "Design dependencies so they're easy to override"
+     ],
+     "key_points": [
+      "app.dependency_overrides[original] = replacement swaps a dependency for every request in a test; clear the dictionary afterwards so tests can't affect each other.",
+      "Design for overriding: when request sessions and background jobs both get their session factory from one dependency, overriding that one moves everything onto the test database.",
+      "Override get_settings to give tests their own configuration, such as a temporary outbox file, without touching the environment.",
+      "Override outside services, such as payments, email or other APIs, with fakes that record their calls, so tests are fast, repeatable and never touch real systems.",
+      "Overrides are keyed by the function object the app uses, so import the same function from the same module."
+     ]
+    },
+    {
+     "title": "Isolated test databases and async tests",
+     "minutes": 12,
+     "objectives": [
+      "Give every test a fresh, isolated database",
+      "Write async tests and measure coverage"
+     ],
+     "key_points": [
+      "Tests must never touch production or shared data: give each test a fresh database, created by a fixture and thrown away afterwards.",
+      "In-memory SQLite is fast: create_engine(\"sqlite://\", connect_args={\"check_same_thread\": False}, poolclass=StaticPool) keeps one connection, so every session in the test sees the same database; create the tables with Base.metadata.create_all(engine).",
+      "SQLite isn't PostgreSQL: types, constraints and concurrency differ, so also run the suite against the production engine, such as PostgreSQL in a container or a CI service container, before deploying.",
+      "For tests that must await other async code, use httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=\"http://test\") in a test marked @pytest.mark.anyio; the anyio pytest plugin comes with AnyIO, which FastAPI depends on.",
+      "Measure coverage with pytest --cov and keep the reports in CI: a suite you trust is what makes frequent deployment safe."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Test the API end to end",
+    "tool": "pytest and TestClient",
+    "minutes": 60,
+    "goal": "Give TaskHub a test suite that runs against a fresh in-memory database for every test, through dependency overrides, and covers authentication, ownership, validation, background work and an async client.",
+    "setup": [
+     "The taskhub project after the module 3 lab, with its virtual environment",
+     "The starter files pyproject.toml, tests/conftest.py, tests/test_auth.py, tests/test_tasks.py, tests/test_background.py and tests/test_async.py; then pip install pytest pytest-cov"
+    ],
+    "steps": [
+     {
+      "do": "Read tests/conftest.py: it sets a test secret key and database URL before importing the app. Complete TODO 1, the engine fixture, and TODO 2, the client fixture with its two overrides."
+     },
+     {
+      "do": "Run the authentication tests.",
+      "code": "python -m pytest -q tests/test_auth.py",
+      "lang": "bash",
+      "see": "5 passed"
+     },
+     {
+      "do": "Complete TODO 3 in tests/test_tasks.py, then run the task tests.",
+      "code": "python -m pytest -q tests/test_tasks.py",
+      "lang": "bash",
+      "see": "7 passed"
+     },
+     {
+      "do": "Run the background and async tests: TestClient runs background tasks before it returns, and the async test calls the app through ASGITransport.",
+      "code": "python -m pytest -q tests/test_background.py tests/test_async.py",
+      "lang": "bash",
+      "see": "3 passed"
+     },
+     {
+      "do": "Run everything with coverage.",
+      "code": "python -m pytest -q --cov --cov-report=term-missing",
+      "lang": "bash",
+      "see": "15 passed and a TOTAL line around 98% (yours may differ a little)."
+     },
+     {
+      "do": "Prove a test can catch a real bug: in app/tasks.py, delete or task.owner_id != user.id from owned_task, run the suite, then put it back.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "FAILED tests/test_tasks.py::test_users_never_see_each_others_tasks, then all passing again."
+     },
+     {
+      "do": "Check that the tests left your development database alone: they never open taskhub.db.",
+      "code": "ls -l taskhub.db",
+      "lang": "bash",
+      "see": "The same size and time as before you ran the tests."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The fixtures use an isolated in-memory database through dependency overrides.",
+      "look_for": [
+       "StaticPool",
+       "dependency_overrides"
+      ]
+     },
+     {
+      "text": "The authentication and task tests pass.",
+      "look_for": [
+       "5 passed",
+       "7 passed"
+      ]
+     },
+     {
+      "text": "The whole suite passes with coverage measured.",
+      "look_for": [
+       "15 passed",
+       "TOTAL"
+      ]
+     },
+     {
+      "text": "Removing the ownership check makes a test fail.",
+      "look_for": [
+       "FAILED tests/test_tasks.py::test_users_never_see_each_others_tasks"
+      ]
+     }
+    ],
+    "submit": "Paste your two fixtures and your new test, and the output of steps 2 to 6.",
+    "files": [
+     {
+      "path": "pyproject.toml",
+      "content": "[tool.pytest.ini_options]\ntestpaths = [\"tests\"]\n\n[tool.coverage.run]\nsource = [\"app\"]\nbranch = true\n"
+     },
+     {
+      "path": "tests/conftest.py",
+      "content": "import os\n\n# Settings are read when the app is imported, so set test values first. Never a real secret.\nos.environ[\"TASKHUB_SECRET_KEY\"] = \"test-key-\" + \"0\" * 55\nos.environ[\"TASKHUB_DATABASE_URL\"] = \"sqlite://\"\n\nimport pytest  # noqa: E402\nfrom fastapi.testclient import TestClient  # noqa: E402\nfrom sqlalchemy import create_engine  # noqa: E402\nfrom sqlalchemy.orm import sessionmaker  # noqa: E402\nfrom sqlalchemy.pool import StaticPool  # noqa: E402\n\nfrom app.config import Settings, get_settings  # noqa: E402\nfrom app.database import Base, get_session_factory  # noqa: E402\nfrom app.main import app  # noqa: E402\n\n\n@pytest.fixture\ndef engine():\n    \"\"\"A fresh in-memory database for each test. StaticPool keeps one connection, so every session\n    sees the same database.\"\"\"\n    # TODO 1: create an engine for \"sqlite://\" with connect_args={\"check_same_thread\": False} and\n    #        poolclass=StaticPool, create the tables with Base.metadata.create_all(engine), yield it,\n    #        then dispose of it\n    yield None\n\n\n@pytest.fixture\ndef outbox(tmp_path):\n    return tmp_path / \"outbox.jsonl\"\n\n\n@pytest.fixture\ndef client(engine, outbox):\n    \"\"\"A TestClient whose sessions and settings point at the test database and a temporary outbox.\"\"\"\n    test_settings = Settings(secret_key=\"test-key-\" + \"0\" * 55, database_url=\"sqlite://\", outbox_path=outbox)\n    # TODO 2: override get_session_factory to return sessionmaker(bind=engine), and get_settings to\n    #        return test_settings; yield a TestClient(app) used as a context manager; clear the overrides\n    yield TestClient(app)\n\n\n@pytest.fixture\ndef make_user(client):\n    \"\"\"Register a user and return the Authorization header for them.\"\"\"\n\n    def make(username: str = \"ana\", password: str = \"correct horse battery\") -> dict[str, str]:\n        client.post(\"/auth/register\", json={\"username\": username, \"password\": password})\n        response = client.post(\"/auth/token\", data={\"username\": username, \"password\": password})\n        return {\"Authorization\": f\"Bearer {response.json()['access_token']}\"}\n\n    return make\n"
+     },
+     {
+      "path": "tests/test_auth.py",
+      "content": "from app.security import create_access_token\n\n\ndef test_register_returns_the_user_without_the_password(client):\n    response = client.post(\"/auth/register\", json={\"username\": \"ana\", \"password\": \"correct horse battery\"})\n    assert response.status_code == 201\n    assert response.json() == {\"id\": 1, \"username\": \"ana\"}\n\n\ndef test_a_taken_username_is_409(client, make_user):\n    make_user(\"ana\")\n    response = client.post(\"/auth/register\", json={\"username\": \"ana\", \"password\": \"another long one\"})\n    assert response.status_code == 409\n\n\ndef test_short_passwords_and_bad_usernames_are_422(client):\n    assert client.post(\"/auth/register\", json={\"username\": \"ana\", \"password\": \"short\"}).status_code == 422\n    assert client.post(\"/auth/register\", json={\"username\": \"Ana!\", \"password\": \"x\" * 12}).status_code == 422\n\n\ndef test_login_with_a_wrong_password_is_401(client, make_user):\n    make_user(\"ana\")\n    response = client.post(\"/auth/token\", data={\"username\": \"ana\", \"password\": \"wrong password\"})\n    assert response.status_code == 401\n    assert response.headers[\"www-authenticate\"] == \"Bearer\"\n\n\ndef test_users_me_needs_a_valid_token(client, make_user):\n    headers = make_user(\"ana\")\n    assert client.get(\"/users/me\", headers=headers).json()[\"username\"] == \"ana\"\n    assert client.get(\"/users/me\").status_code == 401\n    expired = {\"Authorization\": f\"Bearer {create_access_token('ana', minutes=-1)}\"}\n    assert client.get(\"/users/me\", headers=expired).status_code == 401\n"
+     },
+     {
+      "path": "tests/test_tasks.py",
+      "content": "import pytest\n\n\ndef test_create_list_update_and_delete(client, make_user):\n    headers = make_user(\"ana\")\n    created = client.post(\"/tasks\", json={\"title\": \"Ship the release\", \"priority\": 1}, headers=headers)\n    assert created.status_code == 201\n    task_id = created.json()[\"id\"]\n    assert client.patch(f\"/tasks/{task_id}\", json={\"done\": True}, headers=headers).json()[\"done\"] is True\n    assert [t[\"id\"] for t in client.get(\"/tasks?done=true\", headers=headers).json()] == [task_id]\n    assert client.delete(f\"/tasks/{task_id}\", headers=headers).status_code == 204\n    assert client.get(f\"/tasks/{task_id}\", headers=headers).status_code == 404\n\n\ndef test_users_never_see_each_others_tasks(client, make_user):\n    ana, bilal = make_user(\"ana\"), make_user(\"bilal\")\n    task_id = client.post(\"/tasks\", json={\"title\": \"Ana's task\"}, headers=ana).json()[\"id\"]\n    assert client.get(\"/tasks\", headers=bilal).json() == []\n    for method in (\"get\", \"patch\", \"delete\"):\n        kwargs = {\"json\": {\"done\": True}} if method == \"patch\" else {}\n        response = getattr(client, method)(f\"/tasks/{task_id}\", headers=bilal, **kwargs)\n        assert response.status_code == 404\n\n\ndef test_paging(client, make_user):\n    headers = make_user(\"ana\")\n    for n in range(5):\n        client.post(\"/tasks\", json={\"title\": f\"Task {n}\"}, headers=headers)\n    page = client.get(\"/tasks?limit=2&offset=2\", headers=headers).json()\n    assert [t[\"title\"] for t in page] == [\"Task 2\", \"Task 3\"]\n\n\n@pytest.mark.parametrize(\n    \"body\", [{\"title\": \"\"}, {\"title\": \"x\", \"priority\": 9}, {\"title\": \"x\", \"owner_id\": 2}]\n)\ndef test_invalid_tasks_are_422(client, make_user, body):\n    assert client.post(\"/tasks\", json=body, headers=make_user(\"ana\")).status_code == 422\n\n\n# TODO 3: test that every /tasks endpoint answers 401 without a token: at least GET /tasks and\n#        POST /tasks\n"
+     },
+     {
+      "path": "tests/test_background.py",
+      "content": "import json\n\n\ndef test_creating_a_task_writes_a_notification(client, make_user, outbox):\n    headers = make_user(\"ana\")\n    client.post(\"/tasks\", json={\"title\": \"Pay the invoice\"}, headers=headers)\n    # TestClient runs background tasks before the call returns, so the message is already there.\n    message = json.loads(outbox.read_text().splitlines()[0])\n    assert message[\"to\"] == \"ana\"\n    assert message[\"subject\"] == \"Task 1 created\"\n\n\ndef test_a_report_job_runs_and_belongs_to_its_owner(client, make_user):\n    ana, bilal = make_user(\"ana\"), make_user(\"bilal\")\n    for title, priority in [(\"A\", 1), (\"B\", 1), (\"C\", 3)]:\n        client.post(\"/tasks\", json={\"title\": title, \"priority\": priority}, headers=ana)\n    started = client.post(\"/reports\", headers=ana)\n    assert started.status_code == 202\n    job_id = started.json()[\"job_id\"]\n    report = client.get(f\"/reports/{job_id}\", headers=ana).json()\n    assert report[\"status\"] == \"done\"\n    assert report[\"result\"] == {\"total\": 3, \"done\": 0, \"open\": 3, \"priority_1\": 2, \"priority_3\": 1}\n    assert client.get(f\"/reports/{job_id}\", headers=bilal).status_code == 404\n"
+     },
+     {
+      "path": "tests/test_async.py",
+      "content": "import httpx\nimport pytest\n\nfrom app.main import app\n\n\n@pytest.mark.anyio\nasync def test_health_through_an_async_client():\n    \"\"\"For tests that must await other async code: the app is called in-process through ASGITransport.\"\"\"\n    transport = httpx.ASGITransport(app=app)\n    async with httpx.AsyncClient(transport=transport, base_url=\"http://test\") as client:\n        response = await client.get(\"/health\")\n    assert response.json() == {\"status\": \"ok\"}\n"
+     }
+    ],
+    "hints": [
+     "Without StaticPool, each new connection to sqlite:// gets its own empty database.",
+     "The overrides go in before the TestClient starts, and app.dependency_overrides.clear() after it closes.",
+     "If a test sees data from another test, a fixture is shared across tests: keep the engine fixture at the default function scope."
+    ]
+   }
+  },
+  {
+   "title": "Production Deployment",
+   "summary": "Run the service for real: configuration and secrets from the environment, a Docker image built for production, workers, performance and structured logs, and deployment behind an Nginx reverse proxy with health checks.",
+   "instructor": "mouhamadouu-ba",
+   "lessons": [
+    {
+     "title": "Configuration and secrets",
+     "minutes": 11,
+     "objectives": [
+      "Configure a FastAPI service from environment variables with pydantic-settings",
+      "Keep secrets out of code, images and logs"
+     ],
+     "key_points": [
+      "Configuration that differs between environments, such as the database URL, secret key, log level and allowed origins, comes from environment variables, not code, so one image runs anywhere.",
+      "pydantic-settings: a Settings(BaseSettings) class with model_config = SettingsConfigDict(env_prefix=\"TASKHUB_\", env_file=\".env\") reads TASKHUB_DATABASE_URL and the rest, converts and validates them, and stops at start-up when a required one is missing.",
+      "Declare secrets as SecretStr: the value is hidden in reprs and logs and read deliberately with get_secret_value(). Give the secret key no default, so a forgotten setting stops the app instead of running with a known key.",
+      "Read the settings once, with @lru_cache on get_settings(), and inject them with Depends(get_settings) where they're needed, so tests can override them.",
+      ".env files are for development: keep them out of Git and out of images (.gitignore and .dockerignore), and supply real secrets through the platform, such as Docker or Kubernetes secrets or a secrets manager."
+     ]
+    },
+    {
+     "title": "Docker images for FastAPI",
+     "minutes": 13,
+     "objectives": [
+      "Write a production Dockerfile for a FastAPI service",
+      "Run it with health checks and the right network settings"
+     ],
+     "key_points": [
+      "Start from an official slim Python image, copy requirements.txt and install it before copying the code, so Docker reuses the cached dependency layer whenever only the code changes.",
+      "Use the exec form of CMD, such as CMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"] or CMD [\"fastapi\", \"run\", \"app/main.py\", \"--port\", \"8000\"], so the server is PID 1, gets the stop signal and shuts down cleanly, lifespan included.",
+      "Run as an unprivileged user (useradd, then USER appuser), and list in .dockerignore what must stay out of the image: .venv, .git, tests, .env and local databases.",
+      "Inside a container the server must listen on 0.0.0.0, because 127.0.0.1 there is reachable only from inside the container; docker run -p 8000:8000 publishes the port.",
+      "A HEALTHCHECK, or the orchestrator's own probe, calls an endpoint such as /health, and Docker Compose's depends_on with condition: service_healthy waits for it before starting the services that need the app.",
+      "Pin the base image and dependency versions for repeatable builds, and use a multi-stage build when compilers or build tools are needed only to install dependencies."
+     ]
+    },
+    {
+     "title": "Workers, performance and logging",
+     "minutes": 12,
+     "objectives": [
+      "Choose how many processes to run, and how",
+      "Find performance problems, and log so that problems can be found"
+     ],
+     "key_points": [
+      "One Uvicorn process uses one CPU core. Run several with uvicorn --workers 4 or fastapi run --workers 4, or with Gunicorn as the process manager: gunicorn app.main:app -k uvicorn_worker.UvicornWorker -w 4, from the uvicorn-worker package (the older uvicorn.workers module is deprecated).",
+      "Under Kubernetes or another orchestrator, run one process per container and scale by adding containers; use workers when you manage a server or virtual machine yourself.",
+      "Workers are separate processes with their own memory: in-memory caches, rate limits and job stores aren't shared, so keep shared state in the database or Redis.",
+      "Performance basics: don't block the event loop, reuse database and HTTP connection pools, paginate long lists, declare response models (recent FastAPI serialises them with Pydantic's Rust core), and measure with a load-testing tool such as Locust before tuning.",
+      "Log to standard error, one JSON object per line, with a request ID passed back in X-Request-ID and the method, path, status and duration of every request; never log tokens, passwords or Authorization headers."
+     ]
+    },
+    {
+     "title": "Behind a reverse proxy, with health checks",
+     "minutes": 13,
+     "objectives": [
+      "Serve the app behind Nginx with the forwarded headers it needs",
+      "Separate liveness from readiness"
+     ],
+     "key_points": [
+      "A reverse proxy such as Nginx or Traefik sits in front of the app server: it terminates HTTPS, buffers slow clients, balances load across instances and can serve static files, while the app listens only on a private network.",
+      "Nginx passes requests on with proxy_pass http://app:8000; and proxy_set_header lines for Host, X-Forwarded-For ($proxy_add_x_forwarded_for) and X-Forwarded-Proto ($scheme), so the app learns the client's address and the original scheme.",
+      "Uvicorn uses the forwarded headers only from addresses in --forwarded-allow-ips, which defaults to 127.0.0.1: set it to the proxy's address, or to * only when nothing but the proxy can reach the app.",
+      "If the proxy serves the API under a prefix such as /api and strips it, start the server with --root-path /api so the docs and generated URLs include it; the root_path argument of FastAPI() is deprecated in recent versions.",
+      "Expose a liveness check (/health: the process answers) and a readiness check (/ready: the database answers too), so proxies, Docker and orchestrators send traffic only to instances that can serve it."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Containerise TaskHub and serve it behind Nginx",
+    "tool": "Docker Compose, Uvicorn and Nginx",
+    "minutes": 75,
+    "goal": "Make TaskHub production-shaped: structured request logs with IDs, liveness and readiness checks, workers, forwarded headers you control, and a non-root Docker image served behind Nginx with Docker Compose.",
+    "setup": [
+     "The taskhub project after the module 4 lab, with its migrations and tests",
+     "Docker with Docker Compose",
+     "The starter files app/main.py (it replaces yours), Dockerfile, dockerignore, compose.yaml, nginx.conf and env.example"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 (the request log line) and TODO 2 (the /ready check) in app/main.py, then run the module 4 tests.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "15 passed"
+     },
+     {
+      "do": "Run the app with JSON logs and send what a proxy would add: a client address and a request ID.",
+      "code": "TASKHUB_LOG_JSON=true uvicorn app.main:app\n# in a second terminal:\ncurl -s -i http://127.0.0.1:8000/ready -H \"X-Forwarded-For: 203.0.113.7\" -H \"X-Request-ID: abc123\"",
+      "lang": "bash",
+      "see": "HTTP/1.1 200 OK, x-request-id: abc123 and {\"status\":\"ready\"}; the log line has \"message\": \"request\", \"request_id\": \"abc123\", \"path\": \"/ready\", \"status\": 200 and \"client\": \"203.0.113.7\", because Uvicorn trusts forwarded headers from 127.0.0.1 by default."
+     },
+     {
+      "do": "Restart with a proxy address that doesn't match and repeat the request.",
+      "code": "uvicorn app.main:app --forwarded-allow-ips 10.0.0.1",
+      "lang": "bash",
+      "see": "Now the log shows \"client\": \"127.0.0.1\": headers from an untrusted address are ignored."
+     },
+     {
+      "do": "Try the ways of running several workers, stopping each with Ctrl+C.",
+      "code": "uvicorn app.main:app --workers 2\npip install gunicorn uvicorn-worker\ngunicorn app.main:app -k uvicorn_worker.UvicornWorker -w 2 -b 127.0.0.1:8000",
+      "lang": "bash",
+      "see": "Started parent process and two Started server process lines; then Gunicorn's Listening at: http://127.0.0.1:8000, Using worker: uvicorn_worker.UvicornWorker and two Booting worker with pid lines."
+     },
+     {
+      "do": "Serve the app as if a proxy put it under /api.",
+      "code": "uvicorn app.main:app --root-path /api\n# in a second terminal:\ncurl -s http://127.0.0.1:8000/openapi.json | python3 -c \"import sys, json; print(json.load(sys.stdin)['servers'])\"",
+      "lang": "bash",
+      "see": "[{'url': '/api'}]"
+     },
+     {
+      "do": "Prepare the container files. Check the compose file without printing it, because docker compose config shows the values from .env, secret included.",
+      "code": "mv dockerignore .dockerignore\ncp env.example .env   # then put a real secret in .env\ndocker compose config --quiet && echo \"compose file is valid\"",
+      "lang": "bash",
+      "see": "compose file is valid"
+     },
+     {
+      "do": "Build and start both services. Compose starts Nginx only once the app's health check passes.",
+      "code": "docker compose up --build -d\ndocker compose ps",
+      "lang": "bash",
+      "see": "The app service Up (healthy), and the proxy service Up with 0.0.0.0:8080->80/tcp."
+     },
+     {
+      "do": "Use the API through Nginx, then read the app's JSON log lines.",
+      "code": "curl -s http://localhost:8080/health\ncurl -s -X POST http://localhost:8080/auth/register -H \"Content-Type: application/json\" -d '{\"username\": \"ana\", \"password\": \"correct horse battery\"}'\ndocker compose logs app --tail 3",
+      "lang": "bash",
+      "see": "{\"status\":\"ok\"}, the new user, and request lines whose request_id came from Nginx and whose client is the address Nginx saw."
+     },
+     {
+      "do": "Restart the app and check the data survived in the volume, then stop everything.",
+      "code": "docker compose restart app\ndocker compose down",
+      "lang": "bash",
+      "see": "After the restart, logging in as ana still works; down keeps the volume (down -v would delete it)."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The tests still pass.",
+      "look_for": [
+       "15 passed"
+      ]
+     },
+     {
+      "text": "Requests are logged as JSON with an ID and the forwarded client address.",
+      "look_for": [
+       "x-request-id: abc123",
+       "\"client\": \"203.0.113.7\""
+      ]
+     },
+     {
+      "text": "Gunicorn runs the app with Uvicorn workers.",
+      "look_for": [
+       "Using worker: uvicorn_worker.UvicornWorker",
+       "Booting worker with pid"
+      ]
+     },
+     {
+      "text": "The root path is reflected in the schema.",
+      "look_for": [
+       "[{'url': '/api'}]"
+      ]
+     },
+     {
+      "text": "The stack is valid and the app is healthy behind Nginx.",
+      "look_for": [
+       "compose file is valid",
+       "healthy"
+      ]
+     },
+     {
+      "text": "The API answers through the proxy on port 8080.",
+      "look_for": [
+       "8080",
+       "{\"status\":\"ok\"}"
+      ]
+     }
+    ],
+    "submit": "Paste your log line and /ready code, and the output of steps 1 to 8 (with your secret key left out).",
+    "files": [
+     {
+      "path": "app/main.py",
+      "content": "import json\nimport logging\nimport time\nimport uuid\nfrom contextlib import asynccontextmanager\n\nfrom fastapi import FastAPI, HTTPException, Request\nfrom sqlalchemy import text\n\nfrom app import auth, tasks\nfrom app.config import get_settings\nfrom app.database import SessionDep\n\nlog = logging.getLogger(\"app\")\n\n\nclass JsonFormatter(logging.Formatter):\n    \"\"\"One JSON object per line: easy for log collectors to parse and search.\"\"\"\n\n    def format(self, record: logging.LogRecord) -> str:\n        entry = {\"time\": self.formatTime(record, \"%Y-%m-%dT%H:%M:%S\"), \"level\": record.levelname,\n                 \"logger\": record.name, \"message\": record.getMessage()}\n        entry.update(getattr(record, \"fields\", {}))\n        return json.dumps(entry)\n\n\ndef setup_logging(level: str, as_json: bool) -> None:\n    handler = logging.StreamHandler()  # standard error: Docker and systemd collect it\n    plain = logging.Formatter(\"%(levelname)s %(name)s: %(message)s\")\n    handler.setFormatter(JsonFormatter() if as_json else plain)\n    logging.basicConfig(level=level, handlers=[handler], force=True)\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    settings = get_settings()\n    setup_logging(settings.log_level, settings.log_json)\n    settings.outbox_path.parent.mkdir(parents=True, exist_ok=True)\n    log.info(\"TaskHub starting\")\n    yield\n    log.info(\"TaskHub stopping\")\n\n\napp = FastAPI(title=\"TaskHub\", version=\"1.0.0\", lifespan=lifespan)\napp.include_router(auth.router)\napp.include_router(tasks.router)\napp.include_router(tasks.reports)\n\n\n@app.middleware(\"http\")\nasync def log_requests(request: Request, call_next):\n    \"\"\"Give every request an ID, pass it back in X-Request-ID, and log one line per request.\"\"\"\n    request_id = request.headers.get(\"X-Request-ID\") or uuid.uuid4().hex[:16]\n    start = time.perf_counter()\n    response = await call_next(request)\n    duration_ms = round((time.perf_counter() - start) * 1000, 1)\n    response.headers[\"X-Request-ID\"] = request_id\n    # TODO 1: log one INFO line, \"request\", with extra={\"fields\": {...}} holding request_id, the\n    #        method, the path, the status code, duration_ms and the client's address (request.client.host)\n    return response\n\n\n@app.get(\"/health\", tags=[\"service\"])\ndef health() -> dict[str, str]:\n    \"\"\"Liveness: the process is up and answering.\"\"\"\n    return {\"status\": \"ok\"}\n\n\n@app.get(\"/ready\", tags=[\"service\"])\ndef ready(session: SessionDep) -> dict[str, str]:\n    \"\"\"Readiness: the database answers too, so this instance can take traffic.\"\"\"\n    # TODO 2: run SELECT 1 with session.execute(text(\"SELECT 1\")); if it raises an exception,\n    #        log it and raise a 503 with the detail \"Database unavailable\"; otherwise return {\"status\": \"ready\"}\n    return {\"status\": \"ready\"}\n"
+     },
+     {
+      "path": "Dockerfile",
+      "content": "FROM python:3.13-slim\n\nENV PYTHONDONTWRITEBYTECODE=1 \\\n    PYTHONUNBUFFERED=1 \\\n    PIP_NO_CACHE_DIR=1\n\nWORKDIR /code\n\n# Dependencies first: this layer is rebuilt only when requirements.txt changes.\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\n\nCOPY alembic.ini .\nCOPY migrations ./migrations\nCOPY app ./app\n\n# Run as an unprivileged user, with a folder for the SQLite file and the outbox.\nRUN useradd --create-home --uid 10001 appuser && mkdir /data && chown appuser /data\nUSER appuser\n\nEXPOSE 8000\nHEALTHCHECK --interval=30s --timeout=3s --start-period=10s \\\n    CMD [\"python\", \"-c\", \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)\"]\n\n# Exec form, so uvicorn is PID 1 and receives the stop signal. Behind a proxy, trust its headers.\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\", \"--proxy-headers\", \"--forwarded-allow-ips\", \"*\"]\n"
+     },
+     {
+      "path": "dockerignore",
+      "content": ".venv/\n__pycache__/\n*.pyc\n.env\n*.db\noutbox.jsonl\ntests/\n.pytest_cache/\nhtmlcov/\n.git/\n"
+     },
+     {
+      "path": "compose.yaml",
+      "content": "services:\n  app:\n    build: .\n    env_file: .env\n    environment:\n      TASKHUB_DATABASE_URL: sqlite:////data/taskhub.db\n      TASKHUB_OUTBOX_PATH: /data/outbox.jsonl\n      TASKHUB_LOG_JSON: \"true\"\n    # Migrate, then replace the shell with uvicorn so it receives stop signals.\n    command: [\"sh\", \"-c\", \"alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'\"]\n    volumes:\n      - taskhub-data:/data\n    expose:\n      - \"8000\"\n    restart: unless-stopped\n\n  proxy:\n    image: nginx:1.27-alpine\n    ports:\n      - \"8080:80\"\n    volumes:\n      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro\n    depends_on:\n      app:\n        condition: service_healthy\n    restart: unless-stopped\n\nvolumes:\n  taskhub-data:\n"
+     },
+     {
+      "path": "nginx.conf",
+      "content": "upstream taskhub {\n    server app:8000;\n}\n\nserver {\n    listen 80;\n    server_name _;\n    client_max_body_size 1m;\n\n    location / {\n        proxy_pass http://taskhub;\n        proxy_http_version 1.1;\n        proxy_set_header Host $host;\n        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n        proxy_set_header X-Forwarded-Proto $scheme;\n        proxy_set_header X-Request-ID $request_id;\n        proxy_read_timeout 30s;\n    }\n}\n"
+     },
+     {
+      "path": "env.example",
+      "content": "# Copy to .env and put a real secret in it: python -c \"import secrets; print(secrets.token_hex(32))\"\nTASKHUB_SECRET_KEY=replace-me\nTASKHUB_LOG_LEVEL=INFO\n"
+     }
+    ],
+    "hints": [
+     "If the app container keeps restarting, docker compose logs app shows why; a missing TASKHUB_SECRET_KEY stops it at start-up, by design.",
+     "--forwarded-allow-ips '*' is safe here only because the app's port is exposed to the Compose network, not published to the host.",
+     "The image runs as appuser, so anything it writes must go in /data, the volume.",
+     "Docker Compose v2 is the docker compose command (with a space)."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Authentication: the OAuth2 password flow, password hashing, JWTs and protected routes; finish the auth lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "SQLAlchemy and Alembic, then background tasks and job queues; finish both labs.",
+   "modules": [
+    2,
+    3
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Test the service end to end, then configure, containerise and deploy it behind Nginx.",
+   "modules": [
+    4,
+    5
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Build and deploy the capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Ship a secure, containerised task API",
+  "minutes": 480,
+  "brief": "Take the task management API you built in Introduction to FastAPI and Modern Web Services, or TaskHub from this course, to production quality. Add accounts with the OAuth2 password flow, Argon2-hashed passwords and short-lived JWT access tokens; every user sees only their own projects and tasks, and an admin role can list users. Store everything with SQLAlchemy 2.0, with Alembic migrations that build the schema from an empty database: SQLite by default, and PostgreSQL when the database URL points to it (as an optional third Compose service). Keep report jobs in the database, so they survive restarts and work with several workers, and send notifications with background tasks. Test it thoroughly against an isolated database with dependency overrides. Configure it entirely from environment variables, log JSON lines with request IDs, expose /health and /ready, package it in a Docker image that runs as a non-root user, and serve it with Uvicorn or Gunicorn workers behind Nginx with Docker Compose. Optionally, deploy the same image to a Linux server or a cloud platform of your choice, with HTTPS.",
+  "deliverables": [
+   "The code or a repository link: the app package, migrations, tests, Dockerfile, .dockerignore, compose.yaml and nginx.conf",
+   "At least 25 tests with at least 85% coverage, isolated from any real database",
+   "Alembic migrations that build the schema from an empty database, including one safe change: a new column with a server default",
+   "A README covering every environment variable, running locally, running with Docker Compose, and the API's security model",
+   "A transcript through the proxy: register, log in, create and list tasks, a 401, a 404 for another user's task, a report job polled until done, and docker compose ps with the app healthy",
+   "Optional: the URL of a server or cloud deployment, and how HTTPS is provided there"
+  ],
+  "rubric": [
+   {
+    "name": "Security",
+    "points": 25,
+    "description": "The OAuth2 password flow with Argon2 hashes and expiring JWTs checked against allowed algorithms; 404 for other users' data; an admin role; no secrets in code, images or logs."
+   },
+   {
+    "name": "Data and migrations",
+    "points": 20,
+    "description": "Typed SQLAlchemy 2.0 models, a session per request, migrations from an empty database including a safe column addition, and job state stored in the database."
+   },
+   {
+    "name": "Background work",
+    "points": 10,
+    "description": "Notifications with BackgroundTasks using their own sessions; reports as 202 jobs that are polled; failures logged."
+   },
+   {
+    "name": "Testing",
+    "points": 20,
+    "description": "At least 25 tests covering authentication, ownership, validation and background work, against an isolated database with overrides, with at least 85% coverage."
+   },
+   {
+    "name": "Deployment",
+    "points": 20,
+    "description": "Settings from the environment; a non-root image with an exec-form CMD and a health check; workers; Nginx with forwarded headers and a deliberate --forwarded-allow-ips; JSON logs with request IDs; /health and /ready."
+   },
+   {
+    "name": "Documentation",
+    "points": 5,
+    "description": "A README that lets someone else configure, run and call the API safely."
+   }
+  ],
+  "submit": "Paste your repository link or the code (each file with its name), the pytest summary with the coverage total, your migration files, your README, and the transcript through the proxy. Leave every secret out."
+ }
+}

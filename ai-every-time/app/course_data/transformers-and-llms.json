@@ -1,0 +1,961 @@
+{
+ "slug": "transformers-and-llms",
+ "title": "Transformers and Large Language Models",
+ "subtitle": "Build attention and transformer blocks from scratch, understand how large language models are pretrained, aligned and scaled, and fine-tune, decode and evaluate them with Hugging Face.",
+ "category": "Generative AI",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "aleksei-volkovi",
+  "bjorn-sigurdsson"
+ ],
+ "skills": [
+  "Transformer architecture",
+  "Self-attention",
+  "Language model pretraining",
+  "Fine-tuning",
+  "Hugging Face Transformers",
+  "Text generation and decoding",
+  "Summarisation",
+  "Question answering",
+  "Model evaluation",
+  "PyTorch"
+ ],
+ "tools": [
+  "Python 3",
+  "PyTorch",
+  "NumPy",
+  "Hugging Face Transformers",
+  "Hugging Face Datasets",
+  "rouge-score"
+ ],
+ "outcomes": [
+  "Explain and implement self-attention, multi-head attention, positional encoding and the transformer block from scratch",
+  "Describe causal and masked pretraining, instruction tuning, preference alignment with RLHF and DPO, and scaling laws",
+  "Fine-tune pre-trained transformers for text classification, and prepare data for named entity recognition",
+  "Implement and compare greedy, beam search, temperature, top-k and nucleus sampling decoding",
+  "Adapt sequence-to-sequence models for summarisation and extractive QA, and evaluate them with ROUGE, exact match and F1"
+ ],
+ "prerequisites": "Text Representation: From Vectors to Context and Statistical NLP: Models, Parsing and Information Retrieval, or the same skills; comfort with PyTorch (Deep Learning with PyTorch covers it), matrix multiplication, softmax and cross-entropy. You need Python 3.10 or later with PyTorch, transformers 4.46 or later, datasets and rouge-score; the labs download small models, up to about 350 MB each. A GPU helps for the capstone but isn't required.",
+ "description": "Large language models are transformers trained on enormous amounts of text, and this course opens them up. You'll implement scaled dot-product attention, multi-head attention, layer normalisation, a complete transformer block and positional encodings in NumPy, and check every piece against PyTorch. Then you'll compare how models are pretrained, by causal language modelling like GPT or by masking and denoising like BERT, T5 and BART, train a tiny GPT yourself, and follow a model through instruction tuning and preference alignment with RLHF and DPO, with the scaling laws that guide how big to build and how long to train.\n\nThe second half is hands-on with Hugging Face: fine-tune DistilBERT for sentiment with Datasets and the Trainer API and prepare labels for named entity recognition; write greedy, beam search and sampling decoders from scratch before using generate(); and apply sequence-to-sequence models to summarisation and extractive question answering, scored with ROUGE, exact match and F1 that you implement yourself. Every module has a lab with exact expected output wherever the maths allows it, and the capstone fine-tunes a summariser for a domain of your choice and finds the decoding strategy you'd ship. The code works with transformers 4.46 and later, including version 5. It builds on Text Representation: From Vectors to Context and Statistical NLP: Models, Parsing and Information Retrieval.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Transformer architecture deep dive",
+   "summary": "Take the transformer apart: scaled dot-product attention and its masks, multi-head attention, positional encodings, the feed-forward, residual and normalisation layers of a block, and how blocks stack into encoders, decoders and encoder-decoders.",
+   "instructor": "aleksei-volkovi",
+   "lessons": [
+    {
+     "title": "Scaled dot-product attention",
+     "minutes": 14,
+     "objectives": [
+      "Compute attention from queries, keys and values",
+      "Explain the scaling factor and the padding and causal masks"
+     ],
+     "key_points": [
+      "Each token vector is projected three ways, Q = XW_Q, K = XW_K and V = XW_V, and attention computes softmax(QK^T / √d_k) V, so each output row is an average of the value vectors weighted by how well that token's query matches every key.",
+      "The softmax runs along each row, so every token's attention weights are positive and sum to 1; subtracting the row's maximum before exponentiating prevents overflow without changing the result.",
+      "Dot products of random vectors with unit-variance components have a variance of about d_k (63.1 for d_k = 64 in the lab), which saturates the softmax and shrinks its gradients; dividing by √d_k brings the variance back to about 1.",
+      "Masks set scores to -inf before the softmax so their weights become 0: a padding mask hides padding tokens, and a causal mask hides every later position, so token i of a decoder attends only to positions 0 to i.",
+      "Attention compares every token with every other, so its time and memory grow with the square of the sequence length, O(n² d); long-context methods try to reduce exactly this cost."
+     ]
+    },
+    {
+     "title": "Multi-head attention and positional encoding",
+     "minutes": 14,
+     "objectives": [
+      "Implement multi-head attention by splitting and merging heads",
+      "Compare sinusoidal, learned and rotary position encodings"
+     ],
+     "key_points": [
+      "Multi-head attention runs h attentions in parallel on d_model / h-dimensional slices of the projected Q, K and V, concatenates the heads and applies an output projection W_O, so different heads can specialise in different relations.",
+      "In code, splitting is a reshape to (heads, sequence, d_k) and merging its reverse; the four projection matrices hold 4 × d_model² parameters (plus 4 × d_model biases), the same as a single head of full width.",
+      "Attention ignores order, so position has to be injected. The original transformer adds fixed sinusoids, PE(pos, 2i) = sin(pos / 10000^(2i/d)) and PE(pos, 2i+1) = cos(pos / 10000^(2i/d)), and the dot product PE(p) · PE(p + k) depends only on the offset k.",
+      "BERT and GPT-2 learn an absolute position embedding for each position up to a maximum, 512 for BERT and 1,024 for GPT-2, so they can't take longer inputs without changes.",
+      "Many recent decoder models use rotary position embeddings (RoPE), which rotate pairs of query and key dimensions by position-dependent angles so their dot product depends on relative position; T5 adds learned relative-position biases to the scores, and ALiBi distance-based penalties."
+     ]
+    },
+    {
+     "title": "The transformer block: feed-forward, residuals and layer normalisation",
+     "minutes": 12,
+     "objectives": [
+      "Assemble a transformer block from attention, a feed-forward network, residual connections and layer normalisation",
+      "Explain the difference between pre-LN and post-LN blocks"
+     ],
+     "key_points": [
+      "A block applies multi-head attention and then a position-wise feed-forward network: two linear layers with a non-linearity between them (ReLU originally, GELU in BERT and GPT-2, SwiGLU in many newer models), usually four times wider than d_model in the middle.",
+      "Residual connections add each sub-layer's input to its output, x + Sublayer(x), so information and gradients flow straight through a deep stack; it helps to picture a residual stream that every layer reads from and writes to.",
+      "Layer normalisation rescales each token's vector to zero mean and unit variance across its features, then applies a learned gain and bias; RMSNorm, used in many recent models, skips the mean and divides by the root mean square.",
+      "The original transformer normalised after each residual addition (post-LN); most large models now normalise each sub-layer's input instead (pre-LN, x + Sublayer(LN(x))), which trains more stably without a long learning-rate warm-up.",
+      "With a causal mask, changing a later token leaves the earlier positions' outputs exactly unchanged, which is what lets a decoder train on whole sequences at once; in the lab, a block with d_model = 16, 4 heads and a 64-wide feed-forward layer has 3,280 parameters, as PyTorch confirms."
+     ]
+    },
+    {
+     "title": "Encoder, decoder and encoder-decoder stacks",
+     "minutes": 12,
+     "objectives": [
+      "Distinguish encoder-only, decoder-only and encoder-decoder transformers",
+      "Match each architecture to the tasks it suits"
+     ],
+     "key_points": [
+      "An encoder stack (BERT, RoBERTa, DistilBERT) uses bidirectional self-attention, so every token sees the whole input; it suits understanding tasks such as classification, tagging and extractive question answering.",
+      "A decoder stack (the GPT family and most open chat models) uses causal self-attention and predicts the next token, so it suits generation, and with large-scale training it handles many tasks through prompting.",
+      "An encoder-decoder (the original transformer, T5, BART) encodes the input bidirectionally and decodes the output causally, with cross-attention in each decoder block: queries come from the decoder, keys and values from the encoder's output.",
+      "Encoder-decoders fit tasks that map one text to another, such as translation and summarisation, though a decoder-only model can do the same with the input given as a prompt.",
+      "A final linear layer projects each output vector to vocabulary-sized logits, and many models tie its weights to the input embedding matrix, which saves parameters."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build a transformer block in NumPy",
+    "tool": "Python 3, NumPy and PyTorch",
+    "minutes": 75,
+    "goal": "Implement scaled dot-product attention, causal masking, multi-head attention, layer normalisation, a pre-LN transformer block and sinusoidal positional encodings in NumPy, then check them against PyTorch.",
+    "setup": [
+     "Python 3.10 or later with NumPy and PyTorch (the CPU version is enough): pip install numpy torch",
+     "The starter file attention.py"
+    ],
+    "steps": [
+     {
+      "do": "Read main(): it makes a random 5-token input with d_model = 16 and the block's weights, then checks each piece you write."
+     },
+     {
+      "do": "Write attention() and causal_mask() (TODOs 1 and 2), then multi_head() (TODO 3). Run the script.",
+      "code": "python attention.py",
+      "lang": "bash",
+      "see": "Variance of q.k with d_k=64: 63.1; after dividing by sqrt(64): 0.99; Multi-head output (5, 16), weights (4, 5, 5), rows sum to 1: True; Causal weights above the diagonal: 0.0"
+     },
+     {
+      "do": "Check the causal weights and the comparison with PyTorch.",
+      "see": "Head 0's causal weights for the third token: [0.369 0.358 0.273 0. 0.] and Matches torch.nn.MultiheadAttention: True"
+     },
+     {
+      "do": "Write layer_norm() (TODO 4); block() and gelu() are given. Run it again.",
+      "see": "Block output (5, 16); changing the last token changes earlier outputs by 0.0, and Parameters in one block with biases: ours 3280, PyTorch 3280"
+     },
+     {
+      "do": "Write positional_encoding() (TODO 5).",
+      "see": "PE[1, 0] = 0.8415 (sin 1); PE[10] . PE[13] = 5.5431, PE[40] . PE[43] = 5.5431"
+     },
+     {
+      "do": "Remove the 1/sqrt(d_k) scaling, multiply the inputs by 10, and print the largest attention weight per row. Then write two or three sentences starting Scaling: that explain what you see."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Scaling by the square root of d_k restores unit variance.",
+      "look_for": [
+       "63.1",
+       "0.99"
+      ]
+     },
+     {
+      "text": "Attention weights are a proper distribution, and the causal mask hides later positions.",
+      "look_for": [
+       "rows sum to 1: True",
+       "Causal weights above the diagonal: 0.0"
+      ]
+     },
+     {
+      "text": "The NumPy multi-head attention matches PyTorch's.",
+      "look_for": [
+       "Matches torch.nn.MultiheadAttention: True"
+      ]
+     },
+     {
+      "text": "The block is causal and has the right number of parameters.",
+      "look_for": [
+       "changes earlier outputs by 0.0",
+       "ours 3280, PyTorch 3280"
+      ]
+     },
+     {
+      "text": "The sinusoidal encodings depend only on relative offset.",
+      "look_for": [
+       "PE[10] . PE[13] = 5.5431",
+       "PE[40] . PE[43] = 5.5431"
+      ]
+     },
+     {
+      "text": "The scaling experiment is explained.",
+      "look_for": [
+       "Scaling:"
+      ]
+     }
+    ],
+    "submit": "Paste your attention(), causal_mask(), multi_head(), layer_norm() and positional_encoding(), everything the script printed, and your Scaling: answer.",
+    "files": [
+     {
+      "path": "attention.py",
+      "content": "\"\"\"A transformer block in NumPy: scaled dot-product attention, multi-head attention, layer normalisation and a\nfeed-forward layer, checked against PyTorch, plus sinusoidal positional encodings.\"\"\"\n\nimport numpy as np\nimport torch\n\nrng = np.random.default_rng(0)\nD_MODEL, HEADS, D_FF, SEQ = 16, 4, 64, 5\n\n\ndef softmax(x, axis=-1):\n    x = x - x.max(axis=axis, keepdims=True)  # subtracting the maximum avoids overflow and changes nothing\n    e = np.exp(x)\n    return e / e.sum(axis=axis, keepdims=True)\n\n\ndef attention(q, k, v, mask=None):\n    \"\"\"softmax(Q K^T / sqrt(d_k)) V. mask is True where attention is allowed.\"\"\"\n    # TODO 1: scores = Q K^T / sqrt(d_k) (use k.swapaxes(-1, -2) so it works for any number of heads);\n    #         where mask is False set the score to -np.inf; softmax over the last axis; return (weights @ v, weights)\n    raise NotImplementedError(\"attention\")\n\n\ndef causal_mask(n):\n    # TODO 2: an n x n boolean matrix that is True on and below the diagonal (np.tril)\n    raise NotImplementedError(\"causal_mask\")\n\n\ndef multi_head(x, w_q, w_k, w_v, w_o, heads=HEADS, mask=None):\n    \"\"\"Project, split into heads, attend in each head, concatenate, project back. x: (seq, d_model).\"\"\"\n    seq, d = x.shape\n    d_k = d // heads\n\n    # TODO 3: project x with w_q, w_k and w_v; split each (seq, d) result into (heads, seq, d_k) with\n    #         reshape(seq, heads, d_k).transpose(1, 0, 2); run attention(); merge the heads back to (seq, d)\n    #         with the reverse transpose and reshape; multiply by w_o. Return (output, weights).\n    raise NotImplementedError(\"multi_head\")\n\n\ndef layer_norm(x, gamma, beta, eps=1e-5):\n    # TODO 4: normalise each row to mean 0 and variance 1 (adding eps to the variance), then scale by gamma, add beta\n    raise NotImplementedError(\"layer_norm\")\n\n\ndef gelu(x):  # the tanh approximation\n    return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x ** 3)))\n\n\ndef block(x, p, mask=None):\n    \"\"\"A pre-LN transformer block: x + attention(LN(x)), then x + FFN(LN(x)).\"\"\"\n    attn, _ = multi_head(layer_norm(x, p[\"g1\"], p[\"b1\"]), p[\"wq\"], p[\"wk\"], p[\"wv\"], p[\"wo\"], mask=mask)\n    x = x + attn\n    hidden = gelu(layer_norm(x, p[\"g2\"], p[\"b2\"]) @ p[\"w1\"] + p[\"c1\"])\n    return x + hidden @ p[\"w2\"] + p[\"c2\"]\n\n\ndef positional_encoding(n_positions, d):\n    # TODO 5: PE[pos, 2i] = sin(pos / 10000^(2i/d)) and PE[pos, 2i+1] = cos(pos / 10000^(2i/d))\n    raise NotImplementedError(\"positional_encoding\")\n\n\ndef main():\n    x = rng.normal(size=(SEQ, D_MODEL))\n    p = {name: rng.normal(scale=0.2, size=(D_MODEL, D_MODEL)) for name in (\"wq\", \"wk\", \"wv\", \"wo\")}\n    p.update(g1=np.ones(D_MODEL), b1=np.zeros(D_MODEL), g2=np.ones(D_MODEL), b2=np.zeros(D_MODEL),\n             w1=rng.normal(scale=0.2, size=(D_MODEL, D_FF)), c1=np.zeros(D_FF),\n             w2=rng.normal(scale=0.2, size=(D_FF, D_MODEL)), c2=np.zeros(D_MODEL))\n\n    q = rng.normal(size=(10000, 64))\n    k = rng.normal(size=(10000, 64))\n    dots = (q * k).sum(-1)\n    print(f\"Variance of q.k with d_k=64: {dots.var():.1f}; after dividing by sqrt(64): {(dots / 8).var():.2f}\")\n\n    out, weights = multi_head(x, p[\"wq\"], p[\"wk\"], p[\"wv\"], p[\"wo\"])\n    print(f\"Multi-head output {out.shape}, weights {weights.shape}, rows sum to 1: {np.allclose(weights.sum(-1), 1)}\")\n    _, causal = multi_head(x, p[\"wq\"], p[\"wk\"], p[\"wv\"], p[\"wo\"], mask=causal_mask(SEQ))\n    print(f\"Causal weights above the diagonal: {causal[:, np.triu_indices(SEQ, 1)[0], np.triu_indices(SEQ, 1)[1]].sum():.1f}\")\n    print(\"Head 0's causal weights for the third token:\", np.round(causal[0, 2], 3))\n\n    mha = torch.nn.MultiheadAttention(D_MODEL, HEADS, bias=False, batch_first=True)\n    with torch.no_grad():\n        mha.in_proj_weight.copy_(torch.tensor(np.concatenate([p[\"wq\"], p[\"wk\"], p[\"wv\"]], axis=1).T))\n        mha.out_proj.weight.copy_(torch.tensor(p[\"wo\"].T))\n    xt = torch.tensor(x[None], dtype=torch.float32)\n    torch_out, _ = mha(xt, xt, xt, need_weights=False)\n    diff = np.abs(torch_out[0].detach().numpy() - out).max()\n    print(f\"Matches torch.nn.MultiheadAttention: {diff < 1e-5}\")\n\n    y = block(x, p, mask=causal_mask(SEQ))\n    x2 = x.copy()\n    x2[-1] += 1.0  # change only the last token\n    y2 = block(x2, p, mask=causal_mask(SEQ))\n    print(f\"Block output {y.shape}; changing the last token changes earlier outputs by {np.abs(y2[:-1] - y[:-1]).max():.1f}\")\n\n    layer = torch.nn.TransformerEncoderLayer(D_MODEL, HEADS, dim_feedforward=D_FF, batch_first=True)\n    ours = 4 * D_MODEL * D_MODEL + 4 * D_MODEL + D_MODEL * D_FF + D_FF + D_FF * D_MODEL + D_MODEL + 4 * D_MODEL\n    print(f\"Parameters in one block with biases: ours {ours}, PyTorch {sum(t.numel() for t in layer.parameters())}\")\n\n    pe = positional_encoding(64, D_MODEL)\n    print(f\"PE[1, 0] = {pe[1, 0]:.4f} (sin 1); PE[10] . PE[13] = {pe[10] @ pe[13]:.4f}, PE[40] . PE[43] = {pe[40] @ pe[43]:.4f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "np.where(mask, scores, -np.inf) keeps allowed scores; the softmax then gives exactly 0 to masked ones.",
+     "PyTorch's in_proj_weight stacks W_Q, W_K and W_V as rows and applies x @ W.T, which is why main() transposes them.",
+     "Use x.var(-1, keepdims=True), the population variance, as PyTorch's LayerNorm does."
+    ]
+   }
+  },
+  {
+   "title": "LLMs and masked LMs",
+   "summary": "Compare the objectives that pretrain language models, causal language modelling for GPT-style decoders and masked or denoising objectives for BERT, T5 and BART, then follow a model from pretraining through fine-tuning and preference alignment, and see what scaling laws say.",
+   "instructor": "aleksei-volkovi",
+   "lessons": [
+    {
+     "title": "Causal language modelling",
+     "minutes": 12,
+     "objectives": [
+      "State the causal language modelling objective and how it's trained in parallel",
+      "Relate cross-entropy loss to perplexity"
+     ],
+     "key_points": [
+      "A causal language model learns to predict each token from the ones before it, maximising Σ log P(x_t | x_<t); its loss is the average cross-entropy over every position of every training sequence.",
+      "Teacher forcing with a causal mask computes the predictions for every position in one forward pass: the targets are simply the inputs shifted left by one.",
+      "Perplexity is the exponential of the average cross-entropy in nats: a loss of 2.07 means the model is, on average, as uncertain as a uniform choice among about 7.9 options, and a uniform guess over a vocabulary of V tokens has loss ln V.",
+      "Every token is a training example, so raw text supplies huge amounts of supervision; at scale such models also pick up patterns from their prompt, the in-context learning described in the GPT-3 paper (Brown and colleagues, 2020).",
+      "In the lab, a character-level transformer with 112,706 parameters, trained for 400 steps on 24,000 characters of Alice's Adventures in Wonderland, reaches a validation loss of about 2.07, below the add-one bigram baseline's 2.48."
+     ]
+    },
+    {
+     "title": "Masked and denoising objectives",
+     "minutes": 12,
+     "objectives": [
+      "Explain BERT's masked language modelling recipe",
+      "Compare it with the span-corruption and denoising objectives of T5 and BART"
+     ],
+     "key_points": [
+      "Masked language modelling chooses 15% of the input tokens and trains the model to recover them using context from both sides; only the chosen positions count in the loss, and Hugging Face labels the rest -100.",
+      "Of the chosen tokens, 80% become [MASK], 10% a random token and 10% stay unchanged, so the model can't rely on seeing [MASK], which never appears in real input.",
+      "BERT also trained on next-sentence prediction, which RoBERTa (2019) dropped after finding it didn't help, while training longer on more data with masks chosen afresh each time.",
+      "T5 replaces random spans of the input with sentinel tokens and trains the decoder to write out the missing spans; BART corrupts text with noise such as span masking and sentence shuffling and learns to reconstruct the original.",
+      "Masked models give strong bidirectional representations for understanding tasks but don't generate text naturally; denoising encoder-decoders do both, which is why BART and T5 are popular for summarisation."
+     ]
+    },
+    {
+     "title": "From pretraining to fine-tuning and alignment",
+     "minutes": 14,
+     "objectives": [
+      "Describe fine-tuning, instruction tuning and preference alignment",
+      "Compute the DPO loss for a preference pair"
+     ],
+     "key_points": [
+      "Pretraining learns general language from unlabelled text; fine-tuning continues training on a smaller labelled dataset for one task, updating all the weights or, with parameter-efficient methods such as LoRA, a small number of added ones.",
+      "Instruction tuning, or supervised fine-tuning (SFT), trains on prompt and response pairs, usually with the loss on the response tokens only, so a pretrained model learns to follow instructions and answer helpfully.",
+      "RLHF, reinforcement learning from human feedback, trains a reward model on human comparisons of responses, then optimises the language model for that reward with an algorithm such as PPO, with a KL penalty that keeps it close to the SFT model.",
+      "Direct preference optimisation (DPO; Rafailov and colleagues, 2023) needs no reward model: for a preferred response y_w and a rejected one y_l it minimises -log σ(β[(log π(y_w) - log π_ref(y_w)) - (log π(y_l) - log π_ref(y_l))]).",
+      "When the policy equals the reference the DPO loss is ln 2 ≈ 0.6931; in the lab, a policy that has raised the preferred response's log probability by 1 and lowered the rejected one's by 1 has, with β = 0.1, a loss of 0.5981.",
+      "Alignment shapes behaviour but doesn't add knowledge, and preference data carries the values and blind spots of whoever labelled it; Fine-Tuning Open Language Models with LoRA covers parameter-efficient training in depth."
+     ]
+    },
+    {
+     "title": "Scaling laws, in outline",
+     "minutes": 12,
+     "objectives": [
+      "Describe how loss scales with parameters, data and compute",
+      "Estimate training compute and a compute-optimal amount of data"
+     ],
+     "key_points": [
+      "Scaling laws are empirical: for transformer language models, test loss falls roughly as a power law in the number of parameters, the amount of training data and the compute used, over many orders of magnitude (Kaplan and colleagues, 2020).",
+      "Training a dense transformer takes about 6ND floating-point operations for N parameters and D training tokens: roughly 2N per token for the forward pass and 4N for the backward pass.",
+      "The Chinchilla paper (Hoffmann and colleagues, 2022) found that for a fixed compute budget, parameters and tokens should grow in roughly equal proportion, about 20 tokens per parameter: some 20 billion tokens and 1.2 × 10²⁰ FLOPs for a 1-billion-parameter model.",
+      "Many recent models are trained on far more tokens than that, because a smaller model trained for longer is cheaper to run once deployed, so inference cost shapes the choice as well as training cost.",
+      "Scaling laws predict loss, not particular abilities; fitted exponents depend on the data and the architecture, and extrapolating far beyond the measured range is risky."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Pretraining objectives in code",
+    "tool": "Python 3 and PyTorch",
+    "minutes": 75,
+    "goal": "Train a tiny character-level GPT with the causal language modelling loss and compare it with n-gram baselines, implement BERT's masking recipe, compute the DPO loss, and work through scaling-law arithmetic.",
+    "setup": [
+     "Python 3.10 or later with PyTorch (the CPU version is enough)",
+     "The starter files objectives.py and alice_excerpt.txt (the opening of Alice's Adventures in Wonderland, which is in the public domain), in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read TinyGPT: token and learned position embeddings, two pre-LN blocks and a linear head. Write the causal mask in forward() (TODO 1) and causal_lm_loss() (TODO 2)."
+     },
+     {
+      "do": "Run it; training takes a minute or two on a laptop CPU, and the script stops at TODO 3 for now.",
+      "code": "python objectives.py",
+      "lang": "bash",
+      "see": "23912 characters, vocabulary 66; uniform guess: loss ln(66) = 4.190; baselines: unigram loss 3.113, add-one bigram loss 2.478; Parameters: 112706; the validation loss falls from about 4.4 at step 0 to about 2.07 at step 400."
+     },
+     {
+      "do": "Read the sample the model writes, at temperature 0.8.",
+      "see": "Alice-like nonsense with real words and punctuation: a model of 112,706 parameters has learned spelling and some word order, not meaning. The exact text can differ between PyTorch versions."
+     },
+     {
+      "do": "Write mask_tokens() (TODO 3) and dpo_loss() (TODO 4), and run it again.",
+      "see": "MLM: 1491 of 10000 positions chosen (14.9%): 1202 [MASK], 142 random, 147 unchanged; DPO loss: 0.5981; with the policy equal to the reference: 0.6931 (ln 2)"
+     },
+     {
+      "do": "Read the scaling arithmetic.",
+      "see": "1e+09 parameters -> 2e+10 tokens, about 1.2e+20 training FLOPs (6ND), and about 5.5e+11 FLOPs for this lab's model."
+     },
+     {
+      "do": "Double D_MODEL to 128 (four times the parameters) and rerun. Write two or three sentences starting Scale: on what changed in the validation loss and the training time, and how it relates to scaling laws."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The data and baselines are set up.",
+      "look_for": [
+       "vocabulary 66",
+       "add-one bigram loss 2.478"
+      ]
+     },
+     {
+      "text": "The tiny GPT has the expected size and is trained with the causal LM loss.",
+      "look_for": [
+       "Parameters: 112706",
+       "step 400: validation loss"
+      ]
+     },
+     {
+      "text": "BERT-style masking follows the 80/10/10 recipe.",
+      "look_for": [
+       "1491 of 10000 positions chosen",
+       "1202 [MASK]"
+      ]
+     },
+     {
+      "text": "The DPO loss is computed correctly.",
+      "look_for": [
+       "DPO loss: 0.5981",
+       "0.6931 (ln 2)"
+      ]
+     },
+     {
+      "text": "The scaling arithmetic is right.",
+      "look_for": [
+       "1.2e+20 training FLOPs"
+      ]
+     },
+     {
+      "text": "The larger model is compared and related to scaling laws.",
+      "look_for": [
+       "Scale:"
+      ]
+     }
+    ],
+    "submit": "Paste your forward(), causal_lm_loss(), mask_tokens() and dpo_loss(), everything the script printed, your results with D_MODEL = 128, and your Scale: answer.",
+    "files": [
+     {
+      "path": "objectives.py",
+      "content": "\"\"\"Pretraining objectives in code: a tiny character-level GPT, BERT-style masking, the DPO loss and scaling\narithmetic. CPU only; training takes a minute or two.\"\"\"\n\nimport math\nfrom collections import Counter\n\nimport torch\nfrom torch import nn\n\nCONTEXT, D_MODEL, HEADS, LAYERS, STEPS, BATCH = 64, 64, 4, 2, 400, 32\n\n\nclass TinyGPT(nn.Module):\n    \"\"\"Token and learned position embeddings, pre-LN transformer blocks with a causal mask, and a linear head.\"\"\"\n\n    def __init__(self, vocab):\n        super().__init__()\n        self.tok = nn.Embedding(vocab, D_MODEL)\n        self.pos = nn.Embedding(CONTEXT, D_MODEL)\n        layer = nn.TransformerEncoderLayer(D_MODEL, HEADS, 4 * D_MODEL, dropout=0.0, batch_first=True, norm_first=True)\n        self.blocks = nn.TransformerEncoder(layer, LAYERS, enable_nested_tensor=False)\n        self.norm = nn.LayerNorm(D_MODEL)\n        self.head = nn.Linear(D_MODEL, vocab)\n\n    def forward(self, idx):\n        t = idx.shape[1]\n        x = self.tok(idx) + self.pos(torch.arange(t))\n        # TODO 1: make a causal mask with nn.Transformer.generate_square_subsequent_mask(t) and pass it to\n        #         self.blocks(x, mask=mask, is_causal=True); then apply self.norm and self.head\n        raise NotImplementedError(\"forward\")\n\n\ndef batch(data, gen):\n    starts = torch.randint(len(data) - CONTEXT - 1, (BATCH,), generator=gen)\n    x = torch.stack([data[s:s + CONTEXT] for s in starts])\n    y = torch.stack([data[s + 1:s + CONTEXT + 1] for s in starts])  # the same text shifted by one: next characters\n    return x, y\n\n\ndef causal_lm_loss(model, x, y):\n    # TODO 2: the mean cross-entropy of model(x) against y over every position:\n    #         flatten the logits to (batch * time, vocab) and y to (batch * time,)\n    raise NotImplementedError(\"causal_lm_loss\")\n\n\ndef mask_tokens(ids, vocab_size, mask_id, gen, p=0.15):\n    \"\"\"BERT's recipe: choose 15% of positions; of those, 80% become [MASK], 10% a random token, 10% stay.\"\"\"\n    # TODO 3: chosen = torch.rand(ids.shape, generator=gen) < p; labels are ids with -100 where not chosen;\n    #         r = torch.rand(ids.shape, generator=gen); among chosen positions, r < 0.8 -> mask_id,\n    #         0.8 <= r < 0.9 -> torch.randint(vocab_size, ids.shape, generator=gen) at those positions, else unchanged.\n    #         Draw the random numbers in exactly this order. Return (inputs, labels, chosen, r).\n    raise NotImplementedError(\"mask_tokens\")\n\n\ndef dpo_loss(policy_chosen, policy_rejected, ref_chosen, ref_rejected, beta=0.1):\n    \"\"\"-log sigmoid(beta * ((log pi(y_w) - log ref(y_w)) - (log pi(y_l) - log ref(y_l))))\"\"\"\n    # TODO 4: the margin beta * ((log-ratio of the chosen response) - (log-ratio of the rejected one)),\n    #         then -logsigmoid(margin)\n    raise NotImplementedError(\"dpo_loss\")\n\n\ndef main():\n    text = open(\"alice_excerpt.txt\", encoding=\"utf-8\").read()\n    chars = sorted(set(text))\n    stoi = {c: i for i, c in enumerate(chars)}\n    data = torch.tensor([stoi[c] for c in text])\n    cut = int(0.9 * len(data))\n    train, val = data[:cut], data[cut:]\n    print(f\"{len(text)} characters, vocabulary {len(chars)}; uniform guess: loss ln({len(chars)}) = {math.log(len(chars)):.3f}\")\n\n    counts = Counter(train.tolist())\n    unigram = -sum(math.log(counts[c] / len(train)) for c in val.tolist() if counts[c]) / len(val)\n    pairs = Counter(zip(train.tolist(), train[1:].tolist()))\n    v = len(chars)\n    bigram = -sum(math.log((pairs[(a, b)] + 1) / (counts[a] + v)) for a, b in zip(val.tolist(), val[1:].tolist())) / (len(val) - 1)\n    print(f\"Baselines on validation: unigram loss {unigram:.3f}, add-one bigram loss {bigram:.3f}\")\n\n    torch.manual_seed(0)\n    model = TinyGPT(len(chars))\n    print(f\"Parameters: {sum(p.numel() for p in model.parameters())}\")\n    gen = torch.Generator().manual_seed(0)\n    optimiser = torch.optim.AdamW(model.parameters(), lr=3e-3)\n    for step in range(STEPS + 1):\n        if step % 100 == 0:\n            model.eval()\n            with torch.no_grad():\n                g = torch.Generator().manual_seed(1)  # the same validation batches every time\n                losses = [causal_lm_loss(model, *batch(val, g)).item() for _ in range(10)]\n            model.train()\n            loss = sum(losses) / len(losses)\n            print(f\"step {step}: validation loss {loss:.3f}, perplexity {math.exp(loss):.1f}\")\n        if step < STEPS:\n            x, y = batch(train, gen)\n            loss = causal_lm_loss(model, x, y)\n            optimiser.zero_grad()\n            loss.backward()\n            optimiser.step()\n\n    model.eval()\n    idx = torch.tensor([[stoi[c] for c in \"Alice \"]])\n    sample_gen = torch.Generator().manual_seed(0)\n    with torch.no_grad():\n        for _ in range(80):\n            probs = torch.softmax(model(idx[:, -CONTEXT:])[0, -1] / 0.8, dim=-1)  # temperature 0.8\n            idx = torch.cat([idx, torch.multinomial(probs, 1, generator=sample_gen)[None]], dim=1)\n    print(\"Sample:\", \"\".join(chars[i] for i in idx[0].tolist()).replace(\"\\n\", \" \"))\n\n    ids = torch.randint(1000, (10000,), generator=torch.Generator().manual_seed(0))\n    inputs, labels, chosen, r = mask_tokens(ids, 1000, mask_id=1000, gen=torch.Generator().manual_seed(0))\n    n = int(chosen.sum())\n    print(f\"MLM: {n} of 10000 positions chosen ({n / 100:.1f}%): {int((chosen & (r < 0.8)).sum())} [MASK], \"\n          f\"{int((chosen & (r >= 0.8) & (r < 0.9)).sum())} random, {int((chosen & (r >= 0.9)).sum())} unchanged; \"\n          f\"{int((labels != -100).sum())} labels kept\")\n\n    loss = dpo_loss(torch.tensor(-12.0), torch.tensor(-15.0), torch.tensor(-13.0), torch.tensor(-14.0))\n    same = dpo_loss(torch.tensor(-13.0), torch.tensor(-14.0), torch.tensor(-13.0), torch.tensor(-14.0))\n    print(f\"DPO loss: {loss.item():.4f}; with the policy equal to the reference: {same.item():.4f} (ln 2)\")\n\n    n_params = 1e9\n    tokens = 20 * n_params\n    print(f\"Compute-optimal rule of thumb: {n_params:.0e} parameters -> {tokens:.0e} tokens, \"\n          f\"about {6 * n_params * tokens:.1e} training FLOPs (6ND)\")\n    ours = sum(p.numel() for p in model.parameters())\n    print(f\"This lab: {ours} parameters x {STEPS * BATCH * CONTEXT} tokens -> {6 * ours * STEPS * BATCH * CONTEXT:.1e} FLOPs\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "alice_excerpt.txt",
+      "content": "CHAPTER I. Down the Rabbit-Hole\n\nAlice was beginning to get very tired of sitting by her sister on the bank, and of having nothing to do: once or twice she had peeped into the book her sister was reading, but it had no pictures or conversations in it, 'and what is the use of a book,' thought Alice 'without pictures or conversation?'\n\nSo she was considering in her own mind (as well as she could, for the hot day made her feel very sleepy and stupid), whether the pleasure of making a daisy-chain would be worth the trouble of getting up and picking the daisies, when suddenly a White Rabbit with pink eyes ran close by her.\n\nThere was nothing so VERY remarkable in that; nor did Alice think it so VERY much out of the way to hear the Rabbit say to itself, 'Oh dear! Oh dear! I shall be late!' (when she thought it over afterwards, it occurred to her that she ought to have wondered at this, but at the time it all seemed quite natural); but when the Rabbit actually TOOK A WATCH OUT OF ITS WAISTCOAT-POCKET, and looked at it, and then hurried on, Alice started to her feet, for it flashed across her mind that she had never before seen a rabbit with either a waistcoat-pocket, or a watch to take out of it, and burning with curiosity, she ran across the field after it, and fortunately was just in time to see it pop down a large rabbit-hole under the hedge.\n\nIn another moment down went Alice after it, never once considering how in the world she was to get out again.\n\nThe rabbit-hole went straight on like a tunnel for some way, and then dipped suddenly down, so suddenly that Alice had not a moment to think about stopping herself before she found herself falling down a very deep well.\n\nEither the well was very deep, or she fell very slowly, for she had plenty of time as she went down to look about her and to wonder what was going to happen next. First, she tried to look down and make out what she was coming to, but it was too dark to see anything; then she looked at the sides of the well, and noticed that they were filled with cupboards and book-shelves; here and there she saw maps and pictures hung upon pegs. She took down a jar from one of the shelves as she passed; it was labelled 'ORANGE MARMALADE', but to her great disappointment it was empty: she did not like to drop the jar for fear of killing somebody, so managed to put it into one of the cupboards as she fell past it.\n\n'Well!' thought Alice to herself, 'after such a fall as this, I shall think nothing of tumbling down stairs! How brave they'll all think me at home! Why, I wouldn't say anything about it, even if I fell off the top of the house!' (Which was very likely true.)\n\nDown, down, down. Would the fall NEVER come to an end! 'I wonder how many miles I've fallen by this time?' she said aloud. 'I must be getting somewhere near the centre of the earth. Let me see: that would be four thousand miles down, I think--' (for, you see, Alice had learnt several things of this sort in her lessons in the schoolroom, and though this was not a VERY good opportunity for showing off her knowledge, as there was no one to listen to her, still it was good practice to say it over) '--yes, that's about the right distance--but then I wonder what Latitude or Longitude I've got to?' (Alice had no idea what Latitude was, or Longitude either, but thought they were nice grand words to say.)\n\nPresently she began again. 'I wonder if I shall fall right THROUGH the earth! How funny it'll seem to come out among the people that walk with their heads downward! The Antipathies, I think--' (she was rather glad there WAS no one listening, this time, as it didn't sound at all the right word) '--but I shall have to ask them what the name of the country is, you know. Please, Ma'am, is this New Zealand or Australia?' (and she tried to curtsey as she spoke--fancy CURTSEYING as you're falling through the air! Do you think you could manage it?) 'And what an ignorant little girl she'll think me for asking! No, it'll never do to ask: perhaps I shall see it written up somewhere.'\n\nDown, down, down. There was nothing else to do, so Alice soon began talking again. 'Dinah'll miss me very much to-night, I should think!' (Dinah was the cat.) 'I hope they'll remember her saucer of milk at tea-time. Dinah my dear! I wish you were down here with me! There are no mice in the air, I'm afraid, but you might catch a bat, and that's very like a mouse, you know. But do cats eat bats, I wonder?' And here Alice began to get rather sleepy, and went on saying to herself, in a dreamy sort of way, 'Do cats eat bats? Do cats eat bats?' and sometimes, 'Do bats eat cats?' for, you see, as she couldn't answer either question, it didn't much matter which way she put it. She felt that she was dozing off, and had just begun to dream that she was walking hand in hand with Dinah, and saying to her very earnestly, 'Now, Dinah, tell me the truth: did you ever eat a bat?' when suddenly, thump! thump! down she came upon a heap of sticks and dry leaves, and the fall was over.\n\nAlice was not a bit hurt, and she jumped up on to her feet in a moment: she looked up, but it was all dark overhead; before her was another long passage, and the White Rabbit was still in sight, hurrying down it. There was not a moment to be lost: away went Alice like the wind, and was just in time to hear it say, as it turned a corner, 'Oh my ears and whiskers, how late it's getting!' She was close behind it when she turned the corner, but the Rabbit was no longer to be seen: she found herself in a long, low hall, which was lit up by a row of lamps hanging from the roof.\n\nThere were doors all round the hall, but they were all locked; and when Alice had been all the way down one side and up the other, trying every door, she walked sadly down the middle, wondering how she was ever to get out again.\n\nSuddenly she came upon a little three-legged table, all made of solid glass; there was nothing on it except a tiny golden key, and Alice's first thought was that it might belong to one of the doors of the hall; but, alas! either the locks were too large, or the key was too small, but at any rate it would not open any of them. However, on the second time round, she came upon a low curtain she had not noticed before, and behind it was a little door about fifteen inches high: she tried the little golden key in the lock, and to her great delight it fitted!\n\nAlice opened the door and found that it led into a small passage, not much larger than a rat-hole: she knelt down and looked along the passage into the loveliest garden you ever saw. How she longed to get out of that dark hall, and wander about among those beds of bright flowers and those cool fountains, but she could not even get her head through the doorway; 'and even if my head would go through,' thought poor Alice, 'it would be of very little use without my shoulders. Oh, how I wish I could shut up like a telescope! I think I could, if I only know how to begin.' For, you see, so many out-of-the-way things had happened lately, that Alice had begun to think that very few things indeed were really impossible.\n\nThere seemed to be no use in waiting by the little door, so she went back to the table, half hoping she might find another key on it, or at any rate a book of rules for shutting people up like telescopes: this time she found a little bottle on it, ('which certainly was not here before,' said Alice,) and round the neck of the bottle was a paper label, with the words 'DRINK ME' beautifully printed on it in large letters.\n\nIt was all very well to say 'Drink me,' but the wise little Alice was not going to do THAT in a hurry. 'No, I'll look first,' she said, 'and see whether it's marked \"poison\" or not'; for she had read several nice little histories about children who had got burnt, and eaten up by wild beasts and other unpleasant things, all because they WOULD not remember the simple rules their friends had taught them: such as, that a red-hot poker will burn you if you hold it too long; and that if you cut your finger VERY deeply with a knife, it usually bleeds; and she had never forgotten that, if you drink much from a bottle marked 'poison,' it is almost certain to disagree with you, sooner or later.\n\nHowever, this bottle was NOT marked 'poison,' so Alice ventured to taste it, and finding it very nice, (it had, in fact, a sort of mixed flavour of cherry-tart, custard, pine-apple, roast turkey, toffee, and hot buttered toast,) she very soon finished it off.\n\n* * * * * * *\n\n* * * * * *\n\n* * * * * * *\n\n'What a curious feeling!' said Alice; 'I must be shutting up like a telescope.'\n\nAnd so it was indeed: she was now only ten inches high, and her face brightened up at the thought that she was now the right size for going through the little door into that lovely garden. First, however, she waited for a few minutes to see if she was going to shrink any further: she felt a little nervous about this; 'for it might end, you know,' said Alice to herself, 'in my going out altogether, like a candle. I wonder what I should be like then?' And she tried to fancy what the flame of a candle is like after the candle is blown out, for she could not remember ever having seen such a thing.\n\nAfter a while, finding that nothing more happened, she decided on going into the garden at once; but, alas for poor Alice! when she got to the door, she found she had forgotten the little golden key, and when she went back to the table for it, she found she could not possibly reach it: she could see it quite plainly through the glass, and she tried her best to climb up one of the legs of the table, but it was too slippery; and when she had tired herself out with trying, the poor little thing sat down and cried.\n\n'Come, there's no use in crying like that!' said Alice to herself, rather sharply; 'I advise you to leave off this minute!' She generally gave herself very good advice, (though she very seldom followed it), and sometimes she scolded herself so severely as to bring tears into her eyes; and once she remembered trying to box her own ears for having cheated herself in a game of croquet she was playing against herself, for this curious child was very fond of pretending to be two people. 'But it's no use now,' thought poor Alice, 'to pretend to be two people! Why, there's hardly enough of me left to make ONE respectable person!'\n\nSoon her eye fell on a little glass box that was lying under the table: she opened it, and found in it a very small cake, on which the words 'EAT ME' were beautifully marked in currants. 'Well, I'll eat it,' said Alice, 'and if it makes me grow larger, I can reach the key; and if it makes me grow smaller, I can creep under the door; so either way I'll get into the garden, and I don't care which happens!'\n\nShe ate a little bit, and said anxiously to herself, 'Which way? Which way?', holding her hand on the top of her head to feel which way it was growing, and she was quite surprised to find that she remained the same size: to be sure, this generally happens when one eats cake, but Alice had got so much into the way of expecting nothing but out-of-the-way things to happen, that it seemed quite dull and stupid for life to go on in the common way.\n\nSo she set to work, and very soon finished off the cake.\n\n* * * * * * *\n\n* * * * * *\n\n* * * * * * *\n\n\n\nCHAPTER II. The Pool of Tears\n\n'Curiouser and curiouser!' cried Alice (she was so much surprised, that for the moment she quite forgot how to speak good English); 'now I'm opening out like the largest telescope that ever was! Good-bye, feet!' (for when she looked down at her feet, they seemed to be almost out of sight, they were getting so far off). 'Oh, my poor little feet, I wonder who will put on your shoes and stockings for you now, dears? I'm sure _I_ shan't be able! I shall be a great deal too far off to trouble myself about you: you must manage the best way you can;--but I must be kind to them,' thought Alice, 'or perhaps they won't walk the way I want to go! Let me see: I'll give them a new pair of boots every Christmas.'\n\nAnd she went on planning to herself how she would manage it. 'They must go by the carrier,' she thought; 'and how funny it'll seem, sending presents to one's own feet! And how odd the directions will look!\n\nALICE'S RIGHT FOOT, ESQ. HEARTHRUG, NEAR THE FENDER, (WITH ALICE'S LOVE).\n\nOh dear, what nonsense I'm talking!'\n\nJust then her head struck against the roof of the hall: in fact she was now more than nine feet high, and she at once took up the little golden key and hurried off to the garden door.\n\nPoor Alice! It was as much as she could do, lying down on one side, to look through into the garden with one eye; but to get through was more hopeless than ever: she sat down and began to cry again.\n\n'You ought to be ashamed of yourself,' said Alice, 'a great girl like you,' (she might well say this), 'to go on crying in this way! Stop this moment, I tell you!' But she went on all the same, shedding gallons of tears, until there was a large pool all round her, about four inches deep and reaching half down the hall.\n\nAfter a time she heard a little pattering of feet in the distance, and she hastily dried her eyes to see what was coming. It was the White Rabbit returning, splendidly dressed, with a pair of white kid gloves in one hand and a large fan in the other: he came trotting along in a great hurry, muttering to himself as he came, 'Oh! the Duchess, the Duchess! Oh! won't she be savage if I've kept her waiting!' Alice felt so desperate that she was ready to ask help of any one; so, when the Rabbit came near her, she began, in a low, timid voice, 'If you please, sir--' The Rabbit started violently, dropped the white kid gloves and the fan, and skurried away into the darkness as hard as he could go.\n\nAlice took up the fan and gloves, and, as the hall was very hot, she kept fanning herself all the time she went on talking: 'Dear, dear! How queer everything is to-day! And yesterday things went on just as usual. I wonder if I've been changed in the night? Let me think: was I the same when I got up this morning? I almost think I can remember feeling a little different. But if I'm not the same, the next question is, Who in the world am I? Ah, THAT'S the great puzzle!' And she began thinking over all the children she knew that were of the same age as herself, to see if she could have been changed for any of them.\n\n'I'm sure I'm not Ada,' she said, 'for her hair goes in such long ringlets, and mine doesn't go in ringlets at all; and I'm sure I can't be Mabel, for I know all sorts of things, and she, oh! she knows such a very little! Besides, SHE'S she, and I'm I, and--oh dear, how puzzling it all is! I'll try if I know all the things I used to know. Let me see: four times five is twelve, and four times six is thirteen, and four times seven is--oh dear! I shall never get to twenty at that rate! However, the Multiplication Table doesn't signify: let's try Geography. London is the capital of Paris, and Paris is the capital of Rome, and Rome--no, THAT'S all wrong, I'm certain! I must have been changed for Mabel! I'll try and say \"How doth the little--\"' and she crossed her hands on her lap as if she were saying lessons, and began to repeat it, but her voice sounded hoarse and strange, and the words did not come the same as they used to do:--\n\n'How doth the little crocodile Improve his shining tail, And pour the waters of the Nile On every golden scale!\n\n'How cheerfully he seems to grin, How neatly spread his claws, And welcome little fishes in With gently smiling jaws!'\n\n'I'm sure those are not the right words,' said poor Alice, and her eyes filled with tears again as she went on, 'I must be Mabel after all, and I shall have to go and live in that poky little house, and have next to no toys to play with, and oh! ever so many lessons to learn! No, I've made up my mind about it; if I'm Mabel, I'll stay down here! It'll be no use their putting their heads down and saying \"Come up again, dear!\" I shall only look up and say \"Who am I then? Tell me that first, and then, if I like being that person, I'll come up: if not, I'll stay down here till I'm somebody else\"--but, oh dear!' cried Alice, with a sudden burst of tears, 'I do wish they WOULD put their heads down! I am so VERY tired of being all alone here!'\n\nAs she said this she looked down at her hands, and was surprised to see that she had put on one of the Rabbit's little white kid gloves while she was talking. 'How CAN I have done that?' she thought. 'I must be growing small again.' She got up and went to the table to measure herself by it, and found that, as nearly as she could guess, she was now about two feet high, and was going on shrinking rapidly: she soon found out that the cause of this was the fan she was holding, and she dropped it hastily, just in time to avoid shrinking away altogether.\n\n'That WAS a narrow escape!' said Alice, a good deal frightened at the sudden change, but very glad to find herself still in existence; 'and now for the garden!' and she ran with all speed back to the little door: but, alas! the little door was shut again, and the little golden key was lying on the glass table as before, 'and things are worse than ever,' thought the poor child, 'for I never was so small as this before, never! And I declare it's too bad, that it is!'\n\nAs she said these words her foot slipped, and in another moment, splash! she was up to her chin in salt water. Her first idea was that she had somehow fallen into the sea, 'and in that case I can go back by railway,' she said to herself. (Alice had been to the seaside once in her life, and had come to the general conclusion, that wherever you go to on the English coast you find a number of bathing machines in the sea, some children digging in the sand with wooden spades, then a row of lodging houses, and behind them a railway station.) However, she soon made out that she was in the pool of tears which she had wept when she was nine feet high.\n\n'I wish I hadn't cried so much!' said Alice, as she swam about, trying to find her way out. 'I shall be punished for it now, I suppose, by being drowned in my own tears! That WILL be a queer thing, to be sure! However, everything is queer to-day.'\n\nJust then she heard something splashing about in the pool a little way off, and she swam nearer to make out what it was: at first she thought it must be a walrus or hippopotamus, but then she remembered how small she was now, and she soon made out that it was only a mouse that had slipped in like herself.\n\n'Would it be of any use, now,' thought Alice, 'to speak to this mouse? Everything is so out-of-the-way down here, that I should think very likely it can talk: at any rate, there's no harm in trying.' So she began: 'O Mouse, do you know the way out of this pool? I am very tired of swimming about here, O Mouse!' (Alice thought this must be the right way of speaking to a mouse: she had never done such a thing before, but she remembered having seen in her brother's Latin Grammar, 'A mouse--of a mouse--to a mouse--a mouse--O mouse!') The Mouse looked at her rather inquisitively, and seemed to her to wink with one of its little eyes, but it said nothing.\n\n'Perhaps it doesn't understand English,' thought Alice; 'I daresay it's a French mouse, come over with William the Conqueror.' (For, with all her knowledge of history, Alice had no very clear notion how long ago anything had happened.) So she began again: 'Ou est ma chatte?' which was the first sentence in her French lesson-book. The Mouse gave a sudden leap out of the water, and seemed to quiver all over with fright. 'Oh, I beg your pardon!' cried Alice hastily, afraid that she had hurt the poor animal's feelings. 'I quite forgot you didn't like cats.'\n\n'Not like cats!' cried the Mouse, in a shrill, passionate voice. 'Would YOU like cats if you were me?'\n\n'Well, perhaps not,' said Alice in a soothing tone: 'don't be angry about it. And yet I wish I could show you our cat Dinah: I think you'd take a fancy to cats if you could only see her. She is such a dear quiet thing,' Alice went on, half to herself, as she swam lazily about in the pool, 'and she sits purring so nicely by the fire, licking her paws and washing her face--and she is such a nice soft thing to nurse--and she's such a capital one for catching mice--oh, I beg your pardon!' cried Alice again, for this time the Mouse was bristling all over, and she felt certain it must be really offended. 'We won't talk about her any more if you'd rather not.'\n\n'We indeed!' cried the Mouse, who was trembling down to the end of his tail. 'As if I would talk on such a subject! Our family always HATED cats: nasty, low, vulgar things! Don't let me hear the name again!'\n\n'I won't indeed!' said Alice, in a great hurry to change the subject of conversation. 'Are you--are you fond--of--of dogs?' The Mouse did not answer, so Alice went on eagerly: 'There is such a nice little dog near our house I should like to show you! A little bright-eyed terrier, you know, with oh, such long curly brown hair! And it'll fetch things when you throw them, and it'll sit up and beg for its dinner, and all sorts of things--I can't remember half of them--and it belongs to a farmer, you know, and he says it's so useful, it's worth a hundred pounds! He says it kills all the rats and--oh dear!' cried Alice in a sorrowful tone, 'I'm afraid I've offended it again!' For the Mouse was swimming away from her as hard as it could go, and making quite a commotion in the pool as it went.\n\nSo she called softly after it, 'Mouse dear! Do come back again, and we won't talk about cats or dogs either, if you don't like them!' When the Mouse heard this, it turned round and swam slowly back to her: its face was quite pale (with passion, Alice thought), and it said in a low trembling voice, 'Let us get to the shore, and then I'll tell you my history, and you'll understand why it is I hate cats and dogs.'\n\nIt was high time to go, for the pool was getting quite crowded with the birds and animals that had fallen into it: there were a Duck and a Dodo, a Lory and an Eaglet, and several other curious creatures. Alice led the way, and the whole party swam to the shore.\n\n\n\nCHAPTER III. A Caucus-Race and a Long Tale\n\nThey were indeed a queer-looking party that assembled on the bank--the birds with draggled feathers, the animals with their fur clinging close to them, and all dripping wet, cross, and uncomfortable.\n\nThe first question of course was, how to get dry again: they had a consultation about this, and after a few minutes it seemed quite natural to Alice to find herself talking familiarly with them, as if she had known them all her life. Indeed, she had quite a long argument with the Lory, who at last turned sulky, and would only say, 'I am older than you, and must know better'; and this Alice would not allow without knowing how old it was, and, as the Lory positively refused to tell its age, there was no more to be said.\n\nAt last the Mouse, who seemed to be a person of authority among them, called out, 'Sit down, all of you, and listen to me! I'LL soon make you dry enough!' They all sat down at once, in a large ring, with the Mouse in the middle. Alice kept her eyes anxiously fixed on it, for she felt sure she would catch a bad cold if she did not get dry very soon.\n\n'Ahem!' said the Mouse with an important air, 'are you all ready? This is the driest thing I know. Silence all round, if you please! \"William the Conqueror, whose cause was favoured by the pope, was soon submitted to by the English, who wanted leaders, and had been of late much accustomed to usurpation and conquest. Edwin and Morcar, the earls of Mercia and Northumbria--\"'\n\n'Ugh!' said the Lory, with a shiver.\n\n'I beg your pardon!' said the Mouse, frowning, but very politely: 'Did you speak?'\n\n'Not I!' said the Lory hastily.\n"
+     }
+    ],
+    "hints": [
+     "cross_entropy wants (N, vocab) logits and (N,) targets: logits.reshape(-1, logits.shape[-1]) and y.reshape(-1).",
+     "If the first validation loss is far below ln(66), the mask is missing and the model can see the characters it is predicting.",
+     "Draw the random numbers in mask_tokens() in the order the TODO gives, from the generator passed in, or your counts will differ from the ones shown."
+    ]
+   }
+  },
+  {
+   "title": "Text classification pipeline",
+   "summary": "Fine-tune a pre-trained transformer the Hugging Face way: load and prepare data with Datasets, tokenise for the model, train and evaluate with the Trainer API, and extend the same pipeline to named entity recognition.",
+   "instructor": "bjorn-sigurdsson",
+   "lessons": [
+    {
+     "title": "Hugging Face Datasets",
+     "minutes": 12,
+     "objectives": [
+      "Load, inspect and split datasets with the datasets library",
+      "Prepare a dataset in batches with map()"
+     ],
+     "key_points": [
+      "load_dataset('cornell-movie-review-data/rotten_tomatoes') downloads a dataset from the Hugging Face Hub and returns a DatasetDict of splits, here 8,530 training, 1,066 validation and 1,066 test reviews; load_dataset('csv', data_files=...) loads your own files the same way.",
+      "Datasets are stored in Apache Arrow format and memory-mapped from disk, so they needn't fit in memory, and processed results are cached.",
+      "dataset.map(function, batched=True) applies a function to batches of examples and adds the columns it returns, such as input_ids, while shuffle(seed=...), select(), filter() and train_test_split(seed=...) reshape a split.",
+      "A dataset's features describe its columns: a ClassLabel maps label numbers to names, such as ['neg', 'pos'], which become the model's id2label.",
+      "Since version 4 of the datasets library, datasets that need a loading script no longer load; many have Parquet versions instead, such as CoNLL-2003 through load_dataset('eriktks/conll2003', revision='refs/convert/parquet')."
+     ],
+     "walkthrough": {
+      "tool": "Python and Hugging Face Datasets",
+      "title": "Load and inspect a dataset",
+      "steps": [
+       {
+        "do": "Install the libraries.",
+        "code": "pip install datasets transformers torch",
+        "lang": "bash"
+       },
+       {
+        "do": "Load Rotten Tomatoes and look at its splits.",
+        "code": "from datasets import load_dataset\nds = load_dataset('cornell-movie-review-data/rotten_tomatoes')\n{name: len(split) for name, split in ds.items()}",
+        "lang": "python",
+        "see": "{'train': 8530, 'validation': 1066, 'test': 1066}"
+       },
+       {
+        "do": "Read the label names and take a reproducible sample.",
+        "code": "ds['train'].features['label'].names\nsmall = ds['train'].shuffle(seed=42).select(range(1000))",
+        "lang": "python",
+        "see": "['neg', 'pos'], and a 1,000-review training set that's the same on every run."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Tokenisation for transformers",
+     "minutes": 12,
+     "objectives": [
+      "Tokenise text with a model's own tokeniser",
+      "Align word-level labels with subword tokens for NER"
+     ],
+     "key_points": [
+      "Always use the tokeniser that matches the checkpoint, AutoTokenizer.from_pretrained(checkpoint), because each model was trained with its own vocabulary and rules: WordPiece for BERT, byte-level BPE for GPT-2 and RoBERTa, SentencePiece for T5.",
+      "A tokeniser returns input_ids, an attention_mask marking real tokens (1) and padding (0) and, for some models, token_type_ids for sentence pairs; it adds special tokens such as [CLS] and [SEP] for BERT-style models.",
+      "truncation=True with max_length cuts long inputs (most BERT-style models stop at 512 tokens), and padding each batch to its own longest example with DataCollatorWithPadding is faster than padding everything to the maximum.",
+      "For named entity recognition, labels belong to words but the model sees pieces: with is_split_into_words=True, word_ids() says which word each piece came from, and the usual scheme labels a word's first piece and gives -100 to later pieces and special tokens.",
+      "In the lab, DistilBERT's cased tokeniser splits 'Kilbrack' into 'Ki', '##l', '##bra' and '##ck', so only 'Ki' carries the B-ORG label."
+     ]
+    },
+    {
+     "title": "Fine-tuning with the Trainer API",
+     "minutes": 14,
+     "objectives": [
+      "Fine-tune a pre-trained encoder for classification with Trainer",
+      "Choose sensible training arguments"
+     ],
+     "key_points": [
+      "AutoModelForSequenceClassification.from_pretrained(checkpoint, num_labels=2, id2label=..., label2id=...) loads the pre-trained body and adds a new, randomly initialised classification head, which is why the library reports new or unused weights.",
+      "TrainingArguments sets up the run: learning_rate (2e-5 to 5e-5 is usual for BERT-style models), num_train_epochs, per_device_train_batch_size, weight_decay, eval_strategy (evaluation_strategy before transformers 4.41), save_strategy, seed and report_to.",
+      "Trainer(model, args, train_dataset, eval_dataset, processing_class=tokenizer, data_collator, compute_metrics) runs the training loop; processing_class replaced the older tokenizer argument in transformers 4.46, and train(), evaluate(), predict() and save_model() do the rest.",
+      "Transfer learning shines with little data: fine-tuned for one epoch on just 1,000 Rotten Tomatoes reviews, DistilBERT reaches 78.6% validation accuracy, against 65.7% for TF-IDF with logistic regression on the same reviews.",
+      "For NER, AutoModelForTokenClassification and DataCollatorForTokenClassification do the same job token by token, using the -100 labels to skip special tokens and continuation pieces."
+     ]
+    },
+    {
+     "title": "Evaluating classifiers and NER",
+     "minutes": 12,
+     "objectives": [
+      "Compute classification metrics in compute_metrics",
+      "Score named entity recognition at the entity level"
+     ],
+     "key_points": [
+      "compute_metrics receives the model's logits and the labels: take the argmax over the last axis for the predicted classes, then report accuracy and macro F1, which weights classes equally, or weighted F1 when classes are imbalanced.",
+      "Compare against a simple baseline, such as TF-IDF with logistic regression, and look at a confusion matrix and misclassified examples before trusting an accuracy figure.",
+      "NER is scored by entity, as the seqeval library does: a predicted entity counts only if its type and both its boundaries match a gold entity exactly.",
+      "Entity scores are stricter than token accuracy: in the lab, missing the second token of 'Amara Okafor' leaves token accuracy at 0.875 but drops entity precision, recall and F1 to 0.667, because the predicted person entity has the wrong span.",
+      "Evaluate on data the model never saw during training or tuning, keep the test set for the end, and fix seeds so runs can be compared."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Fine-tune DistilBERT and prepare NER labels",
+    "tool": "Python 3 and Hugging Face Transformers",
+    "minutes": 90,
+    "goal": "Fine-tune DistilBERT on 1,000 Rotten Tomatoes reviews with Datasets and the Trainer API, compare it with a TF-IDF baseline, then align word-level NER labels with subword tokens and score entities.",
+    "setup": [
+     "Python 3.10 or later with PyTorch, transformers 4.46 or later (5.x works too), datasets and scikit-learn: pip install torch transformers datasets scikit-learn",
+     "Internet access on the first run: the dataset (about 1 MB), DistilBERT (about 270 MB) and DistilBERT's cased tokeniser",
+     "The starter files finetune.py and ner.py; training takes roughly 5 to 15 minutes on a laptop CPU"
+    ],
+    "steps": [
+     {
+      "do": "Read finetune.py: it loads the dataset, trains the TF-IDF baseline and tokenises with dynamic padding. Write compute_metrics() (TODO 1)."
+     },
+     {
+      "do": "Create the TrainingArguments and the Trainer (TODOs 2 and 3), then run the script.",
+      "code": "python finetune.py",
+      "lang": "bash",
+      "see": "The DatasetDict with 8530, 1066 and 1066 rows; TF-IDF + logistic regression on 1000 reviews: accuracy 0.6567; Encoded: ['[CLS]', 'a', 'gripping', ',', 'beautifully', 'shot', 'film', '.', '[SEP]']"
+     },
+     {
+      "do": "Watch the training log, then read the evaluation.",
+      "see": "The loss falls over 63 steps, and DistilBERT fine-tuned on 1000 reviews: accuracy about 0.786, macro F1 about 0.786. A note about newly initialised classifier weights is expected."
+     },
+     {
+      "do": "Write align() in ner.py (TODO 1) and run it.",
+      "code": "python ner.py",
+      "lang": "bash",
+      "see": "Pieces with 'Ki', '##l', '##bra', '##ck'; Labels: [-100, 1, -100, 2, -100, -100, 0, 3, -100, -100, -100, 4, -100, 0, 5, 0, -100]"
+     },
+     {
+      "do": "Read the entity scores.",
+      "see": "Token accuracy 0.875; entity precision 0.667, recall 0.667, F1 0.667"
+     },
+     {
+      "do": "Try learning_rate=2e-5 or N_TRAIN = 2000, and write two or three sentences starting Results: on how the fine-tuned model compares with the baseline, what your change did, and why entity F1 is lower than token accuracy."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The dataset is loaded and a baseline trained on the same reviews.",
+      "look_for": [
+       "TF-IDF + logistic regression on 1000 reviews: accuracy 0.6567"
+      ]
+     },
+     {
+      "text": "The tokeniser adds special tokens and splits words into pieces.",
+      "look_for": [
+       "['[CLS]', 'a', 'gripping', ',', 'beautifully', 'shot', 'film', '.', '[SEP]']"
+      ]
+     },
+     {
+      "text": "DistilBERT is fine-tuned with the Trainer API and evaluated with compute_metrics.",
+      "look_for": [
+       "DistilBERT fine-tuned on 1000 reviews: accuracy",
+       "macro F1"
+      ]
+     },
+     {
+      "text": "NER labels are aligned to the first piece of each word.",
+      "look_for": [
+       "[-100, 1, -100, 2, -100, -100, 0, 3, -100, -100, -100, 4, -100, 0, 5, 0, -100]"
+      ]
+     },
+     {
+      "text": "Entities are scored by exact span and type.",
+      "look_for": [
+       "entity precision 0.667, recall 0.667, F1 0.667"
+      ]
+     },
+     {
+      "text": "The results and the experiment are discussed.",
+      "look_for": [
+       "Results:"
+      ]
+     }
+    ],
+    "submit": "Paste your compute_metrics(), TrainingArguments and Trainer code, align(), everything both scripts printed, and your Results:.",
+    "files": [
+     {
+      "path": "finetune.py",
+      "content": "\"\"\"Fine-tune DistilBERT for sentiment on Rotten Tomatoes with the Trainer API, and compare it with a TF-IDF baseline.\n\nWorks with transformers 4.46 or later (including 5.x). The first run downloads the dataset (about 1 MB) and\nDistilBERT (about 270 MB). On a laptop CPU, training on 1,000 reviews takes roughly 5 to 15 minutes.\n\"\"\"\n\nimport numpy as np\nfrom datasets import load_dataset\nfrom sklearn.feature_extraction.text import TfidfVectorizer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import accuracy_score, f1_score\nfrom transformers import (AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding, Trainer,\n                          TrainingArguments, set_seed)\n\nCHECKPOINT = \"distilbert/distilbert-base-uncased\"\nN_TRAIN = 1000\n\n\ndef compute_metrics(eval_pred):\n    logits, labels = eval_pred\n    # TODO 1: predicted classes are the argmax over the last axis; return a dict with \"accuracy\" and \"macro_f1\"\n    return {}\n\n\ndef main():\n    set_seed(42)\n    ds = load_dataset(\"cornell-movie-review-data/rotten_tomatoes\")\n    print(ds)\n    train = ds[\"train\"].shuffle(seed=42).select(range(N_TRAIN))\n    val = ds[\"validation\"]\n    print(\"Labels:\", train.features[\"label\"].names, \"| first example:\", train[0])\n\n    tfidf = TfidfVectorizer(ngram_range=(1, 2), min_df=2)\n    baseline = LogisticRegression(max_iter=1000).fit(tfidf.fit_transform(train[\"text\"]), train[\"label\"])\n    base_pred = baseline.predict(tfidf.transform(val[\"text\"]))\n    print(f\"TF-IDF + logistic regression on {N_TRAIN} reviews: accuracy {accuracy_score(val['label'], base_pred):.4f}\")\n\n    tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT)\n    enc = tokenizer(\"A gripping, beautifully shot film.\", truncation=True, max_length=64)\n    print(\"Encoded:\", tokenizer.convert_ids_to_tokens(enc[\"input_ids\"]), \"| keys:\", list(enc.keys()))\n\n    def tokenise(examples):\n        return tokenizer(examples[\"text\"], truncation=True, max_length=64)  # padding happens per batch, later\n\n    train_tok = train.map(tokenise, batched=True)\n    val_tok = val.map(tokenise, batched=True)\n    model = AutoModelForSequenceClassification.from_pretrained(\n        CHECKPOINT, num_labels=2, id2label={0: \"neg\", 1: \"pos\"}, label2id={\"neg\": 0, \"pos\": 1})\n\n    # TODO 2: TrainingArguments with output_dir=\"rt-distilbert\", eval_strategy=\"epoch\", save_strategy=\"no\",\n    #         learning_rate=5e-5, per_device_train_batch_size=16, per_device_eval_batch_size=64, num_train_epochs=1,\n    #         weight_decay=0.01, logging_steps=20, seed=42 and report_to=\"none\"\n    # TODO 3: a Trainer with the model, the arguments, train_tok and val_tok, processing_class=tokenizer,\n    #         data_collator=DataCollatorWithPadding(tokenizer) and compute_metrics\n    args = trainer = None\n    trainer.train()\n    metrics = trainer.evaluate()\n    print(f\"DistilBERT fine-tuned on {N_TRAIN} reviews: accuracy {metrics['eval_accuracy']:.4f}, \"\n          f\"macro F1 {metrics['eval_macro_f1']:.4f}\")\n\n    trainer.save_model(\"rt-distilbert/final\")\n    out = trainer.predict(val_tok.select(range(5)))\n    print(\"Predictions for 5 validation reviews:\", out.predictions.argmax(-1).tolist(), \"gold:\", out.label_ids.tolist())\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "ner.py",
+      "content": "\"\"\"Prepare word-level NER labels for a subword tokeniser, and score entities the way seqeval does.\n\nDownloads only DistilBERT's cased tokenizer files (well under 1 MB).\n\"\"\"\n\nfrom transformers import AutoTokenizer\n\nLABELS = [\"O\", \"B-PER\", \"I-PER\", \"B-ORG\", \"I-ORG\", \"B-LOC\", \"I-LOC\"]\nWORDS = [\"Amara\", \"Okafor\", \"joined\", \"Kilbrack\", \"Ferries\", \"in\", \"Galway\", \".\"]\nGOLD = [\"B-PER\", \"I-PER\", \"O\", \"B-ORG\", \"I-ORG\", \"O\", \"B-LOC\", \"O\"]\nPRED = [\"B-PER\", \"O\", \"O\", \"B-ORG\", \"I-ORG\", \"O\", \"B-LOC\", \"O\"]  # a model that missed \"Okafor\"\n\n\ndef align(word_ids, tags):\n    \"\"\"Label the first piece of each word; -100 for special tokens and for later pieces, so the loss skips them.\"\"\"\n    # TODO 1: walk word_ids; give -100 to special tokens (None) and to every piece after a word's first,\n    #         and LABELS.index(tag) to the first piece of each word\n    return []\n\n\ndef entities(tags):\n    \"\"\"(type, start, end) spans from BIO tags.\"\"\"\n    spans, start, kind = [], None, None\n    for i, tag in enumerate(tags + [\"O\"]):\n        if start is not None and not (tag.startswith(\"I-\") and tag[2:] == kind):\n            spans.append((kind, start, i))\n            start = None\n        if tag.startswith(\"B-\") or (tag.startswith(\"I-\") and start is None):\n            start, kind = i, tag[2:]\n    return set(spans)\n\n\ndef main():\n    tokenizer = AutoTokenizer.from_pretrained(\"distilbert/distilbert-base-cased\")\n    enc = tokenizer(WORDS, is_split_into_words=True)\n    pieces = tokenizer.convert_ids_to_tokens(enc[\"input_ids\"])\n    labels = align(enc.word_ids(), GOLD)\n    print(\"Pieces:  \", pieces)\n    print(\"Word ids:\", enc.word_ids())\n    print(\"Labels:  \", labels)\n\n    gold, pred = entities(GOLD), entities(PRED)\n    tp = len(gold & pred)\n    precision, recall = tp / len(pred), tp / len(gold)\n    token_acc = sum(g == p for g, p in zip(GOLD, PRED)) / len(GOLD)\n    print(f\"Gold entities: {sorted(gold)}\")\n    print(f\"Predicted:     {sorted(pred)}\")\n    print(f\"Token accuracy {token_acc:.3f}; entity precision {precision:.3f}, recall {recall:.3f}, \"\n          f\"F1 {2 * precision * recall / (precision + recall):.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "With transformers older than 4.46, use tokenizer=tokenizer instead of processing_class=tokenizer; older than 4.41, evaluation_strategy instead of eval_strategy.",
+     "Your fine-tuned accuracy can differ in the second decimal place with other hardware or library versions; the baseline's figure should match exactly.",
+     "word_ids() returns None for [CLS] and [SEP], and the same word index for every piece of one word."
+    ]
+   }
+  },
+  {
+   "title": "Text generation and decoding",
+   "summary": "Generate text one token at a time and choose how: greedy and beam search, sampling with temperature, top-k and top-p, written from scratch on a toy model and then used through Hugging Face's generate().",
+   "instructor": "aleksei-volkovi",
+   "lessons": [
+    {
+     "title": "Autoregressive generation",
+     "minutes": 12,
+     "objectives": [
+      "Explain the autoregressive generation loop",
+      "Describe how a KV cache speeds generation up"
+     ],
+     "key_points": [
+      "A language model generates by repeating one step: compute the next-token distribution from everything so far, choose a token, append it, and stop at an end-of-sequence token or a length limit such as max_new_tokens.",
+      "The decoding strategy, how the next token is chosen from that distribution, changes the output as much as the model does: the same model can be repetitive with one strategy and fluent with another.",
+      "Generation is sequential, so its time grows with the output's length; a key-value (KV) cache keeps each layer's keys and values for earlier tokens so each step computes only the new token's (Efficient Inference: Quantisation, Distillation and Batching goes further).",
+      "Logits become probabilities through the softmax, and dividing the logits by a temperature first reshapes the distribution without changing which token is most likely.",
+      "In Hugging Face, model.generate() runs the loop, with settings such as do_sample, num_beams, temperature, top_k, top_p, no_repeat_ngram_size and max_new_tokens taken from the call or from the model's generation_config."
+     ]
+    },
+    {
+     "title": "Greedy and beam search",
+     "minutes": 12,
+     "objectives": [
+      "Trace greedy decoding and beam search",
+      "Explain length normalisation and repetition"
+     ],
+     "key_points": [
+      "Greedy decoding takes the most probable token at each step: fast and deterministic, but it can miss the most probable sequence, because a likely first token may lead only to unlikely continuations.",
+      "Beam search keeps the B most probable partial sequences (beams) by total log probability, extends each with every possible token and keeps the best B again; with B = 1 it's greedy decoding.",
+      "In the lab's toy model, greedy decoding gives 'the cat sat' with probability 0.090, while beam search of width 2 finds 'a cat sat' with 0.216, because 'a' (0.4) leads to a far surer continuation than 'the' (0.5).",
+      "Log probabilities only fall as a sequence grows, so beam search favours short outputs; length normalisation divides the score by length^α, which Hugging Face controls with length_penalty.",
+      "Beam search suits tasks with one right answer, such as translation and summarisation, but for open-ended text it's often dull and repetitive: in the lab, DistilGPT-2 with 4 beams repeats the prompt word for word until no_repeat_ngram_size=3 forbids repeated 3-grams."
+     ]
+    },
+    {
+     "title": "Sampling: temperature, top-k and top-p",
+     "minutes": 12,
+     "objectives": [
+      "Apply temperature, top-k and top-p to a next-token distribution",
+      "Make sampled output reproducible"
+     ],
+     "key_points": [
+      "Sampling draws the next token at random from the distribution, which gives varied, more natural text; in Hugging Face it needs do_sample=True.",
+      "Temperature T divides the logits before the softmax: T < 1 sharpens the distribution, T > 1 flattens it and T near 0 approaches greedy decoding. For DistilGPT-2's next token in the lab, the top token's probability is 0.739 at T = 0.5 but 0.172 at T = 1.0.",
+      "Top-k sampling keeps only the k most probable tokens and renormalises them; a fixed k is too many when the model is sure and too few when it isn't.",
+      "Top-p, or nucleus, sampling (Holtzman and colleagues, 2020) keeps the smallest set of most probable tokens whose probabilities add up to at least p, so the set adapts to the model's confidence. Hugging Face also applies top_k=50 by default when sampling, so set top_k=0 for top-p alone.",
+      "Sampling is random, so set a seed with torch.manual_seed or transformers.set_seed to reproduce a run; strategies are often combined, typically a temperature with top-p."
+     ]
+    },
+    {
+     "title": "Choosing and evaluating a decoding strategy",
+     "minutes": 12,
+     "objectives": [
+      "Match decoding strategies to tasks",
+      "Evaluate generated text for quality and diversity"
+     ],
+     "key_points": [
+      "Use beam search or greedy decoding where faithfulness to the input matters, as in summarisation, translation and structured output, and sampling with a moderate temperature and top-p where variety matters, as in stories, dialogue and brainstorming.",
+      "Evaluate with task metrics where references exist (ROUGE for summaries, BLEU or chrF for translation), and measure diversity too, for example distinct-n, the share of unique n-grams across outputs, and repetition rates.",
+      "Low perplexity isn't a quality score in itself: degenerate, repetitive text can be highly probable under the model, which is exactly why pure maximisation fails for open-ended text.",
+      "Human or model-based judgments are still needed for fluency, factual accuracy and helpfulness; compare strategies on the same prompts and seeds, and read the outputs.",
+      "Stopping rules matter as well: set max_new_tokens, end-of-sequence tokens and stop strings, or outputs run on or stop mid-sentence."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Decoding strategies from scratch and with generate()",
+    "tool": "Python 3, PyTorch and Hugging Face Transformers",
+    "minutes": 60,
+    "goal": "Implement greedy decoding, beam search, temperature, top-k and top-p on a toy language model whose answers you can check by hand, then compare the same strategies on DistilGPT-2 with generate().",
+    "setup": [
+     "Python 3.10 or later; decoding.py needs nothing beyond the standard library",
+     "For hf_generate.py: PyTorch and transformers 4.46 or later (5.x works too); it downloads DistilGPT-2 (about 350 MB) on the first run",
+     "The starter files decoding.py, toy_lm.json and hf_generate.py, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read toy_lm.json: the probability of each next token given the previous one. Work out by hand the probability of 'the cat sat' and of 'a cat sat'."
+     },
+     {
+      "do": "Write greedy() and beam_search() (TODOs 1 and 2), then comment out the later parts of main() and run it.",
+      "code": "python decoding.py",
+      "lang": "bash",
+      "see": "Greedy: <s> the cat sat </s> P = 0.090; Beam width 1: the same; Beam width 2: <s> a cat sat </s> P = 0.216"
+     },
+     {
+      "do": "Write with_temperature(), top_k() and top_p() (TODOs 3 to 5) and run the whole script.",
+      "see": "T=0.5: cat 0.346 ... entropy 1.890 bits; T=2.0: entropy 1.993 bits; top-k=2: {'cat': 0.5, 'dog': 0.5}; top-p=0.75: {'cat': 0.375, 'dog': 0.375, 'bird': 0.25}"
+     },
+     {
+      "do": "Read the sampled sequences, which repeat exactly because Python's random.Random(0) does.",
+      "see": "Pure sampling: ['a cat sat', 'a cat ran', 'the dog', 'a cat ran', 'the']; Top-p 0.75: ['a cat sat', 'the dog sat', 'the dog sat', 'the bird sang', 'a cat ran']"
+     },
+     {
+      "do": "Run hf_generate.py.",
+      "code": "python hf_generate.py",
+      "lang": "bash",
+      "see": "With 4 beams, DistilGPT-2 repeats 'the ferry left the harbour at dawn, and' over and over; no_repeat_ngram_size=3 breaks the loop; at T=0.5 the top next token has probability 0.739, at T=1.0 0.172. Exact sampled text depends on library versions."
+     },
+     {
+      "do": "Add two settings of your own to hf_generate.py, such as top_k=50 with temperature 1.2, and write two or three sentences starting Decoding: on which strategy you'd use for a summary and which for a story, and why."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Greedy decoding and beam search are correct.",
+      "look_for": [
+       "Greedy: <s> the cat sat </s>  P = 0.090",
+       "Beam width 2: <s> a cat sat </s>  P = 0.216"
+      ]
+     },
+     {
+      "text": "Temperature reshapes the distribution.",
+      "look_for": [
+       "entropy 1.890 bits",
+       "entropy 1.993 bits"
+      ]
+     },
+     {
+      "text": "Top-k and top-p filter and renormalise.",
+      "look_for": [
+       "top-k=2: {'cat': 0.5, 'dog': 0.5}",
+       "{'cat': 0.375, 'dog': 0.375, 'bird': 0.25}"
+      ]
+     },
+     {
+      "text": "Sampling is reproducible with a seed.",
+      "look_for": [
+       "['a cat sat', 'a cat ran', 'the dog', 'a cat ran', 'the']"
+      ]
+     },
+     {
+      "text": "generate() strategies are compared on DistilGPT-2.",
+      "look_for": [
+       "no repeated 3-grams",
+       "top token 0.739"
+      ]
+     },
+     {
+      "text": "The choice of strategy is justified for two tasks.",
+      "look_for": [
+       "Decoding:"
+      ]
+     }
+    ],
+    "submit": "Paste your decoding functions, everything both scripts printed, your extra settings with their output, and your Decoding: answer.",
+    "files": [
+     {
+      "path": "decoding.py",
+      "content": "\"\"\"Decoding strategies from scratch on a toy language model: greedy, beam search, temperature, top-k and top-p.\"\"\"\n\nimport json\nimport math\nimport random\n\nLM = json.load(open(\"toy_lm.json\", encoding=\"utf-8\"))  # P(next token | previous token)\n\n\ndef greedy(lm, max_len=10):\n    # TODO 1: from [\"<s>\"], append the most probable next token (max over lm[last].items() by probability,\n    #         which keeps the first-listed token on ties) until \"</s>\" or max_len; return (sequence, log probability)\n    raise NotImplementedError(\"greedy\")\n\n\ndef beam_search(lm, width, max_len=10, alpha=0.0):\n    \"\"\"Keep the `width` best extensions at each step; finished ones are set aside. alpha > 0 normalises by length.\"\"\"\n    # TODO 2: extend every beam with every next token, sort the candidates by log probability (highest first,\n    #         with a stable sort), keep the best `width`, and move finished ones (ending \"</s>\") to done;\n    #         repeat until no beams are left, then return the best of done (dividing by length ** alpha)\n    raise NotImplementedError(\"beam_search\")\n\n\ndef with_temperature(dist, t):\n    # TODO 3: divide each log probability by t, then softmax back to probabilities\n    raise NotImplementedError(\"with_temperature\")\n\n\ndef entropy(dist):\n    return -sum(p * math.log2(p) for p in dist.values() if p > 0)\n\n\ndef top_k(dist, k):\n    # TODO 4: keep the k most probable tokens and renormalise them to sum to 1\n    raise NotImplementedError(\"top_k\")\n\n\ndef top_p(dist, p):\n    \"\"\"The smallest set of most likely tokens whose probabilities add up to at least p, renormalised.\"\"\"\n    # TODO 5: add tokens from most to least probable until their total reaches p, then renormalise\n    raise NotImplementedError(\"top_p\")\n\n\ndef sample(lm, rng, transform=lambda d: d, max_len=10):\n    seq = [\"<s>\"]\n    while seq[-1] != \"</s>\" and len(seq) < max_len:\n        dist = transform(lm[seq[-1]])\n        u, acc = rng.random(), 0.0\n        for w, p in dist.items():  # inverse CDF: walk the distribution until it passes u\n            acc += p\n            if u < acc:\n                break\n        seq.append(w)\n    return \" \".join(seq[1:-1])\n\n\ndef main():\n    seq, logp = greedy(LM)\n    print(f\"Greedy: {' '.join(seq)}  P = {math.exp(logp):.3f}\")\n    for width in (1, 2, 3):\n        seq, logp = beam_search(LM, width)\n        print(f\"Beam width {width}: {' '.join(seq)}  P = {math.exp(logp):.3f}\")\n\n    after_the = LM[\"the\"]\n    for t in (0.5, 1.0, 2.0):\n        d = with_temperature(after_the, t)\n        print(f\"T={t}: \" + \", \".join(f\"{w} {p:.3f}\" for w, p in d.items()) + f\"  entropy {entropy(d):.3f} bits\")\n    print(\"top-k=2:\", {w: round(p, 3) for w, p in top_k(after_the, 2).items()})\n    print(\"top-p=0.5:\", {w: round(p, 3) for w, p in top_p(after_the, 0.5).items()},\n          \"| top-p=0.75:\", {w: round(p, 3) for w, p in top_p(after_the, 0.75).items()})\n\n    rng = random.Random(0)  # Python guarantees random() repeats for the same seed\n    print(\"Pure sampling:\", [sample(LM, rng) for _ in range(5)])\n    rng = random.Random(0)\n    print(\"Top-p 0.75:   \", [sample(LM, rng, lambda d: top_p(d, 0.75)) for _ in range(5)])\n    rng = random.Random(0)\n    print(\"T=0.5:        \", [sample(LM, rng, lambda d: with_temperature(d, 0.5)) for _ in range(5)])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "toy_lm.json",
+      "content": "{\n  \"<s>\": {\"the\": 0.5, \"a\": 0.4, \"one\": 0.1},\n  \"the\": {\"cat\": 0.3, \"dog\": 0.3, \"bird\": 0.2, \"</s>\": 0.2},\n  \"a\": {\"cat\": 0.9, \"dog\": 0.05, \"</s>\": 0.05},\n  \"one\": {\"cat\": 0.5, \"</s>\": 0.5},\n  \"cat\": {\"sat\": 0.6, \"ran\": 0.3, \"</s>\": 0.1},\n  \"dog\": {\"sat\": 0.4, \"ran\": 0.5, \"</s>\": 0.1},\n  \"bird\": {\"sang\": 0.8, \"</s>\": 0.2},\n  \"sat\": {\"</s>\": 1.0},\n  \"ran\": {\"</s>\": 1.0},\n  \"sang\": {\"</s>\": 1.0}\n}\n"
+     },
+     {
+      "path": "hf_generate.py",
+      "content": "\"\"\"The same strategies with Hugging Face generate() on DistilGPT-2 (about 350 MB, downloaded on the first run).\"\"\"\n\nimport torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nCHECKPOINT = \"distilbert/distilgpt2\"\nPROMPT = \"The ferry left the harbour at dawn, and\"\n\n\ndef main():\n    tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT)\n    model = AutoModelForCausalLM.from_pretrained(CHECKPOINT).eval()\n    inputs = tokenizer(PROMPT, return_tensors=\"pt\")\n    settings = {\n        \"greedy\": dict(do_sample=False),\n        \"beam 4\": dict(do_sample=False, num_beams=4),\n        \"beam 4, no repeated 3-grams\": dict(do_sample=False, num_beams=4, no_repeat_ngram_size=3),\n        \"top-p 0.9, T 0.8\": dict(do_sample=True, top_p=0.9, top_k=0, temperature=0.8),\n    }\n    for name, kwargs in settings.items():\n        torch.manual_seed(0)\n        out = model.generate(**inputs, max_new_tokens=25, pad_token_id=tokenizer.eos_token_id, **kwargs)\n        text = tokenizer.decode(out[0, inputs[\"input_ids\"].shape[1]:], skip_special_tokens=True)\n        print(f\"{name}: {text!r}\")\n\n    with torch.no_grad():\n        logits = model(**inputs).logits[0, -1]\n    probs = torch.softmax(logits, dim=-1)\n    top = torch.topk(probs, 5)\n    print(\"Next-token top 5:\", [(tokenizer.decode(int(i)), round(float(p), 3)) for p, i in zip(top.values, top.indices)])\n    for t in (0.5, 1.0, 1.5):\n        p = torch.softmax(logits / t, dim=-1)\n        h = float(-(p * torch.log2(p.clamp_min(1e-12))).sum())\n        print(f\"T={t}: top token {float(p.max()):.3f}, entropy {h:.2f} bits\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "Keep the stable sort in beam search: with ties, 'the cat' must stay ahead of 'the dog' for the output to match.",
+     "Beam search with width 1 must give the same result as greedy decoding; if it doesn't, finished candidates outside the top `width` are being kept.",
+     "The temperature step works on log probabilities: math.log(p) / t, then softmax."
+    ]
+   }
+  },
+  {
+   "title": "Summarisation and question answering",
+   "summary": "Apply transformers to two classic tasks: abstractive summarisation with sequence-to-sequence models such as BART and T5, scored with ROUGE, and extractive question answering, scored with exact match and F1.",
+   "instructor": "bjorn-sigurdsson",
+   "lessons": [
+    {
+     "title": "Sequence-to-sequence models: BART and T5",
+     "minutes": 12,
+     "objectives": [
+      "Describe how BART and T5 are pretrained and used for summarisation",
+      "Prepare inputs and labels for a sequence-to-sequence model"
+     ],
+     "key_points": [
+      "T5 (Raffel and colleagues, 2020) treats every task as text-to-text, naming the task in the input with a prefix such as 'summarize: '; it was pretrained with span corruption on the C4 web corpus.",
+      "BART (Lewis and colleagues, 2020) is a denoising autoencoder with a bidirectional encoder and an autoregressive decoder; checkpoints fine-tuned on news, such as facebook/bart-large-cnn, are strong summarisers.",
+      "AutoModelForSeq2SeqLM loads either. For training, tokenise targets with text_target= to get the labels, and DataCollatorForSeq2Seq pads the labels with -100 so padding doesn't count in the loss.",
+      "Seq2SeqTrainer with predict_with_generate=True generates during evaluation, so metrics such as ROUGE are computed on real outputs, with generation settings such as generation_num_beams.",
+      "Inputs have length limits (t5-small was trained on 512 tokens, BART takes 1,024), so long documents must be truncated, split into chunks or given to a long-context model."
+     ]
+    },
+    {
+     "title": "Measuring summaries with ROUGE",
+     "minutes": 12,
+     "objectives": [
+      "Compute ROUGE-N and ROUGE-L",
+      "Interpret ROUGE scores and their limits"
+     ],
+     "key_points": [
+      "ROUGE-N counts n-grams shared by a candidate summary and a reference: recall is the share of the reference's n-grams found in the candidate, precision the share of the candidate's found in the reference, and F1 combines them.",
+      "ROUGE-L uses the longest common subsequence, the longest run of words appearing in both in the same order but not necessarily side by side, so it rewards keeping the reference's word order; ROUGE-Lsum applies it sentence by sentence.",
+      "Google's rouge_score package lowercases, replaces everything but letters and digits with spaces and splits on whitespace, with optional Porter stemming (use_stemmer=True); a from-scratch version with the same tokenisation matches it exactly, as the lab shows.",
+      "ROUGE rewards surface overlap, not meaning or truth: a fluent summary with a wrong number can score well and a correct paraphrase badly, so check factual consistency separately and read the outputs.",
+      "When comparing systems, report F1 for ROUGE-1, ROUGE-2 and ROUGE-L on the same test set, with the same tokenisation and stemming."
+     ]
+    },
+    {
+     "title": "Extractive question answering",
+     "minutes": 12,
+     "objectives": [
+      "Frame extractive QA as predicting an answer span",
+      "Find the best valid span from start and end logits"
+     ],
+     "key_points": [
+      "Extractive QA, as in the SQuAD datasets, answers a question with a span copied from a given context; the model reads the question and the context together, separated by [SEP], and predicts where the answer starts and ends.",
+      "A QA head gives every token a start logit and an end logit, and the answer is the span (i, j) with the highest start[i] + end[j] such that both lie in the context, j ≥ i, and the span is no longer than a limit such as 30 tokens.",
+      "Offset mappings (return_offsets_mapping=True with a fast tokeniser) give each token's character positions, so the chosen tokens become an exact substring of the context.",
+      "Contexts longer than the model's limit are split into overlapping windows with a stride, each window is scored, and the best answer across them wins.",
+      "SQuAD 2.0 adds unanswerable questions: models compare the best span's score with a no-answer score at [CLS] and abstain when no span beats it by a threshold."
+     ]
+    },
+    {
+     "title": "Scoring QA: exact match and F1",
+     "minutes": 12,
+     "objectives": [
+      "Normalise answers the way the SQuAD evaluation does",
+      "Compute exact match and token F1 over several gold answers"
+     ],
+     "key_points": [
+      "Before comparing, answers are normalised: lowercased, punctuation removed, the articles a, an and the dropped and whitespace collapsed, so 'The Music Festival!' becomes 'music festival'.",
+      "Exact match (EM) is 1 if the normalised prediction equals a normalised gold answer and 0 otherwise; token F1 measures the overlap of their words, so a near miss earns partial credit.",
+      "Questions often have several acceptable gold answers, and each prediction takes its best score over them; the dataset's score is the average over its questions.",
+      "In the lab, DistilBERT fine-tuned on SQuAD answers two of three questions exactly and for the third returns 'to add an extra evening sailing next summer', with EM 0 but F1 0.833, giving EM 0.667 and F1 0.944 overall.",
+      "EM and F1 reward matching the annotators' span boundaries rather than being right in substance, so read the near misses before concluding that a model is wrong."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Summarise, answer questions and score them",
+    "tool": "Python 3 and Hugging Face Transformers",
+    "minutes": 60,
+    "goal": "Implement ROUGE-1, ROUGE-2 and ROUGE-L and check them against the rouge_score package, implement SQuAD's exact match and F1, find answer spans from a QA model's logits, and summarise an article with T5 using beam search and greedy decoding.",
+    "setup": [
+     "Python 3.10 or later with PyTorch, transformers 4.46 or later (5.x works too), sentencepiece and rouge-score: pip install torch transformers sentencepiece rouge-score",
+     "Internet access on the first run: distilbert-base-cased-distilled-squad (about 260 MB) and t5-small (about 240 MB)",
+     "The starter file seq2seq_qa.py"
+    ],
+    "steps": [
+     {
+      "do": "Write rouge_n() and rouge_l() (TODOs 1 and 2); rouge_tokens() copies rouge_score's tokeniser. Run the script.",
+      "code": "python seq2seq_qa.py",
+      "lang": "bash",
+      "see": "ROUGE-1 ours 0.6190, rouge_score 0.6190; ROUGE-2 ours 0.3500, rouge_score 0.3500; ROUGE-L ours 0.5238, rouge_score 0.5238"
+     },
+     {
+      "do": "Write normalise_answer() (TODO 3); exact_match() and token_f1() use it.",
+      "see": "normalise_answer('The Music Festival!') = 'music festival', then EM 1.0, F1 0.667"
+     },
+     {
+      "do": "Write the span search in answer() (TODO 4): the best start[i] + end[j] over context tokens with i <= j < i + 30.",
+      "see": "'4,200' and 'its music festival' exactly right; 'to add an extra evening sailing next summer' with EM 0 and F1 0.833; QA over 3 questions: EM 0.667, F1 0.944"
+     },
+     {
+      "do": "Read T5's two summaries and their scores.",
+      "see": "Beam 4 copies the article's first sentences, with ROUGE-1 0.471, ROUGE-2 0.212, ROUGE-L 0.324; greedy gives a shorter summary that makes the ferry company the one asked, with ROUGE-1 0.314."
+     },
+     {
+      "do": "Write two or three sentences starting Summary: on why beam search scores higher here, whether either summary misstates the article, and what ROUGE can't tell you."
+     }
+    ],
+    "checks": [
+     {
+      "text": "From-scratch ROUGE matches the rouge_score package.",
+      "look_for": [
+       "ROUGE-1 ours 0.6190, rouge_score 0.6190",
+       "ROUGE-L ours 0.5238, rouge_score 0.5238"
+      ]
+     },
+     {
+      "text": "Answers are normalised as SQuAD does.",
+      "look_for": [
+       "'music festival'"
+      ]
+     },
+     {
+      "text": "Spans are found from start and end logits and mapped back to the context.",
+      "look_for": [
+       "'4,200'",
+       "'to add an extra evening sailing next summer'"
+      ]
+     },
+     {
+      "text": "Exact match and F1 are averaged over the questions.",
+      "look_for": [
+       "EM 0.667, F1 0.944"
+      ]
+     },
+     {
+      "text": "T5 summarises with two decoding strategies, scored with ROUGE.",
+      "look_for": [
+       "ROUGE-1 0.471",
+       "ROUGE-1 0.314"
+      ]
+     },
+     {
+      "text": "The summaries are judged beyond their scores.",
+      "look_for": [
+       "Summary:"
+      ]
+     }
+    ],
+    "submit": "Paste your four functions, everything the script printed, and your Summary: answer.",
+    "files": [
+     {
+      "path": "seq2seq_qa.py",
+      "content": "\"\"\"ROUGE and SQuAD-style scores from scratch, extractive QA with DistilBERT, and summarisation with T5.\n\nFirst run downloads distilbert-base-cased-distilled-squad (about 260 MB) and t5-small (about 240 MB).\npip install rouge-score  (to check the from-scratch ROUGE against Google's package)\n\"\"\"\n\nimport re\nimport string\nfrom collections import Counter\n\nimport torch\nfrom rouge_score import rouge_scorer\nfrom transformers import AutoModelForQuestionAnswering, AutoModelForSeq2SeqLM, AutoTokenizer\n\nARTICLE = (\"The Kilbrack ferry carried a record 4,200 passengers in August, the harbour office said on Monday. \"\n           \"Most travelled to the island for its music festival, which ran for four days. The office has asked the \"\n           \"ferry company to add an extra evening sailing next summer, because queues at the pier grew to more than \"\n           \"an hour on the festival weekend. The company said it would consider the request once it had checked \"\n           \"the crew rotas.\")\nREFERENCE = \"A record 4,200 people took the Kilbrack ferry in August, mostly for the island's festival, and the harbour office wants an extra evening sailing.\"\nQUESTIONS = [(\"How many passengers did the ferry carry in August?\", [\"4,200\", \"a record 4,200\"]),\n             (\"Why did most passengers travel to the island?\", [\"for its music festival\", \"its music festival\"]),\n             (\"What has the harbour office asked for?\", [\"an extra evening sailing next summer\", \"an extra evening sailing\"])]\n\n\ndef rouge_tokens(text):\n    \"\"\"rouge_score's default tokeniser: lowercase, replace anything but a-z and 0-9 with spaces, split.\"\"\"\n    return re.sub(r\"[^a-z0-9]+\", \" \", text.lower()).split()\n\n\ndef f_measure(overlap, n_pred, n_ref):\n    if overlap == 0:\n        return 0.0\n    p, r = overlap / n_pred, overlap / n_ref\n    return 2 * p * r / (p + r)\n\n\ndef rouge_n(pred, ref, n):\n    # TODO 1: count the n-grams of both texts (after rouge_tokens) in Counters; the overlap is the size of their\n    #         intersection (p & r); return f_measure(overlap, n-grams in pred, n-grams in ref)\n    return 0.0\n\n\ndef rouge_l(pred, ref):\n    # TODO 2: the length of the longest common subsequence of the two token lists, by dynamic programming\n    #         (like edit distance, but matching words add 1 and otherwise take the max of the left and upper cells);\n    #         return f_measure(lcs, len(pred tokens), len(ref tokens))\n    return 0.0\n\n\ndef normalise_answer(s):\n    \"\"\"The SQuAD script's normalisation: lowercase, drop punctuation and the articles a, an and the, squash spaces.\"\"\"\n    # TODO 3: lowercase, remove string.punctuation characters, replace the words a, an and the with spaces\n    #         (re.sub with word boundaries), and collapse whitespace\n    return s\n\n\ndef exact_match(pred, golds):\n    return max(float(normalise_answer(pred) == normalise_answer(g)) for g in golds)\n\n\ndef token_f1(pred, golds):\n    def f1(p, g):\n        p, g = normalise_answer(p).split(), normalise_answer(g).split()\n        common = sum((Counter(p) & Counter(g)).values())\n        return f_measure(common, len(p), len(g))\n    return max(f1(pred, g) for g in golds)\n\n\ndef answer(tokenizer, model, question, context, max_len=30):\n    enc = tokenizer(question, context, return_tensors=\"pt\", return_offsets_mapping=True)\n    offsets = enc.pop(\"offset_mapping\")[0]\n    seq_ids = enc.sequence_ids(0)\n    with torch.no_grad():\n        out = model(**enc)\n    start, end = out.start_logits[0], out.end_logits[0]\n    best, span = -1e9, (0, 0)\n    ctx = [i for i, s in enumerate(seq_ids) if s == 1]  # only tokens of the context can be part of the answer\n    # TODO 4: over context tokens i and j with i <= j < i + max_len, keep the pair with the highest\n    #         start[i] + end[j] in best and span\n    return context[int(offsets[span[0]][0]):int(offsets[span[1]][1])], best\n\n\ndef main():\n    pred = \"The Kilbrack ferry carried 4,200 passengers in August, and the office wants another evening sailing.\"\n    scorer = rouge_scorer.RougeScorer([\"rouge1\", \"rouge2\", \"rougeL\"], use_stemmer=False)\n    ref_scores = scorer.score(REFERENCE, pred)\n    print(f\"ROUGE-1 ours {rouge_n(pred, REFERENCE, 1):.4f}, rouge_score {ref_scores['rouge1'].fmeasure:.4f}\")\n    print(f\"ROUGE-2 ours {rouge_n(pred, REFERENCE, 2):.4f}, rouge_score {ref_scores['rouge2'].fmeasure:.4f}\")\n    print(f\"ROUGE-L ours {rouge_l(pred, REFERENCE):.4f}, rouge_score {ref_scores['rougeL'].fmeasure:.4f}\")\n\n    print(\"normalise_answer('The Music Festival!') =\", repr(normalise_answer(\"The Music Festival!\")))\n    print(f\"EM {exact_match('its music festival', QUESTIONS[1][1]):.1f}, \"\n          f\"F1 {token_f1('the island music festival', QUESTIONS[1][1]):.3f}\")\n\n    qa_name = \"distilbert/distilbert-base-cased-distilled-squad\"\n    qa_tok, qa_model = AutoTokenizer.from_pretrained(qa_name), AutoModelForQuestionAnswering.from_pretrained(qa_name).eval()\n    ems, f1s = [], []\n    for question, golds in QUESTIONS:\n        text, score = answer(qa_tok, qa_model, question, ARTICLE)\n        ems.append(exact_match(text, golds))\n        f1s.append(token_f1(text, golds))\n        print(f\"Q: {question} -> {text!r} (score {score:.2f}) EM {ems[-1]:.0f} F1 {f1s[-1]:.3f}\")\n    print(f\"QA over {len(QUESTIONS)} questions: EM {sum(ems) / len(ems):.3f}, F1 {sum(f1s) / len(f1s):.3f}\")\n\n    t5_name = \"google-t5/t5-small\"\n    t5_tok, t5 = AutoTokenizer.from_pretrained(t5_name), AutoModelForSeq2SeqLM.from_pretrained(t5_name).eval()\n    enc = t5_tok(\"summarize: \" + ARTICLE, return_tensors=\"pt\", truncation=True, max_length=512)\n    for name, kwargs in {\"beam 4\": dict(num_beams=4), \"greedy\": dict(num_beams=1)}.items():\n        out = t5.generate(**enc, max_new_tokens=60, no_repeat_ngram_size=3, **kwargs)\n        summary = t5_tok.decode(out[0], skip_special_tokens=True)\n        s = scorer.score(REFERENCE, summary)\n        print(f\"T5 {name}: {summary!r}\")\n        print(f\"   ROUGE-1 {s['rouge1'].fmeasure:.3f}, ROUGE-2 {s['rouge2'].fmeasure:.3f}, ROUGE-L {s['rougeL'].fmeasure:.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "The intersection of two Counters, p & r, keeps each n-gram's smaller count, which is the clipped overlap ROUGE uses.",
+     "enc.sequence_ids(0) is 0 for question tokens, 1 for context tokens and None for special tokens, which is how answer() keeps spans inside the context.",
+     "Model outputs can vary slightly between library versions; the from-scratch ROUGE figures should match exactly."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Implement attention, multi-head attention, layer normalisation and a transformer block in NumPy, and check them against PyTorch.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Train a tiny GPT, implement BERT's masking and the DPO loss, and work through scaling-law arithmetic.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Fine-tune DistilBERT with Datasets and the Trainer API, and prepare NER labels for subword tokens.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Write greedy, beam and sampling decoders from scratch, then compare strategies with generate().",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Summarise with T5, answer questions extractively, and score both with ROUGE, exact match and F1.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Start the capstone: prepare the data, measure the pretrained model and fine-tune your summariser.",
+   "modules": []
+  },
+  {
+   "week": 7,
+   "focus": "Finish the decoding experiments, the error analysis and the report, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Custom fine-tuned summariser",
+  "minutes": 720,
+  "brief": "Fine-tune a sequence-to-sequence model to summarise texts from one domain, evaluate it rigorously, and choose how to decode it. Start from the starter script train_summariser.py, which fine-tunes t5-small on DialogSum (knkarthick/dialogsum on the Hugging Face Hub: dialogues with human-written summaries, licensed CC BY-NC-SA 4.0), or swap in another domain's document and summary pairs, such as BillSum (US legislation) or your own. Measure the pretrained model first, then fine-tune it: a few thousand examples and two or three epochs are feasible on a laptop CPU in a few hours and far faster on a GPU. Build an evaluation pipeline that reports ROUGE-1, ROUGE-2 and ROUGE-L on a held-out test set, then compare decoding strategies on the same test examples: greedy decoding, beam search with two widths and two length penalties, and nucleus sampling at two temperatures with fixed seeds. Read the summaries as well as the scores: look for invented facts, omissions and repetition, and say which strategy you'd ship and why. In a quick check of the starter script (64 training dialogues, one epoch, 16 validation dialogues), ROUGE-1 rose from 0.23 to 0.34, so a full run should do clearly better.",
+  "deliverables": [
+   "Your training script, adapted from the starter, with fixed seeds, the data preparation and the training arguments you chose",
+   "A results table of ROUGE-1, ROUGE-2 and ROUGE-L on the test set before fine-tuning and after, for at least five decoding settings",
+   "Ten test examples with the reference and two systems' summaries side by side, each annotated for errors such as invented facts, omissions and repetition",
+   "A short report: the data and its licence, your training choices and their cost in time and hardware, the results, and the decoding strategy you'd ship with its risks"
+  ],
+  "rubric": [
+   {
+    "name": "Data and preprocessing",
+    "points": 15,
+    "description": "The dataset and its licence are documented, inputs carry the task prefix where the model needs it, inputs and labels are truncated sensibly, and label padding is ignored by the loss."
+   },
+   {
+    "name": "Fine-tuning",
+    "points": 20,
+    "description": "Training runs end to end with fixed seeds and sensible arguments, and the before-and-after comparison shows what fine-tuning changed."
+   },
+   {
+    "name": "Evaluation pipeline",
+    "points": 25,
+    "description": "ROUGE is computed correctly on a held-out test set, with the tokenisation and stemming stated, and every system is scored on the same examples."
+   },
+   {
+    "name": "Decoding experiments",
+    "points": 20,
+    "description": "At least five decoding settings are compared fairly, sampled runs fix their seeds, and the trade-offs between quality, diversity and length are explained."
+   },
+   {
+    "name": "Error analysis and report",
+    "points": 20,
+    "description": "The annotated examples identify real kinds of failure, the report recommends a strategy with evidence, and limits such as ROUGE's blindness to factual errors are acknowledged."
+   }
+  ],
+  "submit": "Paste your training and evaluation code (or a repository link), the results table, the ten annotated examples and your report.",
+  "files": [
+   {
+    "path": "train_summariser.py",
+    "content": "\"\"\"A starting point for the capstone: fine-tune t5-small for dialogue summarisation and score it with ROUGE.\n\nWorks with transformers 4.46 or later. pip install transformers datasets rouge-score sentencepiece torch\nQuick check:   python train_summariser.py --train 64 --eval 16 --epochs 1\nReal run:      python train_summariser.py --train 2000 --eval 200 --epochs 3\n\"\"\"\n\nimport argparse\n\nimport numpy as np\nfrom datasets import load_dataset\nfrom rouge_score import rouge_scorer\nfrom transformers import (AutoModelForSeq2SeqLM, AutoTokenizer, DataCollatorForSeq2Seq, Seq2SeqTrainer,\n                          Seq2SeqTrainingArguments, set_seed)\n\nCHECKPOINT = \"google-t5/t5-small\"\nPREFIX = \"summarize: \"\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--train\", type=int, default=64)\n    parser.add_argument(\"--eval\", type=int, default=16)\n    parser.add_argument(\"--epochs\", type=float, default=1)\n    parser.add_argument(\"--out\", default=\"t5-dialogsum\")\n    args = parser.parse_args()\n    set_seed(42)\n\n    ds = load_dataset(\"knkarthick/dialogsum\")  # CC BY-NC-SA 4.0: check the dataset card before other uses\n    train = ds[\"train\"].shuffle(seed=42).select(range(args.train))\n    val = ds[\"validation\"].select(range(args.eval))\n    tokenizer = AutoTokenizer.from_pretrained(CHECKPOINT)\n    model = AutoModelForSeq2SeqLM.from_pretrained(CHECKPOINT)\n\n    def preprocess(batch):\n        inputs = tokenizer([PREFIX + d for d in batch[\"dialogue\"]], max_length=512, truncation=True)\n        inputs[\"labels\"] = tokenizer(text_target=batch[\"summary\"], max_length=64, truncation=True)[\"input_ids\"]\n        return inputs\n\n    cols = ds[\"train\"].column_names\n    train_tok = train.map(preprocess, batched=True, remove_columns=cols)\n    val_tok = val.map(preprocess, batched=True, remove_columns=cols)\n    scorer = rouge_scorer.RougeScorer([\"rouge1\", \"rouge2\", \"rougeL\"], use_stemmer=True)\n\n    def compute_metrics(eval_pred):\n        preds, labels = eval_pred\n        preds = np.where(preds != -100, preds, tokenizer.pad_token_id)\n        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)  # -100 marks padding in the labels\n        decoded = tokenizer.batch_decode(preds, skip_special_tokens=True)\n        refs = tokenizer.batch_decode(labels, skip_special_tokens=True)\n        scores = [scorer.score(r, p) for r, p in zip(refs, decoded)]\n        return {k: float(np.mean([s[k].fmeasure for s in scores])) for k in (\"rouge1\", \"rouge2\", \"rougeL\")}\n\n    training_args = Seq2SeqTrainingArguments(\n        output_dir=args.out, eval_strategy=\"epoch\", save_strategy=\"no\", learning_rate=3e-4,\n        per_device_train_batch_size=8, per_device_eval_batch_size=8, num_train_epochs=args.epochs,\n        weight_decay=0.01, predict_with_generate=True, generation_max_length=64, generation_num_beams=4,\n        logging_steps=10, seed=42, report_to=\"none\")\n    trainer = Seq2SeqTrainer(model=model, args=training_args, train_dataset=train_tok, eval_dataset=val_tok,\n                             processing_class=tokenizer, data_collator=DataCollatorForSeq2Seq(tokenizer, model=model),\n                             compute_metrics=compute_metrics)\n    print(\"Before fine-tuning:\", trainer.evaluate())\n    trainer.train()\n    print(\"After fine-tuning:\", trainer.evaluate())\n    trainer.save_model(f\"{args.out}/final\")\n    # TODO (capstone): evaluate on the test split, compare beam search with nucleus sampling via\n    #                  model.generate(..., do_sample=True, top_p=0.9, top_k=0), and analyse the summaries\n\n\nif __name__ == \"__main__\":\n    main()\n"
+   }
+  ]
+ }
+}
