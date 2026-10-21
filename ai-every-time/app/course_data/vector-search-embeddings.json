@@ -1,0 +1,999 @@
+{
+  "slug": "vector-search-embeddings",
+  "title": "Vector Databases and Semantic Search",
+  "subtitle": "Build semantic search that's fast and measurably right: embeddings, exact and approximate indexes, compression, hybrid ranking, filtering and vector databases.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "ravi-chandrasekharan",
+    "bjorn-sigurdsson"
+  ],
+  "skills": [
+    "Semantic search",
+    "Text embeddings",
+    "Approximate nearest neighbour search",
+    "IVF and HNSW indexes",
+    "Product quantisation",
+    "Hybrid search with BM25",
+    "Filtered vector search",
+    "Retrieval evaluation",
+    "pgvector"
+  ],
+  "tools": [
+    "NumPy",
+    "scikit-learn",
+    "FAISS",
+    "sentence-transformers",
+    "PostgreSQL",
+    "pgvector",
+    "Docker"
+  ],
+  "outcomes": [
+    "Choose an embedding model and similarity measure for search, and explain why normalised vectors make cosine, inner product and L2 rankings agree",
+    "Build exact, IVF and HNSW indexes and tune nprobe, M and efSearch against recall@k on held-out queries",
+    "Compress vectors with scalar, binary and product quantisation, and recover accuracy by re-ranking",
+    "Fuse BM25 with dense retrieval, tune it on dev queries and report recall@k, MRR and nDCG with a bootstrap interval",
+    "Filter vector search without losing results, and choose between FAISS, pgvector, Qdrant, Weaviate and Milvus for a workload"
+  ],
+  "prerequisites": "Python and NumPy at the level of Python Foundations for Data Science, and Machine Learning Foundations with Python; Text Representation: From Vectors to Context helps. You need Python 3.10 or later with numpy, pandas, scikit-learn, faiss-cpu and sentence-transformers (one 90 MB model download), and Docker for the last lab.",
+  "description": "Semantic search finds what people mean rather than the words they typed, and it's the retrieval layer under most AI assistants. This course takes you inside it. You'll embed text with a pretrained model and see why normalised vectors make cosine, inner product and Euclidean distance agree; build exact search in NumPy and keep its answers as ground truth; build an inverted-file index from scratch and tune FAISS IVF and HNSW indexes on recall, latency and memory; and compress vectors with int8, binary and product quantisation, winning accuracy back by re-ranking.\n\nThen you'll make search good and safe to use: evaluate relevance with graded queries, recall@k, MRR and nDCG, and a bootstrap that says whether a gain is real; fuse BM25 with dense retrieval; filter by tenant without losing results; and run it all in PostgreSQL with pgvector, with a clear-eyed comparison of FAISS, pgvector, Qdrant, Weaviate and Milvus. Every lab runs on a laptop and was run end to end, and the checks quote its real output. The course stops at retrieval: Building RAG and Agentic Systems takes it on to generation and agents.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Embeddings and similarity for search",
+      "summary": "How embedding models turn text into vectors for retrieval, which similarity measure to use, and what exact nearest-neighbour search costs: the ground truth for everything that follows.",
+      "instructor": "bjorn-sigurdsson",
+      "lessons": [
+        {
+          "title": "Embedding models for retrieval",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a bi-encoder embedding model supports search",
+            "Choose an embedding model and its settings for a retrieval task"
+          ],
+          "key_points": [
+            "A bi-encoder embedding model maps a text to one fixed-length vector. Trained contrastively on pairs such as a question and the passage that answers it, it places related texts close together, so search becomes finding the vectors nearest the query's.",
+            "Documents are embedded once, ahead of time, and only the query at search time. The same model, version and pre-processing must embed both: vectors from different models aren't comparable, even when they have the same number of dimensions.",
+            "Symmetric search compares texts of the same kind, such as duplicate questions; asymmetric search matches a short query to a longer passage. Pick a model trained for your case, and add any prefixes it expects, such as 'query: ' and 'passage: ' for the E5 family.",
+            "Transformer encoders produce a vector per token and pool them, often by averaging, into one. Input past the model's maximum length is cut off silently (256 tokens for all-MiniLM-L6-v2 in sentence-transformers), so split long documents into chunks before embedding them.",
+            "More dimensions can hold more detail but cost memory and time per comparison. Some models are trained so that their first dimensions work on their own (Matryoshka representation learning), so vectors can be truncated and re-normalised, once you've measured the loss.",
+            "Store the model's name and version with every vector. Changing the model means re-embedding the whole collection into a new index, never mixing old and new vectors in one."
+          ]
+        },
+        {
+          "title": "Similarity measures and normalisation",
+          "minutes": 12,
+          "objectives": [
+            "Calculate the dot product, cosine similarity and Euclidean distance of two vectors",
+            "Explain when the three measures rank neighbours identically and when they don't"
+          ],
+          "key_points": [
+            "The dot product q·x sums the products of matching coordinates; cosine similarity divides it by both vectors' lengths, so it depends only on the angle between them; Euclidean (L2) distance is the length of q − x.",
+            "For vectors of length 1, ||q − x||² = 2 − 2·cos(q, x), so L2 distance, cosine similarity and the inner product all rank neighbours identically. Normalise once, at index time, and use the inner product, the cheapest of the three to compute.",
+            "On raw, unnormalised vectors the measures disagree: the inner product favours long vectors whatever their direction. Maximum inner product search suits models trained for it, such as recommenders whose vector length carries meaning; otherwise use the model's training measure.",
+            "Similarity scores aren't calibrated probabilities: a cosine of 0.5 can be a strong match for one model and a weak one for another. Set any score threshold per model on labelled examples, and rely on ranks where you can.",
+            "In high dimensions, distances between random points bunch together, so the nearest and farthest points end up almost equally far away. Real embeddings have structure, with topics forming clusters, which makes nearest neighbours meaningful and approximate search possible."
+          ]
+        },
+        {
+          "title": "Exact nearest-neighbour search and its cost",
+          "minutes": 12,
+          "objectives": [
+            "Implement brute-force k-nearest-neighbour search with matrix multiplication",
+            "Estimate the memory and compute an exact index needs"
+          ],
+          "key_points": [
+            "Exact (flat) k-nearest-neighbour search scores the query against every vector, N × d multiply-adds per query, and keeps the best k. Its answers are perfect, and they're the ground truth that every approximate index is measured against.",
+            "Batch the queries: one matrix multiplication of the query matrix by the transposed collection scores many queries at once in optimised BLAS code. For L2, expand ||q − x||² = ||q||² − 2q·x + ||x||² and compute the ||x||² terms once.",
+            "Select the top k with a partial sort, such as numpy.argpartition followed by sorting only those k: about O(N) work per query instead of O(N log N) for a full sort.",
+            "Memory is N × d × 4 bytes in float32: a million 768-dimensional vectors need about 3.1 GB before any index overhead, which is often what decides that exact search no longer fits on one machine.",
+            "Exact search is the right choice for small collections, for filters that leave few candidates and for building evaluation ground truth. Keep an ID array beside the matrix so that row numbers map back to documents."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Exact search, metrics and real embeddings",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Generate the course's collection of 50,000 vectors, implement exact k-NN search with NumPy, show that cosine, L2 and inner product agree on unit vectors but not on raw ones, save the ground truth that later labs measure against, and embed help-desk texts with a small pretrained model.",
+        "setup": [
+          "Python 3.10 or later in a virtual environment for the whole course, with pip install numpy scikit-learn faiss-cpu sentence-transformers pandas",
+          "A project folder you'll keep for every lab, holding the starter files make_vectors.py, vecs.py, exact_search.py and embed_demo.py",
+          "Internet access the first time embed_demo.py runs: it downloads sentence-transformers/all-MiniLM-L6-v2 (about 90 MB) from Hugging Face and caches it"
+        ],
+        "steps": [
+          {
+            "do": "Generate the collection: 50,000 vectors of 64 dimensions in 100 overlapping topic clusters, 500 held-out queries from the same distribution, and a tenant label on every vector. The seed is fixed, so everyone gets identical files.",
+            "code": "python make_vectors.py",
+            "lang": "bash",
+            "see": "wrote data/base.npy (50000, 64) float32, data/queries.npy (500, 64), data/tenant.npy, then the tenant shares, from 0:0.401 down to 7:0.005"
+          },
+          {
+            "do": "Read vecs.py. unit() scales rows to length 1, top_k() selects with argpartition, exact_search() scores a batch of queries with one matrix multiplication, and recall_at_k() compares two result lists. Every later lab imports it."
+          },
+          {
+            "do": "Run the experiments: lengths of the raw vectors, the three measures compared, the identity behind them, partial against full sorting, and the cost of exact search.",
+            "code": "python exact_search.py",
+            "lang": "bash",
+            "see": "identical top-10 for 100.0% of queries on unit vectors; raw inner product overlap@10 0.144; raw L2 overlap@10 0.363"
+          },
+          {
+            "do": "Look at the identity line: the gap between ||a − b||² and 2 − 2cos(a, b) is about 1e-7, rounding error. Then compare the sort and argpartition timings for 256 queries.",
+            "see": "argpartition gives the same top-10 as a full sort: True, in a fraction of the time"
+          },
+          {
+            "do": "Note data/gt.npy: the exact top 100 for each query. Modules 2 to 5 measure every index against it, so don't regenerate the data with other settings."
+          },
+          {
+            "do": "Embed six help-desk articles and three queries with a pretrained model, and see which article each query finds.",
+            "code": "python embed_demo.py",
+            "lang": "bash",
+            "see": "384 dimensions, lengths 1.000, inputs truncated after 256 tokens; \"I can't remember my login details\" finds the password-reset article at 0.556 with no shared words"
+          },
+          {
+            "do": "Write two or three sentences: why did the raw inner product disagree most with cosine, and what does the first query's result show that keyword matching couldn't do?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The collection was generated with the fixed seed.",
+            "look_for": [
+              "wrote data/base.npy (50000, 64) float32",
+              "0:0.401"
+            ]
+          },
+          {
+            "text": "Cosine and L2 agree on unit vectors, and the raw measures disagree.",
+            "look_for": [
+              "identical top-10 for 100.0% of queries",
+              "overlap@10 0.144",
+              "overlap@10 0.363"
+            ]
+          },
+          {
+            "text": "The partial sort matches a full sort, and the ground truth was saved.",
+            "look_for": [
+              "same top-10 as a full sort: True",
+              "saved data/gt.npy"
+            ]
+          },
+          {
+            "text": "The pretrained model matched a paraphrase that shares no words with the article.",
+            "look_for": [
+              "384 dimensions",
+              "0.556",
+              "shared words: none"
+            ]
+          },
+          {
+            "text": "The explanation connects the raw inner product's ranking to vector length.",
+            "look_for": [
+              "length"
+            ]
+          }
+        ],
+        "submit": "Paste the output of make_vectors.py, exact_search.py and embed_demo.py, and your two or three sentences from step 7.",
+        "files": [
+          {
+            "path": "make_vectors.py",
+            "content": "\"\"\"Make the course's synthetic embedding collection: 50,000 vectors in topic clusters, 500 held-out queries\nfrom the same distribution, and a tenant label on every vector for the filtering labs. Fixed seed: everyone\ngets identical files.\"\"\"\nimport argparse\nimport pathlib\n\nimport numpy as np\n\np = argparse.ArgumentParser()\np.add_argument(\"--n\", type=int, default=50_000)\np.add_argument(\"--dim\", type=int, default=64)\np.add_argument(\"--topics\", type=int, default=100)\np.add_argument(\"--queries\", type=int, default=500)\np.add_argument(\"--seed\", type=int, default=7)\na = p.parse_args()\n\nrng = np.random.default_rng(a.seed)\ncentres = rng.normal(size=(a.topics, a.dim)) * 0.6       # topic centres, overlapping as real topics do\nspread = rng.uniform(0.5, 1.0, size=a.topics)             # some topics tight, some loose\nweights = rng.dirichlet(np.ones(a.topics) * 2.0)          # some topics much more common than others\n\n\ndef sample(m):\n    topic = rng.choice(a.topics, size=m, p=weights)\n    x = centres[topic] + rng.normal(size=(m, a.dim)) * spread[topic, None]\n    x *= rng.lognormal(0.0, 0.25, size=(m, 1))            # raw model outputs vary in length\n    return x.astype(np.float32)\n\n\nbase = sample(a.n)\nqueries = sample(a.queries)\nshare = [0.40, 0.25, 0.15, 0.10, 0.05, 0.03, 0.015, 0.005]  # tenants 0-7, from big to tiny\ntenant = rng.choice(len(share), size=a.n, p=share).astype(np.int16)\n\nout = pathlib.Path(\"data\")\nout.mkdir(exist_ok=True)\nnp.save(out / \"base.npy\", base)\nnp.save(out / \"queries.npy\", queries)\nnp.save(out / \"tenant.npy\", tenant)\nprint(f\"wrote data/base.npy {base.shape} {base.dtype}, data/queries.npy {queries.shape}, data/tenant.npy\")\nprint(\"tenant shares:\", \" \".join(f\"{t}:{np.mean(tenant == t):.3f}\" for t in range(len(share))))\n"
+          },
+          {
+            "path": "vecs.py",
+            "content": "\"\"\"Helpers shared by the course labs: loading the collection, exact search and recall.\"\"\"\nimport numpy as np\n\n\ndef unit(x):\n    \"\"\"Scale every row to length 1, so that inner product equals cosine similarity.\"\"\"\n    return (x / np.linalg.norm(x, axis=1, keepdims=True)).astype(np.float32)\n\n\ndef load(folder=\"data\", normalise=True):\n    base, queries = np.load(f\"{folder}/base.npy\"), np.load(f\"{folder}/queries.npy\")\n    return (unit(base), unit(queries)) if normalise else (base, queries)\n\n\ndef top_k(scores, k):\n    \"\"\"Column indices of the k highest scores in each row, best first, without sorting whole rows.\"\"\"\n    k = min(k, scores.shape[1])\n    part = np.argpartition(-scores, k - 1, axis=1)[:, :k]\n    order = np.argsort(-np.take_along_axis(scores, part, axis=1), axis=1, kind=\"stable\")\n    return np.take_along_axis(part, order, axis=1)\n\n\ndef exact_search(queries, base, k=10, metric=\"ip\", batch=256):\n    \"\"\"Brute-force k-NN, a batch of queries at a time. metric 'ip': inner product (cosine on unit vectors);\n    'l2': Euclidean distance, using ||q - x||^2 = ||q||^2 - 2 q.x + ||x||^2.\"\"\"\n    base_sq = (base.astype(np.float64) ** 2).sum(axis=1).astype(np.float32) if metric == \"l2\" else None\n    out = []\n    for s in range(0, len(queries), batch):\n        sims = queries[s:s + batch] @ base.T              # one matrix multiplication per batch\n        if metric == \"l2\":\n            sims = 2 * sims - base_sq                     # ||q||^2 is the same for every x: drop it\n        out.append(top_k(sims, k))\n    return np.vstack(out)\n\n\ndef recall_at_k(found, truth, k=10):\n    \"\"\"Share of the true k nearest neighbours that a search returned, averaged over the queries.\"\"\"\n    return float(np.mean([len(set(f[:k]) & set(t[:k])) / k for f, t in zip(found, truth)]))\n"
+          },
+          {
+            "path": "exact_search.py",
+            "content": "\"\"\"Module 1 lab: exact k-NN search with NumPy, and what normalisation does to the metrics.\"\"\"\nimport time\n\nimport numpy as np\n\nfrom vecs import exact_search, recall_at_k, top_k, unit\n\nbase, queries = np.load(\"data/base.npy\"), np.load(\"data/queries.npy\")\nprint(f\"collection: {base.shape[0]} vectors x {base.shape[1]} dims, {base.dtype}, {base.nbytes / 1e6:.1f} MB\")\nnorms = np.linalg.norm(base, axis=1)\nprint(f\"raw lengths: min {norms.min():.2f}, median {np.median(norms):.2f}, max {norms.max():.2f}\")\n\nk = 10\nbn, qn = unit(base), unit(queries)\ncos = exact_search(qn, bn, k, \"ip\")\nsame = np.mean(np.all(cos == exact_search(qn, bn, k, \"l2\"), axis=1))\nprint(f\"cosine vs L2 on unit vectors: identical top-{k} for {same:.1%} of queries\")\nprint(f\"cosine vs raw inner product: overlap@{k} {recall_at_k(exact_search(queries, base, k, 'ip'), cos, k):.3f}\")\nprint(f\"cosine vs raw L2:            overlap@{k} {recall_at_k(exact_search(queries, base, k, 'l2'), cos, k):.3f}\")\n\na, b = bn[:1000].astype(np.float64), bn[1000:2000].astype(np.float64)\ngap = np.abs(((a - b) ** 2).sum(1) - (2 - 2 * (a * b).sum(1))).max()\nprint(f\"largest gap between ||a-b||^2 and 2 - 2cos(a,b) over 1000 pairs: {gap:.1e}\")\n\nscores = qn[:256] @ bn.T                                  # one batch of queries\nt_sort = t_part = float(\"inf\")\nfor _ in range(3):                                        # best of three, to steady the timings\n    t0 = time.perf_counter()\n    full = np.argsort(-scores, axis=1)[:, :k]\n    t1 = time.perf_counter()\n    part = top_k(scores, k)\n    t_sort, t_part = min(t_sort, t1 - t0), min(t_part, time.perf_counter() - t1)\nprint(f\"argpartition gives the same top-{k} as a full sort: {bool(np.all(full == part))} \"\n      f\"(sort {1e3 * t_sort:.0f} ms, argpartition {1e3 * t_part:.0f} ms for 256 queries)\")\n\nt0 = time.perf_counter()\ngt = exact_search(qn, bn, 100, \"ip\")\ndt = time.perf_counter() - t0\nprint(f\"exact top-100 for {len(qn)} queries: {dt:.2f} s, {1e3 * dt / len(qn):.2f} ms per query\")\nnp.save(\"data/gt.npy\", gt)\nprint(\"saved data/gt.npy: the ground truth for every later lab\")\nfor n, d in [(1_000_000, 384), (1_000_000, 768), (10_000_000, 768)]:\n    print(f\"flat float32 index for {n:,} x {d}: {n * d * 4 / 1e9:.2f} GB\")\n"
+          },
+          {
+            "path": "embed_demo.py",
+            "content": "\"\"\"Module 1 lab, part 2: real sentence embeddings from a small open model (downloads about 90 MB once).\"\"\"\nimport numpy as np\nfrom sentence_transformers import SentenceTransformer\n\ndocs = [\n    \"How to reset your password if you are locked out of your account\",\n    \"Setting up the VPN client on a new laptop\",\n    \"Requesting annual leave and checking your remaining holiday allowance\",\n    \"The printer on the third floor reports a paper jam\",\n    \"Claiming travel expenses after a business trip\",\n    \"Turning on two-factor authentication for your email\",\n]\nqueries = [\"I can't remember my login details\", \"how many days off do I have left\", \"printer stuck\"]\n\nmodel = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\")\nD = model.encode(docs, normalize_embeddings=True)\nQ = model.encode(queries, normalize_embeddings=True)\nprint(f\"{D.shape[1]} dimensions, lengths {np.linalg.norm(D, axis=1).min():.3f} to {np.linalg.norm(D, axis=1).max():.3f}, \"\n      f\"inputs truncated after {model.max_seq_length} tokens\")\nfor q, row in zip(queries, Q @ D.T):\n    best = np.argsort(-row)[:2]\n    shared = set(q.lower().split()) & set(docs[best[0]].lower().split())\n    print(f\"{q!r}: {row[best[0]]:.3f} {docs[best[0]]!r} (shared words: {', '.join(sorted(shared)) or 'none'}); \"\n          f\"next {row[best[1]]:.3f}\")\n"
+          }
+        ],
+        "hints": [
+          "sentence-transformers needs PyTorch. On Linux, pip installs a GPU build with large extra libraries by default; install the CPU-only build first with pip install torch --index-url https://download.pytorch.org/whl/cpu to save several gigabytes.",
+          "If embed_demo.py can't download the model, check your connection or proxy settings. After the first run it loads from the cache; set HF_HUB_OFFLINE=1 to stop it checking for updates.",
+          "Timings depend on your computer; the overlaps and counts shouldn't. A different NumPy version can change a last digit.",
+          "A cosine of 0.556 may look low, but scores are only comparable within one model: what matters is that the right article is first and well ahead of the next (0.232)."
+        ]
+      }
+    },
+    {
+      "title": "Approximate nearest neighbours: IVF and HNSW",
+      "summary": "Why approximate search, how to measure it against exact search, and how inverted-file indexes and HNSW graphs trade recall for speed and memory.",
+      "instructor": "ravi-chandrasekharan",
+      "lessons": [
+        {
+          "title": "Measuring approximate search",
+          "minutes": 10,
+          "objectives": [
+            "Define recall@k for an approximate index",
+            "Compare indexes fairly on recall, latency, memory and build time"
+          ],
+          "key_points": [
+            "An approximate nearest-neighbour (ANN) index examines only part of the collection, so it returns most, not all, of the true neighbours. Its recall@k is the share of the exact top k it returns, averaged over queries: 0.95 means 19 of every 20 true neighbours were found.",
+            "Four quantities trade against each other: recall, query latency or throughput, memory, and build or update time. Every index has knobs that move it along that curve, so compare indexes at the same recall, not at their default settings.",
+            "Benchmark with held-out queries like production's, at the k you actually serve, and report latency percentiles from many single queries; the throughput of large batches is a different measurement.",
+            "ANN recall measures agreement with exact search, not relevance. A perfect index over a poor embedding model still returns poor results, so judge the model with relevance labels and the index against exact search.",
+            "Tune the knobs on one query set and confirm on another, and measure again as the collection grows or changes: a setting that gave 0.95 recall on a small collection can give less on a larger one."
+          ]
+        },
+        {
+          "title": "Inverted-file (IVF) indexes",
+          "minutes": 13,
+          "objectives": [
+            "Explain how an IVF index partitions vectors and searches nprobe lists",
+            "Choose nlist and nprobe from measurements"
+          ],
+          "key_points": [
+            "An IVF index runs k-means to find nlist centroids, which divide the space into cells, and stores each vector in the inverted list of its nearest centroid. A query is compared with the centroids, and only the vectors in the nprobe nearest lists are scored.",
+            "Each query scores the nlist centroids plus about nprobe × N / nlist vectors. Raising nprobe finds neighbours just across cell boundaries, raising recall and cost, and nprobe = nlist scans everything, which gives exact results.",
+            "For the same nprobe, more lists means shorter lists and less work but lower recall, so compare list counts by the work needed to reach a target recall. FAISS's guidelines suggest an nlist between about 4√N and 16√N.",
+            "Train k-means on a sample that represents the data, with enough points per centroid (FAISS warns below 39). Popular topics make some lists much longer than others, and queries that probe them are slower.",
+            "Adding a vector only means assigning it to its nearest centroid, and deleting one means removing it from a list; but if the data drifts away from the training sample, the lists become unbalanced and the index needs retraining."
+          ]
+        },
+        {
+          "title": "HNSW graphs",
+          "minutes": 14,
+          "objectives": [
+            "Describe how HNSW builds and searches a layered graph",
+            "Tune M, efConstruction and efSearch, and estimate HNSW's memory"
+          ],
+          "key_points": [
+            "HNSW (Hierarchical Navigable Small World, from Malkov and Yashunin) links every vector to approximate nearest neighbours in a graph. Each vector also appears on higher, sparser layers with exponentially falling probability, about 1/M of them on layer 1, which act as express lanes.",
+            "A search enters at the top layer, moves greedily towards the query and drops a layer at a time. On the bottom layer it runs a best-first search that keeps a candidate list of size efSearch, and returns the best k from it.",
+            "M sets the links per vector (FAISS keeps 2M on the bottom layer), so a higher M raises recall and memory. efConstruction sets how widely insertion looks for neighbours: a better graph for a longer build. efSearch is the query-time knob.",
+            "Links cost memory on top of the vectors: with 4-byte neighbour IDs, about 8 × M bytes per vector on the bottom layer. In the lab, M = 16 added 144 bytes per vector, more than half the size of a 64-dimensional float32 vector.",
+            "HNSW gives high recall at low latency and accepts inserts without training, but it builds more slowly than IVF, the graph normally lives in RAM, and deleted vectors are usually marked and skipped until a rebuild."
+          ],
+          "walkthrough": {
+            "tool": "Python console",
+            "title": "Look inside a FAISS HNSW index",
+            "steps": [
+              {
+                "do": "In the project folder, start Python and build an HNSW index with M = 16 over the unit-length collection. One thread keeps the build reproducible.",
+                "code": "import faiss, numpy as np\nfrom vecs import load\nfaiss.omp_set_num_threads(1)\nbase, queries = load()\nindex = faiss.IndexHNSWFlat(64, 16, faiss.METRIC_INNER_PRODUCT)\nindex.hnsw.efConstruction = 80\nindex.add(base)\nindex.ntotal, index.hnsw.max_level",
+                "lang": "python",
+                "see": "(50000, 4): five layers, numbered 0 to 4"
+              },
+              {
+                "do": "Count how many vectors reach each layer. Each vector's top layer is drawn at random, so that about 1/M of them reach layer 1.",
+                "code": "levels = faiss.vector_to_array(index.hnsw.levels) - 1\nnp.bincount(levels), np.mean(levels >= 1)",
+                "lang": "python",
+                "see": "array([46820, 3013, 155, 11, 1]) and 0.0636: close to 1/16 = 0.0625"
+              },
+              {
+                "do": "Search for the first query's five nearest vectors with a candidate list of 64.",
+                "code": "index.hnsw.efSearch = 64\nD, I = index.search(queries[:1], 5)\nI[0], D[0].round(3)",
+                "lang": "python",
+                "see": "array([36680, 11110, 14074, 39625, 34339]) with inner products 0.742, 0.725, 0.719, 0.716, 0.714"
+              },
+              {
+                "do": "Now shrink the candidate list to 1 and search again. FAISS still returns five results, but the walk stops early and misses the true nearest vector: keep efSearch at least as large as k, and raise it until recall meets your target.",
+                "code": "index.hnsw.efSearch = 1\nindex.search(queries[:1], 5)[1]",
+                "lang": "python",
+                "see": "array([[14074, 13550, 19423, 4243, 1976]]): 36680 and 11110, the two best, are gone"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Build IVF from scratch, then tune FAISS IVF and HNSW",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Build an inverted-file index with scikit-learn's k-means and NumPy and measure recall@10 and the share of vectors scanned as nprobe grows, then sweep FAISS IVF indexes with 256 and 1,024 lists and HNSW graphs with M = 16 and 32, and choose a configuration for a recall target.",
+        "setup": [
+          "The project folder from the module 1 lab, with data/ and data/gt.npy",
+          "The starter files ivf_scratch.py and faiss_sweep.py"
+        ],
+        "steps": [
+          {
+            "do": "Read ivf_scratch.py: it trains 256 centroids on a 20,000-vector sample, puts every vector in its nearest centroid's list, and searches by scoring the centroids and then the vectors in the nprobe best lists."
+          },
+          {
+            "do": "Run it.",
+            "code": "python ivf_scratch.py",
+            "lang": "bash",
+            "see": "trained 256 lists; vectors per list: min 11, median 183, max 614, then one line per nprobe"
+          },
+          {
+            "do": "Read the table: recall@10 climbs from 0.492 at nprobe = 1 to 0.966 at nprobe = 8 while scanning only 3.2% of the vectors, and nprobe = 256 scans everything and matches exact search.",
+            "see": "nprobe=256: recall@10 1.000, scanned 100.0% of the vectors"
+          },
+          {
+            "do": "Run the FAISS sweep. It builds IVF with 256 and 1,024 lists and HNSW with M = 16 and 32, all on one thread, and prints each index's size.",
+            "code": "python faiss_sweep.py",
+            "lang": "bash",
+            "see": "Flat: 12.8 MB; IVF256 nprobe=16 recall@10 0.983; IVF1024 nprobe=16 0.926; HNSW16,Flat: 20.0 MB, 144 bytes of links per vector"
+          },
+          {
+            "do": "For each index, find the cheapest setting that reaches recall@10 of 0.95, and note its latency and memory. Compare IVF256 and IVF1024 at that recall, not at the same nprobe."
+          },
+          {
+            "do": "Write a recommendation of four or five sentences: for these 50,000 vectors, a 0.95 recall target and a tight memory budget, which index and setting would you choose, and what would change at 50 million vectors?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The from-scratch IVF index was trained, with unbalanced lists.",
+            "look_for": [
+              "trained 256 lists",
+              "min 11",
+              "median 183"
+            ]
+          },
+          {
+            "text": "Recall rises with nprobe, reaching exact results when every list is scanned.",
+            "look_for": [
+              "recall@10 0.492",
+              "recall@10 0.966",
+              "scanned 100.0%"
+            ]
+          },
+          {
+            "text": "FAISS IVF results for both list counts.",
+            "look_for": [
+              "IVF256 nprobe=16",
+              "0.983",
+              "IVF1024 nprobe=16",
+              "0.926"
+            ]
+          },
+          {
+            "text": "HNSW results and memory for both values of M.",
+            "look_for": [
+              "HNSW16,Flat",
+              "20.0 MB",
+              "HNSW32 efSearch=64",
+              "0.971"
+            ]
+          },
+          {
+            "text": "The recommendation names an index and setting for the 0.95 target and discusses memory.",
+            "look_for": [
+              "0.95"
+            ]
+          }
+        ],
+        "submit": "Paste the output of ivf_scratch.py and faiss_sweep.py, and your recommendation from step 6.",
+        "files": [
+          {
+            "path": "ivf_scratch.py",
+            "content": "\"\"\"Module 2 lab: an inverted-file (IVF) index from scratch with k-means and NumPy.\"\"\"\nimport time\n\nimport numpy as np\nfrom sklearn.cluster import KMeans\n\nfrom vecs import load, recall_at_k, top_k\n\nbase, queries = load()\ngt = np.load(\"data/gt.npy\")\nnlist, k = 256, 10\n\nt0 = time.perf_counter()\nsample = base[np.random.default_rng(0).choice(len(base), 20_000, replace=False)]   # train on a sample\nkm = KMeans(n_clusters=nlist, n_init=1, max_iter=25, random_state=0).fit(sample)\ncentroids = km.cluster_centers_ / np.linalg.norm(km.cluster_centers_, axis=1, keepdims=True)\ncentroids = centroids.astype(np.float32)\nassign = np.argmax(base @ centroids.T, axis=1)            # each vector joins its nearest centroid's list\nlists = [np.flatnonzero(assign == c) for c in range(nlist)]\nsizes = np.array([len(ids) for ids in lists])\nprint(f\"trained {nlist} lists in {time.perf_counter() - t0:.1f} s; vectors per list: min {sizes.min()}, \"\n      f\"median {int(np.median(sizes))}, max {sizes.max()}\")\n\n\ndef search(q, nprobe):\n    \"\"\"Compare q with the centroids, then scan only the vectors in the nprobe nearest lists.\"\"\"\n    cells = top_k((centroids @ q)[None, :], nprobe)[0]\n    ids = np.concatenate([lists[c] for c in cells])\n    best = top_k((base[ids] @ q)[None, :], k)[0]\n    return ids[best], len(ids)\n\n\nfor nprobe in [1, 2, 4, 8, 16, 32, nlist]:\n    t0 = time.perf_counter()\n    results = [search(q, nprobe) for q in queries]\n    ms = 1e3 * (time.perf_counter() - t0) / len(queries)\n    found = np.array([ids for ids, _ in results])\n    scanned = np.mean([n for _, n in results]) / len(base)\n    print(f\"nprobe={nprobe:>3}: recall@10 {recall_at_k(found, gt, k):.3f}, scanned {scanned:6.1%} of the \"\n          f\"vectors, {ms:.2f} ms/query\")\n"
+          },
+          {
+            "path": "faiss_sweep.py",
+            "content": "\"\"\"Module 2 lab, part 2: the same trade-offs with FAISS: IVF with two list counts, and HNSW graphs.\"\"\"\nimport time\n\nimport faiss\nimport numpy as np\n\nfrom vecs import load, recall_at_k\n\nfaiss.omp_set_num_threads(1)          # one thread: reproducible builds and honest per-query latency\nbase, queries = load()\ngt = np.load(\"data/gt.npy\")\nn, d = base.shape\nk = 10\n\n\ndef mb(index):\n    return faiss.serialize_index(index).nbytes / 1e6\n\n\ndef sweep(index, label, knob, values, apply):\n    for v in values:\n        apply(v)\n        t0 = time.perf_counter()\n        _, found = index.search(queries, k)\n        ms = 1e3 * (time.perf_counter() - t0) / len(queries)\n        print(f\"  {label} {knob}={v:<4} recall@10 {recall_at_k(found, gt, k):.3f}  {ms:.3f} ms/query\")\n\n\nflat = faiss.IndexFlatIP(d)\nflat.add(base)\nprint(f\"Flat: {mb(flat):.1f} MB, recall@10 1.000 by definition\")\n\nfor nlist in (256, 1024):\n    ivf = faiss.IndexIVFFlat(faiss.IndexFlatIP(d), d, nlist, faiss.METRIC_INNER_PRODUCT)\n    t0 = time.perf_counter()\n    ivf.train(base)\n    ivf.add(base)\n    print(f\"IVF{nlist},Flat: built in {time.perf_counter() - t0:.1f} s, {mb(ivf):.1f} MB\")\n    sweep(ivf, f\"IVF{nlist}\", \"nprobe\", [1, 4, 16, 64], lambda v: setattr(ivf, \"nprobe\", v))\n\nfor m in (16, 32):\n    hnsw = faiss.IndexHNSWFlat(d, m, faiss.METRIC_INNER_PRODUCT)\n    hnsw.hnsw.efConstruction = 80\n    t0 = time.perf_counter()\n    hnsw.add(base)\n    print(f\"HNSW{m},Flat: built in {time.perf_counter() - t0:.1f} s, {mb(hnsw):.1f} MB, \"\n          f\"{(mb(hnsw) - mb(flat)) * 1e6 / n:.0f} bytes of links per vector\")\n    sweep(hnsw, f\"HNSW{m}\", \"efSearch\", [16, 32, 64, 128], lambda v: setattr(hnsw.hnsw, \"efSearch\", v))\n"
+          }
+        ],
+        "hints": [
+          "If pip can't find a faiss-cpu wheel for your platform, conda install -c pytorch faiss-cpu is the project's own installation route.",
+          "The scripts run FAISS on one thread so that builds are reproducible and latencies are per query. Remove faiss.omp_set_num_threads(1) to see multi-threaded speed; HNSW builds then vary slightly between runs.",
+          "Latencies depend on your machine; recall should match the checks. The from-scratch index is slower than FAISS because it loops in Python and copies candidate vectors: compare the share of vectors scanned, not its milliseconds.",
+          "At 50 million vectors, think about the training sample, list counts from the √N guideline, the memory for HNSW's links and the time to rebuild."
+        ]
+      }
+    },
+    {
+      "title": "Compressing vectors: scalar, binary and product quantisation",
+      "summary": "Fit more vectors into memory with float16, int8 and binary codes and with product quantisation, and win back accuracy with IVF residuals and re-ranking.",
+      "instructor": "ravi-chandrasekharan",
+      "lessons": [
+        {
+          "title": "Memory budgets and scalar quantisation",
+          "minutes": 12,
+          "objectives": [
+            "Work out the memory a vector index needs per vector",
+            "Compare float16, int8 and binary quantisation"
+          ],
+          "key_points": [
+            "An in-memory index needs the vectors plus its own structures: 50,000 float32 vectors of 64 dimensions take 12.8 MB, IVF adds an 8-byte ID per vector and HNSW its links. Work it out per vector before choosing an index or hardware.",
+            "Storing vectors as float16 halves their memory with almost no effect on ranking for typical embeddings: the module's lab measured recall@10 of 0.999 against float32.",
+            "Int8 scalar quantisation maps each dimension's range onto the 256 values of a byte, with a scale and offset per dimension, using a quarter of float32's memory; the lab's SQ8 index kept recall@10 at 0.981.",
+            "Binary quantisation keeps only the sign of each value, one bit per dimension, 32 times smaller than float32, and compares codes by Hamming distance with XOR and a bit count. It loses the most information and suits high-dimensional models with re-scoring.",
+            "Over-fetch and re-score: search the compressed codes for more candidates than you need, such as 100 for a top 10, then re-rank them with full-precision vectors, which can live on disk or in cheaper storage."
+          ]
+        },
+        {
+          "title": "Product quantisation",
+          "minutes": 14,
+          "objectives": [
+            "Explain how product quantisation encodes vectors and scores them",
+            "Estimate a product-quantised index's size and accuracy"
+          ],
+          "key_points": [
+            "Product quantisation (Jégou, Douze and Schmid, 2011) splits each vector into m sub-vectors and learns a k-means codebook of 256 centroids for each sub-space, so a vector is stored as m one-byte codes: 256 bytes of float32 become 8 bytes with m = 8.",
+            "Asymmetric distance computation keeps the query exact: for each sub-space it scores the query's sub-vector against all 256 centroids once, an m × 256 table, and each stored vector's score is then the sum of m table look-ups, with no decompression.",
+            "More sub-vectors means more bytes and a finer approximation: in the lab, recall@10 rose from 0.266 with 8 bytes per vector to 0.504 with 16. Because the scores are approximate, the order near the top shuffles, which is why re-ranking matters.",
+            "IVF-PQ combines the two: IVF chooses the cells to scan, and PQ encodes each vector's residual, its difference from its cell's centroid, which varies less than the vector itself and so quantises more accurately.",
+            "Codebooks need representative training data: thousands of vectors, since each sub-space has 256 centroids. Sub-spaces should carry similar variance, and OPQ learns a rotation before quantising to balance them."
+          ]
+        },
+        {
+          "title": "Re-ranking and choosing a compression scheme",
+          "minutes": 11,
+          "objectives": [
+            "Design a two-stage search that re-ranks compressed candidates",
+            "Choose a compression scheme from a memory budget and a recall target"
+          ],
+          "key_points": [
+            "A two-stage search retrieves candidates using compressed codes and re-scores them exactly. Its recall@10 equals the share of the true top 10 among the candidates: re-ranking 100 PQ candidates lifted the lab's recall@10 from 0.260 to 0.765.",
+            "Re-ranking needs the full vectors somewhere. FAISS's IndexRefineFlat keeps them in RAM (about 275 bytes per vector in the lab), while disk-based designs such as DiskANN keep compressed codes in memory and the full vectors on SSD.",
+            "Start from the budget: bytes per vector times the number of vectors, with headroom for growth. Choose the least compression that fits, then measure recall: there's no point in PQ when float16 or int8 already fits.",
+            "Reducing dimensions, with PCA or Matryoshka truncation, is another form of compression and combines with quantisation; measure its effect on both ANN recall and end-to-end relevance.",
+            "Normalise before quantising when you search by cosine, and quantise with the metric the index uses. Keep the codebooks and settings with the index: codes mean nothing without them."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Product quantisation from scratch, and FAISS's compressed indexes",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Implement product quantisation with scikit-learn's k-means, score vectors with asymmetric distance tables, compare it with int8 and binary quantisation, re-rank candidates with full vectors, and build a table of bytes per vector against recall@10 for FAISS's compressed indexes.",
+        "setup": [
+          "The project folder with data/ and data/gt.npy from module 1",
+          "The starter files pq_scratch.py and faiss_compress.py"
+        ],
+        "steps": [
+          {
+            "do": "Read the first part of pq_scratch.py: eight k-means codebooks, one per 8-dimensional slice, and an encoder that stores each vector as eight one-byte codes."
+          },
+          {
+            "do": "Run it. It takes up to a minute, most of it training the codebooks.",
+            "code": "python pq_scratch.py",
+            "lang": "bash",
+            "see": "PQ 8x8: 8 bytes per vector instead of 256 (32x smaller), plus 66 KB of codebooks; mean squared reconstruction error 0.297"
+          },
+          {
+            "do": "Compare the recall lines: PQ alone, PQ's top 100 re-ranked, SQ8, and binary with and without re-ranking.",
+            "see": "PQ alone 0.260; re-ranked 0.765; SQ8 0.980; binary 0.140, top 100 re-ranked 0.484"
+          },
+          {
+            "do": "Find adc_scores() and add a comment explaining what the 8 × 256 table holds and why the query is never quantised."
+          },
+          {
+            "do": "Build FAISS's compressed indexes from factory strings and compare them at nprobe = 16.",
+            "code": "python faiss_compress.py",
+            "lang": "bash",
+            "see": "a table from Flat (256.0 bytes, 1.000) through SQ8 (64.0, 0.981) and IVF256,PQ16 (26.7, 0.573) to IVF256,PQ8,RFlat (274.7, 0.845)"
+          },
+          {
+            "do": "Using the bytes-per-vector column, work out the memory for 100 million vectors like these with Flat, SQ8, IVF256,PQ16 and IVF256,PQ8,RFlat."
+          },
+          {
+            "do": "Write a recommendation: with 16 GB of RAM for 100 million vectors and a recall@10 target of 0.95, which configuration would you choose, and where would the vectors for re-ranking live?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The PQ codes and their size.",
+            "look_for": [
+              "8 bytes per vector instead of 256 (32x smaller)"
+            ]
+          },
+          {
+            "text": "Recall for PQ, SQ8 and binary codes, with and without re-ranking.",
+            "look_for": [
+              "recall@10 0.260",
+              "recall@10 0.765",
+              "recall@10 0.980",
+              "top 100 re-ranked 0.484"
+            ]
+          },
+          {
+            "text": "FAISS's table of bytes per vector against recall.",
+            "look_for": [
+              "SQfp16",
+              "0.999",
+              "IVF256,PQ8,RFlat",
+              "274.7"
+            ]
+          },
+          {
+            "text": "The memory for 100 million vectors is worked out (Flat needs 25.6 GB).",
+            "look_for": [
+              "25.6"
+            ]
+          },
+          {
+            "text": "The recommendation fits 16 GB and explains how recall is recovered.",
+            "look_for": [
+              "GB"
+            ]
+          }
+        ],
+        "submit": "Paste the output of both scripts, your comment from step 4, your memory figures and your recommendation.",
+        "files": [
+          {
+            "path": "pq_scratch.py",
+            "content": "\"\"\"Module 3 lab: product quantisation from scratch, with scalar and binary quantisation for comparison.\nEvery result is measured against the exact ground truth from module 1.\"\"\"\nimport numpy as np\nfrom sklearn.cluster import KMeans\n\nfrom vecs import load, recall_at_k, top_k\n\nbase, queries = load()\ngt = np.load(\"data/gt.npy\")\nn, d = base.shape\nm, k = 8, 10                       # 8 sub-vectors of 8 dimensions, 256 centroids (one byte) each\nds = d // m\ntrain = base[np.random.default_rng(0).choice(n, 20_000, replace=False)]\n\n\ndef rerank(candidates, k=10):\n    \"\"\"Re-score each query's candidates with the full float32 vectors and keep the best k.\"\"\"\n    return np.array([c[np.argsort(-(base[c] @ q))[:k]] for c, q in zip(candidates, queries)])\n\n\n# 1. Train a 256-centroid codebook for each sub-space and encode every vector as 8 one-byte codes.\nbooks = np.stack([KMeans(256, n_init=1, max_iter=20, random_state=j).fit(train[:, j * ds:(j + 1) * ds])\n                  .cluster_centers_ for j in range(m)]).astype(np.float32)          # shape (8, 256, 8)\ncodes = np.empty((n, m), dtype=np.uint8)\nfor j in range(m):\n    sub = base[:, j * ds:(j + 1) * ds]\n    dist = (sub ** 2).sum(1)[:, None] - 2 * sub @ books[j].T + (books[j] ** 2).sum(1)[None, :]\n    codes[:, j] = np.argmin(dist, axis=1)\nprint(f\"PQ 8x8: {codes.nbytes // n} bytes per vector instead of {base.nbytes // n} \"\n      f\"({base.nbytes // codes.nbytes}x smaller), plus {books.nbytes / 1e3:.0f} KB of codebooks\")\nrecon = np.concatenate([books[j][codes[:, j]] for j in range(m)], axis=1)\nprint(f\"mean squared reconstruction error: {np.mean(((base - recon) ** 2).sum(1)):.3f} (each vector has length 1)\")\n\n\n# 2. Asymmetric distance computation: the query stays exact; one 8 x 256 table, then 8 look-ups per vector.\ndef adc_scores(q):\n    table = np.einsum(\"jcs,js->jc\", books, q.reshape(m, ds))      # q's sub-vector . every centroid\n    return table[np.arange(m), codes].sum(axis=1)                # approximate inner product with every vector\n\n\npq_top = np.stack([top_k(adc_scores(q)[None, :], 100)[0] for q in queries])\nprint(f\"PQ alone:                     recall@10 {recall_at_k(pq_top, gt):.3f}\")\nprint(f\"PQ top 100, re-ranked exactly: recall@10 {recall_at_k(rerank(pq_top), gt):.3f}\")\n\n# 3. Scalar quantisation: each dimension's range mapped onto 0-255.\nlo, hi = base.min(axis=0), base.max(axis=0)\nscale = (hi - lo) / 255\nsq8 = np.round((base - lo) / scale).astype(np.uint8)\ndecoded = sq8 * scale + lo\nprint(f\"SQ8 ({sq8.nbytes // n} bytes):              recall@10 {recall_at_k(top_k(queries @ decoded.T, k), gt):.3f}\")\n\n# 4. Binary quantisation: one sign bit per dimension, compared by Hamming distance.\nbits, qbits = np.packbits(base > 0, axis=1), np.packbits(queries > 0, axis=1)\n\n\ndef hamming(b, q):\n    x = b ^ q\n    return np.bitwise_count(x).sum(1) if hasattr(np, \"bitwise_count\") else np.unpackbits(x, axis=1).sum(1)\n\n\nbin_top = np.stack([top_k(-hamming(bits, qb)[None, :].astype(np.float32), 100)[0] for qb in qbits])\nprint(f\"binary ({bits.nbytes // n} bytes):            recall@10 {recall_at_k(bin_top, gt):.3f}, \"\n      f\"top 100 re-ranked {recall_at_k(rerank(bin_top), gt):.3f}\")\n"
+          },
+          {
+            "path": "faiss_compress.py",
+            "content": "\"\"\"Module 3 lab, part 2: memory against recall for FAISS's compressed indexes, built with index_factory.\"\"\"\nimport time\n\nimport faiss\nimport numpy as np\n\nfrom vecs import load, recall_at_k\n\nfaiss.omp_set_num_threads(1)\nbase, queries = load()\ngt = np.load(\"data/gt.npy\")\nn, d = base.shape\nparams = faiss.ParameterSpace()\n\nprint(f\"{'index':<20}{'bytes/vector':>13}{'recall@10':>11}{'ms/query':>10}\")\nfor spec in [\"Flat\", \"SQfp16\", \"SQ8\", \"PQ8\", \"PQ16\", \"IVF256,PQ8\", \"IVF256,PQ16\", \"IVF256,PQ8,RFlat\"]:\n    index = faiss.index_factory(d, spec, faiss.METRIC_INNER_PRODUCT)\n    index.train(base)\n    index.add(base)\n    if \"IVF\" in spec:\n        params.set_index_parameters(index, \"nprobe=16\")\n    if \"RFlat\" in spec:\n        faiss.downcast_index(index).k_factor = 10              # re-rank 10 x k candidates exactly\n    t0 = time.perf_counter()\n    _, found = index.search(queries, 10)\n    ms = 1e3 * (time.perf_counter() - t0) / len(queries)\n    size = faiss.serialize_index(index).nbytes / n\n    print(f\"{spec:<20}{size:>13.1f}{recall_at_k(found, gt):>11.3f}{ms:>10.3f}\")\n"
+          }
+        ],
+        "hints": [
+          "np.bitwise_count needs NumPy 2.0 or later; pq_scratch.py falls back to np.unpackbits on older versions.",
+          "PQ does poorly on these 64-dimensional vectors because much of their spread is random noise, which nothing compresses well. Measure on your own embeddings before choosing a scheme.",
+          "If faiss_compress.py's figures differ slightly from the checks, check your version with pip show faiss-cpu; the lab was run with 1.15.1."
+        ]
+      }
+    },
+    {
+      "title": "Hybrid search, filtering and evaluation",
+      "summary": "Measure relevance with labelled queries, combine BM25 with dense retrieval and tune the fusion without fooling yourself, and filter vector search without losing results.",
+      "instructor": "bjorn-sigurdsson",
+      "lessons": [
+        {
+          "title": "Evaluating relevance with labelled queries",
+          "minutes": 13,
+          "objectives": [
+            "Build a labelled query set with graded relevance",
+            "Calculate recall@k, MRR and nDCG, and judge whether a difference is real"
+          ],
+          "key_points": [
+            "Relevance evaluation needs queries like real users' and judgements of which documents answer them (qrels), ideally graded, such as 2 for an answer and 1 for related. Take queries from search logs where you can, and label them without seeing which system found what.",
+            "recall@k is the share of a query's relevant documents in the top k; MRR averages 1/rank of the first relevant result; nDCG@k sums gains (2^grade − 1) divided by log2(rank + 1) and scales by the best possible ordering, rewarding the most relevant documents first.",
+            "Split the queries: tune weights, thresholds and model choices on a dev set and report the test set once, at the end. Tuning on the queries you report gives optimistic numbers.",
+            "Small query sets are noisy. Compare two systems query by query and bootstrap over queries for an interval on the difference: in the lab, a hybrid's nDCG@10 gain of 0.004 over dense retrieval on 20 test queries had an interval of +0.000 to +0.011.",
+            "Read the failures, not just the averages: list the queries where systems disagree, because they show what each retriever misses, such as exact codes for dense models and paraphrases for BM25."
+          ]
+        },
+        {
+          "title": "Hybrid search: fusing BM25 and dense results",
+          "minutes": 14,
+          "objectives": [
+            "Explain what lexical and dense retrieval each do well",
+            "Fuse two rankings with reciprocal rank fusion or a weighted combination of scores"
+          ],
+          "key_points": [
+            "BM25 scores documents by the query's words that they contain, weighted by rarity (IDF), with saturation through k1 and length normalisation through b. It excels at identifiers, error codes and rare names, which dense models often blur.",
+            "Dense retrieval matches meaning across different words, such as \"I'm off sick today\" to an article on reporting sickness absence. In the lab it beat BM25 on recall@5 (0.900 against 0.725), yet only BM25 found the article searched for by its ID.",
+            "Reciprocal rank fusion adds 1 / (k + rank) from each list, with k = 60 by convention. It needs no score calibration but weights both retrievers equally, so a much weaker one drags results down: in the lab, RRF scored nDCG@10 0.785 against 0.924 for dense alone.",
+            "A convex combination, w × dense + (1 − w) × BM25 after min-max normalising each query's scores, lets the weight reflect each retriever's strength. Choose w on dev queries (the lab chose 0.9) and confirm on test.",
+            "In production, take the top 100 or so from each retriever, fuse the union and re-rank if needed. Learned sparse models such as SPLADE, and the hybrid queries built into several vector databases, are other ways to get both behaviours."
+          ]
+        },
+        {
+          "title": "Filtering vector search",
+          "minutes": 13,
+          "objectives": [
+            "Compare post-filtering, pre-filtering and filtering during the search",
+            "Choose a filtering strategy from how selective the filter is"
+          ],
+          "key_points": [
+            "Post-filtering takes the index's top k and drops rows that fail the filter, so a filter matching 5% of rows leaves about 0.5 of 10 results. Over-fetching helps only partly, because the factor needed grows as the filter narrows.",
+            "Pre-filtering finds the matching rows first, for example with a B-tree index, and searches only them, exactly: perfect recall, and cheap when few rows match, which makes it the right plan for highly selective filters.",
+            "Filtering during the search skips non-matching vectors as the index is traversed. It works for broad filters, but with very selective ones IVF's probed lists hold few matches and HNSW's graph falls apart: in the lab, HNSW found 4.2 of 10 results for a 0.5% tenant.",
+            "Engines combine the strategies: several estimate how many rows match and switch to an exact scan of them when there are few, and pgvector 0.8.0 and later can keep scanning an HNSW index until enough rows pass the filter (iterative index scans).",
+            "Partition when a filter is always present, such as one tenant per query: an index or partition per tenant keeps searches small and customers' data apart. Enforce access rules in the filter itself, never by trusting a later step to drop documents."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Hybrid search with honest evaluation, and filters that keep their results",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Score BM25, a dense model, reciprocal rank fusion and a tuned convex combination on 40 labelled help-desk queries with recall@5, MRR@10 and nDCG@10, test whether the hybrid's gain is real with a paired bootstrap, and compare post-filtering, pre-filtering and in-index filtering as a tenant filter narrows.",
+        "setup": [
+          "The project folder from the earlier labs: filters.py uses data/ and vecs.py",
+          "The starter files hybrid.py, filters.py, data/helpdesk.csv (60 help-centre articles) and data/queries.csv (20 dev and 20 test queries with graded labels)",
+          "The all-MiniLM-L6-v2 model cached in module 1; without it, use --dense lsa"
+        ],
+        "steps": [
+          {
+            "do": "Open data/queries.csv. Each query lists its relevant articles with a grade: 2 for the answer, 1 for related. Read a few and check that you agree with the labels."
+          },
+          {
+            "do": "Read hybrid.py: BM25 from term counts, dense scores from the pretrained model, RRF, a min-max convex combination whose weight is chosen on dev queries only, three metrics per query, and a paired bootstrap."
+          },
+          {
+            "do": "Run it.",
+            "code": "python hybrid.py",
+            "lang": "bash",
+            "see": "convex weight chosen on dev queries: w = 0.9; on test, BM25 nDCG@10 0.744, dense 0.924, RRF 0.785, convex 0.928"
+          },
+          {
+            "do": "Read the disagreement lines: which test queries does only the dense model get right, and which only BM25?",
+            "see": "four paraphrases for dense, and only BM25 ranks a relevant article first: 'KB-1048'"
+          },
+          {
+            "do": "Read the bootstrap line, then run again with LSA vectors instead of the pretrained model, to see how much the embedding model matters.",
+            "code": "python hybrid.py --dense lsa",
+            "lang": "bash",
+            "see": "dense model: lsa; dense nDCG@10 0.769"
+          },
+          {
+            "do": "Run the filtering experiment: the 10 nearest vectors within one tenant, by post-filtering the top 10 or top 100, and with the filter inside FAISS's IVF and HNSW searches.",
+            "code": "python filters.py",
+            "lang": "bash",
+            "see": "for tenant 7 (0.5%): 0.1 and 0.5 results after post-filtering; IVF 9.9 r=0.56; HNSW 4.2 r=0.27"
+          },
+          {
+            "do": "Write a short note: which fusion would you ship for this help centre, and why? Which filtering strategy would you use for tenant 0 and for tenant 7?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "All four runs were scored on the test queries, with the weight chosen on dev.",
+            "look_for": [
+              "w = 0.9",
+              "0.924",
+              "0.785",
+              "0.928"
+            ]
+          },
+          {
+            "text": "The disagreement analysis found the query only BM25 gets right.",
+            "look_for": [
+              "only BM25 ranks a relevant article first: 'KB-1048'"
+            ]
+          },
+          {
+            "text": "The bootstrap interval for the hybrid's gain.",
+            "look_for": [
+              "+0.004 (95% bootstrap interval +0.000 to +0.011)"
+            ]
+          },
+          {
+            "text": "The LSA run shows the effect of the embedding model.",
+            "look_for": [
+              "dense model: lsa",
+              "0.769"
+            ]
+          },
+          {
+            "text": "Filtering results across tenant sizes.",
+            "look_for": [
+              "0.5%",
+              "9.9 r=0.56",
+              "4.2 r=0.27"
+            ]
+          },
+          {
+            "text": "The note recommends a fusion and a filtering strategy for each tenant, with reasons.",
+            "look_for": [
+              "tenant 7"
+            ]
+          }
+        ],
+        "submit": "Paste the output of both hybrid.py runs and of filters.py, and your note from step 7.",
+        "files": [
+          {
+            "path": "hybrid.py",
+            "content": "\"\"\"Module 4 lab: BM25, dense and hybrid retrieval over the help-centre articles. Fusion is tuned on the dev\nqueries and scored once on the test queries with recall@5, MRR@10 and nDCG@10.\"\"\"\nimport argparse\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.feature_extraction.text import CountVectorizer\n\np = argparse.ArgumentParser()\np.add_argument(\"--dense\", choices=[\"minilm\", \"lsa\"], default=\"minilm\")\na = p.parse_args()\n\ndocs, qs = pd.read_csv(\"data/helpdesk.csv\"), pd.read_csv(\"data/queries.csv\")\ntext = (docs[\"id\"] + \" \" + docs[\"title\"] + \". \" + docs[\"body\"]).tolist()\nids = docs[\"id\"].to_numpy()\n\n# ---- BM25 from term counts (k1 = 1.2, b = 0.75)\ncv = CountVectorizer()                                   # tokens: runs of two or more letters or digits\ntf = cv.fit_transform(text).toarray().astype(float)      # documents x terms\nn_docs = len(text)\ndf = (tf > 0).sum(axis=0)\nidf = np.log(1 + (n_docs - df + 0.5) / (df + 0.5))\ndl = tf.sum(axis=1)\n\n\ndef bm25(query, k1=1.2, b=0.75):\n    cols = [cv.vocabulary_[t] for t in cv.build_analyzer()(query) if t in cv.vocabulary_]\n    f = tf[:, cols]\n    return (idf[cols] * f * (k1 + 1) / (f + k1 * (1 - b + b * dl[:, None] / dl.mean()))).sum(axis=1)\n\n\nlexical = np.stack([bm25(q) for q in qs[\"query\"]])\n\n# ---- dense: a small pretrained model, or LSA if you can't download one\nif a.dense == \"minilm\":\n    from sentence_transformers import SentenceTransformer\n    model = SentenceTransformer(\"sentence-transformers/all-MiniLM-L6-v2\")\n    D = model.encode(text, normalize_embeddings=True)\n    Q = model.encode(qs[\"query\"].tolist(), normalize_embeddings=True)\nelse:\n    from sklearn.decomposition import TruncatedSVD\n    from sklearn.feature_extraction.text import TfidfVectorizer\n    from sklearn.preprocessing import normalize\n    tv = TfidfVectorizer(sublinear_tf=True).fit(text)\n    svd = TruncatedSVD(40, random_state=0).fit(tv.transform(text))\n    D = normalize(svd.transform(tv.transform(text)))\n    Q = normalize(svd.transform(tv.transform(qs[\"query\"])))\ndense = Q @ D.T\n\n\n# ---- fusion\ndef ranks(s):\n    return np.argsort(np.argsort(-s, axis=1, kind=\"stable\"), axis=1) + 1   # 1 = best\n\n\ndef rrf(*runs, k=60):\n    return sum(1.0 / (k + ranks(s)) for s in runs)\n\n\ndef minmax(s):\n    lo, hi = s.min(axis=1, keepdims=True), s.max(axis=1, keepdims=True)\n    return (s - lo) / np.where(hi > lo, hi - lo, 1.0)\n\n\ndef convex(w):\n    return w * minmax(dense) + (1 - w) * minmax(lexical)\n\n\n# ---- metrics, per query\ngains = [{d: int(g) for d, g in (x.split(\":\") for x in r.split(\";\"))} for r in qs[\"relevant\"]]\n\n\ndef per_query(scores):\n    out = []\n    for s, g in zip(scores, gains):\n        top = ids[np.argsort(-s, kind=\"stable\")][:10]\n        recall5 = len(set(g) & set(top[:5])) / len(g)\n        first = next((i for i, d in enumerate(top) if d in g), None)\n        rr = 0.0 if first is None else 1.0 / (first + 1)\n        dcg = sum((2 ** g.get(d, 0) - 1) / np.log2(i + 2) for i, d in enumerate(top))\n        idcg = sum((2 ** v - 1) / np.log2(i + 2) for i, v in enumerate(sorted(g.values(), reverse=True)))\n        out.append((recall5, rr, dcg / idcg))\n    return np.array(out)\n\n\ndev, test = (qs[\"split\"] == \"dev\").to_numpy(), (qs[\"split\"] == \"test\").to_numpy()\nbest_w = max(np.round(np.arange(0, 1.01, 0.1), 1), key=lambda w: per_query(convex(w))[dev, 2].mean())\nprint(f\"dense model: {a.dense}; convex weight on dense chosen on dev queries: w = {best_w}\")\nruns = {\"BM25\": lexical, \"dense\": dense, \"RRF (k=60)\": rrf(lexical, dense), f\"convex w={best_w}\": convex(best_w)}\nprint(f\"{'test queries':<16}{'recall@5':>9}{'MRR@10':>8}{'nDCG@10':>9}\")\nresults = {name: per_query(s) for name, s in runs.items()}\nfor name, r in results.items():\n    print(f\"{name:<16}\" + \"\".join(f\"{v:>9.3f}\" if i != 1 else f\"{v:>8.3f}\" for i, v in enumerate(r[test].mean(0))))\n\n# ---- where the two retrievers disagree\nfirst_hit = {name: [ids[np.argsort(-s, kind=\"stable\")][0] in g for s, g in zip(sc, gains)]\n             for name, sc in [(\"BM25\", lexical), (\"dense\", dense)]}\nfor q, b, dn in zip(qs[\"query\"][test], np.array(first_hit[\"BM25\"])[test], np.array(first_hit[\"dense\"])[test]):\n    if b != dn:\n        print(f\"  only {'BM25' if b else 'dense'} ranks a relevant article first: {q!r}\")\n\n# ---- is the hybrid's gain over dense real? a paired bootstrap over the 20 test queries\ndiff = results[f\"convex w={best_w}\"][test, 2] - results[\"dense\"][test, 2]\nrng = np.random.default_rng(0)\nboot = [rng.choice(diff, size=len(diff)).mean() for _ in range(2000)]\nlo, hi = np.percentile(boot, [2.5, 97.5])\nprint(f\"nDCG@10 gain of the convex hybrid over dense: {diff.mean():+.3f} (95% bootstrap interval {lo:+.3f} to {hi:+.3f})\")\n"
+          },
+          {
+            "path": "filters.py",
+            "content": "\"\"\"Module 4 lab, part 2: filtered vector search. Find each query's 10 nearest vectors within one tenant,\nby post-filtering, by pre-filtering, and with the filter applied inside FAISS's IVF and HNSW searches.\"\"\"\nimport faiss\nimport numpy as np\n\nfrom vecs import load, recall_at_k, top_k\n\nfaiss.omp_set_num_threads(1)\nbase, queries = load()\ntenant = np.load(\"data/tenant.npy\")\nn, d = base.shape\nk = 10\n\nivf = faiss.IndexIVFFlat(faiss.IndexFlatIP(d), d, 256, faiss.METRIC_INNER_PRODUCT)\nivf.train(base)\nivf.add(base)\nhnsw = faiss.IndexHNSWFlat(d, 16, faiss.METRIC_INNER_PRODUCT)\nhnsw.hnsw.efConstruction = 80\nhnsw.add(base)\nscores = queries @ base.T                                   # exact scores, for the reference answers\n\n\ndef returned(found):\n    return np.mean([(row >= 0).sum() for row in found])     # FAISS pads missing results with -1\n\n\nprint(f\"{'tenant':<7}{'share':>6} | {'post k=10':>9} {'post k=100':>10} | {'IVF':>11} {'HNSW ef=64':>11}\")\nfor t in [0, 2, 4, 6, 7]:\n    ids = np.flatnonzero(tenant == t)\n    truth = ids[top_k(scores[:, ids], k)]                    # pre-filter: exact search inside the tenant\n    post10 = [[i for i in row if tenant[i] == t][:k] for row in top_k(scores, 10)]\n    post100 = [[i for i in row if tenant[i] == t][:k] for row in top_k(scores, 100)]\n    sel = faiss.IDSelectorBatch(ids.astype(np.int64))\n    _, f_ivf = ivf.search(queries, k, params=faiss.SearchParametersIVF(sel=sel, nprobe=16))\n    _, f_hnsw = hnsw.search(queries, k, params=faiss.SearchParametersHNSW(sel=sel, efSearch=64))\n    print(f\"{t:<7}{len(ids) / n:>6.1%} | {np.mean([len(r) for r in post10]):>9.1f} \"\n          f\"{np.mean([len(r) for r in post100]):>10.1f} | {returned(f_ivf):>4.1f} r={recall_at_k(f_ivf, truth):.2f} \"\n          f\"{returned(f_hnsw):>4.1f} r={recall_at_k(f_hnsw, truth):.2f}\")\nprint(\"post columns: results left after filtering the top 10 or top 100; IVF and HNSW: results returned, \"\n      \"and recall against the pre-filtered exact answer\")\n"
+          },
+          {
+            "path": "data/helpdesk.csv",
+            "content": "id,title,body,category,audience\nKB-1001,Reset a forgotten password,\"If you are locked out, open the self-service portal from the sign-in page and choose Forgot password. A code is sent to your registered phone; after five failed attempts the account locks for 15 minutes.\",accounts,all\nKB-1002,Unlock an account after too many sign-in attempts,\"Accounts lock automatically after five wrong passwords in ten minutes. Wait 15 minutes, or ask the service desk to unlock it once they have checked your identity.\",accounts,all\nKB-1003,Change your password before it expires,\"Passwords expire every 90 days and reminders start 14 days before. Choose at least 14 characters; a passphrase of four unrelated words is easier to remember.\",accounts,all\nKB-1004,Set up multi-factor authentication on a new phone,\"Install the authenticator app, then scan the QR code shown under Security info in your account settings. Keep the old phone until the new one works, then remove it from the list.\",security,all\nKB-1005,Lost or stolen phone with your authenticator app,\"Report it to the service desk straight away so the old device can be removed and your recent sign-ins checked. Temporary access codes valid for 24 hours can be issued after an identity check.\",security,all\nKB-1006,Report a phishing email,\"Use the Report button in the mail app, or forward the message as an attachment to the security team. Do not click links or open attachments; if you already did, say so in the report.\",security,all\nKB-1007,Error 0x800CCC0E when sending email,\"This error means the mail app cannot reach the outgoing server. Check that you are online, that the VPN is connected if you are off site, and that the server is mail.example.org on port 587.\",email,all\nKB-1008,Mailbox full: free up space,\"Mailboxes hold 50 GB. Empty Deleted Items, archive messages older than a year with the Archive button, and save large attachments to a shared drive instead.\",email,all\nKB-1009,Set an out-of-office reply,\"In the mail app open Settings, then Automatic replies, and set the dates and the message. You can add a different message for people outside the company.\",email,all\nKB-1010,Share a calendar with a colleague,\"Right-click your calendar, choose Sharing permissions and add the colleague. Choose whether they see free and busy times only, titles and locations, or all details.\",email,all\nKB-1011,Create a shared team mailbox,\"Managers can request a shared mailbox for a team in the service portal. Give its name, the owner and the members; it is ready within two working days.\",email,managers\nKB-1012,Connect to the VPN from home,\"Open the VPN client, choose the Europe gateway and sign in with your work account and MFA. Connect before opening internal sites such as the intranet or the finance system.\",network,all\nKB-1013,VPN error 809: the connection could not be established,\"Error 809 usually means a home router or hotel network is blocking the VPN ports. Switch the client to TLS mode in Settings, or try a mobile hotspot to confirm.\",network,all\nKB-1014,Slow VPN connection,\"Disconnect from the VPN for video calls, which go directly over the internet. If file transfers are still slow, run the speed test in the client and attach the result to a ticket.\",network,all\nKB-1015,Connect to the office Wi-Fi,\"Choose the Staff network and sign in with your work account. Guests use the Visitor network, with a daily code from reception.\",network,all\nKB-1016,Wi-Fi keeps dropping on a laptop,\"Forget the Staff network and join it again, then update the wireless driver from the Software Centre. If several people on one floor are affected, report it as an outage.\",network,all\nKB-1017,Request a new laptop,\"Laptops are replaced every four years or when they fail. Your manager approves the request in the service portal; delivery takes about five working days.\",devices,all\nKB-1018,Laptop battery drains quickly,\"Check Battery settings for the apps using most power, lower the screen brightness and close browser tabs you are not using. If the battery health report shows under 60%, request a replacement battery.\",devices,all\nKB-1019,Laptop will not turn on,\"Plug in the charger and hold the power button for 30 seconds to reset it. If the charging light stays off, bring the laptop and charger to the IT desk on the ground floor.\",devices,all\nKB-1020,Connect a second monitor,\"Use the USB-C or HDMI port, then open Display settings to choose Extend or Duplicate. Docking stations in meeting rooms work the same way.\",devices,all\nKB-1021,Encrypt a USB drive,\"Only encrypted USB drives may hold company data. Right-click the drive and turn on BitLocker, or ask the IT desk for an approved encrypted drive.\",security,all\nKB-1022,Install software from the Software Centre,\"Open the Software Centre, search for the application and select Install. Software that is not listed needs a request with a business reason and your manager's approval.\",software,all\nKB-1023,Request admin rights on your computer,\"Admin rights are granted for a fixed time, usually 24 hours, after a request in the service portal. Developers can ask for a permanent developer workstation instead.\",software,all\nKB-1024,Excel crashes when opening large files,\"Start Excel in safe mode by holding Ctrl while it opens, then turn off add-ins one at a time. Files over 100 MB work better saved in the binary .xlsb format.\",software,all\nKB-1025,Update your operating system,\"Updates install automatically on Wednesday nights. If a restart has been pending for more than three days, save your work and restart to finish installing.\",software,all\nKB-1026,Printer shows a paper jam on the third floor,\"Open tray 2 and the rear door, gently remove any paper and close both. If the jam message stays, switch the printer off and on and report it with the printer's asset tag.\",printing,all\nKB-1027,Printer error E-302,\"E-302 means the toner cartridge is not recognised. Remove it, shake it gently and refit it until it clicks; order a new cartridge if the error returns.\",printing,all\nKB-1028,Add a printer to your laptop,\"Open Settings, then Printers, and choose Add device; office printers are named by floor, such as FL3-COLOUR. Follow-me printing releases your job when you tap your badge.\",printing,all\nKB-1029,Scan a document to email,\"Tap your badge on the printer, choose Scan to me and place the pages face up in the feeder. The PDF arrives in your inbox within a minute.\",printing,all\nKB-1030,Book annual leave,\"Request leave in the HR portal under Time off; your manager is notified to approve it. Your remaining allowance is shown on the same page.\",hr,all\nKB-1031,Check your remaining holiday allowance,\"The HR portal shows the days taken, booked and remaining in the leave year, which runs from January to December. Up to five unused days can be carried over.\",hr,all\nKB-1032,Report sickness absence,\"Tell your manager before your usual start time on the first day. For absences over seven calendar days, upload a fit note in the HR portal.\",hr,all\nKB-1033,Parental leave policy,\"Employees can take parental leave after 26 weeks of service. Give at least 15 weeks' notice before the expected week of birth using form HR-17.\",hr,all\nKB-1034,Approve leave requests for your team,\"Managers see pending requests in the HR portal under Team. Check the team calendar for clashes before approving; requests left for five days are escalated.\",hr,managers\nKB-1035,Start a new joiner's onboarding,\"Managers raise an onboarding request at least ten working days before the start date, so that the laptop, accounts and badge are ready on day one.\",hr,managers\nKB-1036,Update your bank details for payroll,\"Change bank details in the HR portal under Pay; changes made after the 15th take effect the following month. An email confirms the change.\",finance,all\nKB-1037,Payslips and tax documents,\"Payslips are published in the HR portal on the 25th of each month. Year-end tax documents are there from the end of the following month.\",finance,all\nKB-1038,Claim travel expenses,\"Submit claims in the expenses app within 30 days of the trip, with photos of the receipts. Mileage is claimed per kilometre at the rate shown in the app.\",finance,all\nKB-1039,Company credit card lost,\"Call the card provider's 24-hour number to block the card, then tell the finance team. A replacement arrives in about five working days.\",finance,all\nKB-1040,Approve your team's expense claims,\"Managers approve claims in the expenses app and check that the receipts match the amounts. Claims over the policy limits need finance approval as well.\",finance,managers\nKB-1041,Raise a purchase order,\"Purchases over the small-spend limit need a purchase order in the finance system before a supplier is engaged. Add the cost centre and attach the quote.\",finance,managers\nKB-1042,Book a meeting room,\"Use the Rooms tab in the calendar to find a free room with the right capacity and equipment. Rooms not checked in within ten minutes are released.\",facilities,all\nKB-1043,Visitor access and badges,\"Register visitors in the reception system the day before. They sign in at reception, wear a visitor badge and must be accompanied in secure areas.\",facilities,all\nKB-1044,Lost or damaged staff badge,\"Report a lost badge to reception so that it can be cancelled; a new one is printed the same day when you show photo ID. Damaged badges are swapped free.\",facilities,all\nKB-1045,Heating or air conditioning problem,\"Report temperature problems with the facilities form, giving the floor and zone number. Thermostats in open-plan areas are locked to 21 degrees.\",facilities,all\nKB-1046,Parking and bike storage,\"Parking permits go to staff with mobility needs and to car-share groups. Secure bike storage and showers are in the basement; register your bike with reception.\",facilities,all\nKB-1047,Access a shared drive,\"Ask the drive's owner to add you to its access group; it appears under This PC within an hour after you sign out and in again. The service desk can tell you who owns a drive.\",accounts,all\nKB-1048,Restore a deleted file,\"Files deleted from a shared drive can be restored from Previous versions for 30 days. Right-click the folder, choose Properties and then Previous versions.\",software,all\nKB-1049,Large file transfer to a client,\"Use the secure file-sharing service, not personal cloud storage, and set an expiry date on the link. Files over 2 GB need help from the IT desk.\",security,all\nKB-1050,Camera or microphone not working in video calls,\"Check that the right device is selected in the meeting app's settings and that privacy settings allow access. Unplug and replug USB headsets, then restart the app.\",devices,all\nKB-1051,Request a mobile phone,\"Phones are issued to staff whose role needs one, approved by their manager. Personal phones can be enrolled for email with the device management app instead.\",devices,all\nKB-1052,Enrol a personal phone for work email,\"Install the device management app, sign in with your work account and accept the work profile. Work data stays in the profile and can be wiped without touching personal data.\",devices,all\nKB-1053,Server room access for IT staff,\"Only IT staff on the access list may enter the server room. Sign the log, never prop the door open, and escort contractors at all times.\",security,it\nKB-1054,Rotate a service account password,\"IT staff rotate service account passwords every 180 days through the password vault, then update the dependent applications in the change record.\",security,it\nKB-1055,Planned maintenance windows,\"Routine maintenance happens on Sunday mornings from 06:00 to 10:00. Urgent changes outside the window need emergency change approval.\",software,it\nKB-1056,Data classification labels,\"Mark documents as Public, Internal, Confidential or Restricted. Confidential and Restricted files must not be emailed outside the company without encryption.\",security,all\nKB-1057,Working abroad with a laptop,\"Tell the service desk two weeks before travelling outside the country, because some destinations need a loan laptop. Use the VPN on hotel networks.\",security,all\nKB-1058,Accessibility tools,\"Screen readers, magnifiers and dictation software can be installed from the Software Centre. Ask for an assessment if you need specialised equipment.\",software,all\nKB-1059,Change your display name or photo,\"Your name comes from your HR record, so ask HR to change it; you can update the photo in your account settings and it appears in email and chat within a day.\",accounts,all\nKB-1060,Remove a leaver's access,\"Managers raise a leaver request in the service portal by the person's last working day, so that accounts are disabled and equipment is collected.\",accounts,managers\n"
+          },
+          {
+            "path": "data/queries.csv",
+            "content": "qid,split,query,relevant\nd01,dev,I can't remember my login details,KB-1001:2;KB-1002:1\nd02,dev,how many days off do I have left this year,KB-1031:2;KB-1030:1\nd03,dev,outlook error 0x800CCC0E,KB-1007:2\nd04,dev,VPN error 809,KB-1013:2;KB-1012:1\nd05,dev,printer stuck with paper,KB-1026:2\nd06,dev,E-302 on the printer,KB-1027:2\nd07,dev,my inbox says it is out of space,KB-1008:2\nd08,dev,new phone for the authenticator,KB-1004:2;KB-1005:1\nd09,dev,how do I get reimbursed for a train ticket,KB-1038:2\nd10,dev,someone sent me a suspicious link,KB-1006:2\nd11,dev,computer is dead and won't power up,KB-1019:2\nd12,dev,let a colleague see my diary,KB-1010:2\nd13,dev,form HR-17,KB-1033:2\nd14,dev,bring a guest into the building,KB-1043:2;KB-1015:1\nd15,dev,it's too cold in the office,KB-1045:2\nd16,dev,get back a file I removed by mistake,KB-1048:2\nd17,dev,internet keeps disconnecting on my laptop,KB-1016:2;KB-1014:1\nd18,dev,install Python on my machine,KB-1022:2;KB-1023:1\nd19,dev,send a 5 GB file to a customer,KB-1049:2\nd20,dev,use two screens with my laptop,KB-1020:2\nt01,test,locked out after typing the wrong password,KB-1002:2;KB-1001:2\nt02,test,where can I see my payslip,KB-1037:2\nt03,test,error 809 when connecting from a hotel,KB-1013:2;KB-1057:1\nt04,test,battery dies after two hours,KB-1018:2\nt05,test,I lost my work badge,KB-1044:2\nt06,test,the toner isn't recognised,KB-1027:2\nt07,test,automatic reply while I am on holiday,KB-1009:2\nt08,test,switch my salary to a new bank account,KB-1036:2\nt09,test,excel freezes with a huge spreadsheet,KB-1024:2\nt10,test,I clicked a link in a fake email,KB-1006:2\nt11,test,\"cannot send mail, 0x800CCC0E\",KB-1007:2\nt12,test,maternity leave notice period,KB-1033:2\nt13,test,my phone was stolen and it has my MFA app,KB-1005:2;KB-1004:1\nt14,test,can I use my own phone for work email,KB-1052:2;KB-1051:1\nt15,test,is it OK to copy client data to a memory stick,KB-1021:2;KB-1056:1\nt16,test,camera not detected in video meetings,KB-1050:2\nt17,test,wifi for visitors,KB-1015:2;KB-1043:1\nt18,test,where do I leave my bicycle,KB-1046:2\nt19,test,I'm off sick today,KB-1032:2\nt20,test,KB-1048,KB-1048:2\n"
+          }
+        ],
+        "hints": [
+          "Another sentence-transformers or PyTorch version can change dense scores in the third decimal place; the conclusions shouldn't change.",
+          "When you label queries of your own, grade each one before running any system, so that the labels don't follow one retriever's results.",
+          "filters.py builds its own IVF and HNSW indexes on one thread, which takes a minute or so.",
+          "A bootstrap interval that touches zero doesn't prove the systems are equal: it says these 20 queries can't tell them apart. More labelled queries narrow it."
+        ]
+      }
+    },
+    {
+      "title": "Vector databases in production",
+      "summary": "Choose between a library, a PostgreSQL extension and a dedicated vector database, run vector search inside PostgreSQL with pgvector, and operate an index through updates, model changes and growth.",
+      "instructor": "ravi-chandrasekharan",
+      "lessons": [
+        {
+          "title": "Choosing a vector store",
+          "minutes": 13,
+          "objectives": [
+            "Compare vector libraries, database extensions and dedicated vector databases",
+            "Choose a vector store for a workload from its requirements"
+          ],
+          "key_points": [
+            "FAISS is a library: it runs inside your process with the widest choice of index types and GPU support, but persistence, metadata, filtering beyond ID selectors, replication and an API are yours to build. It suits batch jobs, research and services you control end to end.",
+            "pgvector adds a vector type and HNSW and IVFFlat indexes to PostgreSQL, so vectors sit beside the rows they describe, with the transactions, joins, backups and replication you already run; its scale is that of your PostgreSQL deployment.",
+            "Dedicated vector databases are servers built around vector search: Qdrant (written in Rust) filters on JSON payloads during its HNSW search, Weaviate (in Go) has built-in hybrid BM25 and vector queries, and Milvus is built for distributed scale with many index types.",
+            "Compare candidates on what your workload needs: index types and quantisation, behaviour with selective filters, hybrid search, updates and deletes, multi-tenancy, consistency after writes, replication and sharding, and the operations work each adds.",
+            "Benchmark on your own vectors, filters and query mix at your target recall. Published benchmarks use other data, settings and hardware, and features change quickly, so check current documentation for the versions you'll run."
+          ]
+        },
+        {
+          "title": "Vector search in PostgreSQL with pgvector",
+          "minutes": 14,
+          "objectives": [
+            "Store and query vectors with pgvector's types, operators and indexes",
+            "Tune and inspect pgvector's HNSW and IVFFlat indexes"
+          ],
+          "key_points": [
+            "pgvector stores vectors in a vector(n) column and compares them with operators: <-> for L2 distance, <#> for the negative inner product (negated so that ascending order puts the best first) and <=> for cosine distance. A query orders by the operator and takes a LIMIT.",
+            "An index serves one operator, chosen by its operator class: USING hnsw (embedding vector_cosine_ops) serves <=>. WITH (m = 16, ef_construction = 64) are pgvector's defaults; check with EXPLAIN that queries use the index.",
+            "At query time, SET hnsw.ef_search (default 40) trades recall for speed. IVFFlat takes lists when it's built and ivfflat.probes (default 1) at query time, and should be built once the table has data, because its lists come from k-means on the rows present.",
+            "WHERE conditions are applied to the rows the approximate index returns, so a selective filter can leave few results. pgvector 0.8.0 added iterative index scans (SET hnsw.iterative_scan = relaxed_order), which keep scanning until enough rows match.",
+            "HNSW builds are fastest when the graph fits in maintenance_work_mem, and parallel builds use shared memory: in a Docker container, raise --shm-size, or the build can fail with 'could not resize shared memory segment'.",
+            "Indexed vector columns are limited to 2,000 dimensions. The halfvec type (float16) indexes up to 4,000 and halves storage, and the bit and sparsevec types cover binary and sparse vectors."
+          ],
+          "walkthrough": {
+            "tool": "psql",
+            "title": "pgvector's operators on three vectors",
+            "steps": [
+              {
+                "do": "Start PostgreSQL with pgvector in Docker and open psql inside the container.",
+                "code": "docker run -d --name pgv --shm-size=512m -e POSTGRES_PASSWORD=lab pgvector/pgvector:0.8.1-pg17\ndocker exec -it pgv psql -U postgres",
+                "lang": "bash",
+                "see": "the postgres=# prompt"
+              },
+              {
+                "do": "Enable the extension and create a table of three-dimensional vectors.",
+                "code": "CREATE EXTENSION IF NOT EXISTS vector;\nCREATE TABLE demo (id int, v vector(3));\nINSERT INTO demo VALUES (1, '[1,0,0]'), (2, '[0.8,0.6,0]'), (3, '[0,0,2]');",
+                "lang": "sql",
+                "see": "INSERT 0 3"
+              },
+              {
+                "do": "Compare the three distance operators against [1,0,0].",
+                "code": "SELECT id, v <-> '[1,0,0]' AS l2, v <#> '[1,0,0]' AS neg_ip, v <=> '[1,0,0]' AS cosine_dist\nFROM demo ORDER BY v <=> '[1,0,0]';",
+                "lang": "sql",
+                "see": "row 2: l2 0.632, neg_ip -0.8, cosine_dist 0.2; row 3: l2 2.236, neg_ip -0, cosine_dist 1 (it's orthogonal, whatever its length)"
+              },
+              {
+                "do": "Normalise a vector with l2_normalize and check its length with vector_norm.",
+                "code": "SELECT l2_normalize('[3,4]'::vector) AS unit, vector_norm('[3,4]'::vector) AS norm;",
+                "lang": "sql",
+                "see": "[0.6,0.8] and 5"
+              },
+              {
+                "do": "Drop the table and quit psql. If you aren't starting the lab now, remove the container afterwards with docker rm -f pgv.",
+                "code": "DROP TABLE demo;\n\\q",
+                "lang": "sql"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Operating a vector index",
+          "minutes": 12,
+          "objectives": [
+            "Plan ingestion, updates and deletes for a vector index",
+            "Re-index safely when the embedding model changes, and monitor search quality"
+          ],
+          "key_points": [
+            "Ingest idempotently: give every chunk a stable ID derived from its document and position, upsert in batches, and record the source version and the embedding model, so that reruns never create duplicates.",
+            "Updates and deletes are cheap to request but costly to absorb: HNSW indexes and many databases mark deleted vectors and skip them until compaction or a rebuild, so track the share of deleted entries and plan regular rebuilds.",
+            "A new embedding model means a new index: build it beside the old one from the same documents, compare both on the labelled queries, switch reads with an alias or a configuration change, and keep the old index until the new one has proved itself.",
+            "Monitor search like any service, with latency percentiles, errors, index size and memory, plus a canary set of queries with known exact neighbours whose recall you recompute after every change and on a schedule.",
+            "Plan growth from bytes per vector. When one machine's memory runs out, shard by ID (each query then searches every shard) or by tenant (only its tenant's shard), and add replicas for throughput and availability."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Vector search in PostgreSQL with pgvector",
+        "tool": "Docker and psql",
+        "minutes": 50,
+        "goal": "Load the course's 50,000 vectors into PostgreSQL with pgvector, compute exact answers with a sequential scan, build an HNSW index and measure recall@10 at four ef_search settings, then rescue a selective tenant filter with iterative index scans and with a B-tree pre-filter.",
+        "setup": [
+          "Docker Desktop or Docker Engine, with about 1 GB of disk for the pgvector/pgvector:0.8.1-pg17 image and the data",
+          "The project folder with data/ from module 1, and the starter files export_pg.py and sql/01_load.sql to sql/04_filter.sql"
+        ],
+        "steps": [
+          {
+            "do": "Write the unit-length vectors and the first 100 queries as CSV files in pgvector's text format.",
+            "code": "python export_pg.py",
+            "lang": "bash",
+            "see": "wrote data/pg_items.csv (50000 rows) and data/pg_queries.csv (100 rows)"
+          },
+          {
+            "do": "Start PostgreSQL with pgvector, mounting the project folder at /lab. --shm-size gives parallel index builds the shared memory they need. In Windows PowerShell, write -v ${PWD}:/lab.",
+            "code": "docker run -d --name pgv --shm-size=512m -e POSTGRES_PASSWORD=lab -v \"$PWD:/lab\" pgvector/pgvector:0.8.1-pg17",
+            "lang": "bash",
+            "see": "a container ID; docker ps shows pgv running"
+          },
+          {
+            "do": "Create the extension and the tables, and load the data.",
+            "code": "docker exec -i pgv psql -U postgres -f /lab/sql/01_load.sql",
+            "lang": "bash",
+            "see": "pgvector_version 0.8.1, COPY 50000, COPY 100, and a table size of 17 MB"
+          },
+          {
+            "do": "Compute the exact top 10 for every query. With no vector index, the plan is a sequential scan and a sort.",
+            "code": "docker exec -i pgv psql -U postgres -f /lab/sql/02_exact.sql",
+            "lang": "bash",
+            "see": "Seq Scan on items under a Sort, then SELECT 1000 and exact_rows 1000"
+          },
+          {
+            "do": "Build the HNSW index, check that queries use it, and measure recall@10 against the exact answers at ef_search 10, 20, 40 and 100.",
+            "code": "docker exec -i pgv psql -U postgres -f /lab/sql/03_hnsw.sql",
+            "lang": "bash",
+            "see": "index_size 27 MB, Index Scan using items_hnsw, and recall rising from about 0.8 at ef_search 10 to about 0.95 at 40 and 0.98 at 100"
+          },
+          {
+            "do": "Filter to tenant 7, which owns about 0.5% of the rows: first plainly, then with an iterative index scan, then with a B-tree index on tenant that lets the planner pre-filter.",
+            "code": "docker exec -i pgv psql -U postgres -f /lab/sql/04_filter.sql",
+            "lang": "bash",
+            "see": "avg_rows_returned 0.2, then 10.0 with the iterative scan; then a Bitmap Index Scan on items_tenant and 10.0 again"
+          },
+          {
+            "do": "Open psql with docker exec -it pgv psql -U postgres, and compare the plans the planner chooses for a broad filter (tenant 0, about 40% of the rows) and a narrow one (tenant 7).",
+            "code": "EXPLAIN ANALYZE SELECT id FROM items WHERE tenant = 0\n  ORDER BY embedding <=> (SELECT embedding FROM queries WHERE id = 0) LIMIT 10;\nEXPLAIN ANALYZE SELECT id FROM items WHERE tenant = 7\n  ORDER BY embedding <=> (SELECT embedding FROM queries WHERE id = 0) LIMIT 10;",
+            "lang": "sql"
+          },
+          {
+            "do": "Write a short note: which ef_search would you set for a recall@10 target of 0.95, and why did the tenant 7 query return almost nothing before the iterative scan?"
+          },
+          {
+            "do": "Clean up when you're done.",
+            "code": "docker rm -f pgv",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "pgvector loaded the data.",
+            "look_for": [
+              "0.8.1",
+              "COPY 50000"
+            ]
+          },
+          {
+            "text": "Exact search used a sequential scan.",
+            "look_for": [
+              "Seq Scan on items",
+              "exact_rows"
+            ]
+          },
+          {
+            "text": "Queries use the HNSW index, and recall was measured at four settings.",
+            "look_for": [
+              "Index Scan using items_hnsw",
+              "ef_search | recall_at_10",
+              "27 MB"
+            ]
+          },
+          {
+            "text": "The selective filter lost its results until the iterative scan or the pre-filter.",
+            "look_for": [
+              "avg_rows_returned",
+              "avg_rows_returned_iterative",
+              "Bitmap Index Scan on items_tenant"
+            ]
+          },
+          {
+            "text": "The plans for tenant 0 and tenant 7 are compared.",
+            "look_for": [
+              "Execution Time"
+            ]
+          },
+          {
+            "text": "The note chooses ef_search for the target and explains filtering after the index scan.",
+            "look_for": [
+              "ef_search"
+            ]
+          }
+        ],
+        "submit": "Paste the output of export_pg.py and of the four SQL files, the two plans from step 7, and your note from step 8.",
+        "files": [
+          {
+            "path": "export_pg.py",
+            "content": "\"\"\"Module 5 lab: write the unit-length collection and the first 100 queries as CSV files PostgreSQL can load.\"\"\"\nimport numpy as np\n\nfrom vecs import load\n\nbase, queries = load()\ntenant = np.load(\"data/tenant.npy\")\n\n\ndef literal(v):\n    return \"[\" + \",\".join(f\"{x:.6g}\" for x in v) + \"]\"          # pgvector's text format: [1,2,3]\n\n\nwith open(\"data/pg_items.csv\", \"w\") as f:\n    f.write(\"id,tenant,embedding\\n\")\n    for i, (t, v) in enumerate(zip(tenant, base)):\n        f.write(f'{i},{t},\"{literal(v)}\"\\n')\nwith open(\"data/pg_queries.csv\", \"w\") as f:\n    f.write(\"id,embedding\\n\")\n    for i, v in enumerate(queries[:100]):\n        f.write(f'{i},\"{literal(v)}\"\\n')\nprint(f\"wrote data/pg_items.csv ({len(base)} rows) and data/pg_queries.csv (100 rows)\")\n"
+          },
+          {
+            "path": "sql/01_load.sql",
+            "content": "-- Create the extension and the tables, and load the vectors.\nCREATE EXTENSION IF NOT EXISTS vector;\nSELECT extversion AS pgvector_version FROM pg_extension WHERE extname = 'vector';\nDROP TABLE IF EXISTS items, queries, exact;\nCREATE TABLE items (\n    id        bigint PRIMARY KEY,\n    tenant    smallint NOT NULL,\n    embedding vector(64) NOT NULL\n);\nCREATE TABLE queries (id int PRIMARY KEY, embedding vector(64) NOT NULL);\n\\copy items FROM '/lab/data/pg_items.csv' WITH (FORMAT csv, HEADER true)\n\\copy queries FROM '/lab/data/pg_queries.csv' WITH (FORMAT csv, HEADER true)\nANALYZE items;\nSELECT count(*) AS items, pg_size_pretty(pg_total_relation_size('items')) AS table_size FROM items;\n"
+          },
+          {
+            "path": "sql/02_exact.sql",
+            "content": "-- Exact top 10 for every query: no vector index yet, so PostgreSQL scans and sorts all 50,000 rows.\n\\timing on\nEXPLAIN (COSTS OFF)\nSELECT id FROM items ORDER BY embedding <=> (SELECT embedding FROM queries WHERE id = 0) LIMIT 10;\nCREATE TABLE exact AS\nSELECT q.id AS qid, x.id\nFROM queries q\nCROSS JOIN LATERAL (SELECT id FROM items ORDER BY embedding <=> q.embedding LIMIT 10) x;\nSELECT count(*) AS exact_rows FROM exact;\n"
+          },
+          {
+            "path": "sql/03_hnsw.sql",
+            "content": "-- Build an HNSW index for cosine distance, then measure recall@10 against the exact answers.\n\\timing on\nSET maintenance_work_mem = '256MB';\nCREATE INDEX items_hnsw ON items USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);\n\\timing off\nSELECT pg_size_pretty(pg_relation_size('items_hnsw')) AS index_size;\nEXPLAIN (COSTS OFF)\nSELECT id FROM items ORDER BY embedding <=> (SELECT embedding FROM queries WHERE id = 0) LIMIT 10;\n\nCREATE OR REPLACE FUNCTION recall_at_10(ef int) RETURNS numeric LANGUAGE plpgsql AS $$\nDECLARE r numeric;\nBEGIN\n    PERFORM set_config('hnsw.ef_search', ef::text, true);      -- for this transaction only\n    SELECT round(avg(hits) / 10.0, 3) INTO r FROM (\n        SELECT q.id, (SELECT count(*) FROM exact e WHERE e.qid = q.id AND e.id IN\n                        (SELECT id FROM items ORDER BY embedding <=> q.embedding LIMIT 10)) AS hits\n        FROM queries q) t;\n    RETURN r;\nEND $$;\nSELECT ef AS ef_search, recall_at_10(ef) FROM unnest(ARRAY[10, 20, 40, 100]) AS ef;\n"
+          },
+          {
+            "path": "sql/04_filter.sql",
+            "content": "-- Filtered search: the 10 nearest items for tenant 7, which owns about 0.5% of the rows.\nSET hnsw.ef_search = 40;\nSELECT round(avg(n), 1) AS avg_rows_returned FROM queries q\nCROSS JOIN LATERAL (SELECT count(*) AS n FROM (\n    SELECT id FROM items WHERE tenant = 7 ORDER BY embedding <=> q.embedding LIMIT 10) r) c;\n\n-- pgvector 0.8.0 and later: keep scanning the index until enough rows pass the filter.\nSET hnsw.iterative_scan = relaxed_order;\nSELECT round(avg(n), 1) AS avg_rows_returned_iterative FROM queries q\nCROSS JOIN LATERAL (SELECT count(*) AS n FROM (\n    SELECT id FROM items WHERE tenant = 7 ORDER BY embedding <=> q.embedding LIMIT 10) r) c;\nRESET hnsw.iterative_scan;\n\n-- With a B-tree index on tenant, the planner can pre-filter instead: fetch tenant 7's rows, then sort them exactly.\nCREATE INDEX items_tenant ON items (tenant);\nANALYZE items;\nEXPLAIN (COSTS OFF)\nSELECT id FROM items WHERE tenant = 7\nORDER BY embedding <=> (SELECT embedding FROM queries WHERE id = 0) LIMIT 10;\nSELECT round(avg(n), 1) AS avg_rows_returned_prefilter FROM queries q\nCROSS JOIN LATERAL (SELECT count(*) AS n FROM (\n    SELECT id FROM items WHERE tenant = 7 ORDER BY embedding <=> q.embedding LIMIT 10) r) c;\n"
+          }
+        ],
+        "hints": [
+          "If CREATE INDEX fails with 'could not resize shared memory segment', the container's /dev/shm is too small: recreate it with --shm-size=512m, or SET max_parallel_maintenance_workers = 0 before building.",
+          "Recall can differ by a point or two from build to build: HNSW draws each vector's layers at random, and parallel builds insert in varying order. Look at the trend, not the third decimal.",
+          "Docker Hub can rate-limit anonymous pulls: sign in with docker login, or wait and retry.",
+          "To connect from Python (for example with psycopg), add -p 5432:5432 to docker run; this lab runs psql inside the container, so it doesn't need the port."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Embeddings and similarity measures: build exact search and save the ground truth.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "IVF and HNSW: build IVF from scratch and tune FAISS indexes against recall.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Compress vectors with scalar, binary and product quantisation, and re-rank.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Evaluate relevance, fuse BM25 with dense retrieval and filter without losing results.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Run vector search in PostgreSQL with pgvector and plan how to operate the index.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the capstone search service, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Build and evaluate a semantic search service",
+    "minutes": 600,
+    "brief": "A support organisation wants semantic search over its knowledge base, for staff today and as the retrieval layer of an AI assistant later. Build it on the course's help-centre articles, extended to at least 300 articles of your own writing or from an openly licensed source, or on a document set you're allowed to use, with at least 40 labelled queries split into dev and test. Choose and justify an embedding model. Build exact, IVF or HNSW and one compressed index, and pick a configuration that meets recall@10 of 0.95 against exact search within a memory budget you state. Add BM25 and a fusion tuned on dev queries only. Enforce an audience filter (all staff, managers, IT) so that nobody sees articles they shouldn't, with filtered queries still returning k results. Serve it from FAISS or pgvector, and plan how to re-index when the embedding model changes.",
+    "deliverables": [
+      "The code: ingestion with stable IDs, embedding, index builds, search with filters and fusion, and the evaluation scripts",
+      "An index report: recall@10 against exact search, latency percentiles and bytes per vector for every configuration tried, and the one chosen for the budget",
+      "A relevance report on the test queries: recall@5, MRR@10 and nDCG@10 for BM25, dense and the hybrid, a bootstrap interval for the main comparison, and the disagreements analysed",
+      "A filtering test showing that no query returns an article outside the user's audience and that filtered queries still return k results",
+      "A one-page vector store decision comparing FAISS, pgvector and one dedicated vector database for this workload",
+      "A runbook: adding and deleting articles, rebuilding the index, switching embedding models, and the recall canary"
+    ],
+    "rubric": [
+      {
+        "name": "Index engineering",
+        "points": 25,
+        "description": "Configurations are compared at equal recall against exact ground truth, and the chosen index meets the recall target within the stated memory budget, with measurements to show it."
+      },
+      {
+        "name": "Relevance evaluation",
+        "points": 25,
+        "description": "Labelled dev and test queries, correctly computed metrics, fusion tuned on dev only, a bootstrap interval, and an analysis of the queries where the retrievers disagree."
+      },
+      {
+        "name": "Filtering and access",
+        "points": 20,
+        "description": "Audience rules are enforced inside the search, tests prove that nothing leaks, and selective filters still return k results."
+      },
+      {
+        "name": "Design and operations",
+        "points": 20,
+        "description": "The vector store choice is argued from the workload's needs, and the runbook covers ingestion, deletes, re-indexing for a new model and monitoring recall."
+      },
+      {
+        "name": "Reproducibility and code quality",
+        "points": 10,
+        "description": "Fixed seeds, pinned versions and a README with exact commands, so someone else gets the same results."
+      }
+    ],
+    "submit": "Paste a link to your repository (or the key files), the index and relevance reports, the output of the filtering test, the vector store decision and the runbook.",
+    "files": []
+  }
+}
