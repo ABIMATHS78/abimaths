@@ -1,0 +1,903 @@
+{
+  "slug": "recommender-systems",
+  "title": "Recommender Systems: From Collaborative Filtering to Two-Tower Models",
+  "subtitle": "Build, evaluate and improve recommenders in Python: neighbourhood methods, matrix factorisation, implicit ALS and two-tower retrieval in PyTorch, with honest offline evaluation and cold-start strategies.",
+  "category": "Machine Learning",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "ngo-thi-huunge",
+    "jae-won-parkk"
+  ],
+  "skills": [
+    "Recommender systems",
+    "Collaborative filtering",
+    "Content-based filtering",
+    "Matrix factorisation",
+    "Implicit feedback (ALS)",
+    "Two-tower retrieval",
+    "Ranking metrics",
+    "Offline evaluation",
+    "Cold-start strategies",
+    "PyTorch"
+  ],
+  "tools": [
+    "Python 3",
+    "NumPy",
+    "pandas",
+    "scikit-learn",
+    "PyTorch"
+  ],
+  "outcomes": [
+    "Frame recommendation problems and split interaction data by time for honest offline evaluation",
+    "Compute precision@k, recall@k, MAP@k and NDCG@k, with coverage, novelty and diversity",
+    "Build content-based, user-kNN and item-kNN recommenders and compare them with popularity baselines",
+    "Factorise ratings with SGD and implicit feedback with confidence-weighted ALS, tuned on a validation period",
+    "Train a two-tower retrieval model in PyTorch with in-batch negatives and the logQ correction",
+    "Avoid evaluation pitfalls such as random splits and sampled metrics, and design for cold start"
+  ],
+  "prerequisites": "Machine Learning Foundations with Python, or the same skills: NumPy, pandas and scikit-learn, and training and evaluating models. Some PyTorch helps for module 4 (Deep Learning with PyTorch covers it), as does linear algebra at the level of dot products and matrix products. Install Python 3.10 or later, then pip install numpy pandas scikit-learn torch (the CPU build is enough).",
+  "description": "Recommenders decide much of what people see online: which games, songs, products and posts appear first. This course teaches you to build them and, just as important, to evaluate them honestly. You'll work with six months of plays and ratings from Pixel Bazaar, a fictional store of indie games, generated on your own laptop, with a long tail of niche games and 40 new releases that no model has seen.\n\nYou'll start with popularity baselines and the ranking metrics that judge every model (precision, recall, MAP and NDCG), then build content-based, user-kNN and item-kNN recommenders, factorise ratings with SGD and implicit feedback with confidence-weighted ALS, and train a two-tower retrieval model in PyTorch on the CPU, with in-batch negatives, the logQ correction and a feature tower for new games. The last module covers cold start, the evaluation pitfalls that make offline results misleading (random splits, sampled metrics, popularity bias), and coverage, novelty and diversity. For serving at scale, Vector Databases and Semantic Search is a natural next step. Every lab prints real results that your instructor checks, and the capstone is a hybrid recommender for the store's home page.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Recommendation problems, data and evaluation",
+      "summary": "What recommenders do and the feedback they learn from, how to split interaction data so offline tests mean something, and the ranking metrics every later module uses.",
+      "instructor": "ngo-thi-huunge",
+      "lessons": [
+        {
+          "title": "What recommenders do, and the data they learn from",
+          "minutes": 12,
+          "objectives": [
+            "Describe the retrieval and ranking stages of a recommender",
+            "Distinguish explicit from implicit feedback",
+            "Describe the interaction matrix, its sparsity and its long tail"
+          ],
+          "key_points": [
+            "A recommender ranks items for a user from a large catalogue; at scale it works in stages, where retrieval cheaply narrows millions of items to a few hundred candidates and a ranking model orders those with richer features.",
+            "Explicit feedback, such as star ratings, says how much a user liked an item but is scarce; implicit feedback, such as plays, purchases or watch time, is plentiful but only shows interest, and a missing interaction isn't a dislike.",
+            "Interactions form a user × item matrix that is mostly empty; in large products its density, the share of filled cells, is often far below 1%, so methods must generalise from very few observations per user.",
+            "Interactions follow a long tail: a few popular items collect a large share of them while most items have few, which makes popularity a strong baseline and the tail hard to recommend well.",
+            "Feedback isn't missing at random: users can only interact with what the product showed them, so logged data reflects past recommendations as well as taste, and models trained on it inherit that bias."
+          ]
+        },
+        {
+          "title": "Splitting interactions for evaluation",
+          "minutes": 10,
+          "objectives": [
+            "Split interactions by time for offline evaluation",
+            "Decide which users and items a test covers",
+            "Build popularity baselines"
+          ],
+          "key_points": [
+            "Evaluate the way the system will be used: train on interactions before a cut-off date and test on what each user did afterwards; a random split lets the model learn from the future, such as a game's later popularity.",
+            "Leave-last-out holds out each user's most recent interaction; a global time cut-off is stricter, because it also keeps every later interaction by other users out of training.",
+            "Rank every item a user hasn't interacted with in training and leave out the ones they have, otherwise a model scores points for recommending what users already own.",
+            "Popularity, recommending the most-interacted items to everyone, is the first baseline; a recent-popularity version suits catalogues that change quickly, and any personalised model has to beat both.",
+            "Report what the test covers and what it leaves out, such as users with no training history or items released after the cut-off, which need the cold-start methods of module 5."
+          ]
+        },
+        {
+          "title": "Ranking metrics: precision, recall, MAP and NDCG",
+          "minutes": 12,
+          "objectives": [
+            "Compute precision@k and recall@k",
+            "Compute MAP@k and NDCG@k and explain how they reward order",
+            "Choose k and the metrics for a product surface"
+          ],
+          "key_points": [
+            "precision@k is the share of the top k recommendations the user went on to interact with; recall@k is the share of the user's test interactions that appear in the top k.",
+            "Average precision at k adds precision@i at each position i in the top k that holds a relevant item and divides by min(number relevant, k); MAP@k, its mean over users, rewards putting hits near the top.",
+            "NDCG@k (normalised discounted cumulative gain) sums each hit's gain divided by log2(position + 1) and divides by the best possible sum, so a perfect order scores 1, and it also handles graded relevance.",
+            "Hit rate@k, the share of users with at least one relevant item in the top k, is easy to explain; precision@k is capped by how many relevant items each user has, so compare models only on the same users and the same k.",
+            "Match k to the surface, such as 10 for a row on a home page, and track beyond-accuracy measures alongside: catalogue coverage, novelty and diversity."
+          ],
+          "walkthrough": {
+            "tool": "Python",
+            "title": "Look inside one player's recommendations",
+            "steps": [
+              {
+                "do": "In the course folder, start Python, load the data and make the time split.",
+                "code": "import numpy as np\nfrom rs_common import Split, load, top_k\ngames, plays, ratings = load()\ns = Split(games, plays)\nu = s.user_index['u0007']",
+                "lang": "python",
+                "see": "No output; s.X is the 1198 x 240 matrix of training plays."
+              },
+              {
+                "do": "See what this player liked in training.",
+                "code": "s.train[s.train.user_id == 'u0007'].merge(games, on='game_id').genre.value_counts()",
+                "lang": "python",
+                "see": "46 training plays, 18 of them simulation games."
+              },
+              {
+                "do": "List the popularity baseline's top 5 for them: the same for everyone.",
+                "code": "pop = np.tile(s.X.sum(axis=0), (len(s.users), 1))\n[games.loc[i, 'title'] for i in top_k(pop, s.X)[u][:5]]",
+                "lang": "python",
+                "see": "Frozen Engine, Tiny Voyage, Tiny Signal, Velvet Signal and Wild Kingdom."
+              },
+              {
+                "do": "Count what they played in the test period.",
+                "code": "len(s.relevant[u])",
+                "lang": "python",
+                "see": "14, so this player's recall@10 can't be above 10/14."
+              },
+              {
+                "do": "Score items by their similarity to this player's games (item kNN, module 2) and count the hits in the top 10.",
+                "code": "n = np.linalg.norm(s.X, axis=0)\nsim = (s.X.T @ s.X) / np.maximum(np.outer(n, n), 1e-12)\nnp.fill_diagonal(sim, 0)\nrec = top_k(s.X @ sim, s.X)[u]\nlen(set(rec) & s.relevant[u])",
+                "lang": "python",
+                "see": "5 of the top 10 are games they went on to play: precision@10 of 0.5 for this player, and recall@10 of 5/14."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Split the plays and score popularity baselines",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Generate Pixel Bazaar's play data, explore its sparsity and long tail, split it by time, score popularity baselines with precision, recall, MAP and NDCG at 10, and check the metrics by hand on one list.",
+        "setup": [
+          "Python 3.10 or later with NumPy, pandas, scikit-learn and PyTorch (CPU): pip install numpy pandas scikit-learn torch",
+          "A course folder with the starter files make_games.py, rs_common.py and lab1_baselines.py; keep using it for every lab"
+        ],
+        "steps": [
+          {
+            "do": "Generate the data: 240 games, 1,200 players and six months of plays and ratings, the same for everyone.",
+            "code": "python make_games.py",
+            "lang": "bash",
+            "see": "Wrote 240 games, 24712 plays by 1200 players and 9926 ratings to rs_data/"
+          },
+          {
+            "do": "Read rs_common.py: Split trains on days 0-149 and tests on days 150-179, top_k leaves out games a player already has, and evaluate computes the metrics."
+          },
+          {
+            "do": "Complete TODO 1 (popularity) and TODO 2 (popularity over days 120-149 only). Every row of a score matrix is one player.",
+            "code": "np.tile(s.X.sum(axis=0), (len(s.users), 1))",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 3: precision@5, recall@5, AP@5 and NDCG@5 for one list, by hand.",
+            "code": "ap = sum(sum(hits[:n + 1]) / (n + 1) for n in range(k) if hits[n]) / min(len(rel), k)",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab1_baselines.py",
+            "lang": "bash",
+            "see": "Density 0.0858; popularity scores recall@10 0.2456 and NDCG@10 0.2152 while covering 0.129 of the catalogue; by hand, NDCG@5 0.4162."
+          },
+          {
+            "do": "Write three sentences: why popularity is so hard to beat here, what its coverage of 0.129 means for the store's 240 games, and which players the split can't evaluate."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The data is explored: 24,712 plays, density 0.0858, and the 10 most played games hold 0.169 of all plays.",
+            "look_for": [
+              "24712",
+              "0.0858",
+              "0.169"
+            ]
+          },
+          {
+            "text": "The time split is right: 17,841 training plays by 1,198 players, and 6,862 test plays by 1,070 of them.",
+            "look_for": [
+              "17841",
+              "6862",
+              "1070"
+            ]
+          },
+          {
+            "text": "Popularity scores precision@10 0.1442, recall@10 0.2456 and NDCG@10 0.2152, with coverage 0.129.",
+            "look_for": [
+              "0.1442",
+              "0.2456",
+              "0.2152",
+              "0.129"
+            ]
+          },
+          {
+            "text": "Recent popularity is computed from days 120-149: recall@10 0.2461.",
+            "look_for": [
+              "0.2461"
+            ]
+          },
+          {
+            "text": "The by-hand metrics are right: precision@5 0.4000, recall@5 0.6667, AP@5 0.2444, NDCG@5 0.4162.",
+            "look_for": [
+              "0.4000",
+              "0.6667",
+              "0.2444",
+              "0.4162"
+            ]
+          },
+          {
+            "text": "The sentences explain popularity's strength from the long tail and name players with no training plays as untestable.",
+            "look_for": [
+              "popular"
+            ]
+          }
+        ],
+        "submit": "Paste your three completed TODOs, the output of python lab1_baselines.py and your three sentences.",
+        "files": [
+          {
+            "path": "make_games.py",
+            "content": "\"\"\"Generate the course data for Pixel Bazaar, a fictional store of indie games, into the folder rs_data/.\n\n    python make_games.py\n\ngames.csv    one row per game: game_id, title, genre, tags (separated by |), release_day\nplays.csv    who played what and when: user_id, game_id, day (0-179), hours\nratings.csv  star ratings (1-5) that some players left: user_id, game_id, rating\n\nBehind the data is a hidden taste model: every player leans towards a few genres and tags, and some games are\nsimply more popular. Only random.random() and basic arithmetic are used, with a fixed seed, so everyone gets\nexactly the same data on any Python 3.\n\"\"\"\n\nimport csv\nimport math\nimport random\nfrom pathlib import Path\n\nR = random.Random(11)\nDAYS = 180\nGENRES = [\"puzzle\", \"platformer\", \"strategy\", \"rpg\", \"racing\", \"horror\", \"simulation\", \"rhythm\"]\nTAGS = [\"pixel-art\", \"co-op\", \"story-rich\", \"roguelike\", \"relaxing\", \"difficult\", \"open-world\", \"turn-based\",\n        \"multiplayer\", \"short\", \"sci-fi\", \"fantasy\", \"cute\", \"dark\", \"retro\", \"physics\", \"card-game\", \"survival\",\n        \"sandbox\", \"crafting\"]\nADJ = [\"Neon\", \"Crimson\", \"Silent\", \"Tiny\", \"Clockwork\", \"Hollow\", \"Golden\", \"Lunar\", \"Wild\", \"Paper\", \"Iron\",\n       \"Velvet\", \"Frozen\", \"Hidden\", \"Electric\", \"Ancient\"]\nNOUN = [\"Garden\", \"Orchard\", \"Tides\", \"Circuit\", \"Lantern\", \"Harbour\", \"Kingdom\", \"Engine\", \"Forest\", \"Signal\",\n        \"Atlas\", \"Carnival\", \"Mines\", \"Rhythm\", \"Voyage\", \"Archive\"]\nN_GAMES, N_USERS = 240, 1200\n\n\ndef u():\n    return R.random()\n\n\ndef pick(options, weights):\n    x = u() * sum(weights)\n    for o, w in zip(options, weights):\n        x -= w\n        if x < 0:\n            return o\n    return options[-1]\n\n\ndef main():\n    games = []\n    titles = set()\n    for g in range(N_GAMES):\n        genre = GENRES[g % 8] if g < 200 else pick(GENRES, [1] * 8)\n        tags = []\n        while len(tags) < 3:\n            t = TAGS[int(u() * len(TAGS))]\n            if t not in tags:\n                tags.append(t)\n        while True:\n            title = f\"{ADJ[int(u() * 16)]} {NOUN[int(u() * 16)]}\"\n            if title not in titles:\n                titles.add(title)\n                break\n        release = 0 if g < 200 else 166 + int(u() * 10)          # 40 new games in the last two weeks\n        appeal = u() ** 3 * 2.5                                   # a few games are far more popular\n        games.append({\"id\": f\"g{g + 1:03d}\", \"title\": title, \"genre\": genre, \"tags\": tags, \"release\": release,\n                      \"appeal\": appeal, \"quality\": u()})\n\n    plays, ratings = [], []\n    for n in range(N_USERS):\n        likes_g = {GENRES[int(u() * 8)]: 2.2, GENRES[int(u() * 8)]: 1.4}\n        likes_t = {TAGS[int(u() * len(TAGS))]: 1.0 for _ in range(3)}\n        activity = 4 + int(60 * u() ** 2.5)                       # most players play a few games, some many\n        start = int(u() * 120)\n        scores = []\n        for g in games:\n            taste = likes_g.get(g[\"genre\"], 0.0) + sum(likes_t.get(t, 0.0) for t in g[\"tags\"])\n            scores.append(taste + g[\"appeal\"] + 0.6 * u())\n        chosen = set()\n        for _ in range(activity):\n            day = start + int(u() * (DAYS - start))\n            pool = [i for i, g in enumerate(games) if g[\"release\"] <= day and i not in chosen]\n            weights = [math.exp(1.6 * scores[i]) for i in pool]\n            i = pick(pool, weights)\n            chosen.add(i)\n            g = games[i]\n            hours = round(0.5 + (scores[i] + 1.0) * (1.5 + 4 * u()), 1)\n            plays.append((f\"u{n + 1:04d}\", g[\"id\"], day, hours))\n            if u() < 0.4:\n                stars = 1 + 1.1 * scores[i] / 2.2 + 1.5 * g[\"quality\"] + 0.8 * (u() + u() - 1)\n                ratings.append((f\"u{n + 1:04d}\", g[\"id\"], max(1, min(5, round(stars)))))\n\n    out = Path(__file__).with_name(\"rs_data\")\n    out.mkdir(exist_ok=True)\n    with open(out / \"games.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"game_id\", \"title\", \"genre\", \"tags\", \"release_day\"])\n        for g in games:\n            w.writerow([g[\"id\"], g[\"title\"], g[\"genre\"], \"|\".join(g[\"tags\"]), g[\"release\"]])\n    plays.sort(key=lambda p: (p[2], p[0], p[1]))\n    with open(out / \"plays.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"user_id\", \"game_id\", \"day\", \"hours\"])\n        w.writerows(plays)\n    ratings.sort()\n    with open(out / \"ratings.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"user_id\", \"game_id\", \"rating\"])\n        w.writerows(ratings)\n    print(f\"Wrote {len(games)} games, {len(plays)} plays by {N_USERS} players and {len(ratings)} ratings to {out.name}/\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "rs_common.py",
+            "content": "\"\"\"Helpers for every lab: load Pixel Bazaar's data, split it by time, and score top-k recommendations.\n\n    from rs_common import load, Split, evaluate\n    games, plays, ratings = load()\n    s = Split(games, plays)              # train on days 0-149, test on days 150-179\n    print(evaluate(s, scores))           # scores: one row per training user, one column per game\n\"\"\"\n\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\n\nDATA = Path(__file__).parent / \"rs_data\"\nSPLIT_DAY = 150\nK = 10\n\n\ndef load():\n    if not (DATA / \"plays.csv\").exists():\n        raise SystemExit(\"No data yet: run python make_games.py first.\")\n    return (pd.read_csv(DATA / \"games.csv\"), pd.read_csv(DATA / \"plays.csv\"), pd.read_csv(DATA / \"ratings.csv\"))\n\n\nclass Split:\n    \"\"\"Plays before split_day train the models; each training user's plays from split_day on are what they\n    should be recommended. X is the binary user x game matrix of training plays, H the hours played.\"\"\"\n\n    def __init__(self, games, plays, split_day=SPLIT_DAY):\n        self.games = games.reset_index(drop=True)\n        self.items = self.games[\"game_id\"].tolist()\n        self.item_index = {g: i for i, g in enumerate(self.items)}\n        train, test = plays[plays[\"day\"] < split_day], plays[plays[\"day\"] >= split_day]\n        self.users = sorted(train[\"user_id\"].unique())\n        self.user_index = {u: i for i, u in enumerate(self.users)}\n        self.train, self.test = train, test[test[\"user_id\"].isin(self.user_index)]\n        rows = train[\"user_id\"].map(self.user_index).to_numpy()\n        cols = train[\"game_id\"].map(self.item_index).to_numpy()\n        self.X = np.zeros((len(self.users), len(self.items)))\n        self.X[rows, cols] = 1.0\n        self.H = np.zeros_like(self.X)\n        self.H[rows, cols] = train[\"hours\"].to_numpy()\n        self.relevant = [set() for _ in self.users]\n        for u, g in zip(self.test[\"user_id\"], self.test[\"game_id\"]):\n            self.relevant[self.user_index[u]].add(self.item_index[g])\n        self.eval_users = [u for u, rel in enumerate(self.relevant) if rel]\n        self.new_items = set(self.games.index[self.games[\"release_day\"] >= split_day])\n\n\ndef top_k(scores, X, k=K):\n    \"\"\"The k highest-scoring games for each user, leaving out games they've already played.\"\"\"\n    s = np.where(X > 0, -np.inf, scores)\n    return np.argsort(-s, axis=1, kind=\"stable\")[:, :k]\n\n\ndef evaluate(split, scores, k=K, users=None):\n    \"\"\"precision@k, recall@k, MAP@k and NDCG@k over the users with test plays, plus catalogue coverage and the\n    share of recommendations that are new games.\"\"\"\n    users = split.eval_users if users is None else users\n    recs = top_k(scores[users], split.X[users], k)\n    discount = 1 / np.log2(np.arange(2, k + 2))\n    p, r, ap, ndcg = [], [], [], []\n    for u, rec in zip(users, recs):\n        rel = split.relevant[u]\n        hits = np.array([i in rel for i in rec], dtype=float)\n        p.append(hits.sum() / k)\n        r.append(hits.sum() / len(rel))\n        precision_at = np.cumsum(hits) / np.arange(1, k + 1)\n        ap.append((precision_at * hits).sum() / min(len(rel), k))\n        ndcg.append((hits * discount).sum() / discount[:min(len(rel), k)].sum())\n    shown = recs.ravel()\n    return {f\"precision@{k}\": round(float(np.mean(p)), 4), f\"recall@{k}\": round(float(np.mean(r)), 4),\n            f\"MAP@{k}\": round(float(np.mean(ap)), 4), f\"NDCG@{k}\": round(float(np.mean(ndcg)), 4),\n            \"coverage\": round(len(set(shown)) / len(split.items), 3),\n            \"new_share\": round(float(np.isin(shown, list(split.new_items)).mean()), 3)}\n\n\ndef report(name, metrics):\n    print(f\"{name:22} \" + \"  \".join(f\"{k} {v:.4f}\" if k[0].isupper() or \"@\" in k else f\"{k} {v:.3f}\"\n                                     for k, v in metrics.items()))\n"
+          },
+          {
+            "path": "lab1_baselines.py",
+            "content": "\"\"\"Lab 1: explore the interactions, split them by time, and score popularity baselines with ranking metrics.\"\"\"\n\nimport random\n\nimport numpy as np\n\nfrom rs_common import Split, evaluate, load, report\n\ngames, plays, ratings = load()\nn_users, n_games = plays[\"user_id\"].nunique(), len(games)\nprint(f\"{len(plays)} plays by {n_users} players of {n_games} games; density {len(plays) / (n_users * n_games):.4f}\")\ncounts = plays[\"game_id\"].value_counts()\nprint(f\"The 10 most played games have {counts.head(10).sum() / len(plays):.3f} of all plays; \"\n      f\"the least played game has {counts.min()}\")\nper_user = plays.groupby(\"user_id\").size()\nprint(f\"Plays per player: median {per_user.median():.0f}, mean {per_user.mean():.1f}, max {per_user.max()}\")\n\ns = Split(games, plays)\nprint(f\"Train: {len(s.train)} plays by {len(s.users)} players; test: {len(s.test)} plays by \"\n      f\"{len(s.eval_users)} of them; {len(s.new_items)} games are released during the test period\")\n\nrnd = random.Random(0)\nscores = {\n    \"random\": np.array([[rnd.random() for _ in s.items] for _ in s.users]),\n    # TODO 1: every user gets the games with the most training plays\n    \"popularity\": np.zeros(s.X.shape),\n    # TODO 2: popularity over the last 30 days of training only (days 120-149)\n    \"recent popularity\": np.zeros(s.X.shape),\n}\nfor name, sc in scores.items():\n    report(name, evaluate(s, sc))\n\n# TODO 3: score one list by hand: recommendations [3, 8, 1, 6, 2] (best first) against relevant games {1, 2, 9}\nrec, rel, k = [3, 8, 1, 6, 2], {1, 2, 9}, 5\nprecision = recall = ap = dcg = 0.0\nidcg = 1.0\nprint(f\"By hand: precision@5 {precision:.4f}, recall@5 {recall:.4f}, AP@5 {ap:.4f}, NDCG@5 {dcg / idcg:.4f}\")\n"
+          }
+        ],
+        "hints": [
+          "np.bincount(index_array, minlength=n) counts how often each game index appears.",
+          "AP@5 here is (1/3 + 2/5) / 3: hits at positions 3 and 5, and three relevant games.",
+          "The random baseline's numbers can differ slightly between Python versions; nothing is checked on them."
+        ]
+      }
+    },
+    {
+      "title": "Content-based and neighbourhood methods",
+      "summary": "Recommend from item attributes, and from the behaviour of similar users and similar items; compare them with popularity, and see which of them can recommend a game nobody has played yet.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "Content-based recommendation",
+          "minutes": 12,
+          "objectives": [
+            "Represent items and user profiles as feature vectors",
+            "Score items by cosine similarity to a profile",
+            "Weigh the strengths and limits of content-based methods"
+          ],
+          "key_points": [
+            "Content-based recommenders describe each item by its attributes, such as genre, tags or text turned into TF-IDF or embedding vectors, and recommend items similar to those the user already liked.",
+            "A user profile is a weighted sum of the vectors of the items they interacted with, weighted for example by log(1 + hours played); the cosine similarity between the profile and each item vector is that item's score.",
+            "Content-based methods can recommend brand-new items from their attributes alone and explain themselves, as in 'because you play simulation games', which collaborative methods can't do.",
+            "Their weakness is over-specialisation: recommendations stay close to what the user already knows, so lists lack variety and miss what attributes don't capture, such as quality or how fun a game is.",
+            "TF-IDF gives attributes that many items share less weight than rare ones; clean the vocabulary first, because duplicate and synonymous tags weaken every similarity."
+          ]
+        },
+        {
+          "title": "User-based collaborative filtering",
+          "minutes": 12,
+          "objectives": [
+            "Explain collaborative filtering",
+            "Score items with user-based nearest neighbours",
+            "Choose similarity measures and neighbourhood sizes"
+          ],
+          "key_points": [
+            "Collaborative filtering recommends from behaviour alone, with no item attributes: users who agreed in the past are assumed to agree again, and items used by the same people are assumed to be related.",
+            "User-based kNN measures the similarity between users' interaction vectors, often by cosine, keeps each user's k most similar neighbours, and scores items by the similarity-weighted interactions of those neighbours.",
+            "For ratings, centre each user's ratings on their own mean before comparing them, since some people rate everything highly, and predict a rating as the user's mean plus a weighted average of the neighbours' deviations.",
+            "The neighbourhood size trades noise against reach: a few neighbours give sharp but noisy recommendations, and a great many smooth them towards plain popularity.",
+            "User-user similarities grow with the square of the number of users and change whenever anyone acts, which makes user-based kNN costly to keep fresh in a large product."
+          ]
+        },
+        {
+          "title": "Item-based collaborative filtering",
+          "minutes": 12,
+          "objectives": [
+            "Compute item-item similarities from co-occurrence",
+            "Score items with item-based nearest neighbours",
+            "Explain the item cold-start problem"
+          ],
+          "key_points": [
+            "Item-based kNN computes similarities between items from the users who interacted with both, the basis of 'players who played this also played', and scores an item by its similarity to the items a user already has.",
+            "Cosine similarity on binary columns divides the number of users two items share by the square root of the product of their popularities, so very popular items don't look similar to everything.",
+            "Item similarities change slowly and grow only with the square of the number of items, so they can be computed offline and stored as each item's top neighbours, which is why item-to-item methods have long served large online shops.",
+            "Similarities built from few shared users are unreliable; shrinkage, multiplying by n / (n + λ) for n shared users, pulls them towards zero, and keeping only each item's top neighbours removes much of the noise.",
+            "Neighbourhood methods can't score an item nobody has interacted with, so a new item stays invisible until it gathers interactions: the item cold-start problem."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Compare content-based, item kNN and user kNN",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Build a content-based recommender from TF-IDF game features and hours-weighted player profiles, item and user nearest neighbours from the play matrix, and compare them with popularity overall and on new games.",
+        "setup": [
+          "Your course folder from lab 1, with rs_data/",
+          "The starter file lab2_neighbours.py"
+        ],
+        "steps": [
+          {
+            "do": "Read how each game becomes a document of its genre and tags, and TfidfVectorizer turns the documents into unit-length vectors G."
+          },
+          {
+            "do": "Complete TODO 1: hours-weighted profiles, normalised, then cosine scores against every game.",
+            "code": "profiles = np.log1p(s.H) @ G\nprofiles /= np.linalg.norm(profiles, axis=1, keepdims=True)\ncontent = profiles @ G.T",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: the cosine similarity between every pair of games' columns of s.X.",
+            "code": "item_sim = (s.X.T @ s.X) / np.maximum(np.outer(norms, norms), 1e-12)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 3: score games by the similarity-weighted plays of each player's 50 nearest neighbours.",
+            "code": "user_knn = keep_top(user_sim, 50) @ s.X",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab2_neighbours.py",
+            "lang": "bash",
+            "see": "User kNN scores recall@10 0.3394 and item kNN 0.3247, against 0.2456 for popularity; content-based scores 0.2507 but covers the whole catalogue."
+          },
+          {
+            "do": "Read the new-games line: only the content-based model can rank the 40 games released during the test period."
+          },
+          {
+            "do": "Write a short comparison: which model you'd put on the home page, which one you'd use for new releases, and why."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Content-based is right: recall@10 0.2507, NDCG@10 0.2330, coverage 1.000 and 0.232 of its recommendations new games.",
+            "look_for": [
+              "0.2507",
+              "0.2330",
+              "0.232"
+            ]
+          },
+          {
+            "text": "Item kNN with 30 neighbours scores recall@10 0.3247 and NDCG@10 0.3212.",
+            "look_for": [
+              "0.3247",
+              "0.3212"
+            ]
+          },
+          {
+            "text": "User kNN with 50 neighbours scores recall@10 0.3394 and NDCG@10 0.3433, the best of the four.",
+            "look_for": [
+              "0.3394",
+              "0.3433"
+            ]
+          },
+          {
+            "text": "On new games, content-based puts a player's game in its top 10 for 0.811 of 472 players, against 0.374 for a random order, and item kNN can't score them at all.",
+            "look_for": [
+              "0.811",
+              "0.374",
+              "472"
+            ]
+          },
+          {
+            "text": "The neighbours of Frozen Engine are found: Iron Harbour, Iron Carnival and Lunar Mines.",
+            "look_for": [
+              "Iron Harbour",
+              "Iron Carnival"
+            ]
+          },
+          {
+            "text": "The comparison picks a collaborative model for the home page and content-based features for new releases, with reasons.",
+            "look_for": [
+              "content"
+            ]
+          }
+        ],
+        "submit": "Paste your three completed TODOs, the script's output and your comparison.",
+        "files": [
+          {
+            "path": "lab2_neighbours.py",
+            "content": "\"\"\"Lab 2: content-based recommendation, and item-based and user-based nearest neighbours.\"\"\"\n\nfrom math import comb\n\nimport numpy as np\nfrom sklearn.feature_extraction.text import TfidfVectorizer\n\nfrom rs_common import Split, evaluate, load, report\n\ngames, plays, ratings = load()\ns = Split(games, plays)\n\n\ndef keep_top(sim, k):\n    \"\"\"Zero all but each row's k largest similarities.\"\"\"\n    out = np.zeros_like(sim)\n    idx = np.argsort(-sim, axis=1, kind=\"stable\")[:, :k]\n    rows = np.arange(sim.shape[0])[:, None]\n    out[rows, idx] = sim[rows, idx]\n    return out\n\n\n# Content-based: each game is a TF-IDF vector of its genre and tags; a player's profile is the hours-weighted\n# sum of the vectors of the games they played\ndocs = (\"genre_\" + games[\"genre\"] + \" \" + games[\"tags\"].str.replace(\"|\", \" \")).tolist()\nG = TfidfVectorizer(token_pattern=r\"[^ ]+\").fit_transform(docs).toarray()        # rows have unit length\n# TODO 1: the players' profiles (weights log(1 + hours)), normalised to unit length, and their cosine scores\ncontent = np.zeros(s.X.shape)\n\n# Item-based kNN: cosine similarity between games' columns of the play matrix, 30 neighbours each\nnorms = np.linalg.norm(s.X, axis=0)\n# TODO 2: the game-game cosine similarities (zero for games nobody played), with the diagonal set to 0\nitem_sim = np.zeros((len(s.items), len(s.items)))\nnp.fill_diagonal(item_sim, 0)\nitem_knn = s.X @ keep_top(item_sim, 30).T\n\n# User-based kNN: cosine similarity between players' rows, 50 neighbours each\nunorm = np.linalg.norm(s.X, axis=1)\nuser_sim = (s.X @ s.X.T) / np.outer(unorm, unorm)\nnp.fill_diagonal(user_sim, 0)\n# TODO 3: score each game by the similarity-weighted plays of each player's 50 nearest neighbours\nuser_knn = np.zeros(s.X.shape)\n\npopularity = np.tile(s.X.sum(axis=0), (len(s.users), 1))\nfor name, sc in [(\"popularity\", popularity), (\"content-based\", content), (\"item kNN\", item_knn), (\"user kNN\", user_knn)]:\n    report(name, evaluate(s, sc))\n\n# Who can recommend the 40 games released during the test period?\nnew = np.array(sorted(s.new_items))\nnew_users = [u for u in s.eval_users if s.relevant[u] & s.new_items]\nhits = [bool(set(new[np.argsort(-content[u, new], kind=\"stable\")[:10]]) & s.relevant[u]) for u in new_users]\nchance = [1 - comb(40 - len(s.relevant[u] & s.new_items), 10) / comb(40, 10) for u in new_users]\nprint(f\"\\n{len(new_users)} players played a new game during the test period. Ranking only the 40 new games, \"\n      f\"content-based puts one of theirs in its top 10 for {np.mean(hits):.3f} of them (a random order: {np.mean(chance):.3f}); \"\n      f\"item kNN gives every new game a score of 0 ({int(np.count_nonzero(item_knn[:, new]))} non-zero scores)\")\n\n# Explain one item-kNN neighbourhood\ng = s.item_index[\"g125\"]\nprint(f\"\\nMost similar to {games.loc[g, 'title']} ({games.loc[g, 'genre']}):\",\n      [f\"{games.loc[j, 'title']} ({games.loc[j, 'genre']}, {item_sim[g, j]:.3f})\"\n       for j in np.argsort(-item_sim[g], kind=\"stable\")[:3]])\n"
+          }
+        ],
+        "hints": [
+          "s.H holds hours played; log1p keeps a 40-hour binge from swamping everything else.",
+          "np.maximum(..., 1e-12) avoids dividing by zero for games nobody played in training.",
+          "keep_top zeroes all but each row's largest values; check its output's shape matches the input's."
+        ]
+      }
+    },
+    {
+      "title": "Matrix factorisation",
+      "summary": "Compress the interaction matrix into user and item factors: fit ratings with biases and SGD, learn when factors help, and fit implicit feedback with confidence-weighted ALS tuned on a validation period.",
+      "instructor": "ngo-thi-huunge",
+      "lessons": [
+        {
+          "title": "Latent factors and rating prediction",
+          "minutes": 12,
+          "objectives": [
+            "Explain the latent factor model with biases",
+            "Fit it on observed ratings with regularisation",
+            "Explain why a low RMSE isn't a good ranking"
+          ],
+          "key_points": [
+            "Matrix factorisation gives every user and item a vector of k latent factors and predicts their affinity as a dot product, so R ≈ PQᵀ compresses the interaction matrix into two small matrices.",
+            "For ratings the standard model adds biases: r̂_ui = μ + b_u + b_i + p_u·q_i, where μ is the global mean, b_u how generously a user rates and b_i how well an item is rated in general.",
+            "It's fitted only on observed ratings, minimising the squared error plus λ times the squared size of the parameters; the regularisation keeps the factors of users with few ratings close to zero.",
+            "Biases often do most of the work: a well-regularised bias model is a hard baseline for rating error, and factors only help once users have enough ratings to reveal their tastes.",
+            "A low rating RMSE doesn't mean good recommendations: it measures accuracy on the items users chose to rate, not whether the top of a ranked list holds what they want."
+          ]
+        },
+        {
+          "title": "Training with SGD and ALS",
+          "minutes": 12,
+          "objectives": [
+            "Write the SGD updates for biased matrix factorisation",
+            "Explain alternating least squares",
+            "Tune factors, regularisation and training length on validation data"
+          ],
+          "key_points": [
+            "Stochastic gradient descent visits the observed ratings in random order; with error e = r - r̂ it updates b_u += η(e - λb_u), b_i likewise, and p_u += η(e·q_i - λp_u) and q_i += η(e·p_u - λq_i) together.",
+            "Watch held-out error while training: the training error keeps falling, but the test error reaches a minimum and then rises as the model overfits, so stop early or regularise more.",
+            "Alternating least squares fixes the item factors and solves an exact least-squares problem for each user, then swaps roles; each step can only lower the objective, and the per-user solves run in parallel.",
+            "The number of factors, the regularisation and the learning rate or number of iterations are hyperparameters: choose them on a validation period before the test period, never on the test itself.",
+            "Start the factors at small random values: if they all start at zero, every factor gradient is zero too, and the factors never move."
+          ]
+        },
+        {
+          "title": "Implicit feedback and confidence-weighted ALS",
+          "minutes": 12,
+          "objectives": [
+            "Fit implicit feedback with preferences and confidences",
+            "Explain the ALS solve for implicit data",
+            "Compare implicit ALS with pairwise ranking losses such as BPR"
+          ],
+          "key_points": [
+            "With implicit feedback every cell counts: implicit ALS (Hu, Koren and Volinsky, 2008) fits a preference of 1 for every interaction and 0 for every other cell, weighting each cell by a confidence.",
+            "The confidence c_ui = 1 + α·r_ui grows with the strength of the interaction, such as (the log of) hours played, so the model trusts heavy use more than a single play and still learns a little from the empty cells.",
+            "Each ALS step solves (FᵀC_uF + λI)x_u = FᵀC_up_u for every user, with F the fixed factors and C_u that user's confidences; precomputing FᵀF makes the cost depend on the user's interactions rather than the whole catalogue.",
+            "Bayesian personalised ranking (BPR) is the main alternative: it samples a played and an unplayed item for a user and trains the model to score the played one higher, optimising the order directly.",
+            "Implicit models are sensitive to α, λ and the number of factors, and a badly tuned one can lose to popularity; tune them on a validation period with a ranking metric such as NDCG@k."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Factorise ratings with SGD and plays with implicit ALS",
+        "tool": "Python",
+        "minutes": 60,
+        "goal": "Fit biased matrix factorisation to star ratings with SGD and watch it overfit, compare it with a biases-only model, then tune implicit ALS on a validation period and compare it with user kNN on the test period.",
+        "setup": [
+          "Your course folder, with rs_data/",
+          "The starter file lab3_factorisation.py; it takes under a minute"
+        ],
+        "steps": [
+          {
+            "do": "Read how ratings are split by the day of the play they rate, and why test ratings need a player and a game seen in training."
+          },
+          {
+            "do": "Complete TODO 1: the SGD updates for the biases and the factor vectors.",
+            "code": "bu[u] += lr * (e - reg * bu[u])\nbi[i] += lr * (e - reg * bi[i])\nif k:\n    P[u], Q[i] = P[u] + lr * (e * Q[i] - reg * P[u]), Q[i] + lr * (e * P[u] - reg * Q[i])",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: one round of ALS, solving the players' factors and then the games'.",
+            "code": "U = solve(V, C, split.X, lam)\nV = solve(U, C.T, split.X.T, lam)",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab3_factorisation.py",
+            "lang": "bash",
+            "see": "Test RMSE 0.8702 for the global mean and 0.6699 for biases alone; with 16 factors it reaches 0.6707 at epoch 10 and rises to 0.6803 by epoch 30."
+          },
+          {
+            "do": "Read the validation grid: lambda 30 and alpha 1 give the best NDCG@10, 0.3023, and the chosen model is then scored once on the test period."
+          },
+          {
+            "do": "Write a short paragraph: why the factors don't beat the biases on ratings here, what you'd do about the rising test error, and why the ALS settings were chosen on validation data."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The rating baselines are right: 7,151 training and 2,363 test ratings, test RMSE 0.8702 for the global mean and 0.6699 for biases alone.",
+            "look_for": [
+              "7151",
+              "0.8702",
+              "0.6699"
+            ]
+          },
+          {
+            "text": "SGD with 16 factors overfits: test RMSE 0.6707 at epoch 10 and 0.6803 at epoch 30, while training RMSE falls to 0.5427.",
+            "look_for": [
+              "0.6707",
+              "0.6803",
+              "0.5427"
+            ]
+          },
+          {
+            "text": "The validation grid is computed and chooses lambda 30, alpha 1 (NDCG@10 0.3023).",
+            "look_for": [
+              "0.3023",
+              "Chosen: lambda 30, alpha 1"
+            ]
+          },
+          {
+            "text": "Implicit ALS beats user kNN on the test period: recall@10 0.3543 against 0.3394, NDCG@10 0.3599.",
+            "look_for": [
+              "0.3543",
+              "0.3599"
+            ]
+          },
+          {
+            "text": "The paragraph says the biases capture most of the rating signal, proposes early stopping or more regularisation, and explains why tuning on the test would be optimistic.",
+            "look_for": [
+              "validation"
+            ]
+          }
+        ],
+        "submit": "Paste your two completed TODOs, the script's output and your paragraph.",
+        "files": [
+          {
+            "path": "lab3_factorisation.py",
+            "content": "\"\"\"Lab 3: matrix factorisation of star ratings with SGD, and of plays with implicit ALS.\"\"\"\n\nimport random\n\nimport numpy as np\n\nfrom rs_common import Split, evaluate, load, report\n\ngames, plays, ratings = load()\ns = Split(games, plays)\n\n# Ratings, split by the day of the play they rate; test ratings need a user and a game seen in training\nr = ratings.merge(plays[[\"user_id\", \"game_id\", \"day\"]], on=[\"user_id\", \"game_id\"])\ntrain_r = r[r[\"day\"] < 150]\ntest_r = r[(r[\"day\"] >= 150) & r[\"user_id\"].isin(set(train_r[\"user_id\"])) & r[\"game_id\"].isin(set(train_r[\"game_id\"]))]\nprint(f\"Ratings: {len(train_r)} to train, {len(test_r)} to test\")\nusers = {u: i for i, u in enumerate(sorted(train_r[\"user_id\"].unique()))}\nitems = {g: i for i, g in enumerate(sorted(train_r[\"game_id\"].unique()))}\ntr = [(users[u], items[g], float(x)) for u, g, x in zip(train_r[\"user_id\"], train_r[\"game_id\"], train_r[\"rating\"])]\nte = [(users[u], items[g], float(x)) for u, g, x in zip(test_r[\"user_id\"], test_r[\"game_id\"], test_r[\"rating\"])]\nmu = float(np.mean([x for _, _, x in tr]))\n\n\ndef rmse(predict, data):\n    return float(np.sqrt(np.mean([(x - predict(u, i)) ** 2 for u, i, x in data])))\n\n\ndef sgd(k, epochs, lr=0.01, reg=0.05, show=()):\n    \"\"\"Fit r_ui = mu + b_u + b_i + p_u . q_i by stochastic gradient descent; k = 0 fits the biases alone.\"\"\"\n    rnd = random.Random(0)\n    bu, bi = np.zeros(len(users)), np.zeros(len(items))\n    P = np.array([[rnd.gauss(0, 0.1) for _ in range(k)] for _ in users])\n    Q = np.array([[rnd.gauss(0, 0.1) for _ in range(k)] for _ in items])\n\n    def predict(u, i):\n        return mu + bu[u] + bi[i] + (P[u] @ Q[i] if k else 0.0)\n\n    for epoch in range(1, epochs + 1):\n        order = tr[:]\n        rnd.shuffle(order)\n        for u, i, x in order:\n            e = x - predict(u, i)\n            # TODO 1: move each bias and factor vector a step of lr along its gradient, shrunk by reg\n            pass\n        if epoch in show:\n            print(f\"  epoch {epoch:2}: train RMSE {rmse(predict, tr):.4f}, test RMSE {rmse(predict, te):.4f}\")\n    return predict\n\n\nprint(f\"Global mean {mu:.3f}: test RMSE {rmse(lambda u, i: mu, te):.4f}\")\nprint(f\"Biases only, 10 epochs: test RMSE {rmse(sgd(0, 10), te):.4f}\")\nprint(\"Biases and 16 factors:\")\nsgd(16, 30, show=(1, 5, 10, 20, 30))\n\n\ndef solve(fixed, conf, pref, lam):\n    \"\"\"For each row: (F^T C F + lam I)^-1 F^T C p, the confidence-weighted least-squares factors.\"\"\"\n    out = np.empty((conf.shape[0], fixed.shape[1]))\n    for n in range(conf.shape[0]):\n        Fc = fixed * conf[n][:, None]\n        out[n] = np.linalg.solve(fixed.T @ Fc + lam * np.eye(fixed.shape[1]), Fc.T @ pref[n])\n    return out\n\n\ndef implicit_als(split, factors, lam, alpha, iterations=10):\n    \"\"\"Preference 1 for every play, confidence 1 + alpha * log(1 + hours); returns user x game scores.\"\"\"\n    C = 1 + alpha * np.log1p(split.H)\n    rnd = random.Random(0)\n    U = np.array([[rnd.gauss(0, 0.01) for _ in range(factors)] for _ in split.users])\n    V = np.array([[rnd.gauss(0, 0.01) for _ in range(factors)] for _ in split.items])\n    for _ in range(iterations):\n        # TODO 2: solve the user factors with the game factors fixed, then the game factors with the users fixed\n        pass\n    return U @ V.T\n\n\n# Choose lambda and alpha on a validation period (train before day 120, validate on days 120-149), never on the test\nval = Split(games, plays[plays[\"day\"] < 150], split_day=120)\ngrid = {}\nfor lam in (10, 30):\n    for alpha in (1, 2):\n        grid[(lam, alpha)] = evaluate(val, implicit_als(val, 16, lam, alpha))[\"NDCG@10\"]\n        print(f\"validation: lambda {lam}, alpha {alpha}: NDCG@10 {grid[(lam, alpha)]:.4f}\")\nlam, alpha = max(grid, key=grid.get)\nprint(f\"Chosen: lambda {lam}, alpha {alpha}\\n\")\n\npopularity = np.tile(s.X.sum(axis=0), (len(s.users), 1))\nunorm = np.linalg.norm(s.X, axis=1)\nuser_sim = (s.X @ s.X.T) / np.outer(unorm, unorm)\nnp.fill_diagonal(user_sim, 0)\nkeep = np.argsort(-user_sim, axis=1, kind=\"stable\")[:, :50]\ntop = np.zeros_like(user_sim)\ntop[np.arange(len(s.users))[:, None], keep] = user_sim[np.arange(len(s.users))[:, None], keep]\nfor name, sc in [(\"popularity\", popularity), (\"user kNN\", top @ s.X), (\"implicit ALS\", implicit_als(s, 16, lam, alpha))]:\n    report(name, evaluate(s, sc))\n"
+          }
+        ],
+        "hints": [
+          "Update P[u] and Q[i] together, from their old values: the tuple assignment does that.",
+          "solve() handles one side; call it for the players with the games fixed, then with C.T and s.X.T for the games.",
+          "With alpha 2, heavy players' hours dominate; compare how the two alphas do on validation."
+        ]
+      }
+    },
+    {
+      "title": "Two-tower retrieval with PyTorch",
+      "summary": "Build the retrieval model behind many large recommenders: user and item towers in one embedding space, trained with in-batch negatives and the logQ correction, with features that give new items a place.",
+      "instructor": "jae-won-parkk",
+      "lessons": [
+        {
+          "title": "The two-tower architecture",
+          "minutes": 12,
+          "objectives": [
+            "Describe the user and item towers and how pairs are scored",
+            "Explain why item vectors can be precomputed",
+            "Use features and ID dropout so new items get useful vectors"
+          ],
+          "key_points": [
+            "A two-tower model has a user tower and an item tower, networks that map each side's IDs and features to vectors in one shared space, and scores a pair by the dot product, or cosine, of the two vectors.",
+            "Because neither tower sees the other's inputs, vectors for the whole catalogue can be computed in advance, and retrieval becomes a nearest-neighbour search for the user's vector.",
+            "Features make the towers generalise: a user tower can take recent history and context, and an item tower genre, tags or text, so a new item gets a sensible vector before anyone has interacted with it.",
+            "ID embeddings memorise individual items while features generalise across them; dropping the ID embedding at random during training forces the item tower to also work from features alone, which is what new items need.",
+            "Matrix factorisation is a two-tower model whose towers are only ID embeddings; the extra power comes from the features, at the cost of more tuning and compute."
+          ]
+        },
+        {
+          "title": "Training with in-batch negatives, and serving",
+          "minutes": 12,
+          "objectives": [
+            "Train with an in-batch softmax and a temperature",
+            "Correct the popularity bias of in-batch negatives with logQ",
+            "Describe how retrieval models are served"
+          ],
+          "key_points": [
+            "Training usually treats each (user, item) interaction as a positive and the batch's other items as negatives, applying a softmax over the batch's scores divided by a temperature, so no separate negative sampling is needed.",
+            "Popular items turn up in more batches, so in-batch negatives push them down too often; the logQ correction subtracts the log of each item's sampling probability from its logit, which removes that bias.",
+            "The temperature sets how sharp the softmax is: a low one concentrates training on the hardest negatives and can overfit, a high one treats negatives more evenly; tune it on validation data like any hyperparameter.",
+            "To serve, index the item vectors with an approximate nearest-neighbour library such as FAISS or ScaNN, or a vector database, which returns a few hundred candidates fast enough for live requests, for a ranking model to order.",
+            "On a small catalogue with few interactions a two-tower model rarely beats well-tuned matrix factorisation or kNN; its strengths are features, cold start and very large catalogues."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Train a two-tower retrieval model",
+        "tool": "Python with PyTorch",
+        "minutes": 60,
+        "goal": "Train a two-tower model on the CPU with an in-batch softmax, see what the logQ correction does, compare it with popularity and the earlier models, and rank new games from their features alone.",
+        "setup": [
+          "Your course folder, with rs_data/",
+          "PyTorch, the CPU build: pip install torch",
+          "The starter file lab4_two_tower.py; training takes under a minute. Other PyTorch versions can change the last digits, but not the comparisons"
+        ],
+        "steps": [
+          {
+            "do": "Read the model: the user tower adds an ID embedding to the average features of the player's games; the item tower adds an ID embedding to the game's features and drops the ID half the time in training."
+          },
+          {
+            "do": "Complete TODO 1: the in-batch softmax. Divide the batch's player-game cosines by the temperature; the correct game for row n is column n.",
+            "code": "logits = model.users(u) @ model.items(i).T / temperature\nloss = nn.functional.cross_entropy(logits, torch.arange(len(batch)))",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: the logQ correction.",
+            "code": "logits = logits - torch.log(q[i])[None, :]",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab4_two_tower.py",
+            "lang": "bash",
+            "see": "Without logQ the model scores recall@10 0.1909, below popularity; with it, 0.3248, and 0.257 of its recommendations are new games."
+          },
+          {
+            "do": "Read the last line: ranking only the 40 new games, the feature-only vectors put one of a player's new games in the top 10 for 0.655 of them, against 0.374 by chance."
+          },
+          {
+            "do": "Write a short note: why the uncorrected model underrates popular games, how the two-tower compares with lab 3's implicit ALS (0.3543), and what it offers that ALS doesn't."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The data is set up: 17,841 training pairs and 28 game features.",
+            "look_for": [
+              "17841 training pairs",
+              "28 features"
+            ]
+          },
+          {
+            "text": "Without the logQ correction the model scores below popularity (recall@10 about 0.19 against 0.2456).",
+            "look_for": [
+              "0.2456"
+            ]
+          },
+          {
+            "text": "With the logQ correction it beats popularity, at a recall@10 of about 0.32.",
+            "look_for": [
+              "beats popularity on recall@10: True"
+            ]
+          },
+          {
+            "text": "Feature-only vectors rank new games: about 0.65 of 472 players find one of theirs in the top 10, against 0.374 by chance.",
+            "look_for": [
+              "472 players",
+              "0.374"
+            ]
+          },
+          {
+            "text": "The note explains the popularity bias of in-batch negatives and says the two-tower trails ALS here but handles new games and features.",
+            "look_for": [
+              "popular"
+            ]
+          }
+        ],
+        "submit": "Paste your two completed TODOs, the script's output and your note.",
+        "files": [
+          {
+            "path": "lab4_two_tower.py",
+            "content": "\"\"\"Lab 4: train a two-tower retrieval model with PyTorch on the CPU, and use its game tower for new games.\n\nThe settings (temperature 0.5, 32 dimensions, 20 epochs) were chosen on the validation period used in lab 3.\n\"\"\"\n\nfrom math import comb\n\nimport numpy as np\nimport torch\nfrom torch import nn\n\nfrom rs_common import Split, evaluate, load, report\n\ntorch.manual_seed(0)\ntorch.set_num_threads(1)                         # one thread keeps the results repeatable\ngames, plays, ratings = load()\ns = Split(games, plays)\nX = torch.tensor(s.X, dtype=torch.float32)\n\n# Game features: a multi-hot vector of genre and tags\nvocab = sorted(set(games[\"genre\"]) | {t for tags in games[\"tags\"] for t in tags.split(\"|\")})\nfeats = torch.zeros(len(games), len(vocab))\nfor i, (g, tags) in enumerate(zip(games[\"genre\"], games[\"tags\"])):\n    for t in [g, *tags.split(\"|\")]:\n        feats[i, vocab.index(t)] = 1.0\n\n\nclass TwoTower(nn.Module):\n    def __init__(self, n_users, n_items, n_feats, dim=32, id_dropout=0.5):\n        super().__init__()\n        self.user_id = nn.Embedding(n_users, dim)\n        self.user_taste = nn.Linear(n_feats, dim)          # the average features of the games a player played\n        self.item_id = nn.Embedding(n_items, dim)\n        self.item_feat = nn.Linear(n_feats, dim)\n        self.item_mlp = nn.Sequential(nn.ReLU(), nn.Linear(dim, dim))\n        self.id_dropout = id_dropout\n\n    def users(self, u):\n        taste = X[u] @ feats / X[u].sum(dim=1, keepdim=True).clamp(min=1)\n        return nn.functional.normalize(self.user_id(u) + self.user_taste(taste), dim=-1)\n\n    def items(self, i, use_ids=True):\n        ids = self.item_id(i) if use_ids else 0.0\n        if self.training:\n            # hide each game's ID embedding half the time, so the tower also learns to work from features alone\n            ids = ids * (torch.rand(len(i), 1) > self.id_dropout).float()\n        return nn.functional.normalize(self.item_mlp(ids + self.item_feat(feats[i])), dim=-1)\n\n\npairs = torch.tensor(np.argwhere(s.X > 0))                   # (player, game) for every training play\nq = torch.tensor(s.X.sum(axis=0) / s.X.sum(), dtype=torch.float32)     # how often each game appears in a batch\nprint(f\"{len(pairs)} training pairs, {len(s.users)} players, {len(s.items)} games, {len(vocab)} features\")\n\n\ndef train(logq, epochs=20, temperature=0.5):\n    torch.manual_seed(0)\n    model = TwoTower(len(s.users), len(s.items), len(vocab))\n    opt = torch.optim.Adam(model.parameters(), lr=0.01)\n    for epoch in range(1, epochs + 1):\n        model.train()\n        total = 0.0\n        for batch in torch.randperm(len(pairs)).split(512):\n            u, i = pairs[batch, 0], pairs[batch, 1]\n            # TODO 1: in-batch softmax: each player's own game is the positive and the batch's other games the negatives\n            logits = model.users(u) @ model.items(i).T\n            if logq:\n                # TODO 2: the logQ correction: subtract log(how often each game is sampled) from its column\n                logits = logits\n            loss = nn.functional.cross_entropy(logits, torch.arange(len(batch)))\n            opt.zero_grad()\n            loss.backward()\n            opt.step()\n            total += loss.item() * len(batch)\n        if logq and epoch in (1, 10, 20):\n            print(f\"epoch {epoch:2}: loss {total / len(pairs):.3f}\")\n    model.eval()\n    return model\n\n\nnew = torch.tensor(sorted(s.new_items))\npopularity = np.tile(s.X.sum(axis=0), (len(s.users), 1))\nreport(\"popularity\", evaluate(s, popularity))\nfor logq in (False, True):\n    model = train(logq)\n    with torch.no_grad():\n        U = model.users(torch.arange(len(s.users)))\n        V = model.items(torch.arange(len(s.items)))\n        V[new] = model.items(new, use_ids=False)           # new games have no plays, so their IDs were never trained\n        scores = (U @ V.T).numpy()\n    m = evaluate(s, scores)\n    report(f\"two-tower{', logQ' if logq else ''}\", m)\nprint(f\"Two-tower with logQ beats popularity on recall@10: {m['recall@10'] > evaluate(s, popularity)['recall@10']}\")\n\n# New games: rank only the 40 new games for the players who played one in the test period\nnew_np = new.numpy()\nfans = [u for u in s.eval_users if s.relevant[u] & s.new_items]\nhits = [bool(set(new_np[np.argsort(-scores[u, new_np], kind=\"stable\")[:10]]) & s.relevant[u]) for u in fans]\nchance = [1 - comb(40 - len(s.relevant[u] & s.new_items), 10) / comb(40, 10) for u in fans]\nprint(f\"New games: one of theirs in the top 10 of the 40 for {np.mean(hits):.3f} of {len(fans)} players \"\n      f\"(a random order: {np.mean(chance):.3f})\")\n"
+          }
+        ],
+        "hints": [
+          "torch.arange(len(batch)) gives the targets 0, 1, 2 ...: each row's own game is on the diagonal.",
+          "q[i] is each batch game's share of all training plays; subtracting its log raises rare games' logits.",
+          "torch.set_num_threads(1) and torch.manual_seed(0) keep runs repeatable on one machine."
+        ]
+      }
+    },
+    {
+      "title": "Cold start, evaluation pitfalls and beyond accuracy",
+      "summary": "Serve new users and new items, avoid the evaluation mistakes that make offline results look better than they are, and measure coverage, novelty and diversity alongside accuracy.",
+      "instructor": "ngo-thi-huunge",
+      "lessons": [
+        {
+          "title": "Cold start for new users and new items",
+          "minutes": 12,
+          "objectives": [
+            "Choose strategies for new users and for new items",
+            "Combine methods in a hybrid recommender",
+            "Evaluate cold start on its own"
+          ],
+          "key_points": [
+            "Cold start is the lack of interactions for a new user or a new item; collaborative methods can't place either, so systems fall back on other information until interactions arrive.",
+            "For new users: start from popular or trending items, ask a few onboarding questions about tastes, use context such as country, device or the page they came from, and update quickly from the first clicks.",
+            "For new items: use their content features, through a content-based model or a feature-based item tower, and give them some exposure on purpose, since an item that's never shown never collects interactions.",
+            "Hybrid recommenders combine methods by blending scores, switching on how much data a user or item has, or feeding content features into a collaborative model, and usually do better across the whole catalogue than any single method.",
+            "Evaluate cold start separately: measure new items, and users with little history, on their own, because overall metrics are dominated by established items and heavy users."
+          ]
+        },
+        {
+          "title": "Evaluation pitfalls",
+          "minutes": 12,
+          "objectives": [
+            "Recognise leaks from random splits and preprocessing",
+            "Explain why sampled metrics mislead",
+            "Separate offline metrics from online outcomes"
+          ],
+          "key_points": [
+            "Random splits leak the future: a model trained on interactions that happened after the ones it's tested on learns later trends, such as which games became popular, and scores better offline than it would live.",
+            "Sampled metrics rank each test item against a small random sample of negatives, such as 100, instead of the whole catalogue; they inflate scores and can even reverse the order of two models (Krichene and Rendle, 2020).",
+            "Offline tests reward popularity, because logged interactions concentrate on popular items; report results on the long tail too, where a popularity-heavy model can score close to zero.",
+            "Leaks also come from preprocessing: computing popularity counts, normalisation statistics or item features over the whole dataset, test period included, quietly passes test information into training.",
+            "Offline metrics are proxies: a recommender's value shows in an online A/B test of user and business outcomes, such as engagement, return visits and satisfaction, and offline gains don't always carry over."
+          ]
+        },
+        {
+          "title": "Beyond accuracy: coverage, novelty, diversity and feedback loops",
+          "minutes": 10,
+          "objectives": [
+            "Measure coverage, novelty and diversity",
+            "Explain the trade-offs between them and accuracy",
+            "Recognise feedback loops and who a recommender serves"
+          ],
+          "key_points": [
+            "Catalogue coverage is the share of items that ever get recommended; a model that shows only the most popular items leaves most of the catalogue, and most of its makers, unseen.",
+            "Novelty measures how unfamiliar recommendations are, for example by the popularity rank of recommended items; diversity measures how different the items in one list are, for example by how many genres it spans.",
+            "Accuracy, novelty and diversity pull against each other; re-ranking a candidate list for diversity, for example with maximal marginal relevance, trades a little accuracy for lists that users often find more useful.",
+            "Recommenders create feedback loops: whatever is recommended gets interacted with and so looks more relevant next time, so popular items grow more popular and new ones struggle; exploration and diversity rules counter this.",
+            "Check whom a recommender serves: whether small creators get any exposure, whether minority tastes are served as well as the majority's, and what it shows to children and vulnerable users."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Find the pitfalls in an offline evaluation",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Measure how a random split and sampled metrics change the results of lab 2's four models, test them on the long tail, and compare their coverage, novelty and diversity.",
+        "setup": [
+          "Your course folder, with rs_data/",
+          "The starter file lab5_pitfalls.py"
+        ],
+        "steps": [
+          {
+            "do": "Read models(): popularity, content-based, item kNN (30 neighbours) and user kNN (50 neighbours), as in lab 2."
+          },
+          {
+            "do": "Complete TODO 1: rank each test game against 100 random games the player never played.",
+            "code": "neg = rnd.sample(unplayed, n_neg)\nsampled.append(np.sum(scores[u, neg] > scores[u, i]) < k)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: novelty as the median popularity rank of the recommended games, and diversity as the distinct genres per list.",
+            "code": "novelty = np.median(rank_of[recs])\ndiversity = np.mean([len(set(genre[r])) for r in recs])",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab5_pitfalls.py",
+            "lang": "bash",
+            "see": "A random split raises user kNN's recall@10 from 0.3394 to 0.3625; sampled hit rates are far higher than full ones and put item kNN ahead of user kNN."
+          },
+          {
+            "do": "Read the long-tail table: popularity's recall@10 falls to 0.0035, while content-based keeps 0.2807."
+          },
+          {
+            "do": "Read the beyond-accuracy table: content-based covers the whole catalogue with unfamiliar games but only 2.51 genres per list."
+          },
+          {
+            "do": "Write five sentences for a colleague's evaluation plan: the split, the metric protocol, the segments to report and the beyond-accuracy measures, each with the evidence from this lab."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The random split inflates the scores: popularity 0.2456 to 0.2639 and user kNN 0.3394 to 0.3625.",
+            "look_for": [
+              "0.2639",
+              "0.3625"
+            ]
+          },
+          {
+            "text": "Sampled metrics inflate hit rates, such as popularity's from 0.2249 to 0.3945.",
+            "look_for": [
+              "0.2249",
+              "0.3945"
+            ]
+          },
+          {
+            "text": "Sampled metrics reverse two models: user kNN beats item kNN on the full ranking (0.3108 against 0.3076) but loses on sampled negatives (0.5103 against 0.5337).",
+            "look_for": [
+              "0.3108",
+              "0.3076",
+              "0.5103",
+              "0.5337"
+            ]
+          },
+          {
+            "text": "On the long tail, popularity scores recall@10 0.0035 and content-based 0.2807.",
+            "look_for": [
+              "0.0035",
+              "0.2807"
+            ]
+          },
+          {
+            "text": "Beyond accuracy: content-based has coverage 1.000, median popularity rank 146.0 and 2.51 genres per list; popularity covers 0.129.",
+            "look_for": [
+              "146.0",
+              "2.51"
+            ]
+          },
+          {
+            "text": "The plan recommends a time split, full-catalogue ranking, long-tail and new-item segments, and coverage and diversity measures.",
+            "look_for": [
+              "time"
+            ]
+          }
+        ],
+        "submit": "Paste your two completed TODOs, the script's output and your five sentences.",
+        "files": [
+          {
+            "path": "lab5_pitfalls.py",
+            "content": "\"\"\"Lab 5: evaluation pitfalls (random splits, sampled metrics, popularity) and beyond-accuracy measures.\"\"\"\n\nimport random\n\nimport numpy as np\nfrom sklearn.feature_extraction.text import TfidfVectorizer\n\nfrom rs_common import Split, evaluate, load, top_k\n\ngames, plays, ratings = load()\n\n\ndef models(s):\n    \"\"\"Popularity, content-based, item kNN and user kNN scores for a split, as in lab 2.\"\"\"\n    pop = np.tile(s.X.sum(axis=0), (len(s.users), 1))\n    docs = (\"genre_\" + s.games[\"genre\"] + \" \" + s.games[\"tags\"].str.replace(\"|\", \" \")).tolist()\n    G = TfidfVectorizer(token_pattern=r\"[^ ]+\").fit_transform(docs).toarray()\n    prof = np.log1p(s.H) @ G\n    content = (prof / np.linalg.norm(prof, axis=1, keepdims=True)) @ G.T\n    n = np.linalg.norm(s.X, axis=0)\n    isim = (s.X.T @ s.X) / np.maximum(np.outer(n, n), 1e-12)\n    np.fill_diagonal(isim, 0)\n    best = np.argsort(-isim, axis=1, kind=\"stable\")[:, :30]                 # 30 neighbours per game, as in lab 2\n    near = np.zeros_like(isim)\n    near[np.arange(len(s.items))[:, None], best] = isim[np.arange(len(s.items))[:, None], best]\n    un = np.linalg.norm(s.X, axis=1)\n    usim = (s.X @ s.X.T) / np.outer(un, un)\n    np.fill_diagonal(usim, 0)\n    keep = np.argsort(-usim, axis=1, kind=\"stable\")[:, :50]\n    rows = np.arange(len(s.users))[:, None]\n    top = np.zeros_like(usim)\n    top[rows, keep] = usim[rows, keep]\n    return {\"popularity\": pop, \"content-based\": content, \"item kNN\": s.X @ near.T, \"user kNN\": top @ s.X}\n\n\ntime_split = Split(games, plays)\ntime_models = models(time_split)\n\n# Pitfall 1: a random split lets the past see the future\nrnd = random.Random(0)\nshuffled = plays.assign(day=[0 if rnd.random() < 0.72 else 999 for _ in range(len(plays))])   # a similar test share\nrandom_split = Split(games, shuffled, split_day=1)\nrandom_models = models(random_split)\nprint(\"recall@10, time split vs random split:\")\nfor name in time_models:\n    print(f\"  {name:14} {evaluate(time_split, time_models[name])['recall@10']:.4f}  \"\n          f\"{evaluate(random_split, random_models[name])['recall@10']:.4f}\")\n\n\n# Pitfall 2: sampled metrics. Rank each test game against 100 random games the player never played\ndef hit_rates(s, scores, n_neg=100, k=10, seed=0):\n    rnd = random.Random(seed)\n    played = s.X.copy()\n    for u in s.eval_users:\n        played[u, list(s.relevant[u])] = 1\n    full, sampled = [], []\n    recs = top_k(scores, s.X, k)\n    for u in s.eval_users:\n        unplayed = np.flatnonzero(played[u] == 0).tolist()\n        for i in s.relevant[u]:\n            full.append(i in recs[u])\n            # TODO 1: the sampled version: is game i in the top k when ranked against n_neg random unplayed games?\n            neg = unplayed[:n_neg]\n            sampled.append(np.sum(scores[u, neg] > scores[u, i]) < k)\n    return np.mean(full), np.mean(sampled)\n\n\nprint(\"\\nHit rate@10, full ranking vs 100 sampled negatives:\")\nfor name, sc in time_models.items():\n    f, smp = hit_rates(time_split, sc)\n    print(f\"  {name:14} {f:.4f}  {smp:.4f}\")\n\n# Pitfall 3: offline tests reward popularity. Recall on test plays of games outside the 20 most played\ntop20 = set(np.argsort(-time_split.X.sum(axis=0), kind=\"stable\")[:20])\ntail_users = [u for u in time_split.eval_users if time_split.relevant[u] - top20]\nsaved = time_split.relevant\ntime_split.relevant = [rel - top20 for rel in saved]\nprint(f\"\\nrecall@10 on the long tail (test plays outside the top 20 games, {len(tail_users)} players):\")\nfor name, sc in time_models.items():\n    print(f\"  {name:14} {evaluate(time_split, sc, users=tail_users)['recall@10']:.4f}\")\ntime_split.relevant = saved\n\n# Beyond accuracy: coverage, novelty and diversity of each model's top 10\nrank_of = np.empty(len(games), dtype=int)\nrank_of[np.argsort(-time_split.X.sum(axis=0), kind=\"stable\")] = np.arange(1, len(games) + 1)\ngenre = games[\"genre\"].to_numpy()\nprint(\"\\nBeyond accuracy (top 10 for every test player):\")\nfor name, sc in time_models.items():\n    recs = top_k(sc[time_split.eval_users], time_split.X[time_split.eval_users])\n    # TODO 2: novelty as the median popularity rank of recommended games, diversity as distinct genres per list\n    novelty = diversity = 0.0\n    print(f\"  {name:14} coverage {len(set(recs.ravel())) / len(games):.3f}  median popularity rank {novelty:5.1f}  \"\n          f\"genres per list {diversity:.2f}\")\n"
+          }
+        ],
+        "hints": [
+          "A test game is in the sampled top 10 when fewer than 10 of the negatives score higher than it.",
+          "rank_of gives each game's popularity rank, 1 for the most played; a higher median rank means less familiar games.",
+          "The random split keeps about 72% of plays for training, close to the time split's share."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn the problem, the data and the ranking metrics; split the plays and score popularity in lab 1.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Build content-based, item-kNN and user-kNN recommenders and compare them in lab 2.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Factorise ratings with SGD and plays with implicit ALS, tuned on a validation period, in lab 3.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Train a two-tower retrieval model in PyTorch with in-batch negatives and logQ in lab 4.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Study cold start and the pitfalls of offline evaluation, and measure them in lab 5.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and evaluate the hybrid recommender capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "A hybrid recommender for Pixel Bazaar's home page",
+    "minutes": 420,
+    "brief": "Pixel Bazaar wants a 'Recommended for you' row of 10 games on its home page that works for loyal players, for players who have only tried a game or two, and for the games released this month. Using the course data, design an evaluation protocol, compare at least four models on it, and build a hybrid that combines collaborative scores with content features so new games and light players are served well. Tune it on a validation period, test it once on the test period, and report accuracy overall and by segment together with coverage, novelty and diversity. Finish with a proposal for the online A/B test that would decide whether to launch it, and a one-page summary for the product team.",
+    "deliverables": [
+      "An evaluation protocol: a time split with a validation period, the users and items evaluated, and the metrics at 10, with reasons",
+      "At least four models compared on it: popularity, a neighbourhood model, implicit ALS or a two-tower model, and your hybrid",
+      "A hybrid that serves new games and light players (five or fewer training plays), for example by blending or switching with content-based scores, tuned on the validation period",
+      "Results by segment (the long tail, new games, light players), with coverage, novelty and diversity",
+      "A proposal for an online A/B test: the primary metric, guardrails, the unit of randomisation and how long it should run",
+      "A one-page summary for the product team"
+    ],
+    "rubric": [
+      {
+        "name": "Evaluation protocol",
+        "points": 20,
+        "description": "A time split with validation, full-catalogue ranking, no leakage from preprocessing, and the same protocol for every model."
+      },
+      {
+        "name": "Models and tuning",
+        "points": 20,
+        "description": "At least four models are correctly implemented, and hyperparameters are tuned on validation data only."
+      },
+      {
+        "name": "Hybrid and cold start",
+        "points": 20,
+        "description": "The hybrid handles new games and light players, and its gain on those segments is measured rather than assumed."
+      },
+      {
+        "name": "Segments and beyond accuracy",
+        "points": 15,
+        "description": "Results are reported for the long tail, new games and light players, with coverage, novelty and diversity, and the trade-offs are discussed."
+      },
+      {
+        "name": "Online test proposal",
+        "points": 10,
+        "description": "The A/B test has a sensible primary metric and guardrails, randomises users, and explains why offline gains may not carry over."
+      },
+      {
+        "name": "Communication",
+        "points": 15,
+        "description": "The summary is clear to a product team and honest about the limits of offline evaluation."
+      }
+    ],
+    "submit": "Paste your code (or a link to your repository), the results tables, the A/B test proposal and the summary.",
+    "files": []
+  }
+}
