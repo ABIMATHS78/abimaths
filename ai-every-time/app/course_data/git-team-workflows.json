@@ -1,0 +1,1706 @@
+{
+ "slug": "git-team-workflows",
+ "title": "Git and GitHub Workflows for Teams",
+ "subtitle": "Use Git with confidence on a team: clean commits, branches and merges, pull requests and reviews on GitHub, releases, and a way back from any mistake.",
+ "category": "Software Development",
+ "kind": "course",
+ "level": "beginner",
+ "instructors": [
+  "agnieszka-kowalska",
+  "sebastian-vargas"
+ ],
+ "skills": [
+  "Git",
+  "GitHub",
+  "Branching and merging",
+  "Rebasing",
+  "Resolving merge conflicts",
+  "Pull requests",
+  "Code review",
+  "Release management",
+  "Git hooks"
+ ],
+ "tools": [
+  "Git",
+  "GitHub",
+  "GitHub CLI",
+  "Git Bash"
+ ],
+ "outcomes": [
+  "Record work in small, well-described commits, and find answers in the history with log, show, diff and blame",
+  "Branch, merge and rebase with confidence, and resolve merge conflicts",
+  "Collaborate through remotes: fetch, pull and push, recover from rejected pushes, and share branches",
+  "Run a team workflow on GitHub with pull requests, code review, protected branches and a consistent merge method",
+  "Mark releases with semantic version tags and GitHub Releases, and patch old versions with cherry-pick",
+  "Undo mistakes safely with restore, reset, revert and the reflog, and automate checks with Git hooks"
+ ],
+ "prerequisites": "None beyond using a terminal: changing folders and running commands, as taught in Linux Command Line Essentials. Python Programming with PyCharm shows Git inside an IDE; this course goes further, on the command line and on GitHub. You need Git 2.28 or later (on Windows, Git for Windows, which includes Git Bash), a text editor, a free GitHub account, and the GitHub CLI (gh) for modules 3 and 4.",
+ "description": "Git is how software teams keep track of every change and work on the same code without getting in each other's way. This course starts with what Git records and how to make clean, focused commits, then teaches branching, merging, resolving conflicts and rebasing on the command line, so you understand what the buttons in any tool are doing. You'll practise with remotes by playing two team members on one computer, then move to GitHub: pull requests, code review with suggestions, CODEOWNERS and protected branches, GitHub flow compared with trunk-based development, the three merge methods, and tagged, semantically versioned releases.\n\nEvery module has a lab in real repositories, some created for you by small scripts: a café menu with branches to merge and rebase, a shared remote with two clones, and a repository whose history needs repairing. The last module covers .gitignore, undoing almost anything with restore, reset, revert and the reflog, and automating checks with Git hooks. The capstone brings it all together in a small team project on GitHub, from the first commit to a release and a patch. Afterwards, CI/CD and Automated Testing builds automated pipelines on top of this workflow.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Commits and history",
+   "summary": "How Git records a project: the working tree, the staging area and commits; how to make small commits with clear messages; and how to search and read the history they build.",
+   "instructor": "agnieszka-kowalska",
+   "lessons": [
+    {
+     "title": "How Git records your work",
+     "minutes": 12,
+     "objectives": [
+      "Explain the working tree, the staging area and commits",
+      "Configure Git and make your first commit",
+      "Read git status to see the state of each file"
+     ],
+     "key_points": [
+      "Git keeps a project's history in a repository, the hidden .git folder at the project's top level. The working tree is the files you see and edit, and the staging area (also called the index) holds what will go into the next commit.",
+      "A commit is a snapshot of the whole project at one moment, with its author, date, message and a link to the commit before it, its parent. Following the parents from the newest commit walks back through the history.",
+      "Each commit is named by a hash of its contents: a 40-character hexadecimal ID, which commands accept shortened to its first seven or so characters. Changing anything about a commit gives it a new ID.",
+      "git status lists files as untracked (new to Git), modified or staged. git add copies a file's current changes into the staging area, and git commit -m \"message\" records everything staged as a new commit.",
+      "Before your first commit, set your name and email with git config --global user.name and user.email: they are written into every commit. git config --global init.defaultBranch main makes new repositories start on a branch called main."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Your first repository",
+      "steps": [
+       {
+        "do": "Check that Git is installed (2.28 or later), then tell it who you are and what to call the first branch. On Windows, use Git Bash.",
+        "code": "git --version\ngit config --global user.name \"Sam Taylor\"\ngit config --global user.email \"sam@example.com\"\ngit config --global init.defaultBranch main",
+        "lang": "bash",
+        "see": "git version 2.x; the config commands print nothing."
+       },
+       {
+        "do": "Make a folder for the project and turn it into a repository.",
+        "code": "mkdir recipes\ncd recipes\ngit init",
+        "lang": "bash",
+        "see": "Initialized empty Git repository in .../recipes/.git/"
+       },
+       {
+        "do": "Create a README (in your editor, or with printf as here) and ask Git what it sees.",
+        "code": "printf '# Recipes\\n\\nFamily recipes, tested and written down.\\n' > README.md\ngit status",
+        "lang": "bash",
+        "see": "On branch main, No commits yet, and README.md listed under Untracked files."
+       },
+       {
+        "do": "Stage the file and check again.",
+        "code": "git add README.md\ngit status",
+        "lang": "bash",
+        "see": "README.md under Changes to be committed, as new file:   README.md."
+       },
+       {
+        "do": "Commit it with a message.",
+        "code": "git commit -m \"Add a README\"",
+        "lang": "bash",
+        "see": "[main (root-commit) 445633f] Add a README and 1 file changed, 3 insertions(+). Your hash will differ: it depends on the content, your name and the time."
+       },
+       {
+        "do": "Look at the history in full, then one line per commit.",
+        "code": "git log\ngit log --oneline",
+        "lang": "bash",
+        "see": "The full 40-character ID, Author: Sam Taylor <sam@example.com>, the date and the message; then 445633f Add a README."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Making good commits",
+     "minutes": 13,
+     "objectives": [
+      "Check what will be committed with git diff and git diff --staged",
+      "Stage part of a file with git add -p",
+      "Write clear commit messages, and fix the last commit with --amend"
+     ],
+     "key_points": [
+      "A good commit makes one logical change, such as one bug fix or one small feature, with everything it needs and nothing else. Small, focused commits are easier to review, to understand later and to undo.",
+      "git diff shows the changes you haven't staged; git diff --staged shows what is staged, which is exactly what the next commit will contain. Checking it before each commit catches stray edits.",
+      "git add -p (patch mode) shows each change, called a hunk, in turn and asks whether to stage it: y for yes, n for no, s to split a hunk into smaller ones. Unrelated changes in one file can then go into separate commits.",
+      "A commit message starts with a summary line of about 50 characters, written as a command (Fix the login timeout, not Fixed it), then a blank line and a body that explains why the change was needed.",
+      "git commit --amend replaces the last commit with a new one, adding whatever is staged and letting you change the message. Amend only commits you haven't pushed: the result is a different commit, with a new ID.",
+      "git commit without -m opens an editor for the message. Choose it with git config --global core.editor, such as \"nano\" or \"code --wait\" for Visual Studio Code; otherwise Git may open Vim, which you leave by pressing Esc and typing :wq."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Stage part of a file, then write a clear message",
+      "steps": [
+       {
+        "do": "Save this recipe as pancakes.md and commit it with the message Add a pancake recipe.",
+        "code": "# Pancakes\n\n## Ingredients\n\n- 100 g plain flour\n- 2 eggs\n- 300 ml milk\n- 1 tbsp oil\n- a pinch of salt\n\n## Method\n\n1. Whisk the flour, eggs and milk into a smooth batter.\n2. Heat the oil in a frying pan.\n3. Pour in a ladle of batter and cook for 1 minute on each side.",
+        "lang": "markdown"
+       },
+       {
+        "do": "Make two unrelated changes: change 100 g of flour to 120 g, and insert a new step 2, Rest the batter for 10 minutes, renumbering the steps after it. Then look at the unstaged changes.",
+        "code": "git diff",
+        "lang": "bash",
+        "see": "Two hunks: one headed @@ -2,7 +2,7 @@ for the flour, and one headed @@ -11,5 +11,6 @@ for the method."
+       },
+       {
+        "do": "Stage only the flour change: answer y to the first hunk and n to the second.",
+        "code": "git add -p",
+        "lang": "bash",
+        "see": "(1/2) Stage this hunk [y,n,q,a,d,j,J,g,/,e,?]? after the first hunk, then (2/2) Stage this hunk after the second."
+       },
+       {
+        "do": "Check what's staged, then commit it.",
+        "code": "git diff --staged\ngit commit -m \"Use 120 g of flour in pancakes\"",
+        "lang": "bash",
+        "see": "Only the flour line in the staged diff, then 1 file changed, 1 insertion(+), 1 deletion(-)."
+       },
+       {
+        "do": "Commit the method change with a summary and a body: each -m adds a paragraph.",
+        "code": "git add pancakes.md\ngit commit -m \"Rest the batter\" -m \"Resting lets the flour soak up the milk, which gives lighter pancakes.\"",
+        "lang": "bash"
+       },
+       {
+        "do": "The summary could say more. Amend the commit, which nobody else has yet, and look at the history.",
+        "code": "git commit --amend -m \"Rest the pancake batter for 10 minutes\" -m \"Resting lets the flour soak up the milk, which gives lighter pancakes.\"\ngit log --oneline",
+        "lang": "bash",
+        "see": "Four commits, the newest now Rest the pancake batter for 10 minutes, with a new hash."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Reading history",
+     "minutes": 12,
+     "objectives": [
+      "Search and filter history with git log",
+      "Inspect a commit with git show, and name commits relative to HEAD",
+      "Find who last changed a line, and when, with git blame"
+     ],
+     "key_points": [
+      "git log lists commits newest first. --oneline shows one line per commit, --graph draws the shape of branches and merges, --stat lists the files each commit changed, and -p shows the full changes.",
+      "Filter history to what you need: --author=\"Sam\", --since=\"2 weeks ago\", a path after -- for commits that touched one file, and -S \"text\" (the pickaxe) for commits that added or removed that text.",
+      "git show <commit> displays one commit's message and changes. HEAD means the commit you're on, HEAD~1 its parent and HEAD~2 the commit before that, so recent commits don't need a hash.",
+      "git blame <file> shows, for every line, the commit, author and date that last changed it; -L 10,20 limits it to those lines. It points you to the commit whose message should explain the line.",
+      "git diff A B compares any two commits or branches, and --stat summarises the comparison by file. Clear commit messages make all of these tools more useful, because the why is stored next to the what."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Explore the recipes history",
+      "steps": [
+       {
+        "do": "Show the history as a graph, one commit per line.",
+        "code": "git log --oneline --graph",
+        "lang": "bash",
+        "see": "* a158fde Rest the pancake batter for 10 minutes at the top, then the three older commits."
+       },
+       {
+        "do": "Show the newest commit with the files it changed.",
+        "code": "git log --stat -1",
+        "lang": "bash",
+        "see": "The full message, body included, and pancakes.md | 5 +++--."
+       },
+       {
+        "do": "Find the commit that introduced 120 g.",
+        "code": "git log -S \"120 g\" --oneline",
+        "lang": "bash",
+        "see": "9f7a678 Use 120 g of flour in pancakes"
+       },
+       {
+        "do": "Look at the commit before the newest one, without typing its hash.",
+        "code": "git show HEAD~1",
+        "lang": "bash",
+        "see": "Use 120 g of flour in pancakes, then a diff that removes the 100 g line and adds the 120 g line."
+       },
+       {
+        "do": "See which commit last changed each line of the recipe.",
+        "code": "git blame pancakes.md",
+        "lang": "bash",
+        "see": "Most lines carry the hash of Add a pancake recipe; line 5 and the method lines carry the hashes of the commits that changed them, each with Sam Taylor and the date."
+       },
+       {
+        "do": "List the commits that touched README.md, and compare the recipe two commits ago with now.",
+        "code": "git log --oneline -- README.md\ngit diff HEAD~2 HEAD --stat",
+        "lang": "bash",
+        "see": "445633f Add a README, then pancakes.md | 7 ++++---."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Start a project's history",
+    "tool": "Git",
+    "minutes": 40,
+    "goal": "Put a small project under Git, make focused commits (staging a bug fix on its own with git add -p), improve a message with --amend, and find your way around the history you made.",
+    "setup": [
+     "Git 2.28 or later, configured with your name and email (lesson 1); on Windows, use Git Bash",
+     "The starter files todo.py and README.md in a new, empty folder called todo",
+     "Python 3, if you'd like to run the script (optional)"
+    ],
+    "steps": [
+     {
+      "do": "In the todo folder, create a repository and a .gitignore file that keeps the script's data file out of Git (module 5 explains .gitignore).",
+      "code": "git init\nprintf 'tasks.txt\\n__pycache__/\\n' > .gitignore",
+      "lang": "bash",
+      "see": "Initialized empty Git repository in .../todo/.git/"
+     },
+     {
+      "do": "Commit the three files together as the starting point.",
+      "code": "git add README.md todo.py .gitignore\ngit commit -m \"Add a to-do list script\"",
+      "lang": "bash",
+      "see": "[main (root-commit) ...] Add a to-do list script, 3 files changed, 44 insertions(+)."
+     },
+     {
+      "do": "Optional: see the bug. Add two tasks and mark the second one done.",
+      "code": "python todo.py add Buy milk\npython todo.py add Call Sam\npython todo.py done 2",
+      "lang": "bash",
+      "see": "IndexError: pop index out of range: the list is shown numbered from 1, but pop() counts from 0. Delete tasks.txt afterwards."
+     },
+     {
+      "do": "Make two unrelated changes in todo.py. In load(), replace return TASKS.read_text().splitlines() with the first line below, to ignore blank lines; in main(), replace tasks.pop(number) with the second, to fix the bug.",
+      "code": "    return [line for line in TASKS.read_text().splitlines() if line.strip()]\n\n        tasks.pop(number - 1)",
+      "lang": "python"
+     },
+     {
+      "do": "Stage only the bug fix: answer n to the hunk in load() and y to the hunk in main(). Check what's staged, then commit it.",
+      "code": "git add -p\ngit diff --staged\ngit commit -m \"Fix marking a task as done\"",
+      "lang": "bash",
+      "see": "(1/2) Stage this hunk ... for the load() change and (2/2) for main(); the staged diff shows only tasks.pop(number - 1)."
+     },
+     {
+      "do": "Commit the other change with a short message, then improve it with --amend, adding a body that says why.",
+      "code": "git commit -am \"Ignore blank lines\"\ngit commit --amend -m \"Ignore blank lines in the task file\" -m \"A blank line at the end of tasks.txt used to show up as an empty task.\"",
+      "lang": "bash"
+     },
+     {
+      "do": "Explore the history you made.",
+      "code": "git log --oneline --graph\ngit log -S \"number - 1\" --oneline\ngit blame -L 26,28 todo.py\ngit show --stat HEAD",
+      "lang": "bash",
+      "see": "Three commits; the pickaxe finds Fix marking a task as done; blame shows line 28 came from that commit; git show prints the amended message with its body."
+     },
+     {
+      "do": "Check that nothing is left uncommitted.",
+      "code": "git status",
+      "lang": "bash",
+      "see": "nothing to commit, working tree clean"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The history has three focused commits with the given messages.",
+      "look_for": [
+       "Ignore blank lines in the task file",
+       "Fix marking a task as done",
+       "Add a to-do list script"
+      ]
+     },
+     {
+      "text": "The bug fix was staged on its own with git add -p.",
+      "look_for": [
+       "Stage this hunk",
+       "tasks.pop(number - 1)"
+      ]
+     },
+     {
+      "text": "The amended commit has a body that explains why.",
+      "look_for": [
+       "used to show up as an empty task"
+      ]
+     },
+     {
+      "text": "Everything is committed at the end.",
+      "look_for": [
+       "nothing to commit, working tree clean"
+      ]
+     }
+    ],
+    "submit": "Paste the output of git add -p (with your answers), git log --oneline --graph, git log -S \"number - 1\" --oneline, git show --stat HEAD and git status.",
+    "files": [
+     {
+      "path": "todo.py",
+      "content": "\"\"\"A tiny to-do list, kept in tasks.txt with one task per line.\"\"\"\nimport sys\nfrom pathlib import Path\n\nTASKS = Path(\"tasks.txt\")\n\n\ndef load():\n    if not TASKS.exists():\n        return []\n    return TASKS.read_text().splitlines()\n\n\ndef save(tasks):\n    TASKS.write_text(\"\".join(task + \"\\n\" for task in tasks))\n\n\ndef main(args):\n    tasks = load()\n    if not args:\n        for number, task in enumerate(tasks, 1):\n            print(f\"{number}. {task}\")\n    elif args[0] == \"add\":\n        tasks.append(\" \".join(args[1:]))\n        save(tasks)\n    elif args[0] == \"done\":\n        number = int(args[1])\n        tasks.pop(number)\n        save(tasks)\n    else:\n        print(\"usage: python todo.py [add TEXT | done NUMBER]\")\n\n\nif __name__ == \"__main__\":\n    main(sys.argv[1:])\n"
+     },
+     {
+      "path": "README.md",
+      "content": "# To-do\n\nA tiny command-line to-do list.\n\n    python todo.py add Buy milk\n    python todo.py\n    python todo.py done 1\n"
+     }
+    ],
+    "hints": [
+     "If git add -p shows both changes as one hunk, check that you changed the line in load() and the line in main(): they are far enough apart to be separate hunks.",
+     "Committed the wrong thing? git reset --soft HEAD~1 undoes the last commit and keeps its changes staged (module 5 explains it).",
+     "Stuck in an editor? In Vim press Esc, type :wq and press Enter; in nano press Ctrl+O, Enter, then Ctrl+X."
+    ]
+   }
+  },
+  {
+   "title": "Branches, merging and rebasing",
+   "summary": "Work on several things at once with branches, bring work together with fast-forward and three-way merges, resolve conflicts calmly, and keep history tidy with rebase and interactive rebase.",
+   "instructor": "agnieszka-kowalska",
+   "lessons": [
+    {
+     "title": "Branches and HEAD",
+     "minutes": 11,
+     "objectives": [
+      "Explain what a branch and HEAD are",
+      "Create, switch between and delete branches",
+      "Recognise a detached HEAD and leave it safely"
+     ],
+     "key_points": [
+      "A branch is a movable label that points at a commit. When you commit on a branch, its label moves forward to the new commit, so branches are cheap: each is just a name for a line of work.",
+      "HEAD tells Git where you are: normally it points at the current branch, and new commits go on that branch. git branch lists the branches, with * beside the current one.",
+      "git switch -c name creates a branch at the current commit and switches to it (older guides use git checkout -b); git switch name moves to an existing branch and updates the files to match. Commit your changes before switching.",
+      "Short, descriptive branch names, such as fix/login-timeout or add-export, tell the team what each branch is for. git branch -d name deletes a merged branch; -D forces it, and its unmerged commits are then lost from view.",
+      "git switch --detach <commit> (or checking out a tag) gives a detached HEAD: HEAD points at a commit rather than a branch, so new commits there belong to no branch. git switch - goes back; git switch -c name keeps any work done there."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Branch off, and come back",
+      "steps": [
+       {
+        "do": "List the branches.",
+        "code": "git branch",
+        "lang": "bash",
+        "see": "* main"
+       },
+       {
+        "do": "Create a branch for a new recipe and switch to it.",
+        "code": "git switch -c add-waffles",
+        "lang": "bash",
+        "see": "Switched to a new branch 'add-waffles'"
+       },
+       {
+        "do": "Add a waffle recipe and commit it on the branch.",
+        "code": "printf '# Waffles\\n\\n- 250 g self-raising flour\\n- 2 eggs\\n- 400 ml milk\\n' > waffles.md\ngit add waffles.md\ngit commit -m \"Add a waffle recipe\"",
+        "lang": "bash",
+        "see": "[add-waffles 791f22d] Add a waffle recipe"
+       },
+       {
+        "do": "See every branch in the graph.",
+        "code": "git log --oneline --graph --all",
+        "lang": "bash",
+        "see": "The waffle commit on top, labelled (HEAD -> add-waffles), with main pointing at the commit below it."
+       },
+       {
+        "do": "Switch back to main and list the files.",
+        "code": "git switch main\nls",
+        "lang": "bash",
+        "see": "Switched to branch 'main', and no waffles.md: for now it exists only on add-waffles."
+       },
+       {
+        "do": "Visit an older commit, then come back.",
+        "code": "git switch --detach HEAD~1\ngit switch -",
+        "lang": "bash",
+        "see": "HEAD is now at 9f7a678 Use 120 g of flour in pancakes, then Switched to branch 'main'."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Merging",
+     "minutes": 12,
+     "objectives": [
+      "Explain fast-forward and three-way merges",
+      "Merge a branch and read the result in the graph",
+      "Delete branches once they're merged"
+     ],
+     "key_points": [
+      "git merge name brings another branch's commits into the current branch. If the current branch hasn't moved since the other one started, Git simply moves its label forward: a fast-forward merge, with no new commit.",
+      "If both branches have new commits, Git makes a three-way merge: it compares each branch with their merge base, the last commit they share, and records a merge commit with two parents.",
+      "Since Git 2.34 the default merge strategy is called ort, so Git reports Merge made by the 'ort' strategy (older versions say 'recursive'). git merge --no-ff makes a merge commit even when a fast-forward was possible.",
+      "git log --oneline --graph shows a merge as lines that split and join again. A merge commit's default message is Merge branch 'name', and Git opens your editor to confirm it unless you pass --no-edit.",
+      "After merging, delete the branch with git branch -d name: its commits stay in the history, reachable from main. Git refuses to delete with -d a branch whose commits aren't merged anywhere."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "A fast-forward, then a real merge",
+      "steps": [
+       {
+        "do": "On main, merge the waffle branch.",
+        "code": "git merge add-waffles",
+        "lang": "bash",
+        "see": "Updating a158fde..791f22d, then Fast-forward and waffles.md | 5 +++++."
+       },
+       {
+        "do": "Delete the merged branch.",
+        "code": "git branch -d add-waffles",
+        "lang": "bash",
+        "see": "Deleted branch add-waffles (was 791f22d)."
+       },
+       {
+        "do": "Start a crêpe branch and commit a recipe on it, then go back to main and change the README, so both branches move on.",
+        "code": "git switch -c add-crepes\nprintf '# Crêpes\\n\\n- 125 g plain flour\\n- 2 eggs\\n- 300 ml milk\\n' > crepes.md\ngit add crepes.md\ngit commit -m \"Add a crêpe recipe\"\ngit switch main\nprintf '\\n## Recipes\\n\\n- pancakes.md\\n- waffles.md\\n' >> README.md\ngit commit -am \"List the recipes in the README\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Merge the crêpe branch, accepting Git's message.",
+        "code": "git merge --no-edit add-crepes",
+        "lang": "bash",
+        "see": "Merge made by the 'ort' strategy. and crepes.md | 5 +++++."
+       },
+       {
+        "do": "Look at the shape of the history, then delete the merged branch.",
+        "code": "git log --oneline --graph\ngit branch -d add-crepes",
+        "lang": "bash",
+        "see": "*   50a0c7c Merge branch 'add-crepes' at the top, with two lines below it that join again at Add a waffle recipe."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Resolving merge conflicts",
+     "minutes": 13,
+     "objectives": [
+      "Explain when and why a merge conflict happens",
+      "Read conflict markers and resolve a conflict",
+      "Abort a merge, and show the common ancestor with zdiff3"
+     ],
+     "key_points": [
+      "A conflict happens when both branches changed the same lines, or one changed lines the other deleted, since their merge base. Git merges everything else, stops, and leaves the conflicting part for you to decide.",
+      "git status lists conflicted files under Unmerged paths as both modified. In the file, the lines between <<<<<<< and ======= are your side (HEAD), and those between ======= and >>>>>>> come from the branch being merged.",
+      "To resolve, edit the file to what it should be, delete every marker line, then git add the file and run git commit (or git merge --continue). The result can be one side, the other, or a combination.",
+      "git merge --abort gives up and puts everything back as it was before the merge: the right move when a conflict needs a conversation with whoever made the other change.",
+      "git config --global merge.conflictStyle zdiff3 (Git 2.35+) adds a section after ||||||| showing the lines as they were in the merge base, which makes it much easier to see what each side changed.",
+      "Keep conflicts small and rare: merge main into longer-running work often, keep branches short-lived, and talk before two people rework the same part of a file."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Make a conflict, and resolve it",
+      "steps": [
+       {
+        "do": "On a new branch, change - 300 ml milk to - 350 ml milk in pancakes.md and commit; then on main, change the same line to - 250 ml whole milk and commit.",
+        "code": "git switch -c more-milk\ngit commit -am \"Use more milk for thinner pancakes\"\ngit switch main\ngit commit -am \"Use whole milk in pancakes\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Merge the branch.",
+        "code": "git merge more-milk",
+        "lang": "bash",
+        "see": "CONFLICT (content): Merge conflict in pancakes.md, then Automatic merge failed; fix conflicts and then commit the result."
+       },
+       {
+        "do": "See what Git needs from you.",
+        "code": "git status",
+        "lang": "bash",
+        "see": "You have unmerged paths. and both modified:   pancakes.md"
+       },
+       {
+        "do": "Open pancakes.md and find the markers.",
+        "code": "<<<<<<< HEAD\n- 250 ml whole milk\n=======\n- 350 ml milk\n>>>>>>> more-milk",
+        "lang": "text"
+       },
+       {
+        "do": "Back out of the merge, turn on the zdiff3 style, and merge again.",
+        "code": "git merge --abort\ngit config --global merge.conflictStyle zdiff3\ngit merge more-milk",
+        "lang": "bash"
+       },
+       {
+        "do": "Look at the markers now: the merge base's version of the line appears after |||||||.",
+        "code": "<<<<<<< HEAD\n- 250 ml whole milk\n||||||| 567b590\n- 300 ml milk\n=======\n- 350 ml milk\n>>>>>>> more-milk",
+        "lang": "text"
+       },
+       {
+        "do": "Decide: whole milk, at the original 300 ml. Replace the whole block, markers included, with the line - 300 ml whole milk, then stage and commit.",
+        "code": "git add pancakes.md\ngit commit --no-edit",
+        "lang": "bash",
+        "see": "[main 0b1ba63] Merge branch 'more-milk'"
+       },
+       {
+        "do": "Check the result in the graph.",
+        "code": "git log --oneline --graph -5",
+        "lang": "bash",
+        "see": "Merge branch 'more-milk' joining Use more milk for thinner pancakes and Use whole milk in pancakes."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Rebasing and tidying history",
+     "minutes": 14,
+     "objectives": [
+      "Explain what rebase does and how it differs from merge",
+      "Rebase a branch onto main",
+      "Tidy commits with interactive rebase, and know when not to rebase"
+     ],
+     "key_points": [
+      "git rebase main replays the current branch's commits, one by one, on top of the latest main. The result is a straight line of history, as if the work had started from today's main.",
+      "Rebased commits are new commits with new IDs, even when their changes are the same. So never rebase commits that others already have: rebase only your own work that hasn't been shared, or that only you use.",
+      "If a replayed commit conflicts, the rebase stops: resolve the file, git add it and run git rebase --continue; git rebase --abort puts the branch back as it was.",
+      "git rebase -i main opens a to-do list of the branch's commits. Change pick to reword to edit a message, to squash or fixup to fold a commit into the one above it (fixup discards its message), or to drop to remove it; lines can also be reordered.",
+      "Merging keeps the true history, with merge commits; rebasing gives a cleaner, linear history but rewrites commits. Many teams rebase their own branch to tidy it before review, then merge it through a pull request."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Rebase a branch, then squash its fix-up commits",
+      "steps": [
+       {
+        "do": "Make a branch with three commits: Add a toppings list, then WIP (two more toppings, one misspelt), then Fix typo in toppings. Then switch to main and commit a change there too (Say how many the pancakes serve).",
+        "code": "git switch -c add-toppings\n# ...three commits on the branch...\ngit switch main\n# ...one commit on main...",
+        "lang": "bash"
+       },
+       {
+        "do": "See the branches diverge.",
+        "code": "git log --oneline --graph --all -7",
+        "lang": "bash",
+        "see": "The three toppings commits on one line and Say how many the pancakes serve on another, both starting from Merge branch 'more-milk'."
+       },
+       {
+        "do": "Rebase the branch onto main.",
+        "code": "git switch add-toppings\ngit rebase main",
+        "lang": "bash",
+        "see": "Successfully rebased and updated refs/heads/add-toppings."
+       },
+       {
+        "do": "Look again: the history is a straight line now, and the toppings commits have new hashes.",
+        "code": "git log --oneline --graph --all -6",
+        "lang": "bash"
+       },
+       {
+        "do": "Start an interactive rebase of the branch's commits.",
+        "code": "git rebase -i main",
+        "lang": "bash",
+        "see": "Your editor opens with pick b97d85b Add a toppings list, pick 5dd361f WIP and pick 03108b1 Fix typo in toppings, followed by comment lines that explain each command."
+       },
+       {
+        "do": "Change the second and third lines from pick to fixup, then save and close the editor.",
+        "code": "pick b97d85b Add a toppings list\nfixup 5dd361f WIP\nfixup 03108b1 Fix typo in toppings",
+        "lang": "text",
+        "see": "Successfully rebased and updated refs/heads/add-toppings."
+       },
+       {
+        "do": "Check the branch now has one tidy commit, then merge it into main.",
+        "code": "git log --oneline main..add-toppings\ngit switch main\ngit merge add-toppings",
+        "lang": "bash",
+        "see": "One commit, Add a toppings list, then a Fast-forward merge."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Merge, resolve and rebase a café menu",
+    "tool": "Git",
+    "minutes": 45,
+    "goal": "In a practice repository, make a fast-forward merge and a three-way merge, resolve a real conflict, then rebase a branch and squash its untidy commits before merging it.",
+    "setup": [
+     "Git 2.28 or later, configured with your name and email",
+     "The starter script make_practice_repo.sh (on Windows, run it in Git Bash, which comes with Git for Windows)",
+     "An editor you're comfortable with set as Git's editor (git config --global core.editor), for the interactive rebase"
+    ],
+    "steps": [
+     {
+      "do": "Create the practice repository and look at its branches.",
+      "code": "bash make_practice_repo.sh\ncd cafe-menu\ngit log --oneline --graph --all",
+      "lang": "bash",
+      "see": "Three branches fanning out from Add lentil soup, and fix/opening-hours one commit ahead of main."
+     },
+     {
+      "do": "Merge the opening-hours fix into main.",
+      "code": "git merge fix/opening-hours",
+      "lang": "bash",
+      "see": "Fast-forward"
+     },
+     {
+      "do": "Merge the drinks section, accepting the default message.",
+      "code": "git merge --no-edit feature/drinks",
+      "lang": "bash",
+      "see": "Merge made by the 'ort' strategy."
+     },
+     {
+      "do": "Merge the price change.",
+      "code": "git merge feature/prices",
+      "lang": "bash",
+      "see": "CONFLICT (content): Merge conflict in menu.md"
+     },
+     {
+      "do": "Resolve it. main renamed the soup and feature/prices raised its price, so keep both: the line should read - Roast tomato soup .. 4.80. Remove the markers, then stage and commit.",
+      "code": "git add menu.md\ngit commit --no-edit",
+      "lang": "bash",
+      "see": "[main ...] Merge branch 'feature/prices'"
+     },
+     {
+      "do": "Rebase the desserts branch onto the new main.",
+      "code": "git switch feature/desserts\ngit rebase main",
+      "lang": "bash",
+      "see": "Successfully rebased and updated refs/heads/feature/desserts."
+     },
+     {
+      "do": "Fold its WIP and Fix typo commits into the first one: in the to-do list, change their pick to fixup.",
+      "code": "git rebase -i main",
+      "lang": "bash",
+      "see": "Successfully rebased and updated refs/heads/feature/desserts."
+     },
+     {
+      "do": "Check the branch has one commit and the typo is fixed, then merge it and delete the merged branches.",
+      "code": "git log --oneline main..feature/desserts\ncat desserts.md\ngit switch main\ngit merge feature/desserts\ngit branch -d fix/opening-hours feature/drinks feature/prices feature/desserts",
+      "lang": "bash",
+      "see": "One commit, Add a desserts page; Chocolate cake spelt correctly; a Fast-forward; four Deleted branch lines."
+     },
+     {
+      "do": "Show the final history and the menu.",
+      "code": "git log --oneline --graph\ncat menu.md",
+      "lang": "bash",
+      "see": "Merge branch 'feature/prices' and Merge branch 'feature/drinks' in the graph, and a menu that opens Monday to Saturday."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The opening-hours branch was a fast-forward and the drinks branch a three-way merge.",
+      "look_for": [
+       "Fast-forward",
+       "Merge made by the 'ort' strategy"
+      ]
+     },
+     {
+      "text": "The conflict was resolved keeping both changes, with no markers left.",
+      "look_for": [
+       "CONFLICT (content): Merge conflict in menu.md",
+       "Roast tomato soup .. 4.80"
+      ]
+     },
+     {
+      "text": "The desserts branch was rebased and its three commits squashed into one.",
+      "look_for": [
+       "Successfully rebased and updated refs/heads/feature/desserts",
+       "Add a desserts page"
+      ]
+     },
+     {
+      "text": "The final history has both merge commits, and the menu has Saturday opening.",
+      "look_for": [
+       "Merge branch 'feature/prices'",
+       "Monday to Saturday"
+      ]
+     }
+    ],
+    "submit": "Paste the output of each merge and rebase command, git log --oneline --graph at the end, and the output of cat menu.md.",
+    "files": [
+     {
+      "path": "make_practice_repo.sh",
+      "content": "#!/usr/bin/env bash\n# Creates cafe-menu/, a practice repository with branches to merge, rebase and tidy.\n# Run it from the folder where you want cafe-menu to appear:  bash make_practice_repo.sh\nset -euo pipefail\nif [ -e cafe-menu ]; then\n    echo \"cafe-menu already exists here: delete it, or run this script in another folder.\" >&2\n    exit 1\nfi\nif [ -z \"$(git config user.name || true)\" ] || [ -z \"$(git config user.email || true)\" ]; then\n    echo 'Tell Git who you are first: git config --global user.name \"Your Name\"' >&2\n    echo '                            git config --global user.email \"you@example.com\"' >&2\n    exit 1\nfi\ngit init -q -b main cafe-menu\ncd cafe-menu\ncommit() { git add -A && git commit -q -m \"$1\"; }\n\ncat > menu.md <<'EOF'\n# Corner Café menu\n\n## Opening hours\n\nMonday to Friday, 8:00 to 16:00\n\n## Soups\n\n- Tomato soup ........ 4.50\n\n## Mains\n\n- Cheese toastie ..... 5.80\n- Falafel wrap ....... 6.50\nEOF\ncommit \"Add the menu\"\ncat > menu.md <<'EOF'\n# Corner Café menu\n\n## Opening hours\n\nMonday to Friday, 8:00 to 16:00\n\n## Soups\n\n- Tomato soup ........ 4.50\n- Lentil soup ........ 4.20\n\n## Mains\n\n- Cheese toastie ..... 5.80\n- Falafel wrap ....... 6.50\nEOF\ncommit \"Add lentil soup\"\n\ngit switch -q -c feature/drinks\nprintf '\\n## Drinks\\n\\n- Tea ................ 1.80\\n- Coffee ............. 2.20\\n' >> menu.md\ncommit \"Add a drinks section\"\n\ngit switch -q main\ngit switch -q -c feature/prices\nsed -i.bak 's/^- Tomato soup ........ 4.50$/- Tomato soup ........ 4.80/' menu.md && rm menu.md.bak\ncommit \"Raise the price of tomato soup\"\n\ngit switch -q main\ngit switch -q -c feature/desserts\nprintf '# Desserts\\n\\n- Apple crumble ..... 3.90\\n' > desserts.md\ncommit \"Add a desserts page\"\nprintf -- '- Choclate cake ..... 3.50\\n' >> desserts.md\ncommit \"WIP\"\nsed -i.bak 's/Choclate/Chocolate/' desserts.md && rm desserts.md.bak\ncommit \"Fix typo\"\n\ngit switch -q main\nsed -i.bak 's/^- Tomato soup ........ 4.50$/- Roast tomato soup .. 4.50/' menu.md && rm menu.md.bak\ncommit \"Rename tomato soup to roast tomato soup\"\n\ngit switch -q -c fix/opening-hours\nsed -i.bak 's/^Monday to Friday, 8:00 to 16:00$/Monday to Saturday, 8:00 to 16:00/' menu.md && rm menu.md.bak\ncommit \"Open on Saturdays\"\n\ngit switch -q main\necho \"Created cafe-menu with branches: $(git branch --format='%(refname:short)' | tr '\\n' ' ')\"\n"
+     }
+    ],
+    "hints": [
+     "With Git older than 2.34, the three-way merge says 'recursive' instead of 'ort'; that's fine.",
+     "Lost in the conflict? git merge --abort puts main back as it was before the merge, and you can try again.",
+     "If the to-do list opens in Vim: press i to edit, change the words, press Esc, then type :wq and press Enter.",
+     "To start again from scratch, run the script in a fresh folder."
+    ]
+   }
+  },
+  {
+   "title": "Remotes and GitHub",
+   "summary": "Share work through remotes: clone, fetch, pull and push, recover from a rejected push, share branches with teammates, and connect to GitHub with HTTPS or SSH, publish repositories and work with forks.",
+   "instructor": "sebastian-vargas",
+   "lessons": [
+    {
+     "title": "Remotes: clone, fetch, pull and push",
+     "minutes": 14,
+     "objectives": [
+      "Explain remotes and remote-tracking branches",
+      "Clone, fetch, pull and push",
+      "Recover from a rejected push"
+     ],
+     "key_points": [
+      "A remote is another copy of the repository that you exchange commits with, usually on a server such as GitHub. git clone URL copies a repository and names its source origin; git remote -v lists the remotes.",
+      "Remote-tracking branches such as origin/main record where the remote's branches were when you last talked to it. git fetch updates them without touching your own branches, so it's always safe.",
+      "git pull is git fetch followed by integrating origin's branch into yours, by merging or rebasing. If both sides have new commits and no choice is configured, Git stops with fatal: Need to specify how to reconcile divergent branches.",
+      "git push sends your commits to the remote; git push -u origin main also sets the upstream, so later a plain git push or git pull knows where to go. git branch -vv shows each branch's upstream and whether it's ahead or behind.",
+      "A push is rejected (fetch first) when the remote has commits you don't: fetch, integrate them with git pull --rebase or a merge, and push again. Never force-push a shared branch; for your own pushed branch, --force-with-lease is the safer force.",
+      "Set a default for pulls once: git config --global pull.rebase true rebases your local commits on top of the remote's (a straight history); false merges instead, and pull.ff only refuses anything but a fast-forward."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Two people, one remote, on one computer",
+      "steps": [
+       {
+        "do": "Make a bare repository to act as the shared server: it has history but no working files.",
+        "code": "cd ..\ngit init --bare shared.git",
+        "lang": "bash",
+        "see": "Initialized empty Git repository in .../shared.git/"
+       },
+       {
+        "do": "Connect the recipes repository to it and push main, setting the upstream.",
+        "code": "cd recipes\ngit remote add origin ../shared.git\ngit push -u origin main\ngit remote -v",
+        "lang": "bash",
+        "see": "* [new branch]      main -> main and branch 'main' set up to track 'origin/main'."
+       },
+       {
+        "do": "Play a second person: clone the remote into another folder, give that clone its own author, and push a commit.",
+        "code": "cd ..\ngit clone shared.git recipes-ben\ncd recipes-ben\ngit config user.name \"Ben Okafor\"\ngit config user.email \"ben@example.com\"\nprintf '# Shopping list\\n\\n- flour\\n- eggs\\n' > shopping.md\ngit add shopping.md\ngit commit -m \"Add a shopping list\"\ngit push",
+        "lang": "bash",
+        "see": "Cloning into 'recipes-ben'... done. and a push ending main -> main."
+       },
+       {
+        "do": "Back in recipes, commit something else and try to push.",
+        "code": "cd ../recipes\nprintf '\\nOven temperatures are for a fan oven.\\n' >> README.md\ngit commit -am \"Say which oven the temperatures are for\"\ngit push",
+        "lang": "bash",
+        "see": "! [rejected]        main -> main (fetch first): the remote has Ben's commit, which you don't."
+       },
+       {
+        "do": "Fetch, and see how the branches stand.",
+        "code": "git fetch\ngit status",
+        "lang": "bash",
+        "see": "Your branch and 'origin/main' have diverged, and have 1 and 1 different commits each, respectively."
+       },
+       {
+        "do": "Try a plain pull.",
+        "code": "git pull",
+        "lang": "bash",
+        "see": "hint: You have divergent branches and need to specify how to reconcile them. ... fatal: Need to specify how to reconcile divergent branches."
+       },
+       {
+        "do": "Rebase your commit on top of Ben's, push, and check the upstream status.",
+        "code": "git pull --rebase\ngit push\ngit branch -vv",
+        "lang": "bash",
+        "see": "Successfully rebased and updated refs/heads/main., then a successful push, then * main ... [origin/main] Say which oven the temperatures are for."
+       },
+       {
+        "do": "Choose a default for future pulls, so Git doesn't ask again.",
+        "code": "git config --global pull.rebase true",
+        "lang": "bash"
+       }
+      ]
+     }
+    },
+    {
+     "title": "GitHub: access, repositories and forks",
+     "minutes": 13,
+     "objectives": [
+      "Authenticate to GitHub over HTTPS or SSH",
+      "Publish a local repository on GitHub",
+      "Contribute to another project through a fork"
+     ],
+     "key_points": [
+      "GitHub hosts Git repositories and adds collaboration around them: pull requests, reviews, issues and access control. Your local Git talks to it like any other remote, over HTTPS or SSH.",
+      "GitHub doesn't accept your account password for Git over HTTPS. Use a credential manager (Git for Windows includes Git Credential Manager), a personal access token, or the GitHub CLI's gh auth login, which can set Git up for you.",
+      "For SSH, create a key pair with ssh-keygen -t ed25519 -C \"you@example.com\", add the public key (the .pub file) to your GitHub account's SSH keys, and test with ssh -T git@github.com. Never share the private key.",
+      "To publish an existing repository, create an empty one on GitHub (without a README, so the histories don't clash), add it as a remote and push with -u. gh repo create name --public --source=. --push does it in one step.",
+      "Team members with write access push branches to the shared repository. To contribute to a project you can't push to, fork it (your own copy on GitHub), clone your fork, and open pull requests from it.",
+      "Keep a fork up to date by adding the original as a second remote, git remote add upstream URL, then git fetch upstream and merging upstream/main into your main; GitHub's Sync fork button does the same."
+     ],
+     "walkthrough": {
+      "tool": "GitHub",
+      "title": "Connect to GitHub and publish a repository",
+      "steps": [
+       {
+        "do": "Install the GitHub CLI (cli.github.com) and log in. Choose GitHub.com and HTTPS, and let it authenticate Git with your GitHub credentials.",
+        "code": "gh auth login\ngh auth status",
+        "lang": "bash",
+        "see": "gh auth status reports that you're logged in to github.com."
+       },
+       {
+        "do": "Or use SSH: create a key, then paste the public key into GitHub under Settings, SSH and GPG keys, New SSH key.",
+        "code": "ssh-keygen -t ed25519 -C \"you@example.com\"\ncat ~/.ssh/id_ed25519.pub",
+        "lang": "bash",
+        "see": "One line starting ssh-ed25519: the public half, safe to share."
+       },
+       {
+        "do": "Test the SSH connection.",
+        "code": "ssh -T git@github.com",
+        "lang": "bash",
+        "see": "Hi YOUR-NAME! You've successfully authenticated, but GitHub does not provide shell access."
+       },
+       {
+        "do": "Publish the recipes repository: from inside its folder, create it on GitHub and push it in one step. It already has a remote called origin (the local shared.git), so name this one github.",
+        "code": "gh repo create recipes --public --source=. --remote=github --push",
+        "lang": "bash",
+        "see": "Your repository on github.com, with the whole history."
+       },
+       {
+        "do": "Or do it by hand: on github.com choose New repository, leave it empty (no README), then add it as a remote and push.",
+        "code": "git remote add github https://github.com/YOUR-NAME/recipes.git\ngit push -u github main",
+        "lang": "bash"
+       },
+       {
+        "do": "To contribute to someone else's project, click Fork on its GitHub page, then clone your fork and add the original as upstream.",
+        "code": "git clone https://github.com/YOUR-NAME/PROJECT.git\ncd PROJECT\ngit remote add upstream https://github.com/OWNER/PROJECT.git\ngit fetch upstream\ngit merge upstream/main",
+        "lang": "bash"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Working on shared branches",
+     "minutes": 12,
+     "objectives": [
+      "Push a branch and set its upstream",
+      "Pick up a teammate's branch and add to it",
+      "Clean up remote branches after merging"
+     ],
+     "key_points": [
+      "Push a feature branch early with git push -u origin name, so teammates can see it and it's backed up; after that, git push and git pull on the branch need no arguments.",
+      "After git fetch, a teammate's branch appears as origin/name. git switch name then creates a local branch that tracks it, and commits you push from it go to the same branch on the remote.",
+      "A branch shared by two people needs the same care as main: pull before you push, and don't rewrite its history with a rebase or a force-push without agreeing it first.",
+      "Delete a remote branch once it's merged with git push origin --delete name. Other clones keep their origin/name until they run git fetch --prune (or set fetch.prune to true), which removes tracking branches that no longer exist.",
+      "git branch -r lists remote-tracking branches, git branch -a lists everything, and git log --oneline --graph --all shows how local and remote branches relate."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Share a branch with a teammate",
+      "steps": [
+       {
+        "do": "In recipes, start a branch, commit, and push it with an upstream.",
+        "code": "git switch -c add-smoothies\nprintf '# Smoothies\\n\\n- banana and oat\\n' > smoothies.md\ngit add smoothies.md\ngit commit -m \"Add a smoothie recipe\"\ngit push -u origin add-smoothies",
+        "lang": "bash",
+        "see": "* [new branch]      add-smoothies -> add-smoothies and branch 'add-smoothies' set up to track 'origin/add-smoothies'."
+       },
+       {
+        "do": "In Ben's clone, fetch and list the remote branches.",
+        "code": "cd ../recipes-ben\ngit fetch\ngit branch -r",
+        "lang": "bash",
+        "see": "* [new branch]      add-smoothies -> origin/add-smoothies, then origin/HEAD -> origin/main, origin/add-smoothies and origin/main."
+       },
+       {
+        "do": "Switch to the branch, which creates a local branch tracking it; add a recipe and push.",
+        "code": "git switch add-smoothies\nprintf -- '- mango and lime\\n' >> smoothies.md\ngit commit -am \"Add a mango smoothie\"\ngit push",
+        "lang": "bash",
+        "see": "branch 'add-smoothies' set up to track 'origin/add-smoothies'."
+       },
+       {
+        "do": "Back in recipes, pull Ben's commit, merge the branch into main and push.",
+        "code": "cd ../recipes\ngit pull\ngit switch main\ngit merge add-smoothies\ngit push",
+        "lang": "bash",
+        "see": "A Fast-forward for the branch, then another for main."
+       },
+       {
+        "do": "Delete the branch on the remote, then tidy Ben's clone.",
+        "code": "git push origin --delete add-smoothies\ncd ../recipes-ben\ngit fetch --prune\ngit switch main\ngit pull\ngit branch -d add-smoothies",
+        "lang": "bash",
+        "see": "- [deleted]         add-smoothies, then - [deleted]         (none)     -> origin/add-smoothies from the prune."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Collaborate through a shared remote",
+    "tool": "Git",
+    "minutes": 45,
+    "goal": "Play two team members sharing one remote: recover from a rejected push, share a branch between you, and clean up after merging, all on your own computer.",
+    "setup": [
+     "Git 2.28 or later",
+     "The starter script make_team.sh, run in an empty folder (on Windows, in Git Bash)",
+     "Two terminal windows or tabs: one for Ana's clone and one for Ben's"
+    ],
+    "steps": [
+     {
+      "do": "Create the remote and the two clones.",
+      "code": "bash make_team.sh",
+      "lang": "bash",
+      "see": "Created team.git (the shared remote) and two clones of it: ana/ and ben/."
+     },
+     {
+      "do": "As Ben, add the meeting times and push.",
+      "code": "cd ben\nprintf '# Meetings\\n\\nStand-up at 9:30 every weekday.\\n' > meetings.md\ngit add meetings.md\ngit commit -m \"Add meeting times\"\ngit push",
+      "lang": "bash"
+     },
+     {
+      "do": "As Ana, add an onboarding checklist and try to push.",
+      "code": "cd ../ana\nprintf '# Onboarding\\n\\n- Get a laptop\\n- Read the handbook\\n' > onboarding.md\ngit add onboarding.md\ngit commit -m \"Add an onboarding checklist\"\ngit push",
+      "lang": "bash",
+      "see": "! [rejected]        main -> main (fetch first)"
+     },
+     {
+      "do": "Find out why, without changing anything yet.",
+      "code": "git fetch\ngit status\ngit log --oneline --graph --all",
+      "lang": "bash",
+      "see": "Your branch and 'origin/main' have diverged, and the graph shows the two commits side by side."
+     },
+     {
+      "do": "Put Ana's commit on top of Ben's, and push.",
+      "code": "git pull --rebase\ngit push",
+      "lang": "bash",
+      "see": "Successfully rebased and updated refs/heads/main."
+     },
+     {
+      "do": "As Ana, write a holiday policy on a branch and push it with an upstream.",
+      "code": "git switch -c add-holidays\nprintf '# Holidays\\n\\nBook leave two weeks ahead.\\n' > holidays.md\ngit add holidays.md\ngit commit -m \"Add the holiday policy\"\ngit push -u origin add-holidays",
+      "lang": "bash"
+     },
+     {
+      "do": "As Ben, pick up the branch, add to it and push.",
+      "code": "cd ../ben\ngit fetch\ngit switch add-holidays\nprintf '\\nThe office closes for the first week of August.\\n' >> holidays.md\ngit commit -am \"Add the summer closure\"\ngit push",
+      "lang": "bash",
+      "see": "branch 'add-holidays' set up to track 'origin/add-holidays'."
+     },
+     {
+      "do": "As Ana, pull Ben's commit, merge the branch into main, push, and delete the branch on the remote and locally.",
+      "code": "cd ../ana\ngit pull\ngit switch main\ngit merge add-holidays\ngit push\ngit push origin --delete add-holidays\ngit branch -d add-holidays",
+      "lang": "bash",
+      "see": "- [deleted]         add-holidays"
+     },
+     {
+      "do": "As Ben, prune, update main and look at the shared history.",
+      "code": "cd ../ben\ngit fetch --prune\ngit switch main\ngit pull\ngit branch -d add-holidays\ngit log --oneline --graph",
+      "lang": "bash",
+      "see": "Five commits in a straight line, from Start the team handbook to Add the summer closure."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Ana's first push was rejected and the branches had diverged.",
+      "look_for": [
+       "(fetch first)",
+       "have diverged"
+      ]
+     },
+     {
+      "text": "Ana integrated Ben's work with a rebase before pushing again.",
+      "look_for": [
+       "Successfully rebased and updated refs/heads/main"
+      ]
+     },
+     {
+      "text": "Ben picked up Ana's branch as a tracking branch.",
+      "look_for": [
+       "set up to track 'origin/add-holidays'"
+      ]
+     },
+     {
+      "text": "The branch was deleted on the remote, and the final history includes both people's work.",
+      "look_for": [
+       "[deleted]",
+       "Add the summer closure",
+       "Add meeting times"
+      ]
+     }
+    ],
+    "submit": "Paste the terminal output from Ana's rejected push to the end, including Ben's final git log --oneline --graph.",
+    "files": [
+     {
+      "path": "make_team.sh",
+      "content": "#!/usr/bin/env bash\n# Creates a shared remote (team.git) and two clones of it, ana/ and ben/, for two team members.\n# Run it from an empty folder:  bash make_team.sh\nset -euo pipefail\nfor d in team.git ana ben; do\n    if [ -e \"$d\" ]; then echo \"$d already exists here: run this script in an empty folder.\" >&2; exit 1; fi\ndone\ngit init -q --bare -b main team.git\ngit clone -q team.git ana 2>/dev/null\ncd ana\ngit config user.name \"Ana Costa\"\ngit config user.email \"ana@example.com\"\nprintf '# Team handbook\\n\\nHow our team works together.\\n' > README.md\ngit add README.md\ngit commit -q -m \"Start the team handbook\"\ngit push -q -u origin main\ncd ..\ngit clone -q team.git ben\ncd ben\ngit config user.name \"Ben Okafor\"\ngit config user.email \"ben@example.com\"\ncd ..\necho \"Created team.git (the shared remote) and two clones of it: ana/ and ben/.\"\n"
+     }
+    ],
+    "hints": [
+     "Each clone has its own author name, set by the script, so the history shows who made each commit: try git log --format='%h %an %s'.",
+     "If git pull complains about divergent branches, you ran it without --rebase: run git pull --rebase, or set git config --global pull.rebase true.",
+     "Lost track? git status in each clone says which branch you're on and whether it's ahead of or behind origin."
+    ]
+   }
+  },
+  {
+   "title": "Pull requests, reviews and releases",
+   "summary": "Work as a team on GitHub: propose changes in pull requests, review them well, choose a workflow and a merge method, protect main, and mark releases with tags and GitHub Releases.",
+   "instructor": "sebastian-vargas",
+   "lessons": [
+    {
+     "title": "Pull requests",
+     "minutes": 12,
+     "objectives": [
+      "Explain what a pull request is for",
+      "Open a pull request from GitHub or the GitHub CLI",
+      "Link issues and use a template so pull requests are easy to review"
+     ],
+     "key_points": [
+      "A pull request (PR) asks to merge one branch into another, usually a feature branch into main. It shows the commits and the combined changes, and it's where the team discusses, reviews and checks the work before it's merged.",
+      "Open one after pushing a branch, from the Compare & pull request banner on GitHub or with gh pr create. Give it a clear title and a description of what changed, why, and how it was tested.",
+      "Pushing more commits to the branch updates the open pull request, so review feedback is answered with new commits. A draft pull request (gh pr create --draft) shares work in progress without asking for a review yet.",
+      "Writing Closes #12 (or Fixes #12) in a pull request's description links issue 12 and closes it automatically when the pull request is merged into the default branch.",
+      "A file at .github/pull_request_template.md pre-fills the description of every new pull request, for example with headings for what, why and testing, so authors don't forget them.",
+      "Small pull requests get faster, better reviews: aim for one focused change that a reviewer can read in one sitting, and split big features into a series of pull requests."
+     ],
+     "walkthrough": {
+      "tool": "GitHub",
+      "title": "Open a pull request",
+      "steps": [
+       {
+        "do": "Create an issue for the work, so the pull request can close it.",
+        "code": "gh issue create --title \"Add a recipe index\" --body \"README.md should list every recipe.\"",
+        "lang": "bash",
+        "see": "The new issue's URL, ending in /issues/1 in a new repository."
+       },
+       {
+        "do": "Make the change on a branch and push it to GitHub (the remote called github in the last module).",
+        "code": "git switch -c recipe-index\n# ...add the list of recipes to README.md...\ngit commit -am \"Add a recipe index to the README\"\ngit push -u github recipe-index",
+        "lang": "bash"
+       },
+       {
+        "do": "Open the pull request: GitHub's repository page offers Compare & pull request for a recently pushed branch, or use the GitHub CLI.",
+        "code": "gh pr create --title \"Add a recipe index to the README\" --body \"Lists every recipe. Closes #1\"",
+        "lang": "bash",
+        "see": "The pull request's URL, ending in /pull/2: issues and pull requests share one numbering."
+       },
+       {
+        "do": "Open it in the browser and look at its Conversation, Commits and Files changed tabs.",
+        "code": "gh pr view --web",
+        "lang": "bash"
+       },
+       {
+        "do": "Push one more commit to the branch, then refresh the page: the pull request has updated itself.",
+        "code": "git commit -am \"Link each recipe in the index\"\ngit push",
+        "lang": "bash"
+       },
+       {
+        "do": "For future pull requests, add a template on main as .github/pull_request_template.md.",
+        "code": "## What\n\n<!-- What does this pull request change? -->\n\n## Why\n\n<!-- Why is the change needed? Link the issue it closes, for example: Closes #12 -->\n\n## How it was tested\n\n<!-- What did you check, and how? -->",
+        "lang": "markdown"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Code review",
+     "minutes": 13,
+     "objectives": [
+      "Review a pull request with comments and suggestions, then approve or request changes",
+      "Respond to review feedback as the author",
+      "Use CODEOWNERS and branch protection to get the right reviews"
+     ],
+     "key_points": [
+      "A review checks that a change is correct, readable, tested and fits the design, and it spreads knowledge of the code across the team. Review the change, not the person: be specific and kind, and explain why.",
+      "On the Files changed tab, comment on a line or a range of lines and start a review. A suggestion block proposes exact replacement lines, which the author can apply with Commit suggestion.",
+      "Submitting a review means choosing Comment (feedback only), Approve, or Request changes, which blocks merging when approvals are required. Authors can't approve their own pull requests.",
+      "As the author, answer each comment, push follow-up commits, mark conversations resolved, and re-request review when ready. gh pr checkout 12 fetches pull request 12's branch so you can run it locally.",
+      "A CODEOWNERS file (in .github/, the repository root or docs/) maps paths to people or teams, such as docs/ @maria; GitHub then requests their review on any pull request that touches those paths.",
+      "Branch protection rules and rulesets, in the repository's settings, can require a pull request, a number of approvals, code owners' review and passing status checks before merging into main, and can block force pushes."
+     ],
+     "walkthrough": {
+      "tool": "GitHub",
+      "title": "Review a pull request",
+      "steps": [
+       {
+        "do": "Fetch the pull request's branch locally and try the change.",
+        "code": "gh pr checkout 2\ncat README.md",
+        "lang": "bash",
+        "see": "You're on the pull request's branch, with the recipe index in README.md."
+       },
+       {
+        "do": "On GitHub, open the pull request's Files changed tab. Hover over a line, click the + that appears, and write a comment; choose Start a review to collect several comments into one review."
+       },
+       {
+        "do": "To propose an exact change, add a suggestion block to a comment (the suggestion button in the comment box inserts one) and edit the line inside it.",
+        "code": "```suggestion\n- [Pancakes](pancakes.md): the family favourite\n```",
+        "lang": "markdown"
+       },
+       {
+        "do": "Finish the review: open the review panel on the Files changed tab, write a summary, choose Comment, Approve or Request changes, and submit. gh pr review does the same from the terminal.",
+        "code": "gh pr review 2 --request-changes --body \"Nice index. One suggestion inline.\"\ngh pr review 2 --approve",
+        "lang": "bash"
+       },
+       {
+        "do": "As the author, click Commit suggestion on the suggestion, reply to the other comments and resolve them, then pull the new commit into your local branch.",
+        "code": "git pull",
+        "lang": "bash"
+       },
+       {
+        "do": "Ask for reviews automatically: on main, add .github/CODEOWNERS naming who owns which files (later lines take precedence).",
+        "code": "# Everything needs a review from the maintainer\n*          @YOUR-NAME\n# The pancake recipe also needs its cook\npancakes.md @A-TEAMMATE",
+        "lang": "text"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Team workflows and merge methods",
+     "minutes": 13,
+     "objectives": [
+      "Compare GitHub flow, trunk-based development and Git flow",
+      "Choose between merge commits, squash merging and rebase merging",
+      "Match a workflow to the way a team releases"
+     ],
+     "key_points": [
+      "GitHub flow: main is always releasable; each change starts as a branch from main, goes through a pull request with review and checks, is merged, then deployed. It's simple and suits teams that release continuously.",
+      "Trunk-based development: everyone integrates into main (the trunk) at least daily, through very short-lived branches or small direct commits, with unfinished features hidden behind feature flags. It needs good automated tests, and keeps every merge small.",
+      "Git flow: long-lived main and develop branches, plus feature, release and hotfix branches. It suits software shipped in numbered versions on a schedule, such as installed apps, but adds ceremony and long-lived branches that drift apart.",
+      "GitHub's merge button has three methods: Create a merge commit keeps every commit plus a merge; Squash and merge makes the pull request one commit on main, titled with its number, such as (#2); Rebase and merge replays the commits onto main without a merge commit.",
+      "Teams usually allow one merge method, in the repository's settings, so history stays consistent, and turn on automatically deleting head branches, so merged branches disappear.",
+      "Choose by how you release: continuous deployment fits GitHub flow or trunk-based development, while supporting several released versions needs release branches, such as release/1.4, that receive fixes with git cherry-pick."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "See the three merge methods' results locally",
+      "steps": [
+       {
+        "do": "In a throwaway clone of recipes, make a branch with two commits.",
+        "code": "cd ..\ngit clone -q recipes methods\ncd methods\ngit switch -c add-porridge\n# ...commit Add a porridge recipe, then Add porridge toppings...\ngit switch main",
+        "lang": "bash"
+       },
+       {
+        "do": "Merge commit: what Create a merge commit does.",
+        "code": "git merge --no-ff --no-edit add-porridge\ngit log --oneline --graph -4",
+        "lang": "bash",
+        "see": "*   a663094 Merge branch 'add-porridge' above the branch's two commits."
+       },
+       {
+        "do": "Undo that merge (fine in a throwaway clone), then squash: all the branch's changes staged as one commit, which you then make yourself.",
+        "code": "git reset --hard HEAD~1\ngit merge --squash add-porridge\ngit commit -m \"Add a porridge recipe (#3)\"\ngit log --oneline --graph -3",
+        "lang": "bash",
+        "see": "Squash commit -- not updating HEAD, then a single commit, Add a porridge recipe (#3), on top of main: what Squash and merge produces."
+       },
+       {
+        "do": "Undo it again, then rebase and fast-forward: the branch's commits land on main as they are, with no merge commit.",
+        "code": "git reset --hard HEAD~1\ngit switch add-porridge\ngit rebase main\ngit switch main\ngit merge --ff-only add-porridge\ngit log --oneline --graph -3",
+        "lang": "bash",
+        "see": "Add porridge toppings and Add a porridge recipe in a straight line on main: what Rebase and merge produces."
+       },
+       {
+        "do": "On GitHub, see which methods a repository allows: Settings, General, Pull Requests. Leave the one your team chooses ticked, and tick Automatically delete head branches."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Tags and releases",
+     "minutes": 13,
+     "objectives": [
+      "Mark releases with annotated tags and semantic version numbers",
+      "Push tags and publish a GitHub Release",
+      "Patch an older release on a release branch with cherry-pick"
+     ],
+     "key_points": [
+      "A tag is a fixed name for one commit, used to mark releases. An annotated tag (git tag -a v1.2.0 -m \"message\") is a full object with a tagger, date and message; a lightweight tag (git tag v1.2.0) is just a name, best for private or temporary marks.",
+      "Semantic versioning numbers releases MAJOR.MINOR.PATCH: increase PATCH for bug fixes, MINOR for new features that keep compatibility, and MAJOR for changes that break it, so 1.4.2 is followed by 1.4.3, 1.5.0 or 2.0.0.",
+      "git push doesn't send tags. Push one with git push origin v1.2.0, or use git push --follow-tags to send the annotated tags on the commits being pushed. git describe --tags names a commit by the nearest tag, as in v1.0.0-1-g17a9805.",
+      "A GitHub Release is built on a tag and adds release notes and downloadable files. gh release create v1.2.0 --generate-notes publishes one, with notes listing the pull requests merged since the previous release.",
+      "To fix an older release, branch from its tag (git switch -c release/1.0 v1.0.0), copy the fix from main with git cherry-pick <commit>, which applies its change as a new commit, and tag the result v1.0.1."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Tag, release and patch",
+      "steps": [
+       {
+        "do": "Tag the current commit as the first release, and list tags with their messages.",
+        "code": "git tag -a v1.0.0 -m \"First release: five tested recipes\"\ngit tag -n",
+        "lang": "bash",
+        "see": "v1.0.0          First release: five tested recipes"
+       },
+       {
+        "do": "Look at the tag object: it has its own tagger, date and message.",
+        "code": "git show v1.0.0 --no-patch",
+        "lang": "bash",
+        "see": "tag v1.0.0, Tagger: Sam Taylor <sam@example.com>, the message, then the commit it marks."
+       },
+       {
+        "do": "Push the tag: tags don't travel with a plain git push.",
+        "code": "git push origin v1.0.0",
+        "lang": "bash",
+        "see": "* [new tag]         v1.0.0 -> v1.0.0"
+       },
+       {
+        "do": "Commit something new, then ask Git to describe where you are.",
+        "code": "printf '\\nAll recipes use metric measures.\\n' >> README.md\ngit commit -am \"Say that recipes use metric measures\"\ngit describe --tags",
+        "lang": "bash",
+        "see": "v1.0.0-1-g17a9805: one commit after v1.0.0, and that commit's short hash after the g."
+       },
+       {
+        "do": "People on 1.0 need a fix. Make a release branch from the tag; fix the cooking time on main and commit; then copy the fix across with cherry-pick.",
+        "code": "git switch -c release/1.0 v1.0.0\ngit switch main\n# ...fix the cooking time in pancakes.md...\ngit commit -am \"Fix the cooking time in pancakes\"\ngit switch release/1.0\ngit cherry-pick main",
+        "lang": "bash",
+        "see": "[release/1.0 2b816a2] Fix the cooking time in pancakes: the same change, as a new commit."
+       },
+       {
+        "do": "Tag the patch release and push the branch with its annotated tags.",
+        "code": "git tag -a v1.0.1 -m \"Fix the cooking time in pancakes\"\ngit log --oneline --decorate -3\ngit push --follow-tags origin release/1.0",
+        "lang": "bash",
+        "see": "(HEAD -> release/1.0, tag: v1.0.1) on the fix, and * [new tag]         v1.0.1 -> v1.0.1 in the push."
+       },
+       {
+        "do": "On GitHub, publish a release for the tag, with notes generated from the merged pull requests. Push the tag there first; --verify-tag stops if you haven't.",
+        "code": "git push github v1.0.1\ngh release create v1.0.1 --title \"v1.0.1\" --generate-notes --verify-tag",
+        "lang": "bash",
+        "see": "The release's URL, ending in /releases/tag/v1.0.1."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Take a change from pull request to release",
+    "tool": "GitHub",
+    "minutes": 50,
+    "goal": "Run a change through the whole GitHub workflow on a repository of your own: an issue, a branch, a pull request from a template with a review suggestion, a squash merge that closes the issue, and a tagged release.",
+    "setup": [
+     "A free GitHub account, and the GitHub CLI logged in (gh auth login)",
+     "The starter files README.md, CONTRIBUTING.md and pull_request_template.md in a new folder called team-handbook",
+     "Git configured with your name and email"
+    ],
+    "steps": [
+     {
+      "do": "Put the template where GitHub looks for it, make the first commit, and publish the repository.",
+      "code": "mkdir .github\nmv pull_request_template.md .github/\ngit init\ngit add .\ngit commit -m \"Start the team handbook\"\ngh repo create team-handbook --public --source=. --push",
+      "lang": "bash",
+      "see": "The repository on GitHub, with your commit."
+     },
+     {
+      "do": "Open an issue for the work.",
+      "code": "gh issue create --title \"Explain how we review pull requests\" --body \"CONTRIBUTING.md should say how to ask for a review and how to give one.\"",
+      "lang": "bash",
+      "see": "The issue's URL, ending in /issues/1."
+     },
+     {
+      "do": "On a branch, write the Reviews section of CONTRIBUTING.md (its TODO says what to cover), then commit and push.",
+      "code": "git switch -c docs/review-guide\n# ...write the Reviews section...\ngit commit -am \"Explain how we review pull requests\"\ngit push -u origin docs/review-guide",
+      "lang": "bash"
+     },
+     {
+      "do": "Open the pull request in the browser, so your template fills in its description. Complete the headings, include Closes #1, and create the pull request.",
+      "code": "gh pr create --web",
+      "lang": "bash"
+     },
+     {
+      "do": "Review it yourself: on Files changed, comment on a line of your Reviews section with a suggestion (an exact rewording), and submit the review as a comment, since authors can't approve their own pull requests."
+     },
+     {
+      "do": "Apply the suggestion with Commit suggestion, then bring that commit into your local branch.",
+      "code": "git pull",
+      "lang": "bash"
+     },
+     {
+      "do": "Squash and merge the pull request, deleting its branch, then update main and look at the history.",
+      "code": "gh pr merge --squash --delete-branch\ngit switch main\ngit pull\ngit log --oneline -3",
+      "lang": "bash",
+      "see": "The newest commit on main is Explain how we review pull requests (#2)."
+     },
+     {
+      "do": "Check that the merge closed the issue.",
+      "code": "gh issue view 1",
+      "lang": "bash",
+      "see": "The issue is shown as closed."
+     },
+     {
+      "do": "Tag the release, push the tag, and publish a GitHub Release with generated notes.",
+      "code": "git tag -a v0.1.0 -m \"First version of the handbook\"\ngit push origin v0.1.0\ngh release create v0.1.0 --title \"v0.1.0\" --generate-notes --verify-tag\ngit tag -n",
+      "lang": "bash",
+      "see": "The release's URL, ending in /releases/tag/v0.1.0, then v0.1.0          First version of the handbook."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The pull request's description follows the template and closes the issue.",
+      "look_for": [
+       "## Why",
+       "Closes #1"
+      ]
+     },
+     {
+      "text": "The pull request was squash-merged: main has one commit for it, with its number.",
+      "look_for": [
+       "review pull requests (#"
+      ]
+     },
+     {
+      "text": "The release has an annotated tag and is published on GitHub.",
+      "look_for": [
+       "First version of the handbook",
+       "releases/tag/v0.1.0"
+      ]
+     },
+     {
+      "text": "The submission links the pull request, which shows the suggestion and its commit.",
+      "look_for": [
+       "/pull/"
+      ]
+     }
+    ],
+    "submit": "Paste the pull request's URL and description, the output of git log --oneline -3 after the merge and git tag -n, and the release URL that gh printed.",
+    "files": [
+     {
+      "path": "README.md",
+      "content": "# Team handbook\n\nHow our team works together: the way we plan, write, review and release our work.\n\n- [Contributing](CONTRIBUTING.md): branches, commits, reviews and merging\n"
+     },
+     {
+      "path": "CONTRIBUTING.md",
+      "content": "# Contributing\n\n## Branches\n\nStart every change on a short-lived branch from main, named after what it does, such as\nfix/broken-link or docs/review-guide. Keep each branch to one focused change.\n\n## Commits\n\nWrite a summary line of about 50 characters, as a command (Add the holiday policy), then a\nblank line and a body that explains why, if the summary isn't enough.\n\n## Reviews\n\nTODO: explain how to ask for a review (push the branch, open a pull request, fill in the\ntemplate, request a reviewer) and how to give one (comment on lines, use suggestions,\napprove or request changes, and be specific and kind).\n\n## Merging\n\nWe squash and merge pull requests once they are approved, then delete the branch.\n"
+     },
+     {
+      "path": "pull_request_template.md",
+      "content": "## What\n\n<!-- What does this pull request change? -->\n\n## Why\n\n<!-- Why is the change needed? Link the issue it closes, for example: Closes #12 -->\n\n## How it was tested\n\n<!-- What did you check, and how? -->\n"
+     }
+    ],
+    "hints": [
+     "If gh repo create says the name is taken in your account, choose another, such as team-handbook-practice.",
+     "Closing keywords only work when the pull request is merged into the default branch, main.",
+     "Your numbers may differ if the repository already had issues or pull requests: issues and pull requests share one sequence.",
+     "gh release create --verify-tag stops if the tag isn't on GitHub yet: push the tag first."
+    ]
+   }
+  },
+  {
+   "title": "Ignore, undo and automate",
+   "summary": "Keep the wrong files out with .gitignore, undo almost anything with restore, reset, revert and the reflog, and automate checks with Git hooks that the whole team shares.",
+   "instructor": "agnieszka-kowalska",
+   "lessons": [
+    {
+     "title": ".gitignore: keep the right files out",
+     "minutes": 12,
+     "objectives": [
+      "Write .gitignore patterns, including exceptions",
+      "Find which rule ignores a file",
+      "Stop tracking a committed file, and handle a committed secret"
+     ],
+     "key_points": [
+      "A .gitignore file lists patterns for files Git should leave untracked: *.log matches any .log file, build/ matches a folder, a leading / anchors a pattern to the .gitignore's own folder, and **/ matches folders at any depth.",
+      "A pattern starting with ! makes an exception, so *.log followed by !keep.log ignores every log except keep.log. Lines starting with # are comments, and a .gitignore in a sub-folder applies within that folder.",
+      "Commit .gitignore so the whole team shares it. Keep personal clutter, such as editor and operating-system files, in a global ignore file: git config --global core.excludesFile ~/.gitignore_global.",
+      "git status --ignored lists ignored files, and git check-ignore -v file names the .gitignore line that matches it: the quickest way to debug a rule.",
+      "Ignoring doesn't affect files Git already tracks. To stop tracking one, add it to .gitignore and run git rm --cached file, which removes it from the repository but leaves it on disk.",
+      "If a secret such as a password or API key was ever committed, treat it as leaked: revoke it and issue a new one. Deleting it in a later commit leaves it in the history, and copies may already exist."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Write and debug ignore rules",
+      "steps": [
+       {
+        "do": "Create files that shouldn't be committed (a log, local settings and build output) and one example log that should.",
+        "code": "printf 'API_KEY=not-a-real-key\\n' > .env\nprintf 'started\\n' > debug.log\nprintf 'example\\n' > keep.log\nmkdir -p build\nprintf 'x\\n' > build/output.txt",
+        "lang": "bash"
+       },
+       {
+        "do": "Write .gitignore.",
+        "code": "# Logs, except the example log\n*.log\n!keep.log\n\n# Build output and local settings\nbuild/\n.env",
+        "lang": "text"
+       },
+       {
+        "do": "Compare the normal status with the ignored files shown.",
+        "code": "git status --short\ngit status --short --ignored",
+        "lang": "bash",
+        "see": "?? .gitignore and ?? keep.log; with --ignored, also !! .env, !! build/ and !! debug.log."
+       },
+       {
+        "do": "Ask which rule matches each file.",
+        "code": "git check-ignore -v debug.log build/output.txt .env keep.log",
+        "lang": "bash",
+        "see": ".gitignore:2:*.log debug.log, .gitignore:6:build/ build/output.txt, .gitignore:7:.env .env and .gitignore:3:!keep.log keep.log, the exception."
+       },
+       {
+        "do": "Commit the rules and the example log.",
+        "code": "git add .gitignore keep.log\ngit commit -m \"Ignore logs, build output and local settings\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Now a file committed by mistake: commit settings.local, then add it to .gitignore.",
+        "code": "printf 'theme=dark\\n' > settings.local\ngit add settings.local\ngit commit -m \"Add local settings\"\nprintf 'settings.local\\n' >> .gitignore\ngit status --short",
+        "lang": "bash",
+        "see": "Only  M .gitignore: the new rule doesn't stop Git tracking a file it already has."
+       },
+       {
+        "do": "Stop tracking it, but keep it on disk, and commit.",
+        "code": "git rm --cached settings.local\ngit commit -am \"Stop tracking settings.local\"\ngit status --short --ignored",
+        "lang": "bash",
+        "see": "rm 'settings.local', then delete mode 100644 settings.local in the commit, and !! settings.local among the ignored files."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Undoing changes: restore, reset, revert and the reflog",
+     "minutes": 15,
+     "objectives": [
+      "Discard or unstage changes with git restore",
+      "Undo commits with reset or revert, and choose between them",
+      "Recover lost commits with the reflog, and park work with git stash"
+     ],
+     "key_points": [
+      "git restore file throws away uncommitted changes to a file, returning it to the last commit; git restore --staged file unstages it but keeps the changes. Discarded changes that were never committed can't be recovered.",
+      "git reset moves the current branch back: --soft HEAD~1 undoes the last commit but keeps its changes staged; the default, --mixed, keeps them unstaged; --hard also discards them from the working tree.",
+      "git revert <commit> makes a new commit that undoes an earlier one, without rewriting history. Use revert for commits that have been pushed or shared, and reset only for commits nobody else has.",
+      "The reflog (git reflog) records every position HEAD has had, even after a reset. To recover a commit that seems lost, find it in the reflog and put a branch on it, such as git branch rescued HEAD@{1}.",
+      "git stash puts uncommitted changes aside and cleans the working tree, so you can switch branches; git stash list shows what's stored, and git stash pop brings the latest back.",
+      "Choose the gentlest tool: restore for files, --amend for the last unpushed commit, revert for anything shared, reset --hard only when you're sure, and the reflog when something has gone wrong."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Undo at every level",
+      "steps": [
+       {
+        "do": "Make a change, then discard it.",
+        "code": "printf -- '- a pinch of chilli\\n' >> pancakes.md\ngit status --short\ngit restore pancakes.md\ngit status --short",
+        "lang": "bash",
+        "see": " M pancakes.md, then nothing: the change is gone for good."
+       },
+       {
+        "do": "Stage a change, then unstage it.",
+        "code": "printf -- '- a pinch of chilli\\n' >> pancakes.md\ngit add pancakes.md\ngit restore --staged pancakes.md\ngit status --short",
+        "lang": "bash",
+        "see": " M pancakes.md: still changed, but no longer staged."
+       },
+       {
+        "do": "Commit it, then undo the commit but keep the change staged.",
+        "code": "git commit -am \"Add chilli to pancakes\"\ngit reset --soft HEAD~1\ngit status --short",
+        "lang": "bash",
+        "see": "M  pancakes.md: staged again, and the commit is gone from the branch."
+       },
+       {
+        "do": "Commit it again. This time suppose it was already pushed, and undo it with a new commit.",
+        "code": "git commit -m \"Add chilli to pancakes\"\ngit revert --no-edit HEAD\ngit log --oneline -3",
+        "lang": "bash",
+        "see": "Revert \"Add chilli to pancakes\" on top of Add chilli to pancakes: both stay in the history."
+       },
+       {
+        "do": "Lose a commit on purpose with a hard reset.",
+        "code": "printf '\\n## Variations\\n\\nAdd grated apple to the batter.\\n' >> pancakes.md\ngit commit -am \"Add an apple variation\"\ngit reset --hard HEAD~1",
+        "lang": "bash",
+        "see": "HEAD is now at b023bcb Revert \"Add chilli to pancakes\""
+       },
+       {
+        "do": "Find it in the reflog, and rescue it.",
+        "code": "git reflog -4\ngit branch rescued HEAD@{1}\ngit merge rescued\ngit branch -d rescued",
+        "lang": "bash",
+        "see": "HEAD@{1}: commit: Add an apple variation in the reflog, then a Fast-forward that brings the commit back."
+       },
+       {
+        "do": "Park unfinished work with stash, and bring it back.",
+        "code": "printf '\\nHalf-finished idea.\\n' >> README.md\ngit stash\ngit stash list\ngit stash pop",
+        "lang": "bash",
+        "see": "Saved working directory and index state WIP on main: ..., then stash@{0}: WIP on main: ..., then the change back in README.md."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Automating checks with Git hooks",
+     "minutes": 12,
+     "objectives": [
+      "Explain what Git hooks are and when they run",
+      "Write pre-commit and commit-msg hooks",
+      "Share hooks with a team, and know their limits"
+     ],
+     "key_points": [
+      "Hooks are scripts that Git runs at certain moments: pre-commit before a commit is made, commit-msg to check the message, pre-push before a push. If a hook exits with a non-zero status, Git stops the operation.",
+      "Hooks live in .git/hooks, named exactly after the event (pre-commit, with no extension), and must be executable on macOS and Linux (chmod +x). Git for Windows runs them with the shell it includes.",
+      "A commit-msg hook receives the path of a file holding the message as its first argument ($1), so it can read the summary line and reject messages that are too short or badly formatted.",
+      "The .git folder isn't committed, so hooks in it aren't shared. Commit them in a folder such as .githooks and have each person run git config core.hooksPath .githooks, which replaces .git/hooks entirely.",
+      "Frameworks such as pre-commit (pre-commit.com) install and run shared hooks from a configuration file, with ready-made checks for formatting, linting and secrets.",
+      "Hooks run on each person's computer and git commit --no-verify skips them, so they're a convenience, not a guarantee: enforce important rules on the server too, with branch protection and required checks."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Block secrets and lazy messages",
+      "steps": [
+       {
+        "do": "Write a pre-commit hook that refuses staged changes containing API_KEY=, save it as .git/hooks/pre-commit, and make it executable with chmod +x .git/hooks/pre-commit.",
+        "code": "#!/bin/sh\n# pre-commit: refuse to commit anything that looks like a secret.\nif git diff --cached | grep -q \"API_KEY=\"; then\n    echo \"pre-commit: the staged changes contain API_KEY=; take the secret out and use .env instead.\" >&2\n    exit 1\nfi",
+        "lang": "bash"
+       },
+       {
+        "do": "Try to commit a file with a key in it.",
+        "code": "printf 'API_KEY=not-a-real-key\\n' > config.txt\ngit add config.txt\ngit commit -m \"Add the configuration\"",
+        "lang": "bash",
+        "see": "pre-commit: the staged changes contain API_KEY=; take the secret out and use .env instead. No commit is made."
+       },
+       {
+        "do": "Unstage the file and delete it.",
+        "code": "git restore --staged config.txt\nrm config.txt",
+        "lang": "bash"
+       },
+       {
+        "do": "Write a commit-msg hook in a .githooks folder, where it can be committed and shared: save it as .githooks/commit-msg.",
+        "code": "#!/bin/sh\n# commit-msg: Git passes the path of the file holding the message as $1.\nsummary=$(head -n 1 \"$1\")\nif [ ${#summary} -lt 10 ]; then\n    echo \"commit-msg: the summary line is too short; describe the change in at least 10 characters.\" >&2\n    exit 1\nfi",
+        "lang": "bash"
+       },
+       {
+        "do": "Make it executable and point Git at the folder. From now on .git/hooks is ignored, so the pre-commit hook no longer runs unless you move it into .githooks too.",
+        "code": "chmod +x .githooks/commit-msg\ngit config core.hooksPath .githooks",
+        "lang": "bash"
+       },
+       {
+        "do": "Try a lazy message, then a good one.",
+        "code": "printf '\\nRecipes are tested twice.\\n' >> README.md\ngit commit -am \"wip\"\ngit commit -am \"Say that recipes are tested twice\"",
+        "lang": "bash",
+        "see": "commit-msg: the summary line is too short; describe the change in at least 10 characters. Then the second commit goes through."
+       },
+       {
+        "do": "Commit the hook so teammates get it; each of them runs the same git config core.hooksPath command once.",
+        "code": "git add .githooks\ngit commit -m \"Share the commit-msg hook in .githooks\"",
+        "lang": "bash"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Put a messy repository right",
+    "tool": "Git",
+    "minutes": 45,
+    "goal": "Repair a repository without losing anything: recover a commit lost in a hard reset, revert a bad commit that was shared, stop tracking files that should never have been committed, and add a shared commit-msg hook.",
+    "setup": [
+     "Git 2.28 or later, configured with your name and email",
+     "The starter files make_messy_repo.sh and commit-msg in one folder (on Windows, use Git Bash)"
+    ],
+    "steps": [
+     {
+      "do": "Create the repository and read its history.",
+      "code": "bash make_messy_repo.sh\ncd notes-app\ngit log --oneline",
+      "lang": "bash",
+      "see": "Four commits, the newest being Change the default colour to neon green."
+     },
+     {
+      "do": "A commit called Add export to CSV was lost in a hard reset. Find it in the reflog.",
+      "code": "git reflog",
+      "lang": "bash",
+      "see": "A line ending HEAD@{1}: commit: Add export to CSV."
+     },
+     {
+      "do": "Bring it back: put a branch on it and merge that into main.",
+      "code": "git branch export HEAD@{1}\ngit merge export\ngit branch -d export",
+      "lang": "bash",
+      "see": "Fast-forward, and the export_csv function back in notes.py."
+     },
+     {
+      "do": "The neon green change was shared, so don't rewrite history: revert it, using its hash from git log --oneline.",
+      "code": "git log --oneline\ngit revert --no-edit <hash>\ncat theme.py",
+      "lang": "bash",
+      "see": "[main ...] Revert \"Change the default colour to neon green\", and colour = \"white\" in theme.py."
+     },
+     {
+      "do": "Stop tracking .env and debug.log: ignore them, take them out of the repository but not off the disk, and commit.",
+      "code": "printf '.env\\n*.log\\n' > .gitignore\ngit rm --cached .env debug.log\ngit add .gitignore\ngit commit -m \"Stop tracking local settings and logs\"\ngit check-ignore -v .env debug.log",
+      "lang": "bash",
+      "see": "rm '.env' and rm 'debug.log', then .gitignore:1:.env .env and .gitignore:2:*.log debug.log."
+     },
+     {
+      "do": "The .env file is still in an older commit. Write one sentence on what you'd do if its API_KEY had been real."
+     },
+     {
+      "do": "Install the shared commit-msg hook from the starter files.",
+      "code": "mkdir .githooks\ncp ../commit-msg .githooks/\nchmod +x .githooks/commit-msg\ngit config core.hooksPath .githooks",
+      "lang": "bash"
+     },
+     {
+      "do": "Add a count function to notes.py, then try three commit messages.",
+      "code": "printf '\\n\\ndef count(notes):\\n    return len(notes)\\n' >> notes.py\ngit commit -am \"wip\"\ngit commit -am \"add a count function\"\ngit commit -am \"Add a function that counts the notes\"",
+      "lang": "bash",
+      "see": "Two refusals from commit-msg (the summary is too short; start it with a capital letter), then the commit."
+     },
+     {
+      "do": "Commit the hook and check that everything is committed.",
+      "code": "git add .githooks\ngit commit -m \"Share a commit-msg hook in .githooks\"\ngit log --oneline\ngit status",
+      "lang": "bash",
+      "see": "Nine commits, and nothing to commit, working tree clean."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The lost commit was recovered from the reflog.",
+      "look_for": [
+       "HEAD@{1}: commit: Add export to CSV",
+       "Fast-forward"
+      ]
+     },
+     {
+      "text": "The bad commit was undone with a revert, not removed from history.",
+      "look_for": [
+       "Revert \"Change the default colour to neon green\""
+      ]
+     },
+     {
+      "text": ".env and debug.log are ignored and no longer tracked.",
+      "look_for": [
+       ".gitignore:1:.env",
+       "rm 'debug.log'"
+      ]
+     },
+     {
+      "text": "The hook rejects a short message and a lower-case one, and accepts a good one.",
+      "look_for": [
+       "at least 10",
+       "capital letter",
+       "Add a function that counts the notes"
+      ]
+     },
+     {
+      "text": "The sentence about the secret says to revoke it and issue a new one.",
+      "look_for": [
+       "revoke"
+      ]
+     }
+    ],
+    "submit": "Paste the terminal output from git reflog to the final git status, and your sentence about the secret.",
+    "files": [
+     {
+      "path": "make_messy_repo.sh",
+      "content": "#!/usr/bin/env bash\n# Creates notes-app/, a repository with some mistakes in its history for you to put right.\n# Run it from the folder where you want notes-app to appear:  bash make_messy_repo.sh\nset -euo pipefail\nif [ -e notes-app ]; then\n    echo \"notes-app already exists here: delete it, or run this script in another folder.\" >&2\n    exit 1\nfi\nif [ -z \"$(git config user.name || true)\" ]; then\n    echo 'Tell Git who you are first: git config --global user.name \"Your Name\"' >&2\n    exit 1\nfi\ngit init -q -b main notes-app\ncd notes-app\ncommit() { git add -A && git commit -q -m \"$1\"; }\n\nprintf 'def add_note(notes, text):\\n    notes.append(text)\\n    return notes\\n' > notes.py\nprintf 'colour = \"white\"\\n' > theme.py\ncommit \"Add the notes app\"\n\nprintf 'API_KEY=not-a-real-key\\n' > .env\nprintf 'starting notes app\\n' > debug.log\ncommit \"Add local settings\"\n\nprintf 'def dark_mode():\\n    return {\"background\": \"black\", \"text\": \"white\"}\\n' >> theme.py\ncommit \"Add dark mode\"\n\nsed -i.bak 's/^colour = \"white\"$/colour = \"neon green\"/' theme.py && rm theme.py.bak\ncommit \"Change the default colour to neon green\"\n\nprintf '\\n\\ndef export_csv(notes):\\n    return \"\\\\n\".join(notes)\\n' >> notes.py\ncommit \"Add export to CSV\"\ngit reset -q --hard HEAD~1          # oops: the export commit is no longer on main\n\necho \"Created notes-app. Its history needs some care: see the lab steps.\"\n"
+     },
+     {
+      "path": "commit-msg",
+      "content": "#!/bin/sh\n# commit-msg hook: Git runs it with the path of the file that holds the commit message.\n# A non-zero exit status stops the commit.\nsummary=$(head -n 1 \"$1\")\nlength=${#summary}\n\nif [ \"$length\" -lt 10 ]; then\n    echo \"commit-msg: the summary line has $length characters; describe the change in at least 10.\" >&2\n    exit 1\nfi\nif [ \"$length\" -gt 72 ]; then\n    echo \"commit-msg: the summary line has $length characters; keep it to 72 or fewer.\" >&2\n    exit 1\nfi\ncase \"$summary\" in\n    [[:lower:]]*)\n        echo \"commit-msg: start the summary line with a capital letter.\" >&2\n        exit 1\n        ;;\nesac\nexit 0\n"
+     }
+    ],
+    "hints": [
+     "HEAD@{1} means where HEAD was one move ago. If you've run other commands since, the lost commit has a higher number: look for its message in git reflog.",
+     "If the hook doesn't run, check git config core.hooksPath and that the file is called exactly commit-msg, with no extension, and is executable.",
+     "git revert opens your editor for the message unless you pass --no-edit."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Set up Git, make your first commits, and learn to read history; finish the to-do list lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Branches, merges, conflicts and rebasing; finish the café menu lab.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Remotes, GitHub access and shared branches; finish the two-person remote lab.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Pull requests, code review, team workflows and releases; take a change from pull request to release on GitHub.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": ".gitignore, undoing mistakes and Git hooks; put the messy repository right.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Run the capstone team project on GitHub, then review the course with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Run a team project on GitHub, from first commit to release",
+  "minutes": 240,
+  "brief": "Set up and run a small project the way a professional team would, on GitHub. Choose something small to build or write, such as a recipe collection, a study guide or a short script. Work with a partner if you can, each with your own account, or alone with two clones of your own. Write a CONTRIBUTING.md that describes your workflow (GitHub flow or trunk-based development, branch names, commit message rules, how reviews work and which merge method you use), and add a .gitignore, a pull request template, a CODEOWNERS file and a commit-msg hook shared through core.hooksPath. Protect main so changes need a pull request. Then do the work through issues and at least three pull requests: one that resolves a merge conflict, one tidied with an interactive rebase before review, and one improved in response to review comments. Finish by tagging v1.0.0 with an annotated tag, publishing a GitHub Release with notes, and making a v1.0.1 patch on a release branch with a cherry-picked fix.",
+  "deliverables": [
+   "The repository's URL, with README.md, CONTRIBUTING.md, .gitignore, a pull request template, CODEOWNERS and the shared hook",
+   "A rule or ruleset on main that requires a pull request (a screenshot or a description of its settings)",
+   "Links to at least three merged pull requests, each closing an issue, with the review discussion visible",
+   "The output of git log --oneline --graph --all, showing the history and the release branch",
+   "Annotated tags v1.0.0 and v1.0.1, and the GitHub Release for v1.0.0",
+   "A short reflection, about half a page: what went wrong, how you recovered, and what you'd change in your workflow"
+  ],
+  "rubric": [
+   {
+    "name": "Repository set-up",
+    "points": 20,
+    "description": "README, a CONTRIBUTING.md with a clear and consistent workflow, a .gitignore that fits the project, a pull request template, CODEOWNERS and a working shared hook."
+   },
+   {
+    "name": "Branches and pull requests",
+    "points": 25,
+    "description": "Every change arrives through a focused pull request linked to an issue, with a description that follows the template; the conflict and the interactive rebase are handled correctly."
+   },
+   {
+    "name": "Code review",
+    "points": 15,
+    "description": "Reviews contain specific, kind comments and at least one suggestion; the author responds with follow-up commits and resolves the conversations."
+   },
+   {
+    "name": "History quality",
+    "points": 15,
+    "description": "Small commits with clear summary lines and bodies where needed, no WIP or fix-up commits left on main, and one merge method used consistently."
+   },
+   {
+    "name": "Releases",
+    "points": 15,
+    "description": "Annotated, semantically versioned tags, a GitHub Release with notes, and v1.0.1 made on a release branch with a cherry-picked fix."
+   },
+   {
+    "name": "Reflection",
+    "points": 10,
+    "description": "An honest account of the problems met and how Git was used to recover, with sensible changes to the workflow."
+   }
+  ],
+  "submit": "Paste the repository URL, the links to your pull requests, git log --oneline --graph --all, git tag -n, the release URL and your reflection."
+ }
+}

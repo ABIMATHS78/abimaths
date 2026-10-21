@@ -1,0 +1,1010 @@
+{
+  "slug": "model-serving-deployment",
+  "title": "Deploying and Serving Machine Learning Models",
+  "subtitle": "Serve models fast and safely: validated APIs, ONNX, gRPC and micro-batching, lean containers, canary and shadow releases, and load tests that tell the truth.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "mouhamadouu-ba",
+    "wei-cheng-liu"
+  ],
+  "skills": [
+    "Model serving",
+    "Batch inference",
+    "FastAPI",
+    "ONNX",
+    "gRPC",
+    "Dynamic batching",
+    "Canary releases",
+    "Shadow deployment",
+    "Load testing",
+    "Capacity planning"
+  ],
+  "tools": [
+    "FastAPI",
+    "pydantic",
+    "onnxruntime",
+    "skl2onnx",
+    "gRPC",
+    "Docker",
+    "httpx",
+    "pytest"
+  ],
+  "outcomes": [
+    "Build batch scoring jobs that resume after failure and record the model behind every prediction",
+    "Serve models with FastAPI using strict validation, verified loading, warm-up and readiness checks",
+    "Export scikit-learn and PyTorch models to ONNX and prove the exported model makes the same decisions",
+    "Serve over gRPC, add micro-batching where measurements justify it, and package lean serving images",
+    "Release models through sticky canaries and shadows, and size services from open-loop load tests"
+  ],
+  "prerequisites": "MLOps Foundations: Experiments, Models and Reproducibility with MLflow (or experience packaging models), and Introduction to FastAPI and Modern Web Services or equivalent FastAPI basics. Docker basics help for module 4. You need Python 3.10 or later and Docker; the labs install scikit-learn, FastAPI, onnxruntime, skl2onnx and grpcio with pip.",
+  "description": "A model is only useful once it answers requests reliably, quickly and safely, and most of the hard problems in getting there aren't about the model. This advanced course takes one transaction-risk model all the way to production shape on your own machine: a batch job that survives crashes, a FastAPI server that validates every feature and won't take traffic until the model is verified and warm, an ONNX export proven to make the same decisions, a gRPC service with deadlines, micro-batching measured rather than assumed, and a lean container that knows its CPU budget.\n\nThe last module is about releasing without fear: a sticky canary routed by a stable hash, a shadow that can never affect a response, comparisons on the same live requests, and an open-loop load test that avoids coordinated omission and turns into a capacity plan. Every lab was run end to end and its checks quote the real output. It builds on Advanced FastAPI and Production Deployment and Containerisation and Orchestration with Docker and Kubernetes for the general web and container skills, and leads on to Monitoring Models in Production: Drift, Data Quality and Alerts.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Serving patterns and the prediction contract",
+      "summary": "Set latency and throughput objectives, build batch jobs that survive failure, and define the contract a prediction service keeps with its clients, over REST or gRPC.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "Latency, throughput and serving objectives",
+          "minutes": 12,
+          "objectives": [
+            "Break a prediction request's latency into its parts",
+            "Write a serving objective for a model endpoint using percentiles"
+          ],
+          "key_points": [
+            "Latency is how long one prediction takes end to end; throughput is how many predictions the service completes per second. Improving one can cost the other, as batching shows.",
+            "Report latency as percentiles of raw measurements: p50 is the typical request, and p95 and p99 are the slow tail that many users still meet. An average hides the tail.",
+            "A request's time is spent in parts: network, parsing and validation, fetching features, preprocessing, inference, post-processing and serialising the answer. Measure each part before optimising; inference often isn't the largest.",
+            "A serving objective names a percentile, a threshold and a window, such as 99% of requests under 100 ms over 28 days (an example of the form, not a recommended number), alongside an availability target.",
+            "Cold starts count: loading a model and the first predictions after start-up are slow, so a new replica shouldn't receive traffic until it has loaded and warmed up."
+          ]
+        },
+        {
+          "title": "Batch inference jobs that survive failure",
+          "minutes": 12,
+          "objectives": [
+            "Design a batch scoring job that can be rerun safely after a crash",
+            "Record which model produced each prediction"
+          ],
+          "key_points": [
+            "A batch job scores a large input in chunks so memory stays bounded, for example with pandas.read_csv(path, chunksize=20000) or by reading a Parquet file one row group at a time.",
+            "Write each chunk's output as its own file, atomically: write to a temporary name and then os.replace it to the final name, so a part is either complete or absent, never half-written.",
+            "Skipping parts that already exist makes the job idempotent and resumable: after a crash, rerun it from the start and it does only the missing work, with no duplicates.",
+            "Store the model version and the scoring time with every prediction, and keep each model version's output in its own folder, so consumers always know what produced a score.",
+            "Validate rows before scoring and send invalid ones to a rejects file with a count, rather than letting one bad row stop a long job or silently scoring nonsense."
+          ]
+        },
+        {
+          "title": "REST, gRPC and the prediction contract",
+          "minutes": 12,
+          "objectives": [
+            "Compare REST with JSON and gRPC with Protocol Buffers for model serving",
+            "Version a prediction API without breaking its clients"
+          ],
+          "key_points": [
+            "REST with JSON is universal and easy to debug with curl; gRPC sends Protocol Buffers over HTTP/2 from a schema-first .proto contract, with generated clients, compact binary messages and streaming.",
+            "A contract states every input field with its type and valid range, every output field, and the errors: in FastAPI, 422 for invalid input and 503 while the model isn't ready; in gRPC, status codes such as INVALID_ARGUMENT, UNAVAILABLE and DEADLINE_EXCEEDED.",
+            "Return the model version, and ideally a request ID, with every prediction, so any answer can be traced to the exact model and a faulty model's predictions can be found later.",
+            "Evolve contracts additively: add optional fields, never change a field's meaning or units, and put breaking changes behind a new version such as /v2/predict. In protobuf, never reuse or renumber a field number.",
+            "gRPC keeps long-lived HTTP/2 connections that carry many requests, so a connection-level (layer 4) load balancer can pin one client's traffic to a single replica; balance per request with an HTTP/2-aware proxy or client-side load balancing."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a resumable batch scoring job",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Generate transaction data, train the course's transaction-risk model, and score 100,000 rows with a chunked batch job that writes atomic Parquet parts, survives a simulated crash, skips finished work on a rerun and gives identical results when run from scratch.",
+        "setup": [
+          "Python 3.10 or later in a virtual environment for the whole course, with pip install scikit-learn pandas pyarrow joblib",
+          "A project folder you'll keep for every lab in the course",
+          "The starter files make_transactions.py, train.py, batch_score.py and summary.py"
+        ],
+        "steps": [
+          {
+            "do": "Generate 20,000 labelled transactions for training and 100,000 unlabelled ones to score. The fixed seeds mean everyone gets the same files.",
+            "code": "python make_transactions.py\npython make_transactions.py --rows 100000 --seed 8 --unlabelled --out data/to_score.csv",
+            "lang": "bash",
+            "see": "wrote data/transactions.csv: 20000 rows, fraud rate 0.044, then wrote data/to_score.csv: 100000 rows"
+          },
+          {
+            "do": "Train the model. train.py saves model.joblib and model_meta.json, with the version, the feature order, the threshold and the file's SHA-256.",
+            "code": "python train.py",
+            "lang": "bash",
+            "see": "saved model.joblib (risk-rf-1.0.0): val_auc=0.9012, review rate at 0.2: 0.046"
+          },
+          {
+            "do": "Read batch_score.py: chunks of 20,000 rows, one Parquet part per chunk written to a .tmp name and renamed, finished parts skipped, invalid rows sent to a rejects file. Then run it with a simulated crash after two parts.",
+            "code": "python batch_score.py --crash-after 2",
+            "lang": "bash",
+            "see": "simulated crash before chunk 2 (2 new parts written)"
+          },
+          {
+            "do": "Run it again, exactly as you would after a real failure.",
+            "code": "python batch_score.py",
+            "lang": "bash",
+            "see": "parts written: 3, skipped (already done): 2, rejected rows: 0"
+          },
+          {
+            "do": "Run it a third time: nothing is left to do, and nothing is duplicated.",
+            "code": "python batch_score.py",
+            "lang": "bash",
+            "see": "parts written: 0, skipped (already done): 5, rejected rows: 0"
+          },
+          {
+            "do": "Check the output: row counts, decisions, the model version and a fingerprint of every score.",
+            "code": "python summary.py",
+            "lang": "bash",
+            "see": "rows: 100000, unique transactions: 100000, decisions: {'approve': 95648, 'review': 4352}"
+          },
+          {
+            "do": "Delete the output, run the whole job from scratch and summarise again. Compare the fingerprint with the one from step 6.",
+            "code": "rm -rf scores        # Windows PowerShell: Remove-Item -Recurse scores\npython batch_score.py\npython summary.py",
+            "lang": "bash",
+            "see": "parts written: 5, and the same fingerprint as before"
+          },
+          {
+            "do": "Write two or three sentences: what would go wrong if batch_score.py wrote straight to the final file name, and why does the output folder include the model version?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The data and the model were created.",
+            "look_for": [
+              "wrote data/to_score.csv: 100000 rows",
+              "saved model.joblib (risk-rf-1.0.0)"
+            ]
+          },
+          {
+            "text": "The job crashed part-way, then resumed without redoing finished parts.",
+            "look_for": [
+              "simulated crash before chunk 2",
+              "parts written: 3, skipped (already done): 2"
+            ]
+          },
+          {
+            "text": "A third run did nothing: the job is idempotent.",
+            "look_for": [
+              "parts written: 0, skipped (already done): 5"
+            ]
+          },
+          {
+            "text": "Every transaction was scored exactly once.",
+            "look_for": [
+              "rows: 100000, unique transactions: 100000",
+              "'review': 4352"
+            ]
+          },
+          {
+            "text": "A run from scratch gave the same fingerprint.",
+            "look_for": [
+              "fingerprint: bc4729c931aba5a2"
+            ]
+          },
+          {
+            "text": "The explanation covers half-written files and tracing scores to a model.",
+            "look_for": [
+              "version"
+            ]
+          }
+        ],
+        "submit": "Paste the output of every command from steps 1 to 7, and your explanation from step 8.",
+        "files": [
+          {
+            "path": "make_transactions.py",
+            "content": "\"\"\"Generate synthetic card transactions. A fixed seed means everyone gets the same file.\"\"\"\nimport argparse\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--rows\", type=int, default=20000)\nparser.add_argument(\"--seed\", type=int, default=7)\nparser.add_argument(\"--out\", default=\"data/transactions.csv\")\nparser.add_argument(\"--unlabelled\", action=\"store_true\", help=\"leave out the is_fraud column\")\nargs = parser.parse_args()\n\nrng = np.random.default_rng(args.seed)\nn = args.rows\ndf = pd.DataFrame({\n    \"transaction_id\": [f\"t{args.seed}-{i:06d}\" for i in range(n)],\n    \"user_id\": [f\"u{u:05d}\" for u in rng.integers(0, 5000, n)],\n    \"amount\": np.round(rng.lognormal(3.4, 1.0, n), 2),\n    \"hour\": rng.integers(0, 24, n),\n    \"channel\": rng.choice([\"web\", \"app\", \"pos\"], n, p=[0.35, 0.40, 0.25]),\n    \"account_age_days\": rng.integers(1, 3650, n),\n    \"tx_last_24h\": rng.poisson(2.0, n),\n    \"distance_km\": np.round(rng.exponential(12, n), 1),\n})\nlogit = (-8.0 + 0.9 * np.log(df.amount) + 1.8 * (df.hour < 6) + 1.0 * (df.channel == \"web\")\n         - 0.0015 * df.account_age_days + 0.6 * df.tx_last_24h + 0.05 * df.distance_km)\nif not args.unlabelled:\n    df[\"is_fraud\"] = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\n\nPath(args.out).parent.mkdir(parents=True, exist_ok=True)\ndf.to_csv(args.out, index=False)\nrate = f\", fraud rate {df.is_fraud.mean():.3f}\" if \"is_fraud\" in df else \"\"\nprint(f\"wrote {args.out}: {n} rows{rate}\")\n"
+          },
+          {
+            "path": "train.py",
+            "content": "\"\"\"Train the transaction-risk model and save it with the metadata a server needs.\"\"\"\nimport argparse\nimport hashlib\nimport json\n\nimport joblib\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.ensemble import RandomForestClassifier\nfrom sklearn.metrics import roc_auc_score\nfrom sklearn.model_selection import train_test_split\nfrom sklearn.pipeline import Pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nNUMERIC = [\"amount\", \"hour\", \"account_age_days\", \"tx_last_24h\", \"distance_km\"]\nCATEGORICAL = [\"channel\"]\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--trees\", type=int, default=100)\nparser.add_argument(\"--depth\", type=int, default=8)\nparser.add_argument(\"--scale\", action=\"store_true\", help=\"add a StandardScaler (trees don't need one)\")\nparser.add_argument(\"--version\", default=\"risk-rf-1.0.0\")\nparser.add_argument(\"--out\", default=\"model.joblib\")\nargs = parser.parse_args()\n\ndf = pd.read_csv(\"data/transactions.csv\")\nX, y = df[NUMERIC + CATEGORICAL], df[\"is_fraud\"]\nX_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.25, random_state=0, stratify=y)\nmodel = Pipeline([\n    (\"prep\", ColumnTransformer([(\"num\", StandardScaler() if args.scale else \"passthrough\", NUMERIC),\n                                (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), CATEGORICAL)])),\n    (\"clf\", RandomForestClassifier(n_estimators=args.trees, max_depth=args.depth, min_samples_leaf=20,\n                                   random_state=0, n_jobs=1)),\n])\nmodel.fit(X_train, y_train)\nauc = roc_auc_score(y_val, model.predict_proba(X_val)[:, 1])\n\njoblib.dump(model, args.out)\nwith open(args.out, \"rb\") as f:\n    sha256 = hashlib.sha256(f.read()).hexdigest()\nmeta = {\"model_version\": args.version, \"features\": NUMERIC + CATEGORICAL, \"threshold\": 0.2,\n        \"val_auc\": round(auc, 4), \"sha256\": sha256}\nwith open(args.out.replace(\".joblib\", \"_meta.json\"), \"w\") as f:\n    json.dump(meta, f, indent=2)\nreview_rate = (model.predict_proba(X_val)[:, 1] >= meta[\"threshold\"]).mean()\nprint(f\"saved {args.out} ({args.version}): val_auc={auc:.4f}, review rate at {meta['threshold']}: {review_rate:.3f}\")\n"
+          },
+          {
+            "path": "batch_score.py",
+            "content": "\"\"\"Score a large CSV in chunks. Each chunk becomes one Parquet part, written atomically,\nso a crashed job can simply be run again: finished parts are skipped, not redone.\"\"\"\nimport argparse\nimport json\nimport os\nfrom datetime import datetime, timezone\nfrom pathlib import Path\n\nimport joblib\nimport pandas as pd\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--input\", default=\"data/to_score.csv\")\nparser.add_argument(\"--out\", default=\"scores\")\nparser.add_argument(\"--chunk-rows\", type=int, default=20000)\nparser.add_argument(\"--crash-after\", type=int, default=None, help=\"simulate a failure after N new parts\")\nargs = parser.parse_args()\n\nmodel = joblib.load(\"model.joblib\")\nmeta = json.load(open(\"model_meta.json\"))\nfeatures, version = meta[\"features\"], meta[\"model_version\"]\nout_dir = Path(args.out) / version             # one folder per model version\nout_dir.mkdir(parents=True, exist_ok=True)\nscored_at = datetime.now(timezone.utc).isoformat(timespec=\"seconds\")\n\n\ndef valid_rows(chunk):\n    \"\"\"Rows the model can score; the rest go to a rejects file instead of crashing the job.\"\"\"\n    ok = chunk[\"amount\"].gt(0) & chunk[\"hour\"].between(0, 23) & chunk[\"channel\"].isin([\"web\", \"app\", \"pos\"])\n    return ok & chunk[features].notna().all(axis=1)\n\n\nwritten = skipped = rejected = 0\nfor i, chunk in enumerate(pd.read_csv(args.input, chunksize=args.chunk_rows)):\n    part = out_dir / f\"part-{i:05d}.parquet\"\n    if part.exists():\n        skipped += 1\n        continue\n    if args.crash_after is not None and written == args.crash_after:\n        raise SystemExit(f\"simulated crash before chunk {i} ({written} new parts written)\")\n    ok = valid_rows(chunk)\n    if (~ok).any():\n        chunk[~ok].to_csv(out_dir / f\"rejects-{i:05d}.csv\", index=False)\n        rejected += int((~ok).sum())\n    good = chunk[ok]\n    scores = model.predict_proba(good[features])[:, 1]\n    result = pd.DataFrame({\n        \"transaction_id\": good[\"transaction_id\"].to_numpy(),\n        \"score\": scores.round(6),\n        \"decision\": [\"review\" if s >= meta[\"threshold\"] else \"approve\" for s in scores],\n        \"model_version\": version,\n        \"scored_at\": scored_at,\n    })\n    tmp = part.with_name(part.name + \".tmp\")\n    result.to_parquet(tmp, index=False)\n    os.replace(tmp, part)           # atomic: a part is either complete or absent\n    written += 1\n\nprint(f\"parts written: {written}, skipped (already done): {skipped}, rejected rows: {rejected}\")\n"
+          },
+          {
+            "path": "summary.py",
+            "content": "\"\"\"Check a batch run's output: row counts, decisions, and a fingerprint of the scores.\"\"\"\nimport hashlib\nimport sys\n\nimport pandas as pd\n\nfolder = sys.argv[1] if len(sys.argv) > 1 else \"scores\"\ndf = pd.read_parquet(folder)            # reads every part in the folder and below it\nprint(f\"rows: {len(df)}, unique transactions: {df.transaction_id.nunique()}\")\nprint(\"decisions:\", df.decision.value_counts().sort_index().to_dict())\nprint(\"model versions:\", sorted(df.model_version.astype(str).unique()))\nkey = df.sort_values(\"transaction_id\")[[\"transaction_id\", \"score\"]].to_csv(index=False)\nprint(\"fingerprint:\", hashlib.sha256(key.encode()).hexdigest()[:16])\n"
+          }
+        ],
+        "hints": [
+          "If summary.py can't read the folder, install pyarrow: pandas needs it, or fastparquet, for Parquet.",
+          "Your fingerprint and decision counts can differ slightly on other scikit-learn versions; what matters is that the fingerprint from step 7 matches the one from step 6.",
+          "A Parquet part ending in .tmp means a run was interrupted while writing it: the job ignores it and writes that part again."
+        ]
+      }
+    },
+    {
+      "title": "A production model server with FastAPI",
+      "summary": "Load and warm up a model once, validate every request against the features it was trained on, report liveness and readiness separately, and handle concurrency the way inference needs.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "Loading, warm-up and readiness",
+          "minutes": 12,
+          "objectives": [
+            "Load and verify a model once per process at start-up",
+            "Separate liveness from readiness for a model server"
+          ],
+          "key_points": [
+            "Load the model once per process at start-up, in FastAPI's lifespan function, and keep it in memory; loading it inside the endpoint adds the load time to every prediction.",
+            "Verify the file before trusting it: compare its SHA-256 with the value recorded at training time and refuse to start on a mismatch, so a broken release fails at deploy time, not on a request.",
+            "Warm up after loading by scoring a few representative inputs: first calls are slower because of lazy initialisation, memory allocation and cold caches, as the lab's start-up log shows.",
+            "Separate liveness (/health/live: the process is running) from readiness (/health/ready: the model is loaded and warmed up, 503 until then), so an orchestrator restarts dead processes but routes traffic only to ready ones.",
+            "Treat model versions as immutable deployments: release a new version as new replicas and move traffic to them, rather than swapping the model inside a running process."
+          ]
+        },
+        {
+          "title": "Validating prediction requests with pydantic",
+          "minutes": 12,
+          "objectives": [
+            "Declare a feature schema with types, ranges and allowed categories",
+            "Reject unknown fields and oversized batches"
+          ],
+          "key_points": [
+            "Declare every feature in a pydantic model with its type and limits: Field(gt=0, le=50_000) for an amount, Field(ge=0, le=23) for an hour, and Literal[\"web\", \"app\", \"pos\"] for a category the model was trained on.",
+            "model_config = ConfigDict(extra=\"forbid\") rejects unknown fields, so a misspelt feature such as amout fails loudly instead of being ignored while the model scores something else.",
+            "FastAPI answers invalid requests with 422 and a detail list giving each failing field's location, the rule it broke and the input, so clients can fix requests without reading server logs.",
+            "Bound batch requests too: list[Transaction] = Field(min_length=1, max_length=256) stops one request from monopolising a worker, and response_model fixes the shape of every answer.",
+            "Take limits from the training data and the business, not guesses: values far outside what the model saw may need rejecting or flagging, and the schema belongs in version control with the model."
+          ]
+        },
+        {
+          "title": "Concurrency in a model server",
+          "minutes": 12,
+          "objectives": [
+            "Choose between def and async def for inference endpoints",
+            "Budget threads and processes so they don't fight over CPUs"
+          ],
+          "key_points": [
+            "FastAPI runs a def endpoint in a thread pool and an async def endpoint on the event loop. CPU-bound inference inside async def blocks every other request on that worker, so model endpoints are usually plain def.",
+            "Threads can overlap during inference because NumPy, scikit-learn's compiled code and onnxruntime release Python's global interpreter lock (GIL) in their heavy loops; pure-Python preprocessing holds it.",
+            "Budget CPU threads per container: processes × threads per process (onnxruntime's intra_op_num_threads, or OMP_NUM_THREADS for OpenMP libraries) shouldn't exceed the cores available, or threads compete and tail latency rises.",
+            "A batch endpoint gives callers with many rows far more throughput than many single calls, because per-call overhead such as parsing, building a DataFrame and Python dispatch is paid once.",
+            "For a small model, framework overhead can dwarf the arithmetic: scoring one row through a scikit-learn pipeline can cost a large share of what a 1,000-row batch costs, as module 3's benchmark shows."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Serve the risk model with validation, warm-up and readiness",
+        "tool": "FastAPI",
+        "minutes": 50,
+        "goal": "Run a FastAPI model server that verifies and warms up the model at start-up, validates requests strictly, reports liveness and readiness separately and returns the model version with every answer; prove its contract with pytest.",
+        "setup": [
+          "The project folder from the module 1 lab, with model.joblib and model_meta.json",
+          "pip install \"fastapi[standard]\" pytest httpx (this installs Uvicorn too)",
+          "The starter files app.py and test_app.py"
+        ],
+        "steps": [
+          {
+            "do": "Read app.py: the Transaction schema with extra=\"forbid\", the checksum check in load_model, the warm-up loop in lifespan, and the def (not async def) endpoints."
+          },
+          {
+            "do": "Run the contract tests. TestClient used in a with block runs the lifespan, so the model loads.",
+            "code": "python -m pytest -q test_app.py",
+            "lang": "bash",
+            "see": "8 passed"
+          },
+          {
+            "do": "Start the server and watch the start-up log line.",
+            "code": "uvicorn app:app --port 8000",
+            "lang": "bash",
+            "see": "INFO risk: loaded risk-rf-1.0.0 in ... ms; warm-up calls took ... ms, with the first call noticeably slower than the rest"
+          },
+          {
+            "do": "In a second terminal, check liveness and readiness.",
+            "code": "curl -s http://127.0.0.1:8000/health/live\ncurl -s http://127.0.0.1:8000/health/ready",
+            "lang": "bash",
+            "see": "{\"status\":\"alive\"} and {\"status\":\"ready\",\"model_version\":\"risk-rf-1.0.0\"}"
+          },
+          {
+            "do": "Score an everyday transaction and a risky one.",
+            "code": "curl -s -X POST http://127.0.0.1:8000/v1/predict -H \"Content-Type: application/json\" \\\n  -d '{\"amount\": 42.5, \"hour\": 14, \"channel\": \"app\", \"account_age_days\": 400, \"tx_last_24h\": 1, \"distance_km\": 3.0}'\ncurl -s -X POST http://127.0.0.1:8000/v1/predict -H \"Content-Type: application/json\" \\\n  -d '{\"amount\": 900, \"hour\": 3, \"channel\": \"web\", \"account_age_days\": 20, \"tx_last_24h\": 6, \"distance_km\": 80}'",
+            "lang": "bash",
+            "see": "{\"score\":0.034536,\"decision\":\"approve\",...} and {\"score\":0.643934,\"decision\":\"review\",...}"
+          },
+          {
+            "do": "Send a request with three mistakes: an hour of 24, an unknown channel and a misspelt field.",
+            "code": "curl -s -X POST http://127.0.0.1:8000/v1/predict -H \"Content-Type: application/json\" \\\n  -d '{\"amount\": 42.5, \"hour\": 24, \"channel\": \"fax\", \"account_age_days\": 400, \"tx_last_24h\": 1, \"distance_km\": 3.0, \"amout\": 1}'",
+            "lang": "bash",
+            "see": "A 422 detail list naming hour, channel and amout"
+          },
+          {
+            "do": "Open http://127.0.0.1:8000/docs and try /v1/predict/batch with two transactions from the example schema. Then stop the server."
+          },
+          {
+            "do": "Break the model file on purpose and start the server again, to see a bad release fail at start-up. Restore it afterwards by running python train.py again.",
+            "code": "python -c \"open('model.joblib', 'ab').write(b'x')\"\nuvicorn app:app --port 8000",
+            "lang": "bash",
+            "see": "RuntimeError: model.joblib doesn't match the checksum in its metadata"
+          }
+        ],
+        "checks": [
+          {
+            "text": "All the contract tests passed.",
+            "look_for": [
+              "8 passed"
+            ]
+          },
+          {
+            "text": "The server reported readiness with the model version.",
+            "look_for": [
+              "{\"status\":\"ready\",\"model_version\":\"risk-rf-1.0.0\"}"
+            ]
+          },
+          {
+            "text": "Both transactions were scored with a decision and the model version.",
+            "look_for": [
+              "\"score\":0.034536",
+              "\"score\":0.643934",
+              "\"decision\":\"review\""
+            ]
+          },
+          {
+            "text": "The bad request was rejected with every problem listed.",
+            "look_for": [
+              "less_than_equal",
+              "literal_error",
+              "extra_forbidden"
+            ]
+          },
+          {
+            "text": "A corrupted model stopped the server from starting.",
+            "look_for": [
+              "doesn't match the checksum"
+            ]
+          }
+        ],
+        "submit": "Paste the pytest summary, the start-up log line, the output of steps 4 to 6, and the error from step 8.",
+        "files": [
+          {
+            "path": "app.py",
+            "content": "\"\"\"A production-shaped model server: strict request validation, one model loaded and warmed up\nat start-up, separate liveness and readiness checks, and the model version on every answer.\"\"\"\nimport hashlib\nimport json\nimport logging\nimport os\nimport time\nfrom contextlib import asynccontextmanager\nfrom typing import Literal\n\nimport joblib\nimport pandas as pd\nfrom fastapi import FastAPI, HTTPException\nfrom pydantic import BaseModel, ConfigDict, Field\n\nlog = logging.getLogger(\"risk\")\nlogging.basicConfig(level=logging.INFO, format=\"%(levelname)s %(name)s: %(message)s\")\nMODEL_PATH = os.environ.get(\"MODEL_PATH\", \"model.joblib\")\nSTATE = {\"ready\": False}\n\n\nclass Transaction(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")       # a misspelt field is an error, not ignored\n    amount: float = Field(gt=0, le=50_000)\n    hour: int = Field(ge=0, le=23)\n    channel: Literal[\"web\", \"app\", \"pos\"]\n    account_age_days: int = Field(ge=0, le=36_500)\n    tx_last_24h: int = Field(ge=0, le=1_000)\n    distance_km: float = Field(ge=0, le=20_000)\n\n\nclass Batch(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")\n    transactions: list[Transaction] = Field(min_length=1, max_length=256)\n\n\nclass Scored(BaseModel):\n    score: float\n    decision: Literal[\"approve\", \"review\"]\n\n\nclass Prediction(Scored):\n    model_version: str\n\n\nclass BatchPrediction(BaseModel):\n    model_version: str\n    predictions: list[Scored]\n\n\ndef load_model(path):\n    meta = json.load(open(path.replace(\".joblib\", \"_meta.json\")))\n    with open(path, \"rb\") as f:\n        if hashlib.sha256(f.read()).hexdigest() != meta[\"sha256\"]:\n            raise RuntimeError(f\"{path} doesn't match the checksum in its metadata\")\n    return joblib.load(path), meta\n\n\ndef score_frame(rows):\n    frame = pd.DataFrame([r.model_dump() for r in rows])[STATE[\"meta\"][\"features\"]]\n    scores = STATE[\"model\"].predict_proba(frame)[:, 1]\n    threshold = STATE[\"meta\"][\"threshold\"]\n    return [Scored(score=round(float(s), 6), decision=\"review\" if s >= threshold else \"approve\")\n            for s in scores]\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    started = time.perf_counter()\n    STATE[\"model\"], STATE[\"meta\"] = load_model(MODEL_PATH)       # fail fast if it can't load\n    example = Transaction(amount=42.5, hour=14, channel=\"app\", account_age_days=400,\n                          tx_last_24h=1, distance_km=3.0)\n    timings = []\n    for _ in range(5):                                           # warm-up: the first calls are slower\n        t = time.perf_counter()\n        score_frame([example])\n        timings.append((time.perf_counter() - t) * 1000)\n    STATE[\"ready\"] = True\n    log.info(\"loaded %s in %.0f ms; warm-up calls took %s ms\", STATE[\"meta\"][\"model_version\"],\n             (time.perf_counter() - started) * 1000, \", \".join(f\"{t:.1f}\" for t in timings))\n    yield\n    STATE[\"ready\"] = False\n\n\napp = FastAPI(title=\"Transaction risk\", lifespan=lifespan)\n\n\n@app.get(\"/health/live\")\ndef live():\n    return {\"status\": \"alive\"}\n\n\n@app.get(\"/health/ready\")\ndef ready():\n    if not STATE[\"ready\"]:\n        raise HTTPException(status_code=503, detail=\"model not loaded yet\")\n    return {\"status\": \"ready\", \"model_version\": STATE[\"meta\"][\"model_version\"]}\n\n\n@app.post(\"/v1/predict\", response_model=Prediction)\ndef predict(tx: Transaction):                   # def, not async def: runs in the thread pool\n    scored = score_frame([tx])[0]\n    return Prediction(**scored.model_dump(), model_version=STATE[\"meta\"][\"model_version\"])\n\n\n@app.post(\"/v1/predict/batch\", response_model=BatchPrediction)\ndef predict_batch(batch: Batch):\n    return BatchPrediction(model_version=STATE[\"meta\"][\"model_version\"],\n                           predictions=score_frame(batch.transactions))\n"
+          },
+          {
+            "path": "test_app.py",
+            "content": "\"\"\"Contract tests for the model server. TestClient used as a context manager runs the lifespan.\"\"\"\nimport pytest\nfrom fastapi.testclient import TestClient\n\nfrom app import app\n\nGOOD = {\"amount\": 42.5, \"hour\": 14, \"channel\": \"app\", \"account_age_days\": 400,\n        \"tx_last_24h\": 1, \"distance_km\": 3.0}\n\n\n@pytest.fixture(scope=\"module\")\ndef client():\n    with TestClient(app) as c:\n        yield c\n\n\ndef test_ready_reports_the_model_version(client):\n    r = client.get(\"/health/ready\")\n    assert r.status_code == 200\n    assert r.json()[\"model_version\"] == \"risk-rf-1.0.0\"\n\n\ndef test_prediction_has_score_decision_and_version(client):\n    body = client.post(\"/v1/predict\", json=GOOD).json()\n    assert 0.0 <= body[\"score\"] <= 1.0\n    assert body[\"decision\"] in (\"approve\", \"review\")\n    assert body[\"model_version\"] == \"risk-rf-1.0.0\"\n\n\n@pytest.mark.parametrize(\"change\", [{\"hour\": 24}, {\"amount\": -5}, {\"channel\": \"fax\"}, {\"amout\": 10}])\ndef test_bad_requests_are_rejected_with_422(client, change):\n    r = client.post(\"/v1/predict\", json={**GOOD, **change})\n    assert r.status_code == 422\n\n\ndef test_batch_matches_single_predictions(client):\n    rows = [GOOD, {**GOOD, \"hour\": 3, \"channel\": \"web\", \"amount\": 900.0}]\n    batch = client.post(\"/v1/predict/batch\", json={\"transactions\": rows}).json()\n    singles = [client.post(\"/v1/predict\", json=r).json()[\"score\"] for r in rows]\n    assert [p[\"score\"] for p in batch[\"predictions\"]] == singles\n\n\ndef test_batch_size_is_limited(client):\n    r = client.post(\"/v1/predict/batch\", json={\"transactions\": [GOOD] * 257})\n    assert r.status_code == 422\n"
+          }
+        ],
+        "hints": [
+          "If pytest shows a deprecation warning from Starlette's test client, it's a notice about a future change in how the test client is installed, not a failure.",
+          "Port 8000 busy? Start Uvicorn with --port 8001 and use that port in the curl commands.",
+          "In PowerShell, use curl.exe, and put the JSON in a file to avoid quoting problems: curl.exe -s -X POST URL -H \"Content-Type: application/json\" -d \"@tx.json\"."
+        ]
+      }
+    },
+    {
+      "title": "Portable, fast models with ONNX",
+      "summary": "Export scikit-learn and PyTorch models to ONNX, run them with onnxruntime, prove the exported model makes the same decisions, and measure what the change buys you.",
+      "instructor": "wei-cheng-liu",
+      "lessons": [
+        {
+          "title": "ONNX and onnxruntime",
+          "minutes": 10,
+          "objectives": [
+            "Explain what an ONNX model contains and what onnxruntime does with it",
+            "Decide when exporting to ONNX is worth it"
+          ],
+          "key_points": [
+            "ONNX (Open Neural Network Exchange) is an open format that stores a model as a graph of standard operators, versioned by opsets, with named, typed inputs and outputs.",
+            "onnxruntime runs ONNX graphs with optimisations such as constant folding and operator fusion, on CPUs through the CPUExecutionProvider and on accelerators through other execution providers.",
+            "Serving an ONNX model needs only onnxruntime and NumPy, not the training framework, which shrinks images, speeds start-up and lets other languages such as C++, C#, Java and JavaScript run the same model.",
+            "Not everything converts: custom Python code, some estimators and unusual operators have no ONNX equivalent, so treat export as a step to verify, not a formality.",
+            "Cap the opsets when converting (target_opset), so a converter upgrade can't silently produce a graph the production runtime can't load, and record the opsets with the model."
+          ]
+        },
+        {
+          "title": "Exporting scikit-learn and PyTorch models",
+          "minutes": 13,
+          "objectives": [
+            "Convert a scikit-learn pipeline with typed per-column inputs",
+            "Export a PyTorch network with a dynamic batch dimension"
+          ],
+          "key_points": [
+            "skl2onnx converts whole pipelines: convert_sklearn(model, initial_types=[...]) needs one typed input per column a ColumnTransformer selects by name, such as FloatTensorType([None, 1]) for numbers and StringTensorType([None, 1]) for text categories.",
+            "For classifiers, options={id(clf): {\"zipmap\": False}} returns probabilities as a plain tensor instead of a list of dictionaries, which is faster and simpler to read.",
+            "PyTorch: torch.onnx.export(model, (example,), path, dynamo=True), with dynamic_shapes marking dimensions such as the batch size as variable. This torch.export-based exporter, the default since PyTorch 2.9, needs the onnxscript package; the older dynamo=False exporter is deprecated.",
+            "Call model.eval() before exporting, so dropout and batch normalisation behave as they do at prediction time, and export with a realistic example input.",
+            "onnx.checker.check_model validates the graph's structure, and listing its inputs, outputs and opsets confirms the contract before anything is deployed."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Export a PyTorch network with a dynamic batch size",
+            "steps": [
+              {
+                "do": "Install PyTorch (the CPU build is enough), onnxscript and onnxruntime.",
+                "code": "pip install torch onnxscript onnxruntime",
+                "lang": "bash"
+              },
+              {
+                "do": "Run the export script from the lab files. It builds a small network, puts it in eval mode and exports it with the batch dimension marked as dynamic.",
+                "code": "python export_torch.py",
+                "lang": "bash",
+                "see": "Progress lines from torch.onnx, then input shape: ['batch', 6]"
+              },
+              {
+                "do": "Read the rest of the output: onnxruntime scored a batch of 32 rows although the example had 4, and the outputs match PyTorch's.",
+                "see": "output shape for a batch of 32: (32, 1) and max abs difference: 3.0e-08"
+              },
+              {
+                "do": "Open export_torch.py and change dynamic_shapes to None, export again and try the batch of 32: onnxruntime now rejects it, because the input shape was fixed at 4 rows.",
+                "see": "An INVALID_ARGUMENT error about the input's dimensions"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Parity, precision and speed",
+          "minutes": 12,
+          "objectives": [
+            "Prove an exported model makes the same decisions as the original",
+            "Configure and benchmark an onnxruntime session"
+          ],
+          "key_points": [
+            "Prove parity before deploying: score the same thousands of real rows with the original and the ONNX model, and compare the largest difference and the number of decisions that change at the threshold.",
+            "The converted graph computes in float32 while scikit-learn's preprocessing uses float64, so a scaler in front of a tree ensemble can push values across split points, as the lab's scaled model shows; trees on unscaled features agree almost exactly.",
+            "Agree tolerances in advance: tiny probability differences are normal, but any decision flip at the threshold needs investigating, and parity should be rechecked whenever the model, the converter or the runtime changes.",
+            "SessionOptions control speed: intra_op_num_threads sets the threads per inference, graph_optimization_level=ORT_ENABLE_ALL enables every graph optimisation, and the session is created once and reused.",
+            "Benchmark the way production runs: warm up first, time many calls, report medians and tails, and compare one-row and batch latency, because per-call overhead and batch throughput tell different stories."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Export the risk model to ONNX, prove parity and benchmark it",
+        "tool": "onnxruntime",
+        "minutes": 50,
+        "goal": "Convert the scikit-learn pipeline to a single ONNX graph, show that onnxruntime gives the same decisions on 20,000 rows, see how a scaler breaks parity for a tree model, and measure one-row and batch latency with both runtimes.",
+        "setup": [
+          "The project folder from the earlier labs, with data/to_score.csv, model.joblib and model_meta.json",
+          "pip install onnx onnxruntime skl2onnx (and torch onnxscript for the lesson's PyTorch export)",
+          "The starter files export_onnx.py, check_parity.py, benchmark.py and export_torch.py"
+        ],
+        "steps": [
+          {
+            "do": "Read export_onnx.py: one FloatTensorType input per numeric column, a StringTensorType for channel, zipmap switched off and the opsets capped. Run it.",
+            "code": "python export_onnx.py",
+            "lang": "bash",
+            "see": "wrote risk.onnx, six inputs, outputs ['label', 'probabilities'] and the opsets used"
+          },
+          {
+            "do": "Compare the two runtimes on 20,000 rows.",
+            "code": "python check_parity.py",
+            "lang": "bash",
+            "see": "max abs difference: 5.87e-08, rows differing by more than 1e-4: 0, decision flips at threshold 0.2: 0, parity ok: True"
+          },
+          {
+            "do": "Now see why parity has to be checked. Train the same forest with a StandardScaler in front, export it and compare.",
+            "code": "python train.py --scale --version risk-rf-scaled --out model_scaled.joblib\npython export_onnx.py --model model_scaled.joblib --out risk_scaled.onnx\npython check_parity.py --model model_scaled.joblib --onnx risk_scaled.onnx",
+            "lang": "bash",
+            "see": "max abs difference: 7.97e-03, rows differing by more than 1e-4: 279 and parity ok: False"
+          },
+          {
+            "do": "Benchmark scikit-learn against onnxruntime, with one thread each, for one row and for 1,000 rows.",
+            "code": "python benchmark.py",
+            "lang": "bash",
+            "see": "Four median timings and the one-row speed-up; the exact numbers depend on your machine"
+          },
+          {
+            "do": "Change options.intra_op_num_threads to 2 in benchmark.py and run it again. Note which timings change and which don't."
+          },
+          {
+            "do": "Write a short parity and performance note: the parity results for both models, why the scaled model disagrees, the speed-ups you measured, and whether ONNX is worth it for this service."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The pipeline was exported with one input per column.",
+            "look_for": [
+              "wrote risk.onnx",
+              "inputs: ['amount', 'hour', 'account_age_days', 'tx_last_24h', 'distance_km', 'channel']"
+            ]
+          },
+          {
+            "text": "The unscaled model passed the parity check with no decision flips.",
+            "look_for": [
+              "decision flips at threshold 0.2: 0",
+              "parity ok: True"
+            ]
+          },
+          {
+            "text": "The scaled model showed float32 differences and failed parity.",
+            "look_for": [
+              "max abs difference: 7.97e-03",
+              "parity ok: False"
+            ]
+          },
+          {
+            "text": "Both runtimes were benchmarked for one row and 1,000 rows.",
+            "look_for": [
+              "onnxruntime, 1 row",
+              "scikit-learn, 1,000 rows",
+              "one-row speed-up with onnxruntime"
+            ]
+          },
+          {
+            "text": "The note explains the scaler's effect in terms of float32 precision.",
+            "look_for": [
+              "float32"
+            ]
+          }
+        ],
+        "submit": "Paste the output of steps 1 to 4 (and of step 5's rerun), and your parity and performance note.",
+        "files": [
+          {
+            "path": "export_onnx.py",
+            "content": "\"\"\"Convert the scikit-learn pipeline (scaler, one-hot encoder and forest) to one ONNX graph.\"\"\"\nimport argparse\n\nimport joblib\nimport onnx\nfrom skl2onnx import convert_sklearn\nfrom skl2onnx.common.data_types import FloatTensorType, StringTensorType\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--model\", default=\"model.joblib\")\nparser.add_argument(\"--out\", default=\"risk.onnx\")\nargs = parser.parse_args()\n\nmodel = joblib.load(args.model)\nNUMERIC = [\"amount\", \"hour\", \"account_age_days\", \"tx_last_24h\", \"distance_km\"]\n\n# One graph input per column, as the ColumnTransformer selects columns by name.\ninitial_types = [(name, FloatTensorType([None, 1])) for name in NUMERIC]\ninitial_types.append((\"channel\", StringTensorType([None, 1])))\n\nonx = convert_sklearn(model, initial_types=initial_types,\n                      options={id(model.named_steps[\"clf\"]): {\"zipmap\": False}},\n                      target_opset={\"\": 17, \"ai.onnx.ml\": 3})    # the newest opsets it may use\nonnx.checker.check_model(onx)\nonnx.save(onx, args.out)\n\nprint(f\"wrote {args.out}\")\nprint(\"inputs:\", [i.name for i in onx.graph.input])\nprint(\"outputs:\", [o.name for o in onx.graph.output])\nprint(\"opsets:\", {o.domain or \"ai.onnx\": o.version for o in onx.opset_import})\n"
+          },
+          {
+            "path": "check_parity.py",
+            "content": "\"\"\"Do scikit-learn and onnxruntime agree? Compare probabilities and, more importantly, decisions.\"\"\"\nimport argparse\nimport json\n\nimport joblib\nimport numpy as np\nimport onnxruntime as ort\nimport pandas as pd\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--model\", default=\"model.joblib\")\nparser.add_argument(\"--onnx\", default=\"risk.onnx\")\nargs = parser.parse_args()\n\nmeta = json.load(open(args.model.replace(\".joblib\", \"_meta.json\")))\nmodel = joblib.load(args.model)\nsession = ort.InferenceSession(args.onnx, providers=[\"CPUExecutionProvider\"])\n\ndf = pd.read_csv(\"data/to_score.csv\", nrows=20000)\nX = df[meta[\"features\"]]\n\n\ndef feeds(frame):\n    \"\"\"onnxruntime wants a dict of named arrays shaped (rows, 1), in the declared types.\"\"\"\n    out = {c: frame[[c]].to_numpy(dtype=np.float32) for c in meta[\"features\"] if c != \"channel\"}\n    out[\"channel\"] = frame[[\"channel\"]].to_numpy(dtype=object)\n    return out\n\n\np_sklearn = model.predict_proba(X)[:, 1]\nlabels, probabilities = session.run(None, feeds(X))\np_onnx = probabilities[:, 1]\n\ndiff = np.abs(p_sklearn - p_onnx)\nflips = int(((p_sklearn >= meta[\"threshold\"]) != (p_onnx >= meta[\"threshold\"])).sum())\nprint(\"input names:\", [i.name for i in session.get_inputs()])\nprint(f\"rows compared: {len(X)}\")\nprint(f\"max abs difference: {diff.max():.2e}, rows differing by more than 1e-4: {(diff > 1e-4).sum()}\")\nprint(f\"decision flips at threshold {meta['threshold']}: {flips}\")\nprint(\"parity ok:\", bool(np.allclose(p_sklearn, p_onnx, atol=1e-4) and flips == 0))\n"
+          },
+          {
+            "path": "benchmark.py",
+            "content": "\"\"\"Time one-row and 1,000-row predictions with scikit-learn and with onnxruntime.\"\"\"\nimport json\nimport statistics\nimport time\n\nimport joblib\nimport numpy as np\nimport onnxruntime as ort\nimport pandas as pd\n\nmeta = json.load(open(\"model_meta.json\"))\nmodel = joblib.load(\"model.joblib\")\noptions = ort.SessionOptions()\noptions.intra_op_num_threads = 1               # one thread, so the comparison is like for like\noptions.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL\nsession = ort.InferenceSession(\"risk.onnx\", options, providers=[\"CPUExecutionProvider\"])\nX = pd.read_csv(\"data/to_score.csv\", nrows=1000)[meta[\"features\"]]\n\n\ndef feeds(frame):\n    out = {c: frame[[c]].to_numpy(dtype=np.float32) for c in meta[\"features\"] if c != \"channel\"}\n    out[\"channel\"] = frame[[\"channel\"]].to_numpy(dtype=object)\n    return out\n\n\ndef median_ms(fn, repeats):\n    fn()                                       # warm-up call, not timed\n    times = []\n    for _ in range(repeats):\n        t = time.perf_counter()\n        fn()\n        times.append((time.perf_counter() - t) * 1000)\n    return statistics.median(times)\n\n\none_row, one_feed, all_feed = X.head(1), feeds(X.head(1)), feeds(X)\nresults = {\n    \"scikit-learn, 1 row\": median_ms(lambda: model.predict_proba(one_row), 200),\n    \"onnxruntime, 1 row\": median_ms(lambda: session.run(None, one_feed), 200),\n    \"scikit-learn, 1,000 rows\": median_ms(lambda: model.predict_proba(X), 30),\n    \"onnxruntime, 1,000 rows\": median_ms(lambda: session.run(None, all_feed), 30),\n}\nfor name, ms in results.items():\n    print(f\"{name:26} median {ms:8.3f} ms\")\nprint(f\"one-row speed-up with onnxruntime: {results['scikit-learn, 1 row'] / results['onnxruntime, 1 row']:.0f}x\")\n"
+          },
+          {
+            "path": "export_torch.py",
+            "content": "\"\"\"Export a small PyTorch network to ONNX with a dynamic batch dimension, then check it.\nNeeds torch and onnxscript: pip install torch onnxscript\"\"\"\nimport numpy as np\nimport onnxruntime as ort\nimport torch\n\ntorch.manual_seed(0)\nnet = torch.nn.Sequential(torch.nn.Linear(6, 16), torch.nn.ReLU(), torch.nn.Linear(16, 1), torch.nn.Sigmoid())\nnet.eval()                                         # inference mode: no dropout or batch-norm updates\nexample = torch.randn(4, 6)\nbatch = torch.export.Dim(\"batch\")                  # the first dimension may vary\n\ntorch.onnx.export(net, (example,), \"net.onnx\", input_names=[\"features\"], output_names=[\"score\"],\n                  dynamic_shapes=({0: batch},), dynamo=True)\n\nsession = ort.InferenceSession(\"net.onnx\", providers=[\"CPUExecutionProvider\"])\nrows = np.random.default_rng(1).normal(size=(32, 6)).astype(np.float32)\nwith torch.no_grad():\n    expected = net(torch.from_numpy(rows)).numpy()\n(got,) = session.run(None, {\"features\": rows})\nprint(\"input shape:\", session.get_inputs()[0].shape)\nprint(\"output shape for a batch of 32:\", got.shape)\nprint(f\"max abs difference: {np.abs(expected - got).max():.1e}\")\n"
+          }
+        ],
+        "hints": [
+          "If skl2onnx reports an unsupported model or option, check its version: pip show skl2onnx. The lab was run with skl2onnx 1.20 and onnxruntime 1.31.",
+          "onnxruntime expects arrays shaped (rows, 1) for each column, float32 for numbers and dtype=object for strings; a plain Python list or a float64 array gives a type error naming the input.",
+          "Timings vary from run to run: run benchmark.py two or three times and report typical values."
+        ]
+      }
+    },
+    {
+      "title": "gRPC, micro-batching and containers",
+      "summary": "Serve the ONNX model over gRPC with deadlines and status codes, batch concurrent requests into single model calls, and package a lean serving image that knows its CPU budget.",
+      "instructor": "wei-cheng-liu",
+      "lessons": [
+        {
+          "title": "gRPC model services",
+          "minutes": 12,
+          "objectives": [
+            "Define a model service in a .proto file and generate its Python code",
+            "Map validation failures to gRPC status codes and set deadlines on calls"
+          ],
+          "key_points": [
+            "A .proto file defines the service, such as rpc Score (Transaction) returns (Prediction), and its messages; python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. risk.proto generates risk_pb2.py (messages) and risk_pb2_grpc.py (the client stub and server base class).",
+            "Fields travel as numbers, not names, and proto3 leaves out fields at their default values, so messages are compact: the lab's transaction is 30 bytes as protobuf and 109 bytes as JSON.",
+            "A Python server is grpc.server(futures.ThreadPoolExecutor(max_workers=8)) with the servicer added. add_insecure_port is for local testing only; anything else should use TLS through grpc.ssl_server_credentials.",
+            "Validate inputs in the servicer and reject them with context.abort(grpc.StatusCode.INVALID_ARGUMENT, \"reason\"); clients catch grpc.RpcError and read err.code() and err.details().",
+            "Give every call a deadline, such as stub.Score(request, timeout=2.0): without one, a stuck server holds the caller indefinitely; with one, the call fails fast with DEADLINE_EXCEEDED."
+          ]
+        },
+        {
+          "title": "Dynamic batching",
+          "minutes": 12,
+          "objectives": [
+            "Explain how micro-batching trades latency for throughput",
+            "Implement a micro-batcher with asyncio"
+          ],
+          "key_points": [
+            "Dynamic (micro-)batching groups requests that arrive close together into one model call: each request waits until max_batch requests have queued or a short max_wait of a few milliseconds has passed, whichever comes first.",
+            "It adds a small, bounded wait in exchange for throughput, because a call's fixed cost is paid once per batch and vectorised code runs more efficiently on many rows at once.",
+            "In asyncio, each request queues its row with a future; a worker drains the queue into a batch, runs the model in a thread with run_in_executor so the event loop keeps accepting requests, then resolves each future.",
+            "Batching pays off when each call has a high fixed cost, like the scikit-learn pipeline, and barely matters when calls are already cheap, like the ONNX model: measure before adding it.",
+            "Tune max_batch and max_wait under realistic load; inference servers such as NVIDIA Triton Inference Server, TorchServe and Ray Serve provide dynamic batching built in."
+          ]
+        },
+        {
+          "title": "Packaging a model server in a container",
+          "minutes": 12,
+          "objectives": [
+            "Build a lean serving image with the model inside it",
+            "Set thread counts and health checks to match the container"
+          ],
+          "key_points": [
+            "A serving image needs only what serving uses: for an ONNX model that's onnxruntime, NumPy and the web framework, not scikit-learn, pandas or the converter, which keeps it smaller and lowers its attack surface.",
+            "Baking the model into the image makes the image digest identify code and model together and lets replicas start without a model store; downloading it at start-up keeps images small but makes every start depend on the store.",
+            "In a container, os.cpu_count() reports the host's CPUs, not the container's CPU limit, so set thread counts such as ORT_THREADS or OMP_NUM_THREADS explicitly to match the CPUs the container is given.",
+            "Point the HEALTHCHECK or the orchestrator's readiness probe at the readiness endpoint, which succeeds only after loading and warm-up, with a start period long enough for the model to load.",
+            "Under an orchestrator, run one server process per container and scale by adding containers; the course Containerisation and Orchestration with Docker and Kubernetes covers images, probes and autoscaling in general."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Serve over gRPC, batch requests and build a container",
+        "tool": "gRPC and Docker",
+        "minutes": 60,
+        "goal": "Generate gRPC code from a .proto contract and serve the ONNX model with validation and deadlines, measure when micro-batching helps, and build and run a lean, non-root serving image with a readiness health check.",
+        "setup": [
+          "The project folder with risk.onnx and model_meta.json from the module 3 lab",
+          "pip install grpcio grpcio-tools onnxruntime \"fastapi[standard]\"",
+          "Docker Desktop or Docker Engine, for the container steps",
+          "The starter files risk.proto, onnx_model.py, grpc_server.py, grpc_client.py, microbatch.py, serve_onnx.py, requirements-serve.txt, Dockerfile and dockerignore.txt"
+        ],
+        "steps": [
+          {
+            "do": "Read risk.proto, then generate the Python code from it.",
+            "code": "python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. risk.proto",
+            "lang": "bash",
+            "see": "risk_pb2.py and risk_pb2_grpc.py appear in the folder"
+          },
+          {
+            "do": "Start the gRPC server and leave it running.",
+            "code": "python grpc_server.py",
+            "lang": "bash",
+            "see": "serving risk-rf-1.0.0 over gRPC on 127.0.0.1:50051"
+          },
+          {
+            "do": "In a second terminal, run the client: message sizes, one call, a batch and a bad request, each with a two-second deadline.",
+            "code": "python grpc_client.py",
+            "lang": "bash",
+            "see": "request size: protobuf 30 bytes, JSON 109 bytes, then the scores, then rejected: INVALID_ARGUMENT - unknown channel 'fax'"
+          },
+          {
+            "do": "Stop the server. Run the micro-batcher with the scikit-learn pipeline and then with the ONNX model, and compare the timings.",
+            "code": "python microbatch.py --backend sklearn\npython microbatch.py --backend onnx",
+            "lang": "bash",
+            "see": "200 requests served in 7 batches: [32, 32, 32, 32, 32, 32, 8] and results match one call per request: True, for both backends"
+          },
+          {
+            "do": "Read Dockerfile and requirements-serve.txt: a slim Python base, only the serving libraries, the model copied in, a non-root user, ORT_THREADS=1 and a HEALTHCHECK on /health/ready. Rename dockerignore.txt to .dockerignore, then build.",
+            "code": "docker build -t risk-onnx:1.0.0 .",
+            "lang": "bash",
+            "see": "Successfully built or naming to docker.io/library/risk-onnx:1.0.0"
+          },
+          {
+            "do": "Run it with a one-CPU limit, matching ORT_THREADS, and call it.",
+            "code": "docker run -d --name risk -p 8000:8000 --cpus 1 risk-onnx:1.0.0\ncurl -s -X POST http://127.0.0.1:8000/v1/predict -H \"Content-Type: application/json\" \\\n  -d '{\"amount\": 900, \"hour\": 3, \"channel\": \"web\", \"account_age_days\": 20, \"tx_last_24h\": 6, \"distance_km\": 80}'",
+            "lang": "bash",
+            "see": "{\"score\":0.643934,\"decision\":\"review\",\"model_version\":\"risk-rf-1.0.0\"}"
+          },
+          {
+            "do": "After half a minute, check the health status, the user the server runs as and the start-up log.",
+            "code": "docker ps --filter name=risk\ndocker exec risk whoami\ndocker logs risk",
+            "lang": "bash",
+            "see": "Up ... (healthy), app, and the ready: line with the model's checksum"
+          },
+          {
+            "do": "Compare the image size with your training environment and clean up.",
+            "code": "docker images risk-onnx\ndocker rm -f risk",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The gRPC client got predictions and a structured rejection.",
+            "look_for": [
+              "score=0.0345 decision=approve model_version=risk-rf-1.0.0",
+              "rejected: INVALID_ARGUMENT - unknown channel 'fax'"
+            ]
+          },
+          {
+            "text": "The message sizes were compared.",
+            "look_for": [
+              "request size: protobuf 30 bytes, JSON 109 bytes"
+            ]
+          },
+          {
+            "text": "The micro-batcher formed seven batches and matched unbatched results.",
+            "look_for": [
+              "200 requests served in 7 batches: [32, 32, 32, 32, 32, 32, 8]",
+              "results match one call per request: True"
+            ]
+          },
+          {
+            "text": "The container answered with the same score as the Python server.",
+            "look_for": [
+              "\"score\":0.643934",
+              "risk-rf-1.0.0"
+            ]
+          },
+          {
+            "text": "The container was healthy and ran as a non-root user.",
+            "look_for": [
+              "(healthy)",
+              "app"
+            ]
+          }
+        ],
+        "submit": "Paste the output of grpc_client.py, both micro-batcher runs, the container's prediction, and the output of docker ps, whoami and docker images, with two sentences on when micro-batching helped.",
+        "files": [
+          {
+            "path": "risk.proto",
+            "content": "syntax = \"proto3\";\n\npackage risk.v1;\n\n// The contract: field numbers, not names, go on the wire, so never reuse or renumber them.\nservice RiskScorer {\n  rpc Score (Transaction) returns (Prediction);\n  rpc ScoreBatch (TransactionBatch) returns (PredictionBatch);\n}\n\nmessage Transaction {\n  double amount = 1;\n  int32 hour = 2;\n  string channel = 3;\n  int32 account_age_days = 4;\n  int32 tx_last_24h = 5;\n  double distance_km = 6;\n}\n\nmessage Prediction {\n  double score = 1;\n  string decision = 2;\n  string model_version = 3;\n}\n\nmessage TransactionBatch {\n  repeated Transaction transactions = 1;\n}\n\nmessage PredictionBatch {\n  repeated Prediction predictions = 1;\n  string model_version = 2;\n}\n"
+          },
+          {
+            "path": "onnx_model.py",
+            "content": "\"\"\"The ONNX risk model, shared by the gRPC server, the micro-batcher and the HTTP server.\"\"\"\nimport hashlib\nimport json\nimport os\n\nimport numpy as np\nimport onnxruntime as ort\n\nNUMERIC = [\"amount\", \"hour\", \"account_age_days\", \"tx_last_24h\", \"distance_km\"]\nCHANNELS = (\"web\", \"app\", \"pos\")\n\n\nclass RiskModel:\n    def __init__(self, path=\"risk.onnx\", meta_path=\"model_meta.json\"):\n        self.meta = json.load(open(meta_path))\n        with open(path, \"rb\") as f:\n            self.sha256 = hashlib.sha256(f.read()).hexdigest()\n        options = ort.SessionOptions()\n        # Threads per process: keep workers x threads at or below the CPUs you are given.\n        options.intra_op_num_threads = int(os.environ.get(\"ORT_THREADS\", \"1\"))\n        self.session = ort.InferenceSession(path, options, providers=[\"CPUExecutionProvider\"])\n        self.version = self.meta[\"model_version\"]\n        self.threshold = self.meta[\"threshold\"]\n\n    def scores(self, rows):\n        \"\"\"rows: a list of dicts with the six feature names. Returns one probability per row.\"\"\"\n        feeds = {c: np.array([[r[c]] for r in rows], dtype=np.float32) for c in NUMERIC}\n        feeds[\"channel\"] = np.array([[r[\"channel\"]] for r in rows], dtype=object)\n        _, probabilities = self.session.run(None, feeds)\n        return probabilities[:, 1].astype(float)\n\n    def decision(self, score):\n        return \"review\" if score >= self.threshold else \"approve\"\n"
+          },
+          {
+            "path": "grpc_server.py",
+            "content": "\"\"\"A gRPC model service: typed messages, input checks mapped to status codes, and the ONNX model.\nGenerate the stubs first: python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. risk.proto\"\"\"\nfrom concurrent import futures\n\nimport grpc\n\nimport risk_pb2\nimport risk_pb2_grpc\nfrom onnx_model import CHANNELS, NUMERIC, RiskModel\n\nMODEL = RiskModel()\nFIELDS = NUMERIC + [\"channel\"]\n\n\ndef check(tx, context):\n    if tx.channel not in CHANNELS:\n        context.abort(grpc.StatusCode.INVALID_ARGUMENT, f\"unknown channel {tx.channel!r}\")\n    if not 0 <= tx.hour <= 23:\n        context.abort(grpc.StatusCode.INVALID_ARGUMENT, \"hour must be between 0 and 23\")\n    if tx.amount <= 0:\n        context.abort(grpc.StatusCode.INVALID_ARGUMENT, \"amount must be positive\")\n\n\ndef predictions(txs):\n    rows = [{f: getattr(t, f) for f in FIELDS} for t in txs]\n    return [risk_pb2.Prediction(score=s, decision=MODEL.decision(s), model_version=MODEL.version)\n            for s in MODEL.scores(rows)]\n\n\nclass RiskScorer(risk_pb2_grpc.RiskScorerServicer):\n    def Score(self, request, context):\n        check(request, context)\n        return predictions([request])[0]\n\n    def ScoreBatch(self, request, context):\n        if not 1 <= len(request.transactions) <= 256:\n            context.abort(grpc.StatusCode.INVALID_ARGUMENT, \"send between 1 and 256 transactions\")\n        for tx in request.transactions:\n            check(tx, context)\n        return risk_pb2.PredictionBatch(predictions=predictions(request.transactions),\n                                        model_version=MODEL.version)\n\n\ndef serve():\n    server = grpc.server(futures.ThreadPoolExecutor(max_workers=8))\n    risk_pb2_grpc.add_RiskScorerServicer_to_server(RiskScorer(), server)\n    server.add_insecure_port(\"127.0.0.1:50051\")      # local only: use TLS credentials anywhere else\n    server.start()\n    print(f\"serving {MODEL.version} over gRPC on 127.0.0.1:50051\", flush=True)\n    server.wait_for_termination()\n\n\nif __name__ == \"__main__\":\n    serve()\n"
+          },
+          {
+            "path": "grpc_client.py",
+            "content": "\"\"\"Call the gRPC service: one transaction, a batch, and a bad request. Every call has a deadline.\"\"\"\nimport json\n\nimport grpc\n\nimport risk_pb2\nimport risk_pb2_grpc\n\nfields = dict(amount=42.5, hour=14, channel=\"app\", account_age_days=400, tx_last_24h=1, distance_km=3.0)\ntx = risk_pb2.Transaction(**fields)\nrisky = risk_pb2.Transaction(amount=900.0, hour=3, channel=\"web\", account_age_days=20,\n                             tx_last_24h=6, distance_km=80.0)\nprint(f\"request size: protobuf {len(tx.SerializeToString())} bytes, JSON {len(json.dumps(fields).encode())} bytes\")\n\nwith grpc.insecure_channel(\"127.0.0.1:50051\") as channel:\n    stub = risk_pb2_grpc.RiskScorerStub(channel)\n    reply = stub.Score(tx, timeout=2.0)            # the deadline: give up after two seconds\n    print(f\"score={reply.score:.4f} decision={reply.decision} model_version={reply.model_version}\")\n\n    batch = stub.ScoreBatch(risk_pb2.TransactionBatch(transactions=[tx, risky]), timeout=2.0)\n    print(\"batch:\", [(round(p.score, 4), p.decision) for p in batch.predictions])\n\n    try:\n        stub.Score(risk_pb2.Transaction(amount=10.0, hour=25, channel=\"fax\"), timeout=2.0)\n    except grpc.RpcError as err:\n        print(f\"rejected: {err.code().name} - {err.details()}\")\n"
+          },
+          {
+            "path": "microbatch.py",
+            "content": "\"\"\"Micro-batching: hold requests for a few milliseconds, score them in one call, answer each one.\nRun it with --backend sklearn and --backend onnx: batching pays off when each call has a high\nfixed cost, and hardly matters when calls are already cheap.\"\"\"\nimport argparse\nimport asyncio\nimport time\n\nimport numpy as np\nimport pandas as pd\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--backend\", choices=[\"sklearn\", \"onnx\"], default=\"sklearn\")\nparser.add_argument(\"--requests\", type=int, default=200)\nargs = parser.parse_args()\n\nif args.backend == \"onnx\":\n    from onnx_model import RiskModel\n    score_rows = RiskModel().scores\nelse:\n    import json\n\n    import joblib\n    pipeline = joblib.load(\"model.joblib\")\n    features = json.load(open(\"model_meta.json\"))[\"features\"]\n\n    def score_rows(rows):\n        return pipeline.predict_proba(pd.DataFrame(rows)[features])[:, 1]\n\n\nclass MicroBatcher:\n    def __init__(self, max_batch=32, max_wait_ms=5.0):\n        self.max_batch, self.max_wait = max_batch, max_wait_ms / 1000\n        self.queue = asyncio.Queue()\n        self.batch_sizes = []\n\n    async def submit(self, row):\n        future = asyncio.get_running_loop().create_future()\n        await self.queue.put((row, future))\n        return await future                       # resolved by run() when the batch is scored\n\n    async def run(self):\n        loop = asyncio.get_running_loop()\n        while True:\n            items = [await self.queue.get()]      # wait for the first request\n            deadline = time.perf_counter() + self.max_wait\n            while len(items) < self.max_batch:\n                try:\n                    items.append(self.queue.get_nowait())     # take what is already waiting\n                    continue\n                except asyncio.QueueEmpty:\n                    pass\n                remaining = deadline - time.perf_counter()\n                if remaining <= 0:\n                    break\n                try:\n                    items.append(await asyncio.wait_for(self.queue.get(), remaining))\n                except asyncio.TimeoutError:\n                    break\n            self.batch_sizes.append(len(items))\n            rows = [row for row, _ in items]\n            # Inference runs in a worker thread, so the event loop keeps accepting requests.\n            scores = await loop.run_in_executor(None, score_rows, rows)\n            for (_, future), score in zip(items, scores):\n                future.set_result(float(score))\n\n\nasync def main():\n    rows = pd.read_csv(\"data/to_score.csv\", nrows=args.requests).to_dict(\"records\")\n    batcher = MicroBatcher(max_batch=32, max_wait_ms=5)\n    worker = asyncio.create_task(batcher.run())\n    start = time.perf_counter()\n    batched = await asyncio.gather(*(batcher.submit(r) for r in rows))\n    batched_ms = (time.perf_counter() - start) * 1000\n    worker.cancel()\n\n    start = time.perf_counter()\n    singles = [score_rows([r])[0] for r in rows]             # one model call per request\n    single_ms = (time.perf_counter() - start) * 1000\n\n    print(f\"backend: {args.backend}\")\n    print(f\"{len(rows)} requests served in {len(batcher.batch_sizes)} batches: {batcher.batch_sizes}\")\n    print(\"results match one call per request:\", bool(np.allclose(batched, singles)))\n    print(f\"total time: micro-batched {batched_ms:.0f} ms, one call per request {single_ms:.0f} ms\")\n\n\nasyncio.run(main())\n"
+          },
+          {
+            "path": "serve_onnx.py",
+            "content": "\"\"\"The HTTP model server for the container: the same contract as the module 2 server,\nbut onnxruntime instead of scikit-learn, so the image needs no training libraries.\"\"\"\nimport logging\nfrom contextlib import asynccontextmanager\nfrom typing import Literal\n\nfrom fastapi import FastAPI, HTTPException\nfrom pydantic import BaseModel, ConfigDict, Field\n\nfrom onnx_model import RiskModel\n\nlog = logging.getLogger(\"risk\")\nlogging.basicConfig(level=logging.INFO, format=\"%(levelname)s %(name)s: %(message)s\")\nSTATE = {\"model\": None}\n\n\nclass Transaction(BaseModel):\n    model_config = ConfigDict(extra=\"forbid\")\n    amount: float = Field(gt=0, le=50_000)\n    hour: int = Field(ge=0, le=23)\n    channel: Literal[\"web\", \"app\", \"pos\"]\n    account_age_days: int = Field(ge=0, le=36_500)\n    tx_last_24h: int = Field(ge=0, le=1_000)\n    distance_km: float = Field(ge=0, le=20_000)\n\n\n@asynccontextmanager\nasync def lifespan(app: FastAPI):\n    model = RiskModel()\n    warm = {\"amount\": 42.5, \"hour\": 14, \"channel\": \"app\", \"account_age_days\": 400,\n            \"tx_last_24h\": 1, \"distance_km\": 3.0}\n    for _ in range(5):\n        model.scores([warm])                 # warm up before declaring readiness\n    STATE[\"model\"] = model\n    log.info(\"ready: %s (risk.onnx sha256 %s...)\", model.version, model.sha256[:12])\n    yield\n    STATE[\"model\"] = None\n\n\napp = FastAPI(title=\"Transaction risk (ONNX)\", lifespan=lifespan)\n\n\n@app.get(\"/health/live\")\ndef live():\n    return {\"status\": \"alive\"}\n\n\n@app.get(\"/health/ready\")\ndef ready():\n    if STATE[\"model\"] is None:\n        raise HTTPException(status_code=503, detail=\"model not loaded yet\")\n    return {\"status\": \"ready\", \"model_version\": STATE[\"model\"].version}\n\n\n@app.post(\"/v1/predict\")\ndef predict(tx: Transaction):\n    model = STATE[\"model\"]\n    score = float(model.scores([tx.model_dump()])[0])\n    return {\"score\": round(score, 6), \"decision\": model.decision(score), \"model_version\": model.version}\n"
+          },
+          {
+            "path": "requirements-serve.txt",
+            "content": "# Serving needs only these: no scikit-learn, pandas or skl2onnx in the image.\nfastapi==0.146.0\nuvicorn==0.54.0\nonnxruntime==1.31.0\nnumpy==2.5.4\n"
+          },
+          {
+            "path": "Dockerfile",
+            "content": "# A small serving image: onnxruntime and FastAPI, the model baked in, a non-root user.\nFROM python:3.12-slim\n\nENV PYTHONDONTWRITEBYTECODE=1 \\\n    PYTHONUNBUFFERED=1 \\\n    ORT_THREADS=1\n\nRUN useradd --create-home --uid 10001 app\nWORKDIR /srv\n\nCOPY requirements-serve.txt .\nRUN pip install --no-cache-dir -r requirements-serve.txt\n\n# The model is part of the image, so the image tag and digest identify the model too.\nCOPY onnx_model.py serve_onnx.py risk.onnx model_meta.json ./\n\nUSER app\nEXPOSE 8000\nHEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \\\n  CMD [\"python\", \"-c\", \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)\"]\nCMD [\"uvicorn\", \"serve_onnx:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\", \"--workers\", \"1\"]\n"
+          },
+          {
+            "path": "dockerignore.txt",
+            "content": "# Rename to .dockerignore: keeps data, training models and caches out of the build context.\ndata/\nscores/\n*.joblib\n__pycache__/\n.venv/\n*.jsonl\n"
+          }
+        ],
+        "hints": [
+          "ModuleNotFoundError: risk_pb2 means the code generation step hasn't been run in this folder.",
+          "If the build fails on a pinned version, check that Python 3.12 wheels exist for it with pip download, or use the versions in your own working environment and pin those instead.",
+          "The health status shows (health: starting) during the start period; wait for the first successful check before reading it.",
+          "On Apple silicon or Windows on Arm, Docker builds an arm64 image; onnxruntime publishes wheels for both architectures."
+        ]
+      }
+    },
+    {
+      "title": "Safe releases, load testing and capacity",
+      "summary": "Release a candidate model through a sticky canary and a shadow, compare it on live requests, load-test the service without fooling yourself, and turn the results into a capacity plan.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "Canary and shadow releases in practice",
+          "minutes": 13,
+          "objectives": [
+            "Route a canary by a stable hash so users see one model consistently",
+            "Run a shadow model without letting it affect responses"
+          ],
+          "key_points": [
+            "Route canary traffic by a stable key, such as hashing the user ID into 100 buckets and sending buckets below the canary percentage to the candidate. Python's built-in hash() is randomised per process, so use a real hash such as SHA-256.",
+            "In shadow mode the champion answers every request while the candidate scores a copy in the background; its result is logged, never returned, and it must never trigger side effects such as blocking a card.",
+            "Shadowing adds inference work for every mirrored request, so give the candidate its own capacity or mirror a sample, and make sure a shadow failure or slowdown can't touch the response.",
+            "Compare the models on the same requests: the share of decisions that would change, each model's review rate and the size of score differences. A shadow can't show outcomes; those need the canary or labels that arrive later.",
+            "Widen a canary in steps, such as 1%, 10% and 50%, against written guardrails on errors, latency and decision rates, and roll back by setting the share to zero: a configuration change, not a redeploy."
+          ]
+        },
+        {
+          "title": "Load testing a model service",
+          "minutes": 13,
+          "objectives": [
+            "Run an open-loop load test that avoids coordinated omission",
+            "Find the knee where latency stops scaling with load"
+          ],
+          "key_points": [
+            "A closed-loop test keeps a fixed number of virtual users who each wait for a reply before sending again; an open-loop test sends at a fixed arrival rate regardless of replies, the way independent users behave.",
+            "Coordinated omission: a closed-loop client facing a slow server sends fewer requests and records fewer slow ones, so latency looks better than users experience. Measure each request from the moment it was due.",
+            "Raise the rate in stages and record achieved throughput, errors and p50, p95 and p99 at each; the knee is where latency climbs steeply while throughput stops rising, and the safe operating point lies below it.",
+            "Little's law links them: requests in flight = arrival rate × time in the system, so 200 requests per second at 50 ms means about 10 in flight, a useful check on worker and connection limits.",
+            "Test with production-like payloads, a warmed-up server and production's instance size and settings. Locust and k6 are widely used tools, and open-loop tools such as vegeta suit fixed-rate tests."
+          ]
+        },
+        {
+          "title": "Capacity, scaling and cost",
+          "minutes": 11,
+          "objectives": [
+            "Turn load-test results into a replica count with headroom",
+            "Choose scaling signals that fit inference workloads"
+          ],
+          "key_points": [
+            "A replica's capacity is the highest rate it sustains while meeting the latency objective, read from the load test, not inferred from CPU usage.",
+            "Replicas needed = peak rate ÷ capacity per replica, rounded up, plus headroom for losing a replica and for spikes: 900 requests per second at 250 per replica needs 4 replicas, and 5 keeps the objective if one fails.",
+            "Scale on signals that track inference load, such as requests in flight or queue length, as well as CPU; CPU alone can react late when requests queue behind a saturated thread pool.",
+            "A new replica of a large model can take minutes to load and warm up, so keep a minimum number running and scale before queues build, not after.",
+            "Cost per prediction falls with batching, right-sized threads and a lighter runtime such as ONNX, and by precomputing in batch whatever doesn't have to be computed at request time."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Release a candidate with canary and shadow, then load-test it",
+        "tool": "FastAPI",
+        "minutes": 60,
+        "goal": "Put a candidate model behind a router that serves a sticky 10% canary and shadows everyone else, measure how often its decisions would differ, then run an open-loop load test to find the service's knee with and without the shadow.",
+        "setup": [
+          "The project folder with app.py, model.joblib and the data from the earlier labs",
+          "httpx installed (it comes with fastapi[standard])",
+          "The starter files router.py, send_traffic.py, analyse_shadow.py and loadtest.py"
+        ],
+        "steps": [
+          {
+            "do": "Train the candidate: more and deeper trees, a new version number.",
+            "code": "python train.py --trees 200 --depth 12 --version risk-rf-1.1.0 --out model_v2.joblib",
+            "lang": "bash",
+            "see": "saved model_v2.joblib (risk-rf-1.1.0): val_auc=0.9027, review rate at 0.2: 0.050"
+          },
+          {
+            "do": "Read router.py: bucket() hashes the user ID with SHA-256, CANARY_PERCENT picks the canary buckets, and shadow() runs as a background task after the response, with its own error handling. Start it.",
+            "code": "uvicorn router:app --port 8000",
+            "lang": "bash"
+          },
+          {
+            "do": "In a second terminal, send one request and look at served_by. Then delete the shadow log so the analysis covers only the replay.",
+            "code": "curl -s -X POST http://127.0.0.1:8000/v1/predict -H \"Content-Type: application/json\" \\\n  -d '{\"user_id\": \"u00042\", \"amount\": 900, \"hour\": 3, \"channel\": \"web\", \"account_age_days\": 20, \"tx_last_24h\": 6, \"distance_km\": 80}'\nrm shadow_log.jsonl",
+            "lang": "bash",
+            "see": "\"model_version\":\"risk-rf-1.0.0\",\"served_by\":\"champion\""
+          },
+          {
+            "do": "Replay 2,000 transactions through the router.",
+            "code": "python send_traffic.py",
+            "lang": "bash",
+            "see": "requests: 2000, served by champion: 1799, by candidate: 201 (10.1%) and users seen by both models: 0"
+          },
+          {
+            "do": "Analyse the shadow log: how often would the candidate change the decision?",
+            "code": "python analyse_shadow.py",
+            "lang": "bash",
+            "see": "shadowed requests: 1799, decision changes: 22 (1.2%), review rate: champion 3.9%, candidate 5.0%"
+          },
+          {
+            "do": "Load-test the router at rising rates. Expect latency to explode past the knee; the rates where that happens depend on your machine.",
+            "code": "python loadtest.py --rates 20,50,100,200 --seconds 10",
+            "lang": "bash",
+            "see": "A table of rate, sent, done/s, errors and p50, p95 and p99 for each stage"
+          },
+          {
+            "do": "Restart the router with the shadow switched off and run the same load test.",
+            "code": "SHADOW=off uvicorn router:app --port 8000        # PowerShell: $env:SHADOW=\"off\"; uvicorn ...",
+            "lang": "bash"
+          },
+          {
+            "do": "Write a release note: the canary share and its stickiness, the shadow comparison, the knee with and without the shadow, a capacity estimate for 300 requests per second with headroom, and whether you'd widen the canary."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The candidate was trained with its own version.",
+            "look_for": [
+              "saved model_v2.joblib (risk-rf-1.1.0)"
+            ]
+          },
+          {
+            "text": "The canary took about 10% of traffic and no user saw both models.",
+            "look_for": [
+              "served by champion: 1799, by candidate: 201 (10.1%)",
+              "users seen by both models: 0"
+            ]
+          },
+          {
+            "text": "The shadow comparison was measured on the champion's traffic.",
+            "look_for": [
+              "shadowed requests: 1799",
+              "decision changes: 22 (1.2%)",
+              "candidate 5.0%"
+            ]
+          },
+          {
+            "text": "The load test reported percentiles at several rates.",
+            "look_for": [
+              "p50 ms",
+              "p99 ms",
+              "done/s"
+            ]
+          },
+          {
+            "text": "The note gives a knee, a replica estimate with headroom and a release decision.",
+            "look_for": [
+              "knee",
+              "replica"
+            ]
+          }
+        ],
+        "submit": "Paste the output of steps 1, 4 and 5, both load-test tables, and your release note.",
+        "files": [
+          {
+            "path": "router.py",
+            "content": "\"\"\"Canary and shadow in one service. A stable hash of the user ID sends CANARY_PERCENT of users to\nthe candidate; everyone else gets the champion, and the candidate scores their request in the\nbackground (the shadow) without ever changing the answer.\"\"\"\nimport hashlib\nimport json\nimport os\nimport threading\nimport uuid\n\nimport pandas as pd\nfrom fastapi import BackgroundTasks, FastAPI\nfrom pydantic import Field\n\nfrom app import Transaction, load_model          # the validated schema and checksum loader from module 2\n\nCANARY_PERCENT = int(os.environ.get(\"CANARY_PERCENT\", \"10\"))\nSHADOW = os.environ.get(\"SHADOW\", \"on\") == \"on\"\nCHAMPION = load_model(\"model.joblib\")\nCANDIDATE = load_model(\"model_v2.joblib\")\nLOG_LOCK = threading.Lock()\napp = FastAPI(title=\"Risk router\")\n\n\nclass RoutedTransaction(Transaction):\n    user_id: str = Field(min_length=1, max_length=64)\n\n\ndef bucket(user_id: str) -> int:\n    \"\"\"0-99, the same for a user on every request and every server. Python's hash() won't do:\n    it is randomised per process.\"\"\"\n    return int(hashlib.sha256(user_id.encode()).hexdigest()[:8], 16) % 100\n\n\ndef score(entry, tx):\n    model, meta = entry\n    frame = pd.DataFrame([tx.model_dump()])[meta[\"features\"]]\n    s = float(model.predict_proba(frame)[0, 1])\n    return s, (\"review\" if s >= meta[\"threshold\"] else \"approve\"), meta[\"model_version\"]\n\n\ndef shadow(request_id, tx, champion_score, champion_decision):\n    try:\n        s, decision, version = score(CANDIDATE, tx)\n        record = {\"request_id\": request_id, \"user_id\": tx.user_id, \"champion_score\": round(champion_score, 6),\n                  \"champion_decision\": champion_decision, \"candidate_score\": round(s, 6),\n                  \"candidate_decision\": decision, \"candidate_version\": version}\n        with LOG_LOCK, open(\"shadow_log.jsonl\", \"a\") as f:\n            f.write(json.dumps(record) + \"\\n\")\n    except Exception as err:                  # a shadow failure must never reach the caller\n        print(f\"shadow failed for {request_id}: {err!r}\")\n\n\n@app.post(\"/v1/predict\")\ndef predict(tx: RoutedTransaction, background: BackgroundTasks):\n    request_id = uuid.uuid4().hex[:12]\n    canary = bucket(tx.user_id) < CANARY_PERCENT\n    s, decision, version = score(CANDIDATE if canary else CHAMPION, tx)\n    if SHADOW and not canary:\n        background.add_task(shadow, request_id, tx, s, decision)   # runs after the response is sent\n    return {\"request_id\": request_id, \"score\": round(s, 6), \"decision\": decision,\n            \"model_version\": version, \"served_by\": \"candidate\" if canary else \"champion\"}\n"
+          },
+          {
+            "path": "send_traffic.py",
+            "content": "\"\"\"Replay 2,000 transactions through the router and count who served them.\"\"\"\nimport argparse\nfrom collections import Counter\n\nimport httpx\nimport pandas as pd\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--url\", default=\"http://127.0.0.1:8000\")\nargs = parser.parse_args()\n\nrows = pd.read_csv(\"data/to_score.csv\", nrows=2000)\nfields = [\"user_id\", \"amount\", \"hour\", \"channel\", \"account_age_days\", \"tx_last_24h\", \"distance_km\"]\nserved, users = Counter(), {\"candidate\": set(), \"champion\": set()}\nwith httpx.Client(base_url=args.url, timeout=5.0) as client:\n    for row in rows[fields].to_dict(\"records\"):\n        reply = client.post(\"/v1/predict\", json=row)\n        reply.raise_for_status()\n        who = reply.json()[\"served_by\"]\n        served[who] += 1\n        users[who].add(row[\"user_id\"])\n\ntotal = sum(served.values())\nprint(f\"requests: {total}, served by champion: {served['champion']}, by candidate: {served['candidate']} \"\n      f\"({served['candidate'] / total:.1%})\")\nprint(\"users seen by both models:\", len(users[\"candidate\"] & users[\"champion\"]))\n"
+          },
+          {
+            "path": "analyse_shadow.py",
+            "content": "\"\"\"Compare champion and candidate on the shadowed traffic: how often would the answer change?\"\"\"\nimport pandas as pd\n\nlog = pd.read_json(\"shadow_log.jsonl\", lines=True)\nchanged = log.champion_decision != log.candidate_decision\nprint(f\"shadowed requests: {len(log)}\")\nprint(f\"decision changes: {changed.sum()} ({changed.mean():.1%})\")\nprint(f\"review rate: champion {(log.champion_decision == 'review').mean():.1%}, \"\n      f\"candidate {(log.candidate_decision == 'review').mean():.1%}\")\nprint(f\"mean absolute score difference: {(log.champion_score - log.candidate_score).abs().mean():.4f}\")\nprint(\"changes by direction:\")\nprint(log[changed].groupby([\"champion_decision\", \"candidate_decision\"]).size().to_string())\n"
+          },
+          {
+            "path": "loadtest.py",
+            "content": "\"\"\"An open-loop load test: requests are sent on a fixed schedule whether or not earlier ones have\nfinished, and latency is measured from when each request was due. That avoids coordinated\nomission, where a slow server quietly gets fewer requests and its latency looks better than it is.\"\"\"\nimport argparse\nimport asyncio\nimport statistics\nimport time\n\nimport httpx\nimport pandas as pd\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--url\", default=\"http://127.0.0.1:8000/v1/predict\")\nparser.add_argument(\"--rates\", default=\"20,50,100,200\", help=\"requests per second to try, in order\")\nparser.add_argument(\"--seconds\", type=float, default=10)\nargs = parser.parse_args()\n\nrows = pd.read_csv(\"data/to_score.csv\", nrows=500)\nfields = [\"user_id\", \"amount\", \"hour\", \"channel\", \"account_age_days\", \"tx_last_24h\", \"distance_km\"]\npayloads = rows[fields].to_dict(\"records\")\n\n\ndef pct(values, q):\n    return statistics.quantiles(values, n=100)[q - 1] if len(values) > 1 else float(\"nan\")\n\n\nasync def one(client, payload, due, latencies, errors):\n    await asyncio.sleep(max(0.0, due - time.perf_counter()))\n    try:\n        r = await client.post(args.url, json=payload)\n        r.raise_for_status()\n        latencies.append((time.perf_counter() - due) * 1000)   # from when it was due, not sent\n    except httpx.HTTPError:\n        errors.append(due)\n\n\nasync def stage(client, rate):\n    n = int(rate * args.seconds)\n    start = time.perf_counter() + 0.2\n    latencies, errors = [], []\n    await asyncio.gather(*(one(client, payloads[i % len(payloads)], start + i / rate, latencies, errors)\n                           for i in range(n)))\n    elapsed = time.perf_counter() - start\n    print(f\"{rate:>6} {n:>6} {len(latencies) / elapsed:>9.1f} {len(errors):>6} \"\n          f\"{pct(latencies, 50):>8.1f} {pct(latencies, 95):>8.1f} {pct(latencies, 99):>8.1f}\")\n\n\nasync def main():\n    limits = httpx.Limits(max_connections=500, max_keepalive_connections=500)\n    async with httpx.AsyncClient(timeout=10.0, limits=limits) as client:\n        for p in payloads[:20]:                                  # warm-up, not measured\n            await client.post(args.url, json=p)\n        print(f\"{'rate':>6} {'sent':>6} {'done/s':>9} {'errors':>6} {'p50 ms':>8} {'p95 ms':>8} {'p99 ms':>8}\")\n        for rate in [int(r) for r in args.rates.split(\",\")]:\n            await stage(client, rate)\n\n\nasyncio.run(main())\n"
+          }
+        ],
+        "hints": [
+          "router.py imports Transaction and load_model from app.py, so run it in the folder that holds the module 2 server.",
+          "If every stage of the load test shows errors, the rates are too high for your machine: start lower, such as --rates 10,20,40,80.",
+          "Little's law is a quick sanity check on your table: done per second × average latency in seconds should roughly equal the number of requests in flight.",
+          "The candidate's review rate is higher: whether that's acceptable depends on how many reviews the fraud team can handle, which belongs in the release note."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Set latency objectives, design the prediction contract and build the resumable batch scoring job.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Build and test the FastAPI model server with validation, warm-up and readiness.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Export the model to ONNX, prove parity and benchmark the two runtimes.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Serve over gRPC, measure micro-batching and build the serving container.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Release a candidate through a canary and a shadow, then load-test and size the service.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the capstone service, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Ship a transaction-risk service ready for production traffic",
+    "minutes": 540,
+    "brief": "A payments team wants the transaction-risk model scoring live card payments, with a nightly batch re-score of the day's transactions for the fraud analysts. Build the serving system for it from the course's model and data (or a model of your own with at least five features). Export the model to ONNX and prove parity; serve it over HTTP with strict validation, verified loading, warm-up, separate liveness and readiness, a bounded batch endpoint and the model version on every answer; add either a gRPC endpoint or micro-batching, justified by measurement; package it as a lean, non-root container image with a health check and a set thread budget; write the resumable nightly batch job; release a second model version through a sticky canary with a shadow comparison and a documented rollback; and load-test the service open-loop to find its knee and size it for a peak of 300 requests per second with headroom.",
+    "deliverables": [
+      "The code: ONNX export and parity check, the HTTP server and its tests, the gRPC or micro-batching component, the batch job, the router and the load-test script",
+      "The Dockerfile, the requirements file and the output of building and running the image (healthy, non-root)",
+      "A parity report: rows compared, largest difference and decision flips at the threshold",
+      "The canary and shadow results for the second model version, and the rollback procedure",
+      "A load-test report: the open-loop table, the knee, the capacity per replica and the replica count for the peak with headroom",
+      "A short runbook: how to deploy, check readiness, widen or roll back the canary and rerun a failed batch"
+    ],
+    "rubric": [
+      {
+        "name": "Correct, validated service",
+        "points": 20,
+        "description": "The API validates inputs strictly, verifies and warms up the model, separates liveness from readiness, returns the model version, and its tests pass."
+      },
+      {
+        "name": "Performance engineering",
+        "points": 20,
+        "description": "The ONNX export passes a parity check with no decision flips, and gRPC or micro-batching is added with measurements that show when it helps."
+      },
+      {
+        "name": "Release safety",
+        "points": 20,
+        "description": "The canary is sticky by user, the shadow can't affect responses, the comparison metrics are reported, and rollback is a configuration change that has been tested."
+      },
+      {
+        "name": "Load testing and capacity",
+        "points": 25,
+        "description": "The load test is open-loop with percentiles from raw samples; the knee and per-replica capacity are identified, and the replica count for 300 requests per second includes justified headroom."
+      },
+      {
+        "name": "Packaging and operations",
+        "points": 15,
+        "description": "The image is lean, non-root and healthy with a set thread budget; the batch job resumes after a crash; the runbook is clear enough for someone else on call."
+      }
+    ],
+    "submit": "Paste a link to your repository (or the key files), the build and run output of the image, and the parity, canary and shadow, and load-test reports, with the runbook.",
+    "files": []
+  }
+}
