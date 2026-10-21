@@ -319,7 +319,7 @@
             "do": "Break the model file on purpose and start the server again, to see a bad release fail at start-up. Restore it afterwards by running python train.py again.",
             "code": "python -c \"open('model.joblib', 'ab').write(b'x')\"\nuvicorn app:app --port 8000",
             "lang": "bash",
-            "see": "RuntimeError: model.joblib doesn't match the checksum in its metadata"
+            "see": "RuntimeError: model.joblib doesn't match the checksum in its metadata, then Application startup failed. Exiting."
           }
         ],
         "checks": [
@@ -430,8 +430,8 @@
                 "see": "output shape for a batch of 32: (32, 1) and max abs difference: 3.0e-08"
               },
               {
-                "do": "Open export_torch.py and change dynamic_shapes to None, export again and try the batch of 32: onnxruntime now rejects it, because the input shape was fixed at 4 rows.",
-                "see": "An INVALID_ARGUMENT error about the input's dimensions"
+                "do": "Open export_torch.py and change dynamic_shapes to None, export again and try the batch of 32: onnxruntime now rejects it, because the input shape was fixed at the example's 4 rows.",
+                "see": "INVALID_ARGUMENT : Got invalid dimensions for input: features ... Got: 32 Expected: 4"
               }
             ]
           }
@@ -589,7 +589,7 @@
             "It adds a small, bounded wait in exchange for throughput, because a call's fixed cost is paid once per batch and vectorised code runs more efficiently on many rows at once.",
             "In asyncio, each request queues its row with a future; a worker drains the queue into a batch, runs the model in a thread with run_in_executor so the event loop keeps accepting requests, then resolves each future.",
             "Batching pays off when each call has a high fixed cost, like the scikit-learn pipeline, and barely matters when calls are already cheap, like the ONNX model: measure before adding it.",
-            "Tune max_batch and max_wait under realistic load; inference servers such as NVIDIA Triton Inference Server, TorchServe and Ray Serve provide dynamic batching built in."
+            "Tune max_batch and max_wait under realistic load; serving frameworks such as NVIDIA Triton Inference Server, Ray Serve and BentoML provide dynamic batching built in."
           ]
         },
         {
@@ -648,7 +648,7 @@
             "do": "Read Dockerfile and requirements-serve.txt: a slim Python base, only the serving libraries, the model copied in, a non-root user, ORT_THREADS=1 and a HEALTHCHECK on /health/ready. Rename dockerignore.txt to .dockerignore, then build.",
             "code": "docker build -t risk-onnx:1.0.0 .",
             "lang": "bash",
-            "see": "Successfully built or naming to docker.io/library/risk-onnx:1.0.0"
+            "see": "BuildKit's steps, ending with naming to docker.io/library/risk-onnx:1.0.0 done"
           },
           {
             "do": "Run it with a one-CPU limit, matching ORT_THREADS, and call it.",
