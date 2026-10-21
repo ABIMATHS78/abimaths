@@ -1,0 +1,1013 @@
+{
+  "slug": "product-analytics-sql",
+  "title": "Product Analytics with SQL: Funnels, Cohorts and Retention",
+  "subtitle": "Turn raw product events into metrics a team can trust: active users, sessions, funnels, retention cohorts, attribution and experiment readouts, all in SQL.",
+  "category": "Data Science",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "arjun-sharma",
+    "valentina-lopez"
+  ],
+  "skills": [
+    "Product analytics",
+    "Event data modelling",
+    "SQL window functions",
+    "Sessionisation",
+    "Funnel analysis",
+    "Cohort and retention analysis",
+    "Growth accounting",
+    "Marketing attribution",
+    "Experiment readouts",
+    "DuckDB"
+  ],
+  "tools": [
+    "DuckDB",
+    "Python 3"
+  ],
+  "outcomes": [
+    "Model product events and build a clean, deduplicated, identity-stitched events view",
+    "Measure DAU, WAU, MAU and stickiness with a definition of active that holds up",
+    "Sessionise event streams and build ordered funnels with window functions, then locate where they break",
+    "Build retention cohort tables, curves and growth accounting that handle cohorts still in progress",
+    "Compare first-touch, last-touch, linear and position-based attribution, and explain what none of them measures",
+    "Read out an A/B test from assignment and event data: sample ratio check, triggered analysis, intervals and a decision"
+  ],
+  "prerequisites": "SQL for Data Analysis with DataGrip, or the same SQL: GROUP BY, joins, CTEs and basic window functions (ROW_NUMBER, LAG, running totals). Statistics for Data Science and AI helps with module 5; Practical Statistics for Data Scientists covers test design and significance in depth. Install Python 3.10 or later and pip install duckdb; any editor or Jupyter works.",
+  "description": "Product teams live on a handful of numbers: how many people use the product, where they give up, whether they come back, which channels brought them and whether the last change helped. This course teaches you to compute all of them yourself, in SQL, from the raw event log, and to know when a number can be trusted. You'll work with 13 weeks of events from Basketful, a fictional grocery-delivery app, generated on your own laptop and queried with DuckDB, complete with the duplicates, test accounts and anonymous visitors that real tracking data contains.\n\nYou'll build a clean events view, define active users and stickiness, sessionise event streams with window functions, build ordered funnels and use them to find a broken checkout, build retention cohorts and growth accounting that cope with cohorts still in progress, share sign-up credit between channels under four attribution rules, and read out a real A/B test from its assignment log, including a sample ratio check, a triggered analysis, intervals for conversion, revenue and a ratio metric, and a decision. It builds on SQL for Data Analysis with DataGrip and goes much further, into the queries product analysts write every week. Every lab prints real results that your instructor checks, and the capstone is a quarterly product review built on a reusable metrics layer.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Event data and active users",
+      "summary": "How product events are tracked and stored, how to turn a raw event log into a clean events view, and how to count active users so the number means something.",
+      "instructor": "arjun-sharma",
+      "lessons": [
+        {
+          "title": "Events, users and the tracking plan",
+          "minutes": 12,
+          "objectives": [
+            "Describe the event data model: who, what, when and properties",
+            "Explain how a tracking plan keeps events consistent",
+            "Recognise the identity, duplicate and test-account problems in raw event logs"
+          ],
+          "key_points": [
+            "Product analytics starts from an event log: one row per thing a user did, with who did it (a user or device id), what happened (the event name), when (a timestamp) and properties that describe it, such as the item viewed or a purchase's revenue.",
+            "A tracking plan lists every event, when it fires, its properties and their types, and who owns it; naming events object_action in one style, such as add_to_cart and begin_checkout, keeps queries and dashboards consistent across platforms.",
+            "Before sign-up, events carry only an anonymous device id; identity stitching links them to the user_id once that device signs in, so a journey from first visit to sign-up can be followed as one person.",
+            "Raw logs are messy: retried uploads send the same event twice, internal and test accounts inflate counts, and device clocks drift, so deduplicate on a unique event_id and exclude internal users before measuring anything.",
+            "Properties often arrive as JSON; extract the ones used often, such as channel and revenue, into typed columns of one clean view, so that every query reads them the same way and fixes happen in one place."
+          ]
+        },
+        {
+          "title": "Querying event logs in DuckDB",
+          "minutes": 12,
+          "objectives": [
+            "Load CSV event files into DuckDB views and profile them",
+            "Use DuckDB features that suit event data: FILTER, QUALIFY and JSON operators"
+          ],
+          "key_points": [
+            "DuckDB is an in-process analytical database: after pip install duckdb it queries CSV and Parquet files directly with read_csv and read_parquet, with no server to run, which suits event logs of millions of rows on a laptop.",
+            "DESCRIBE shows a table's columns and types, and SUMMARIZE profiles every column (minimum, maximum, approximate distinct count and share of nulls); run both on any new extract before trusting it.",
+            "An aggregate's FILTER clause counts a subset without a CASE expression, as in COUNT(*) FILTER (WHERE event_name = 'purchase'), so one pass over the events can return several metrics.",
+            "QUALIFY filters on a window function's result the way WHERE filters on columns: QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_time) = 1 keeps one copy of each event.",
+            "properties ->> '$.channel' extracts a JSON field as text, so cast numbers explicitly, as in CAST(properties ->> '$.revenue' AS DECIMAL(10, 2)), before adding them up.",
+            "In DuckDB, / between integers gives a fractional result and // is integer division, whereas PostgreSQL, SQL Server and SQLite truncate integer division, a classic cause of rates of 0 when a query moves between engines."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB in Python",
+            "title": "Explore the raw event log",
+            "steps": [
+              {
+                "do": "In the course folder, start Python (or a Jupyter notebook) and open the data with the course helper.",
+                "code": "from pa_common import connect, show\ncon = connect()",
+                "lang": "python",
+                "see": "No output: the views raw_events, users and assignments now exist."
+              },
+              {
+                "do": "List the columns and their types.",
+                "code": "con.sql(\"DESCRIBE raw_events\").show()",
+                "lang": "python",
+                "see": "Seven columns: event_time is a TIMESTAMP and the other six, including properties, are VARCHAR."
+              },
+              {
+                "do": "Find the time range and the number of devices.",
+                "code": "show(con, \"SELECT MIN(event_time) AS first_event, MAX(event_time) AS last_event, \"\n          \"COUNT(DISTINCT anonymous_id) AS devices FROM raw_events\")",
+                "lang": "python",
+                "see": "2026-01-05 07:37:42 to 2026-04-05 23:42:39, from 4829 devices."
+              },
+              {
+                "do": "Profile every column at once.",
+                "code": "con.sql(\"SUMMARIZE raw_events\").show()",
+                "lang": "python",
+                "see": "One row per column with min, max, approx_unique, null_percentage and more; user_id is often null, on events from before sign-up."
+              },
+              {
+                "do": "Look at one purchase's properties.",
+                "code": "show(con, \"SELECT properties FROM raw_events WHERE event_name = 'purchase' ORDER BY event_id LIMIT 1\")",
+                "lang": "python",
+                "see": "{\"order_id\":\"o000004\",\"revenue\":60.2,\"items\":5}"
+              },
+              {
+                "do": "Count campaign clicks by channel, reading the channel from the JSON.",
+                "code": "show(con, \"\"\"SELECT properties ->> '$.channel' AS channel, COUNT(*) AS clicks\n             FROM raw_events WHERE event_name = 'campaign_click'\n             GROUP BY channel ORDER BY clicks DESC\"\"\")",
+                "lang": "python",
+                "see": "paid_search 1394, paid_social 1209, email 1005, referral 858 and retargeting 836."
+              },
+              {
+                "do": "Look for events that arrived more than once.",
+                "code": "show(con, \"\"\"SELECT event_id, COUNT(*) AS copies FROM raw_events\n             GROUP BY event_id HAVING COUNT(*) > 1 ORDER BY event_id LIMIT 3\"\"\")",
+                "lang": "python",
+                "see": "e0000503, e0000618 and e0000827, with two copies each: retried uploads."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Active users: DAU, WAU, MAU and stickiness",
+          "minutes": 12,
+          "objectives": [
+            "Define an active user for a product",
+            "Compute DAU, WAU, MAU and stickiness with a date spine",
+            "Avoid the common traps in active-user counts"
+          ],
+          "key_points": [
+            "An active user did something meaningful that day, such as searching, viewing an item or buying; counting app opens, notifications received or background events inflates the number and hides real changes in engagement.",
+            "DAU, WAU and MAU count the distinct active users in the 1, 7 and 28 (or 30) days up to a date; a 28-day window holds each weekday exactly four times, so a different mix of weekdays doesn't move it.",
+            "Stickiness, DAU divided by MAU, estimates the share of the month's users who are active on a given day; it suits products meant for frequent use, and is only comparable between periods measured with the same definition of active.",
+            "For a trend, join a date spine (generate_series of dates) to user-day activity on a.day BETWEEN s.day - 27 AND s.day and count distinct users per spine day; the spine also keeps days with no activity in the series.",
+            "Exclude internal and test accounts, decide whether activity before sign-up counts and apply that everywhere, and fix one time zone for days, usually UTC or the business's own, or daily counts shift from one day to the next."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Clean the event log and measure active users",
+        "tool": "DuckDB in Python",
+        "minutes": 50,
+        "goal": "Generate Basketful's event data, write the clean events view that every later lab uses (one row per event, QA accounts left out, anonymous events linked to their user), then compute DAU, WAU, MAU and stickiness for one day and as a weekly trend.",
+        "setup": [
+          "Python 3.10 or later with DuckDB: pip install duckdb",
+          "A course folder with the starter files make_events.py, pa_common.py, clean_events.sql and lab1_active_users.py; keep using it for every lab",
+          "About 15 MB of free disk space for the generated data"
+        ],
+        "steps": [
+          {
+            "do": "Generate the data: 13 weeks of events for Basketful, a fictional grocery-delivery app, the same for everyone.",
+            "code": "python make_events.py",
+            "lang": "bash",
+            "see": "Wrote 126859 raw events from 4826 visitors, 2182 accounts and 1265 experiment assignments to pa_data/"
+          },
+          {
+            "do": "Read pa_common.py: connect() creates the views raw_events, users and assignments over the CSV files and runs clean_events.sql once it exists; show() prints a query's result as a table."
+          },
+          {
+            "do": "In clean_events.sql, complete TODO 1: keep one copy of each event.",
+            "code": "SELECT *\nFROM raw_events\nQUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_time) = 1",
+            "lang": "sql"
+          },
+          {
+            "do": "Complete TODO 2: for every anonymous_id that has signed in, find its user_id from the events that carry both.",
+            "code": "SELECT anonymous_id, MIN(user_id) AS user_id\nFROM deduplicated\nWHERE user_id IS NOT NULL\nGROUP BY anonymous_id",
+            "lang": "sql"
+          },
+          {
+            "do": "Complete TODO 3: keep rows whose user isn't internal. Visitors who never signed up have no users row, so use NOT COALESCE(u.is_internal, false) rather than NOT u.is_internal, which would drop them."
+          },
+          {
+            "do": "In lab1_active_users.py, complete TODO 1 (the active_days view: meaningful events at or after sign-up), TODO 2 (the snapshot for 31 March) and TODO 3 (the weekly trend). The trend joins the spine to the activity like this.",
+            "code": "FROM spine AS s\nJOIN active_days AS a ON a.day BETWEEN s.day - 27 AND s.day\nGROUP BY s.day",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab1_active_users.py",
+            "lang": "bash",
+            "see": "126859 raw rows with 514 duplicates; the clean view has 123219 events from 2179 users; on 31 March DAU 187, WAU 744, MAU 1286 and stickiness 0.145."
+          },
+          {
+            "do": "Compare your DAU of 187 with the naive count of 223 from every raw event, and write two sentences on what makes up the difference and which number a product team should track."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The audit finds the duplicates: 126,859 raw rows but 126,345 distinct events, so 514 duplicate rows.",
+            "look_for": [
+              "126345",
+              "514"
+            ]
+          },
+          {
+            "text": "The clean view has one row per event, without QA accounts: 123,219 events from 2,179 users.",
+            "look_for": [
+              "123219",
+              "2179"
+            ]
+          },
+          {
+            "text": "Anonymous events are linked to users: only 17,919 events, from 2,647 visitors who never signed up, have no user.",
+            "look_for": [
+              "17919",
+              "2647"
+            ]
+          },
+          {
+            "text": "The snapshot for 31 March 2026 is right: DAU 187, WAU 744, MAU 1,286, stickiness 0.145.",
+            "look_for": [
+              "187",
+              "744",
+              "1286",
+              "0.145"
+            ]
+          },
+          {
+            "text": "The weekly trend runs from 3 February (DAU 82, MAU 534, stickiness 0.154) to 31 March.",
+            "look_for": [
+              "534",
+              "0.154",
+              "2026-02-03"
+            ]
+          },
+          {
+            "text": "The note explains the gap between 223 and 187: QA accounts, and users whose only events were app opens or the sign-up itself.",
+            "look_for": [
+              "223"
+            ]
+          }
+        ],
+        "submit": "Paste your clean_events.sql, your three queries from lab1_active_users.py, the script's output and your two-sentence note.",
+        "files": [
+          {
+            "path": "make_events.py",
+            "content": "\"\"\"Generate the course data for Basketful, a fictional grocery-delivery app, into the folder pa_data/.\n\n    python make_events.py\n\nraw_events.csv   every tracked event from Monday 5 January to Sunday 5 April 2026 (13 weeks), as the tracking\n                 pipeline delivered it: retried uploads included, anonymous events from before sign-up, and\n                 the QA team's test accounts\nusers.csv        one row per account: user_id, signup_time, platform, city, is_internal\nassignments.csv  who was assigned to which variant of the one_page_checkout experiment, and when\n\nOnly random.random() is used, with a fixed seed, so everyone gets exactly the same data on any Python 3.\n\"\"\"\n\nimport csv\nimport json\nimport random\nfrom datetime import datetime, timedelta\nfrom pathlib import Path\n\nSEED = 2026\nSTART = datetime(2026, 1, 5)                    # a Monday\nDAYS = 91                                       # 13 weeks\nEND = START + timedelta(days=DAYS)\nEXP_START, EXP_END = datetime(2026, 3, 2), datetime(2026, 3, 30)    # the one_page_checkout experiment\nBUG_START, BUG_END = datetime(2026, 2, 9), datetime(2026, 2, 23)    # an Android payment bug\nONBOARDING_FIX = datetime(2026, 2, 23)          # a new onboarding flow for everyone who signs up from here\nOUT = Path(__file__).with_name(\"pa_data\")\nCATEGORIES = [\"produce\", \"dairy\", \"bakery\", \"pantry\", \"drinks\", \"household\", \"frozen\", \"snacks\"]\nCITIES = [(\"Nairobi\", 35), (\"Lagos\", 30), (\"Accra\", 20), (\"Kigali\", 15)]\nHOURS = [(7, 3), (8, 5), (9, 5), (10, 4), (11, 4), (12, 6), (13, 5), (14, 3), (15, 3), (16, 4),\n         (17, 7), (18, 9), (19, 9), (20, 7), (21, 5), (22, 3)]\n\nR = random.Random(SEED)\n\n\ndef u():\n    return R.random()\n\n\ndef pick(options):\n    \"\"\"One value from [(value, weight), ...].\"\"\"\n    x = u() * sum(w for _, w in options)\n    for value, w in options:\n        x -= w\n        if x < 0:\n            return value\n    return options[-1][0]\n\n\ndef randint(a, b):\n    return a + int(u() * (b - a + 1))\n\n\ndef secs(a, b):\n    return timedelta(seconds=randint(a, b))\n\n\ndef start_time(day):\n    return START + timedelta(days=day, hours=pick(HOURS), minutes=randint(0, 59), seconds=randint(0, 59))\n\n\ndef gap(t):\n    \"\"\"The time to the next event: usually seconds, sometimes a pause, now and then a long break.\"\"\"\n    x = u()\n    if x < 0.025:\n        return t + secs(32 * 60, 55 * 60)\n    if x < 0.065:\n        return t + secs(12 * 60, 25 * 60)\n    return t + secs(8, 90)\n\n\nevents = []          # (time, anonymous_id, user_id, event_name, platform, properties)\nassignments = {}     # user_id -> (variant, assigned_at)\nexposed = set()\norders = [0]\n\n\ndef emit(t, anon, user, name, platform, props=None):\n    if t < END:\n        events.append((t, anon, user, name, platform, props or {}))\n\n\ndef browse(t, anon, platform, channel):\n    \"\"\"An anonymous visit: maybe a campaign click, then a look around.\"\"\"\n    if channel:\n        emit(t, anon, \"\", \"campaign_click\", platform, {\"channel\": channel, \"campaign\": f\"{channel}_q1\"})\n        t = gap(t)\n    if u() < 0.6:\n        emit(t, anon, \"\", \"app_open\", platform)\n        t = gap(t)\n    for _ in range(randint(1, 5)):\n        item = randint(1, 400)\n        emit(t, anon, \"\", \"view_item\", platform, {\"item_id\": item, \"category\": CATEGORIES[item % 8]})\n        t = gap(t)\n    return t\n\n\ndef shop(t, anon, user, platform, keen, opened=False):\n    \"\"\"A visit by a signed-up user: browse, and perhaps check out and buy.\"\"\"\n    if EXP_START <= t < EXP_END and user not in assignments:\n        assignments[user] = (\"treatment\" if u() < 0.5 else \"control\", t)\n    if not opened and u() < 0.08:                  # opened the app and left\n        emit(t, anon, user, \"app_open\", platform)\n        return t\n    if not opened and u() < 0.6:\n        emit(t, anon, user, \"app_open\", platform)\n        t = gap(t)\n    if u() < 0.4:\n        emit(t, anon, user, \"search\", platform, {\"query_length\": randint(3, 18)})\n        t = gap(t)\n    cart = 0\n    for _ in range(randint(1, 6)):\n        item = randint(1, 400)\n        emit(t, anon, user, \"view_item\", platform, {\"item_id\": item, \"category\": CATEGORIES[item % 8]})\n        t = gap(t)\n        if u() < keen:\n            emit(t, anon, user, \"add_to_cart\", platform, {\"item_id\": item})\n            cart += 1\n            t = gap(t)\n    if cart and u() < 0.62:\n        p = {\"ios\": 0.72, \"android\": 0.72, \"web\": 0.64}[platform]\n        if platform == \"android\" and BUG_START <= t < BUG_END:\n            p = 0.44\n        if EXP_START <= t < EXP_END and user in assignments:\n            variant = assignments[user][0]\n            if user not in exposed:\n                exposed.add(user)\n                emit(t, anon, user, \"experiment_exposure\", platform,\n                     {\"experiment\": \"one_page_checkout\", \"variant\": variant})\n            if variant == \"treatment\":\n                p += 0.07\n        emit(t, anon, user, \"begin_checkout\", platform, {\"cart_items\": cart})\n        t += secs(30, 240)\n        if u() < p:\n            orders[0] += 1\n            cents = 1200 + randint(0, 8300)\n            emit(t, anon, user, \"purchase\", platform,\n                 {\"order_id\": f\"o{orders[0]:06d}\", \"revenue\": cents / 100, \"items\": cart + randint(0, 8)})\n    return t\n\n\ndef lifetime(user, anon, platform, signup_at, kind, keen):\n    \"\"\"Every visit a user makes after the day they sign up.\"\"\"\n    decay = 1.0\n    first = (signup_at - START).days\n    for day in range(first + 1, DAYS):\n        decay *= {\"core\": 0.9, \"casual\": 0.9, \"drifter\": 0.7}[kind]\n        p = {\"core\": 0.22 + 0.3 * decay, \"casual\": 0.035 + 0.3 * decay, \"drifter\": 0.25 * decay}[kind]\n        if (START + timedelta(days=day)).weekday() >= 5:\n            p *= 1.25\n        if u() < p:\n            for _ in range(2 if u() < 0.25 else 1):\n                t = start_time(day)\n                if u() < 0.08:\n                    emit(t, anon, user, \"campaign_click\", platform, {\"channel\": \"email\", \"campaign\": \"weekly_offers\"})\n                    t = gap(t)\n                shop(t, anon, user, platform, keen)\n\n\ndef main():\n    users = []\n    visitors = 0\n    for day in range(DAYS):\n        weekend = (START + timedelta(days=day)).weekday() >= 5\n        n = int((44 + 0.15 * day) * (1.2 if weekend else 1.0) * (0.85 + 0.3 * u()))\n        for _ in range(n):\n            visitors += 1\n            anon = f\"a{visitors:05d}\"\n            platform = pick([(\"ios\", 38), (\"android\", 47), (\"web\", 15)])\n            first = pick([(None, 42), (\"paid_search\", 20), (\"paid_social\", 20), (\"referral\", 18)])\n            visits = pick([(1, 50), (2, 30), (3, 20)])\n            p_signup = {None: 0.46, \"paid_search\": 0.5, \"paid_social\": 0.34, \"referral\": 0.62}[first]\n            if platform == \"web\":\n                p_signup *= 0.85\n            signs_up = u() < p_signup\n            t = start_time(day)\n            for v in range(visits):\n                channel = first if v == 0 else pick([(None, 55), (\"retargeting\", 25), (\"paid_search\", 12),\n                                                      (\"paid_social\", 8)])\n                t = browse(t, anon, platform, channel)\n                if v < visits - 1:\n                    t += timedelta(hours=randint(8, 96), minutes=randint(0, 59))\n            if not signs_up or t >= END:\n                continue\n            user = f\"u{len(users) + 1:05d}\"\n            emit(t, anon, user, \"sign_up\", platform, {\"method\": pick([(\"email\", 55), (\"google\", 30), (\"phone\", 15)])})\n            weights = [(\"core\", 20), (\"casual\", 35), (\"drifter\", 45)]\n            if first == \"paid_social\":\n                weights = [(\"core\", 12), (\"casual\", 30), (\"drifter\", 58)]\n            if t >= ONBOARDING_FIX:\n                weights = [(k, w + (8 if k == \"core\" else -8 if k == \"drifter\" else 0)) for k, w in weights]\n            kind = pick(weights)\n            keen = {\"core\": 0.5, \"casual\": 0.4, \"drifter\": 0.3}[kind]\n            if u() < 0.5:\n                shop(gap(t), anon, user, platform, keen, opened=True)\n            users.append((user, t, platform, pick(CITIES), False))\n            lifetime(user, anon, platform, t, kind, keen)\n\n    for i, platform in enumerate([\"ios\", \"android\", \"web\"], 1):     # the QA team's test accounts\n        user, anon = f\"qa{i:02d}\", f\"qa-device-{i}\"\n        users.append((user, START, platform, \"Nairobi\", True))\n        for day in range(DAYS):\n            if (START + timedelta(days=day)).weekday() < 5:\n                for _ in range(2):\n                    shop(start_time(day), anon, user, platform, 0.9)\n\n    events.sort(key=lambda e: (e[0], e[1], e[3]))\n    OUT.mkdir(exist_ok=True)\n    rows = 0\n    with open(OUT / \"raw_events.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"event_id\", \"anonymous_id\", \"user_id\", \"event_time\", \"event_name\", \"platform\", \"properties\"])\n        for n, (t, anon, user, name, platform, props) in enumerate(events, 1):\n            row = [f\"e{n:07d}\", anon, user, t.strftime(\"%Y-%m-%d %H:%M:%S\"), name, platform,\n                   json.dumps(props, separators=(\",\", \":\"))]\n            for _ in range(2 if u() < 0.004 else 1):         # a retried upload sends the same event twice\n                w.writerow(row)\n                rows += 1\n    with open(OUT / \"users.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"user_id\", \"signup_time\", \"platform\", \"city\", \"is_internal\"])\n        for user, t, platform, city, internal in sorted(users):\n            w.writerow([user, t.strftime(\"%Y-%m-%d %H:%M:%S\"), platform, city, str(internal).lower()])\n    with open(OUT / \"assignments.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"user_id\", \"experiment\", \"variant\", \"assigned_at\"])\n        for user, (variant, t) in sorted(assignments.items()):\n            w.writerow([user, \"one_page_checkout\", variant, t.strftime(\"%Y-%m-%d %H:%M:%S\")])\n    print(f\"Wrote {rows} raw events from {visitors} visitors, {len(users)} accounts and \"\n          f\"{len(assignments)} experiment assignments to {OUT.name}/\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "pa_common.py",
+            "content": "\"\"\"Helpers for every lab: open Basketful's data in DuckDB, and print a query's result as a plain table.\n\n    from pa_common import connect, show\n    con = connect()                      # views: raw_events, users, assignments, and events if clean_events.sql exists\n    show(con, \"SELECT COUNT(*) AS n FROM events\")\n\"\"\"\n\nfrom pathlib import Path\n\nimport duckdb\n\nHERE = Path(__file__).parent\nDATA = HERE / \"pa_data\"\nRAW = {\"event_id\": \"VARCHAR\", \"anonymous_id\": \"VARCHAR\", \"user_id\": \"VARCHAR\", \"event_time\": \"TIMESTAMP\",\n       \"event_name\": \"VARCHAR\", \"platform\": \"VARCHAR\", \"properties\": \"VARCHAR\"}\nUSERS = {\"user_id\": \"VARCHAR\", \"signup_time\": \"TIMESTAMP\", \"platform\": \"VARCHAR\", \"city\": \"VARCHAR\",\n         \"is_internal\": \"BOOLEAN\"}\nASSIGNMENTS = {\"user_id\": \"VARCHAR\", \"experiment\": \"VARCHAR\", \"variant\": \"VARCHAR\", \"assigned_at\": \"TIMESTAMP\"}\n\n\ndef connect():\n    \"\"\"An in-memory DuckDB database with a view over each CSV file, plus the clean events view\n    defined in clean_events.sql (lab 1) once that file exists.\"\"\"\n    if not (DATA / \"raw_events.csv\").exists():\n        raise SystemExit(\"No data yet: run python make_events.py first.\")\n    con = duckdb.connect()\n    for name, columns in [(\"raw_events\", RAW), (\"users\", USERS), (\"assignments\", ASSIGNMENTS)]:\n        path = (DATA / f\"{name}.csv\").as_posix()\n        con.execute(f\"CREATE VIEW {name} AS SELECT * FROM read_csv('{path}', header = true, columns = {columns})\")\n    clean = HERE / \"clean_events.sql\"\n    if clean.exists():\n        con.execute(clean.read_text(encoding=\"utf-8\"))\n    return con\n\n\ndef _cell(v):\n    return \"NULL\" if v is None else str(v)\n\n\ndef show(con, sql, title=None):\n    \"\"\"Run a query and print its result as an aligned table, numbers on the right.\"\"\"\n    rel = con.sql(sql)\n    columns, rows = rel.columns, [[_cell(v) for v in r] for r in rel.fetchall()]\n    numeric = [all(r[i].replace(\".\", \"\", 1).replace(\"-\", \"\", 1).isdigit() for r in rows if r[i] != \"NULL\")\n               for i in range(len(columns))]\n    widths = [max([len(c)] + [len(r[i]) for r in rows]) for i, c in enumerate(columns)]\n    if title:\n        print(f\"\\n{title}\")\n    print(\"  \".join(c.rjust(w) if n else c.ljust(w) for c, w, n in zip(columns, widths, numeric)))\n    for r in rows:\n        print(\"  \".join(v.rjust(w) if n else v.ljust(w) for v, w, n in zip(r, widths, numeric)))\n    print(f\"({len(rows)} row{'s' if len(rows) != 1 else ''})\")\n"
+          },
+          {
+            "path": "clean_events.sql",
+            "content": "-- The clean events view every later query starts from: one row per event, QA accounts left out,\n-- and anonymous events from before sign-up linked to the user who signed up on that device.\nCREATE OR REPLACE VIEW events AS\nWITH deduplicated AS (\n    -- TODO 1: keep one row per event_id (retried uploads sent some events twice)\n    SELECT *\n    FROM raw_events\n),\nidentities AS (\n    -- TODO 2: one row per anonymous_id that has ever signed in, with its user_id\n    SELECT CAST(NULL AS VARCHAR) AS anonymous_id, CAST(NULL AS VARCHAR) AS user_id\n)\nSELECT d.event_id,\n       d.anonymous_id,\n       COALESCE(d.user_id, i.user_id) AS user_id,\n       d.event_time,\n       d.event_name,\n       d.platform,\n       d.properties ->> '$.channel' AS channel,\n       CAST(d.properties ->> '$.revenue' AS DECIMAL(10, 2)) AS revenue,\n       d.properties\nFROM deduplicated AS d\nLEFT JOIN identities AS i USING (anonymous_id)\nLEFT JOIN users AS u ON u.user_id = COALESCE(d.user_id, i.user_id)\n-- TODO 3: leave out the QA team's accounts (users.is_internal), but keep visitors who never signed up\nWHERE true;\n"
+          },
+          {
+            "path": "lab1_active_users.py",
+            "content": "\"\"\"Lab 1: audit the raw events, check the clean events view, and measure active users.\"\"\"\n\nfrom pa_common import connect, show\n\nAUDIT = \"\"\"\nSELECT COUNT(*) AS raw_rows,\n       COUNT(DISTINCT event_id) AS distinct_events,\n       COUNT(*) - COUNT(DISTINCT event_id) AS duplicate_rows,\n       COUNT(*) FILTER (WHERE user_id IS NULL) AS rows_without_user\nFROM raw_events\n\"\"\"\n\nCLEAN = \"\"\"\nSELECT COUNT(*) AS events,\n       COUNT(DISTINCT user_id) AS users,\n       COUNT(*) FILTER (WHERE user_id IS NULL) AS events_never_linked,\n       COUNT(DISTINCT anonymous_id) FILTER (WHERE user_id IS NULL) AS visitors_never_signed_up\nFROM events\n\"\"\"\n\nACTIVE_DAYS = \"\"\"\nCREATE OR REPLACE VIEW active_days AS\n-- TODO 1: one row per user and day on which they did something meaningful (search, view_item,\n-- add_to_cart, begin_checkout or purchase) at or after their sign-up time (users.signup_time)\nSELECT CAST(NULL AS VARCHAR) AS user_id, CAST(NULL AS DATE) AS day\n\"\"\"\n\nSNAPSHOT = \"\"\"\n-- TODO 2: from active_days, dau, wau and mau for Tuesday 31 March 2026 (the 1, 7 and 28 days up to and\n-- including it) and stickiness = dau / mau to 3 decimal places\nSELECT 'TODO' AS todo\n\"\"\"\n\nNAIVE = \"\"\"\nSELECT COUNT(DISTINCT user_id) AS dau_any_raw_event\nFROM raw_events\nWHERE user_id IS NOT NULL AND CAST(event_time AS DATE) = DATE '2026-03-31'\n\"\"\"\n\nTREND = \"\"\"\nWITH spine AS (\n    SELECT CAST(d AS DATE) AS day\n    FROM generate_series(DATE '2026-02-03', DATE '2026-03-31', INTERVAL 7 DAY) AS t(d)\n)\n-- TODO 3: the same four columns for every day in the spine: join active_days to it on the 28 days up to\n-- each spine day, then group by the spine day\nSELECT day, 'TODO' AS todo FROM spine ORDER BY day\n\"\"\"\n\ncon = connect()\nshow(con, AUDIT, \"Raw events: rows, duplicates and rows without a user\")\nshow(con, CLEAN, \"The clean events view\")\ncon.execute(ACTIVE_DAYS)\nshow(con, SNAPSHOT, \"Active users on Tuesday 31 March 2026\")\nshow(con, NAIVE, \"DAU if every raw event counted, QA accounts included\")\nshow(con, TREND, \"DAU, WAU, MAU and stickiness each Tuesday\")\n"
+          }
+        ],
+        "hints": [
+          "If connect() fails, clean_events.sql has a mistake: paste its SELECT into con.sql(...) on its own to see the error.",
+          "COUNT(DISTINCT user_id) ignores NULLs, so visitors who never signed up aren't counted as users.",
+          "DuckDB adds and subtracts whole days from a DATE with + and -: DATE '2026-03-31' - 27 is 4 March.",
+          "In DuckDB a SELECT can use an alias defined earlier in the same list, so ROUND(dau / mau, 3) works; other engines need the expressions repeated."
+        ]
+      }
+    },
+    {
+      "title": "Sessions and funnels",
+      "summary": "Use window functions to turn an event stream into sessions and ordered funnels, then read a funnel by platform and week to find where, and when, users drop off.",
+      "instructor": "valentina-lopez",
+      "lessons": [
+        {
+          "title": "Window functions for event streams",
+          "minutes": 12,
+          "objectives": [
+            "Use LAG and LEAD to compare each event with its neighbours",
+            "Choose a window frame, ROWS or RANGE, for rolling metrics",
+            "Make window results repeatable with a deterministic order"
+          ],
+          "key_points": [
+            "Event analysis is mostly about sequences, so it leans on window functions partitioned by user or device and ordered by time: LAG(event_time) returns the previous event's time and LEAD(event_time) the next one's.",
+            "Ties in a window's ORDER BY make results depend on how the engine happens to read the rows; add a unique tie-breaker, as in ORDER BY event_time, event_id, so that every run numbers the events the same way.",
+            "A frame limits the rows a window aggregate sees: ROWS BETWEEN 6 PRECEDING AND CURRENT ROW takes the six rows before, while RANGE BETWEEN INTERVAL 6 DAYS PRECEDING AND CURRENT ROW takes rows whose date is within six days, so missing days don't stretch the window.",
+            "A running SUM over a 0/1 flag numbers runs of consecutive rows: each row where the flag is 1 starts a new run, which is the basis of sessionisation and of finding streaks.",
+            "MIN(event_time) OVER (PARTITION BY user_id), or FIRST_VALUE, attaches each user's first event time to every one of their rows without a self-join, ready for measuring time since first use."
+          ]
+        },
+        {
+          "title": "Sessionisation",
+          "minutes": 12,
+          "objectives": [
+            "Split each device's events into sessions with an inactivity gap",
+            "Measure sessions: how many, how long and how many events",
+            "Explain how the gap chosen changes the results"
+          ],
+          "key_points": [
+            "A session is a burst of activity from one device or user; the usual rule starts a new session when the time since the previous event is longer than an inactivity timeout, often 30 minutes.",
+            "In SQL, LAG gives each event's previous time, a CASE sets a flag to 1 when there's no previous event or the gap exceeds the timeout, and a running SUM of the flag numbers the sessions, making a session_id such as anonymous_id || '-' || n.",
+            "The timeout is a choice, not a fact: a shorter one splits pauses into extra sessions and a longer one merges separate visits, so state the timeout with any session metric and check how sensitive the counts are to it.",
+            "A session's length is its last event's time minus its first, so a one-event session lasts zero seconds; report the median length and the share of single-event sessions, not a mean pulled up by a long tail.",
+            "Sessionise by device to include visits before sign-up, or by user to join one person's devices; client-generated session ids follow each SDK's own rules, so deriving sessions from timestamps gives one definition on every platform."
+          ],
+          "walkthrough": {
+            "tool": "DuckDB in Python",
+            "title": "Sessionise one shopper's day",
+            "steps": [
+              {
+                "do": "With con = connect() from the course helper, list one device's events on 10 March with the gap since the previous event.",
+                "code": "show(con, \"\"\"\nSELECT event_time, event_name,\n       event_time - LAG(event_time) OVER (ORDER BY event_time, event_id) AS gap\nFROM events\nWHERE anonymous_id = 'a00321' AND CAST(event_time AS DATE) = DATE '2026-03-10'\nORDER BY event_time, event_id\"\"\")",
+                "lang": "python",
+                "see": "Nine events. The gaps are about a minute, except 0:32:02 before the view_item at 11:10:40."
+              },
+              {
+                "do": "Flag the start of each session: the first event, or a gap of more than 30 minutes.",
+                "code": "CASE WHEN LAG(event_time) OVER w IS NULL\n       OR event_time - LAG(event_time) OVER w > INTERVAL 30 MINUTE\n     THEN 1 ELSE 0 END AS new_session",
+                "lang": "sql",
+                "see": "Two rows get a 1: the first view_item at 10:34:36 and the view_item at 11:10:40."
+              },
+              {
+                "do": "Number the sessions with a running sum of the flag, in a CTE over the flagged rows.",
+                "code": "SUM(new_session) OVER (ORDER BY event_time, event_id) AS session_n",
+                "lang": "sql",
+                "see": "Five events in session 1, including the add_to_cart; four in session 2, with begin_checkout and purchase."
+              },
+              {
+                "do": "Notice what a session funnel makes of this shopper: session 1 added to the cart and left, and session 2 bought without adding anything. A user-level funnel with a time window sees one trip that converted."
+              },
+              {
+                "do": "Change 30 MINUTE to 60 MINUTE and run the query again.",
+                "see": "One session of nine events: the half-hour pause no longer splits the trip."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Ordered funnels and conversion windows",
+          "minutes": 12,
+          "objectives": [
+            "Build an ordered funnel at session or user level",
+            "Apply a conversion window to a user funnel",
+            "Compute step and overall conversion rates"
+          ],
+          "key_points": [
+            "A funnel counts the units that reach each step of a path, such as view_item, add_to_cart, begin_checkout and purchase; a step only counts if it happens after the step before, which is what makes the funnel ordered.",
+            "The unit matters: a session funnel asks whether one visit went all the way, while a user funnel asks whether a person got there within a conversion window, such as purchasing within 7 days of their first add to cart.",
+            "A compact build pivots each unit's first time at each step with MIN(event_time) FILTER (WHERE event_name = ...), then counts units whose step times are in order; when steps repeat, a strict funnel instead joins each step to the first later occurrence of the next.",
+            "Step conversion divides each step by the one before and overall conversion divides the last step by the first; report both, and the number of users lost at each step, since the biggest absolute loss is where a fix reaches the most people.",
+            "Session funnels undercount when a long pause splits one shopping trip in two: the cart in one session and the purchase in the next look like an abandoned cart and a purchase from nowhere."
+          ]
+        },
+        {
+          "title": "Reading a funnel: segments, trends and time to convert",
+          "minutes": 10,
+          "objectives": [
+            "Segment a funnel by platform and week to locate a problem",
+            "Measure time to convert with medians",
+            "Avoid the common misreadings of funnel changes"
+          ],
+          "key_points": [
+            "Break a funnel down by the dimensions a fix would target, such as platform, app version, country and week: a drop confined to one platform for two weeks points to a release or an outage, not to customers changing their minds.",
+            "Check each segment's size before reading its rate: a step rate from 60 checkouts moves by several points from chance alone, while one from 600 is far steadier.",
+            "An overall rate can change because the mix of segments changed, such as more traffic from a low-converting channel, while no segment changed at all (Simpson's paradox), so compare rates within segments.",
+            "Time to convert is skewed by a few slow users, so report the median and a high percentile, such as MEDIAN() or quantile_cont(x, 0.9) of the minutes from first view to purchase, rather than the mean.",
+            "A funnel shows where users drop off, not why: pair it with release notes, error logs, support tickets or user research, and test a fix with an experiment before claiming it worked."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Sessionise the events and find the broken checkout",
+        "tool": "DuckDB in Python",
+        "minutes": 60,
+        "goal": "Split every device's events into sessions, test how the inactivity timeout changes the count, build the ordered checkout funnel, and use a weekly, per-platform view of the last step to find when and where checkout broke.",
+        "setup": [
+          "Your course folder from lab 1, with the data generated",
+          "The starter file lab2_sessions_funnel.py, and the reference clean_events.sql: replace yours with it so everyone's numbers match"
+        ],
+        "steps": [
+          {
+            "do": "Complete TODO 1 and TODO 2 in the sessionised view: the new-session flag and the running sum that numbers sessions.",
+            "code": "CASE WHEN previous_time IS NULL\n       OR event_time - previous_time > INTERVAL 30 MINUTE THEN 1 ELSE 0 END AS new_session",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the script and read the first two tables.",
+            "code": "python lab2_sessions_funnel.py",
+            "lang": "bash",
+            "see": "22401 sessions, 5.5 events per session, a median of 3.6 minutes and 2138 single-event sessions; 26449 sessions with a 10-minute gap and 19856 with 60."
+          },
+          {
+            "do": "Read the session_steps view: one row per session with the first time it reached each step, pivoted with MIN(...) FILTER (WHERE ...)."
+          },
+          {
+            "do": "Complete TODO 3, the ordered funnel: a session counts at a step only if that step's time is at or after the previous step's.",
+            "code": "COUNT(*) FILTER (WHERE checked_out >= added AND added >= viewed) AS n_checkout",
+            "lang": "sql"
+          },
+          {
+            "do": "Complete TODO 4: checkout-to-purchase by week and platform for sessions that reached checkout before the experiment started on 2 March.",
+            "code": "ROUND(AVG(CASE WHEN purchased >= checked_out THEN 1 ELSE 0 END)\n      FILTER (WHERE platform = 'android'), 3) AS android",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the script again.",
+            "code": "python lab2_sessions_funnel.py",
+            "lang": "bash",
+            "see": "Funnel: 20591 viewed, 9753 added, 5506 checked out, 3892 purchased; Android's checkout-to-purchase falls to 0.418 and 0.393 in the weeks of 9 and 16 February."
+          },
+          {
+            "do": "Write three sentences for the engineering team: what broke, on which platform, between which dates, and why web's dip in the same weeks is weaker evidence (look at web_checkouts)."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Sessionisation with a 30-minute gap gives 22,401 sessions, 5.5 events per session and a median of 3.6 minutes.",
+            "look_for": [
+              "22401",
+              "5.5",
+              "3.6"
+            ]
+          },
+          {
+            "text": "The timeout comparison shows 26,449 sessions at 10 minutes and 19,856 at 60.",
+            "look_for": [
+              "26449",
+              "19856"
+            ]
+          },
+          {
+            "text": "The ordered funnel counts 20,591, 9,753, 5,506 and 3,892 sessions.",
+            "look_for": [
+              "20591",
+              "9753",
+              "5506",
+              "3892"
+            ]
+          },
+          {
+            "text": "The step rates are 0.474, 0.565 and 0.707, and the overall rate 0.189.",
+            "look_for": [
+              "0.474",
+              "0.565",
+              "0.707",
+              "0.189"
+            ]
+          },
+          {
+            "text": "The weekly view shows Android's checkout-to-purchase rate at 0.418 and 0.393 in the weeks of 9 and 16 February, against about 0.7 otherwise.",
+            "look_for": [
+              "0.418",
+              "0.393"
+            ]
+          },
+          {
+            "text": "The note names Android and the two weeks from 9 February, and treats web's smaller dip with caution because of its small numbers.",
+            "look_for": [
+              "android"
+            ]
+          }
+        ],
+        "submit": "Paste your four completed queries, the script's output and your note for the engineering team.",
+        "files": [
+          {
+            "path": "clean_events.sql",
+            "content": "-- The clean events view every later query starts from: one row per event, QA accounts left out,\n-- and anonymous events from before sign-up linked to the user who signed up on that device.\nCREATE OR REPLACE VIEW events AS\nWITH deduplicated AS (\n    SELECT *\n    FROM raw_events\n    QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id ORDER BY event_time) = 1\n),\nidentities AS (\n    SELECT anonymous_id, MIN(user_id) AS user_id\n    FROM deduplicated\n    WHERE user_id IS NOT NULL\n    GROUP BY anonymous_id\n)\nSELECT d.event_id,\n       d.anonymous_id,\n       COALESCE(d.user_id, i.user_id) AS user_id,\n       d.event_time,\n       d.event_name,\n       d.platform,\n       d.properties ->> '$.channel' AS channel,\n       CAST(d.properties ->> '$.revenue' AS DECIMAL(10, 2)) AS revenue,\n       d.properties\nFROM deduplicated AS d\nLEFT JOIN identities AS i USING (anonymous_id)\nLEFT JOIN users AS u ON u.user_id = COALESCE(d.user_id, i.user_id)\nWHERE NOT COALESCE(u.is_internal, false);\n"
+          },
+          {
+            "path": "lab2_sessions_funnel.py",
+            "content": "\"\"\"Lab 2: split each device's events into sessions, then build the checkout funnel and find where it broke.\"\"\"\n\nfrom pa_common import connect, show\n\nSESSIONS = \"\"\"\nCREATE OR REPLACE VIEW sessionised AS\nWITH ordered AS (\n    SELECT *,\n           LAG(event_time) OVER (PARTITION BY anonymous_id ORDER BY event_time, event_id) AS previous_time\n    FROM events\n),\nflagged AS (\n    -- TODO 1: new_session = 1 for a device's first event, or after a gap of more than 30 minutes; else 0\n    SELECT *, 1 AS new_session\n    FROM ordered\n)\n-- TODO 2: number each device's sessions with a running SUM of new_session (ordered by event_time, event_id)\n-- and build session_id from anonymous_id, '-' and that number\nSELECT *, event_id AS session_id\nFROM flagged\n\"\"\"\n\nSUMMARY = \"\"\"\nWITH per_session AS (\n    SELECT session_id, COUNT(*) AS events,\n           date_diff('second', MIN(event_time), MAX(event_time)) / 60 AS minutes\n    FROM sessionised\n    GROUP BY session_id\n)\nSELECT COUNT(*) AS sessions,\n       ROUND(AVG(events), 2) AS events_per_session,\n       ROUND(MEDIAN(minutes), 1) AS median_minutes,\n       COUNT(*) FILTER (WHERE events = 1) AS single_event_sessions\nFROM per_session\n\"\"\"\n\nTHRESHOLDS = \"\"\"\nSELECT gap_minutes,\n       COUNT(*) FILTER (WHERE previous_time IS NULL\n                          OR event_time - previous_time > gap_minutes * INTERVAL 1 MINUTE) AS sessions\nFROM (SELECT * FROM sessionised), (VALUES (10), (30), (60)) AS g(gap_minutes)\nGROUP BY gap_minutes\nORDER BY gap_minutes\n\"\"\"\n\nFUNNEL = \"\"\"\nCREATE OR REPLACE VIEW session_steps AS\nSELECT session_id,\n       ANY_VALUE(platform) AS platform,\n       MIN(event_time) FILTER (WHERE event_name = 'view_item') AS viewed,\n       MIN(event_time) FILTER (WHERE event_name = 'add_to_cart') AS added,\n       MIN(event_time) FILTER (WHERE event_name = 'begin_checkout') AS checked_out,\n       MIN(event_time) FILTER (WHERE event_name = 'purchase') AS purchased\nFROM sessionised\nGROUP BY session_id\n\"\"\"\n\nFUNNEL_COUNTS = \"\"\"\n-- TODO 3: from session_steps, count the sessions reaching each step in order (n_viewed, n_added,\n-- n_checkout, n_purchased: each step's time at or after the previous step's), then the step rates\n-- view_to_cart, cart_to_checkout and checkout_to_purchase, and overall (purchased / viewed), to 3 places\nSELECT 'TODO' AS todo\n\"\"\"\n\nBY_WEEK = \"\"\"\n-- TODO 4: for sessions that reached checkout before 2 March, the share that went on to purchase, by\n-- week (date_trunc('week', checked_out)) in columns android, ios and web, plus web_checkouts (how many)\nSELECT 'TODO' AS todo\n\"\"\"\n\nTIME_TO_BUY = \"\"\"\nSELECT platform,\n       COUNT(*) AS buying_sessions,\n       ROUND(MEDIAN(date_diff('second', viewed, purchased)) / 60, 1) AS median_minutes_view_to_purchase\nFROM session_steps\nWHERE purchased >= viewed\nGROUP BY platform\nORDER BY platform\n\"\"\"\n\ncon = connect()\ncon.execute(SESSIONS)\nshow(con, SUMMARY, \"Sessions, with a 30-minute inactivity gap\")\nshow(con, THRESHOLDS, \"How the gap changes the number of sessions\")\ncon.execute(FUNNEL)\nshow(con, FUNNEL_COUNTS, \"The checkout funnel, in order, within a session\")\nshow(con, BY_WEEK, \"Checkout to purchase, by week and platform (before the experiment)\")\nshow(con, TIME_TO_BUY, \"Time from first view to purchase in buying sessions\")\n"
+          }
+        ],
+        "hints": [
+          "event_time - previous_time is an INTERVAL in DuckDB, so compare it with INTERVAL 30 MINUTE.",
+          "In the funnel, a NULL step time makes the comparison NULL, which FILTER treats as false: sessions that never reached a step drop out on their own.",
+          "Name the counts n_viewed and so on: an alias such as added would clash with the column added in the same query."
+        ]
+      }
+    },
+    {
+      "title": "Cohorts and retention",
+      "summary": "Group users by when they started, build retention tables and curves that handle cohorts still in progress, and account for growth: new, retained, resurrected and churned users.",
+      "instructor": "arjun-sharma",
+      "lessons": [
+        {
+          "title": "Cohorts: comparing users who started together",
+          "minutes": 10,
+          "objectives": [
+            "Explain why cohorts beat aggregate metrics for judging retention",
+            "Build acquisition and behavioural cohorts",
+            "Read a cohort table down its columns and along its rows"
+          ],
+          "key_points": [
+            "A cohort is a group of users who share a starting point, usually the week or month they signed up; comparing cohorts shows how the product treats new users now compared with earlier ones.",
+            "Aggregate metrics mix cohorts of different ages: in a fast-growing product, overall retention can fall while every cohort retains better, because young cohorts, which haven't settled yet, make up more of the total.",
+            "Acquisition cohorts group users by start date; behavioural cohorts group them by something they did, such as buying in their first week, which shows association with retention, not that the behaviour causes it.",
+            "A cohort table has one row per cohort and one column per period since the start: reading down a column compares cohorts at the same age, and reading along a row follows one cohort as it ages.",
+            "Count periods from each user's own sign-up, (activity_day - signup_day) // 7 for weeks, rather than calendar weeks, so that week 1 means the same span of time for everyone."
+          ]
+        },
+        {
+          "title": "Retention curves and cohorts still in progress",
+          "minutes": 12,
+          "objectives": [
+            "Compute N-week, unbounded and bracket retention",
+            "Handle cohorts whose periods haven't finished",
+            "Read the shape of a retention curve"
+          ],
+          "key_points": [
+            "N-week retention is the share of a cohort active in week N; unbounded retention counts users active in week N or any later week, so it can only fall as N grows and is never lower than N-week retention for the same N.",
+            "Bracket retention uses wider periods, such as days 1-7 and 8-14, which suits products people use weekly, like a grocery shop, better than day-by-day retention does.",
+            "Count a cohort in week N only once week N has ended for all of its users; a cohort whose week 4 is still under way shows falsely low retention, so leave those cells empty (NULL), never zero.",
+            "To draw one curve, pool every user whose week N has finished and divide the active ones by them; the denominator shrinks as N grows, so the late points rest on fewer, older users and are noisier.",
+            "A curve that flattens means a core of users keeps coming back; one that keeps sliding towards zero means the product eventually loses almost everyone, however good the first weeks look.",
+            "A before-and-after comparison of cohorts, such as retention before and after a new onboarding flow, can also reflect seasonality or a change in channel mix; confirm it with an experiment or by comparing within channels."
+          ]
+        },
+        {
+          "title": "Churn, resurrection and growth accounting",
+          "minutes": 12,
+          "objectives": [
+            "Split active users into new, retained and resurrected, and count churn",
+            "Build growth accounting in SQL with LAG and LEAD",
+            "Use the quick ratio, and know its limits"
+          ],
+          "key_points": [
+            "Growth accounting splits each period's active users into new (their first active period), retained (also active the period before) and resurrected (back after a gap), and counts churned users: active last period but not this one.",
+            "The parts must add up: this period's active users = new + retained + resurrected, and last period's active users = retained + churned; run that check on every growth accounting query.",
+            "In SQL, reduce activity to one row per user per week; LAG and LEAD over each user's weeks give the previous and next active weeks, so a previous week exactly 7 days earlier means retained and an earlier one means resurrected.",
+            "The quick ratio, (new + resurrected) / churned, compares users gained with users lost: above 1 the active base is growing, but a high ratio driven by heavy acquisition can still hide poor retention.",
+            "Choose the period from how often the product is naturally used: a week without activity may mean churn for a messaging app, but only a normal gap for a weekly grocery shop or a monthly bill payment."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build retention cohorts and growth accounting",
+        "tool": "DuckDB in Python",
+        "minutes": 60,
+        "goal": "Build Basketful's weekly retention cohort table with incomplete cells left empty, draw the pooled retention curve, compare retention before and after the new onboarding flow, and account for weekly growth.",
+        "setup": [
+          "Your course folder, with the data and the reference clean_events.sql",
+          "The starter file lab3_retention.py"
+        ],
+        "steps": [
+          {
+            "do": "Read the ACTIVITY views: active_days (meaningful events at or after sign-up) and user_weeks, which gives each active day's week_n since that user's sign-up."
+          },
+          {
+            "do": "Complete TODO 1, the cohort table. Each cell is the share of the cohort active in week n, and stays NULL until week n has ended for the cohort's last sign-up day.",
+            "code": "MAX(CASE WHEN r.week_n = 4 AND s.cohort_week + 7 * 4 + 12 <= DATE '2026-04-05'\n         THEN ROUND(r.active / s.users, 3) END) AS w4",
+            "lang": "sql"
+          },
+          {
+            "do": "Read the CURVE query: for each week n it pools every user whose week n has finished, and counts how many were active."
+          },
+          {
+            "do": "Complete TODO 2 and TODO 3, the growth accounting states and churn, from each user's previous and next active weeks.",
+            "code": "COUNT(*) FILTER (WHERE previous_week = week - 7) AS retained,\nCOUNT(*) FILTER (WHERE previous_week < week - 7) AS resurrected",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab3_retention.py",
+            "lang": "bash",
+            "see": "The 5 January cohort keeps 0.452 in week 1 and 0.25 in week 8; the pooled curve falls from 0.476 to about 0.24 and flattens; week-2 retention is 0.344 before 23 February and 0.423 from then."
+          },
+          {
+            "do": "Check that growth accounting adds up: for the week of 9 February, retained + churned must equal the previous week's active users.",
+            "see": "211 + 136 = 347, the active users in the week of 2 February."
+          },
+          {
+            "do": "Write a short paragraph: does the curve flatten, did the new onboarding flow help, and what else could explain the difference?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The cohort table is right for the first cohort: 124 users, 0.452 in week 1 and 0.25 in week 8.",
+            "look_for": [
+              "0.452",
+              "0.25"
+            ]
+          },
+          {
+            "text": "Cells whose week hasn't finished are NULL, not 0, and the 23 February cohort shows 0.561 in week 1 and 0.415 in week 4.",
+            "look_for": [
+              "NULL",
+              "0.561",
+              "0.415"
+            ]
+          },
+          {
+            "text": "The pooled retention curve has 1,856 eligible users in week 1 at 0.476, and 0.279 in week 4.",
+            "look_for": [
+              "1856",
+              "0.476",
+              "0.279"
+            ]
+          },
+          {
+            "text": "Week-2 retention is 0.344 for sign-ups before 23 February and 0.423 from then.",
+            "look_for": [
+              "0.344",
+              "0.423"
+            ]
+          },
+          {
+            "text": "Growth accounting for the week of 9 February: 396 active, 142 new, 211 retained, 43 resurrected, 136 churned, quick ratio 1.36.",
+            "look_for": [
+              "396",
+              "211",
+              "136",
+              "1.36"
+            ]
+          },
+          {
+            "text": "The paragraph says whether the curve flattens and names at least one other explanation for the onboarding difference, such as channel mix or season.",
+            "look_for": [
+              "flatten"
+            ]
+          }
+        ],
+        "submit": "Paste your three completed queries, the script's output, the reconciliation for the week of 9 February and your paragraph.",
+        "files": [
+          {
+            "path": "lab3_retention.py",
+            "content": "\"\"\"Lab 3: weekly retention by sign-up cohort, the retention curve, and growth accounting.\"\"\"\n\nfrom pa_common import connect, show\n\nACTIVITY = \"\"\"\nCREATE OR REPLACE VIEW active_days AS\nSELECT DISTINCT e.user_id, CAST(e.event_time AS DATE) AS day\nFROM events AS e\nJOIN users AS u ON u.user_id = e.user_id AND e.event_time >= u.signup_time\nWHERE e.event_name IN ('search', 'view_item', 'add_to_cart', 'begin_checkout', 'purchase');\n\nCREATE OR REPLACE VIEW user_weeks AS\nSELECT a.user_id,\n       CAST(u.signup_time AS DATE) AS signup_day,\n       CAST(date_trunc('week', u.signup_time) AS DATE) AS cohort_week,\n       (a.day - CAST(u.signup_time AS DATE)) // 7 AS week_n\nFROM active_days AS a\nJOIN users AS u USING (user_id);\n\"\"\"\n\nCOHORT_TABLE = \"\"\"\n-- TODO 1: one row per cohort_week with its number of (non-QA) users, then w1, w2, w4 and w8: the share\n-- of the cohort active in week n after sign-up (from user_weeks), to 3 places. Leave a cell NULL until\n-- week n has ended for the cohort's last sign-up day: cohort_week + 7 * n + 12 <= DATE '2026-04-05'\nSELECT 'TODO' AS todo\n\"\"\"\n\nCURVE = \"\"\"\nWITH weeks AS (SELECT CAST(range AS INTEGER) AS week_n FROM range(1, 11)),\neligible AS (\n    SELECT w.week_n, u.user_id\n    FROM weeks AS w\n    JOIN users AS u ON NOT u.is_internal\n                   AND CAST(u.signup_time AS DATE) + 7 * w.week_n + 6 <= DATE '2026-04-05'\n)\nSELECT e.week_n,\n       COUNT(DISTINCT e.user_id) AS eligible_users,\n       COUNT(DISTINCT uw.user_id) AS active_users,\n       ROUND(active_users / eligible_users, 3) AS retention\nFROM eligible AS e\nLEFT JOIN user_weeks AS uw ON uw.user_id = e.user_id AND uw.week_n = e.week_n\nGROUP BY e.week_n\nORDER BY e.week_n\n\"\"\"\n\nONBOARDING = \"\"\"\nSELECT CASE WHEN u.signup_time >= TIMESTAMP '2026-02-23' THEN 'from 23 Feb' ELSE 'before 23 Feb' END AS signed_up,\n       COUNT(DISTINCT u.user_id) AS eligible_users,\n       ROUND(COUNT(DISTINCT uw.user_id) / COUNT(DISTINCT u.user_id), 3) AS week2_retention\nFROM users AS u\nLEFT JOIN user_weeks AS uw ON uw.user_id = u.user_id AND uw.week_n = 2\nWHERE NOT u.is_internal\n  AND CAST(u.signup_time AS DATE) + 20 <= DATE '2026-04-05'\nGROUP BY signed_up\nORDER BY signed_up\n\"\"\"\n\nGROWTH = \"\"\"\nWITH weekly AS (\n    SELECT DISTINCT user_id, CAST(date_trunc('week', day) AS DATE) AS week\n    FROM active_days\n),\nflagged AS (\n    SELECT *,\n           LAG(week) OVER (PARTITION BY user_id ORDER BY week) AS previous_week,\n           LEAD(week) OVER (PARTITION BY user_id ORDER BY week) AS next_week\n    FROM weekly\n),\nstates AS (\n    -- TODO 2: per week, active users, then new_users (no earlier active week), retained (the previous\n    -- active week is exactly 7 days earlier) and resurrected (the previous active week is earlier still)\n    SELECT week, COUNT(*) AS active, 0 AS new_users, 0 AS retained, 0 AS resurrected\n    FROM flagged\n    GROUP BY week\n),\nchurn AS (\n    -- TODO 3: per week, the users who were active the week before but not this week\n    SELECT week + 7 AS week, 1 AS churned\n    FROM flagged\n    GROUP BY week + 7\n)\nSELECT s.week, s.active, s.new_users, s.retained, s.resurrected, c.churned,\n       ROUND((s.new_users + s.resurrected) / c.churned, 2) AS quick_ratio\nFROM states AS s\nJOIN churn AS c USING (week)\nWHERE s.week BETWEEN DATE '2026-02-02' AND DATE '2026-03-30'\nORDER BY s.week\n\"\"\"\n\ncon = connect()\ncon.execute(ACTIVITY)\nshow(con, COHORT_TABLE, \"Share of each weekly cohort active in week n after sign-up (blank until it's complete)\")\nshow(con, CURVE, \"The retention curve: every user whose week n has finished\")\nshow(con, ONBOARDING, \"Week-2 retention before and after the new onboarding flow\")\nshow(con, GROWTH, \"Growth accounting by week\")\n"
+          }
+        ],
+        "hints": [
+          "A cohort's last sign-up day is cohort_week + 6, and its week n ends 7 * n + 6 days after that: cohort_week + 7 * n + 12.",
+          "LEAD(week) is NULL for a user's last active week, and that user churned the week after, unless it's the data's last week.",
+          "Use range() for a series of whole numbers, and cast it to INTEGER before adding it to a DATE."
+        ]
+      }
+    },
+    {
+      "title": "Attribution: giving conversions their credit",
+      "summary": "Match conversions to the marketing touches before them, share the credit with single-touch and multi-touch rules in SQL, and see why attribution isn't the same as incrementality.",
+      "instructor": "valentina-lopez",
+      "lessons": [
+        {
+          "title": "Touchpoints, lookback windows and single-touch rules",
+          "minutes": 12,
+          "objectives": [
+            "Match conversions to the touches before them within a lookback window",
+            "Compare first-touch and last-touch attribution",
+            "Report conversions with no tracked touch honestly"
+          ],
+          "key_points": [
+            "Attribution shares the credit for a conversion, such as a sign-up or a first purchase, among the marketing touches before it: campaign clicks, ad visits and referral links, each recorded with its channel.",
+            "Only touches before the conversion and inside a lookback window count, such as the 14 days before sign-up; leave out the time condition and the query credits touches that came afterwards, like offers emailed to existing customers.",
+            "First-touch gives all the credit to the touch that started the journey, which favours channels that bring new people in; last-touch gives it to the final touch, which favours channels that close, such as retargeting ads.",
+            "Conversions with no tracked touch are direct or organic visits, or journeys whose touches were lost to blocked cookies, consent choices or app-store redirects; report their share rather than spreading them over the channels.",
+            "Touches usually happen before sign-up, on an anonymous device id, so stitch identities first; without it, most sign-ups appear to have no touch at all."
+          ]
+        },
+        {
+          "title": "Multi-touch rules, and what attribution can't tell you",
+          "minutes": 12,
+          "objectives": [
+            "Compute linear and position-based credit with window functions",
+            "Check that an attribution query conserves conversions",
+            "Distinguish attribution from incrementality"
+          ],
+          "key_points": [
+            "Linear attribution splits a conversion equally across its n touches, 1/n each; position-based (U-shaped) gives 40% each to the first and last touch and shares the other 20% among the touches between, with special cases for one or two touches.",
+            "In SQL, number each conversion's touches with ROW_NUMBER() OVER (PARTITION BY the conversion ORDER BY time, id) and count them with COUNT(*) OVER (the same partition), then work out each touch's credit with CASE.",
+            "Whatever the rule, each conversion's credits must add up to 1, so every model's channel totals add up to the same number of attributed conversions; check this before comparing models.",
+            "Time-decay rules give more credit to touches closer to the conversion, for example halving a touch's weight for every 7 days before it; data-driven models instead learn weights from paths that did and didn't convert.",
+            "Rule-based attribution redistributes the same conversions by convention, so changing the rule moves budget without measuring what any channel caused; incrementality, the conversions that wouldn't have happened otherwise, needs an experiment such as a holdout group or a geographic test."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Attribute sign-ups to channels four ways",
+        "tool": "DuckDB in Python",
+        "minutes": 45,
+        "goal": "Find the campaign clicks in the 14 days before each Basketful sign-up, credit the channels under first-touch, last-touch, linear and position-based rules, and see what goes wrong without the time condition.",
+        "setup": [
+          "Your course folder, with the data and the reference clean_events.sql",
+          "The starter file lab4_attribution.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the starter as it is, before changing anything, and look at the credit table.",
+            "code": "python lab4_attribution.py",
+            "lang": "bash",
+            "see": "An email channel appears: without a time condition, clicks after sign-up are matched too, and the credits are still zero."
+          },
+          {
+            "do": "Complete TODO 1 in the signup_touches view: only clicks at or before the sign-up, and no more than 14 days before it.",
+            "code": " AND e.event_time <= s.signed_up_at\n AND e.event_time >= s.signed_up_at - INTERVAL 14 DAY",
+            "lang": "sql"
+          },
+          {
+            "do": "Complete TODO 2: each touch's credit under each rule. Position-based is the trickiest.",
+            "code": "CASE WHEN touches = 1 THEN 1.0\n     WHEN touches = 2 THEN 0.5\n     WHEN touch_n = 1 OR touch_n = touches THEN 0.4\n     ELSE 0.2 / (touches - 2) END AS position_based",
+            "lang": "sql"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab4_attribution.py",
+            "lang": "bash",
+            "see": "2179 sign-ups, 1536 with a touch (0.295 without); paid_search gets 554 sign-ups first-touch, and retargeting rises from 162 first-touch to 354 last-touch."
+          },
+          {
+            "do": "Check conservation: in every column, the channel totals add up to 1,536, the sign-ups with a touch (allow for rounding)."
+          },
+          {
+            "do": "Write a short note for the marketing team: which channel each rule favours and why, what the 29.5% without a touch means, and what test would show whether retargeting causes sign-ups."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The lookback join is right: 2,179 sign-ups, 1,536 with a click in the 14 days before, 0.295 without, and 1.28 touches per touched sign-up.",
+            "look_for": [
+              "1536",
+              "0.295",
+              "1.28"
+            ]
+          },
+          {
+            "text": "First-touch credit: paid_search 554, referral 476, paid_social 344, retargeting 162.",
+            "look_for": [
+              "554.0",
+              "476.0",
+              "344.0",
+              "162.0"
+            ]
+          },
+          {
+            "text": "Last-touch credit moves to closing channels: retargeting 354 and referral 352.",
+            "look_for": [
+              "354.0",
+              "352.0"
+            ]
+          },
+          {
+            "text": "Linear and position-based credit sit between the two, such as paid_search 532.2 (linear) and 532.1 (position-based).",
+            "look_for": [
+              "532.2",
+              "532.1"
+            ]
+          },
+          {
+            "text": "The trap query shows 620 sign-ups with email clicks after sign-up, which a missing time condition would credit.",
+            "look_for": [
+              "620"
+            ]
+          },
+          {
+            "text": "The note says attribution doesn't measure incrementality and proposes a holdout or geographic test.",
+            "look_for": [
+              "holdout"
+            ]
+          }
+        ],
+        "submit": "Paste your completed signup_touches view and credit CTE, the script's output, your conservation check and your note.",
+        "files": [
+          {
+            "path": "lab4_attribution.py",
+            "content": "\"\"\"Lab 4: give each sign-up's credit to the campaign clicks before it, under four attribution rules.\"\"\"\n\nfrom pa_common import connect, show\n\nTOUCHES = \"\"\"\nCREATE OR REPLACE VIEW signup_touches AS\nWITH signups AS (\n    SELECT user_id, event_time AS signed_up_at\n    FROM events\n    WHERE event_name = 'sign_up'\n)\nSELECT s.user_id, e.channel, e.event_time,\n       ROW_NUMBER() OVER (PARTITION BY s.user_id ORDER BY e.event_time, e.event_id) AS touch_n,\n       COUNT(*) OVER (PARTITION BY s.user_id) AS touches\nFROM signups AS s\nJOIN events AS e\n  ON e.user_id = s.user_id\n AND e.event_name = 'campaign_click'\n -- TODO 1: only clicks at or before the sign-up, and no more than 14 days before it\n\"\"\"\n\nCOVERAGE = \"\"\"\nSELECT COUNT(*) AS signups,\n       COUNT(*) FILTER (WHERE user_id IN (SELECT user_id FROM signup_touches)) AS with_a_touch,\n       ROUND(1 - with_a_touch / signups, 3) AS share_without_a_touch,\n       (SELECT ROUND(AVG(touches), 2) FROM signup_touches WHERE touch_n = 1) AS touches_per_touched_signup\nFROM events\nWHERE event_name = 'sign_up'\n\"\"\"\n\nCREDIT = \"\"\"\nWITH credit AS (\n    SELECT channel,\n           -- TODO 2: each touch's credit under each rule; every sign-up's credits must add up to 1.\n           -- position_based: 40% each to the first and last touch and 20% shared by the ones between\n           -- (one touch gets 1.0, and each of two touches 0.5)\n           0.0 AS first_touch,\n           0.0 AS last_touch,\n           0.0 AS linear,\n           0.0 AS position_based\n    FROM signup_touches\n)\nSELECT channel,\n       ROUND(SUM(first_touch), 1) AS first_touch,\n       ROUND(SUM(last_touch), 1) AS last_touch,\n       ROUND(SUM(linear), 1) AS linear,\n       ROUND(SUM(position_based), 1) AS position_based\nFROM credit\nGROUP BY channel\nORDER BY first_touch DESC\n\"\"\"\n\nTRAP = \"\"\"\nSELECT e.channel, COUNT(DISTINCT s.user_id) AS signups_credited_wrongly\nFROM events AS s\nJOIN events AS e ON e.user_id = s.user_id AND e.event_name = 'campaign_click' AND e.event_time > s.event_time\nWHERE s.event_name = 'sign_up'\nGROUP BY e.channel\nORDER BY e.channel\n\"\"\"\n\ncon = connect()\ncon.execute(TOUCHES)\nshow(con, COVERAGE, \"Sign-ups with a campaign click in the 14 days before\")\nshow(con, CREDIT, \"Sign-ups credited to each channel, by rule\")\nshow(con, TRAP, \"Clicks after sign-up: the ones a missing time condition would credit\")\n"
+          }
+        ],
+        "hints": [
+          "touch_n = touches picks the last touch, because touches is the count over the same partition.",
+          "For four touches, position-based credit is 0.4, 0.1, 0.1 and 0.4: the 0.2 is shared by the two in the middle.",
+          "Sum the credits per user and check every user's total is 1: SELECT user_id, SUM(linear) FROM credit GROUP BY user_id HAVING ABS(SUM(linear) - 1) > 1e-9 should return nothing."
+        ]
+      }
+    },
+    {
+      "title": "Experiment readouts from event data",
+      "summary": "Build an A/B test readout in SQL: join assignments to events, choose the population and windows, check the split, compute differences and intervals for conversion, means and ratios, and decide.",
+      "instructor": "arjun-sharma",
+      "lessons": [
+        {
+          "title": "Assignment, exposure and the analysis population",
+          "minutes": 12,
+          "objectives": [
+            "Join an assignment log to outcome events correctly",
+            "Choose between all-assigned and triggered analysis",
+            "Check the sample ratio and the logging before reading results"
+          ],
+          "key_points": [
+            "An experiment's data has two parts: the assignment log, saying which variant each user got and when, and the events that measure outcomes; join them on the unit that was randomised, usually the user.",
+            "Exposure is the moment a user could first notice the change, such as reaching checkout; analysing only exposed users (a triggered analysis) is valid when exposure happens the same way in both variants, which holds when the change can't act before it.",
+            "Including users who were never exposed dilutes the effect: they add the same behaviour to both groups, so the difference in rates shrinks while the noise doesn't, and a real effect becomes harder to detect.",
+            "Measure outcomes from each user's first exposure inside a fixed window, such as 24 hours or 7 days, and only for users whose whole window ended before the test did, so every user is measured for the same length of time.",
+            "Check the split first: a sample ratio mismatch, such as 52/48 in a 50/50 test, shows in a chi-square statistic on the counts; with two groups, above 3.84 is significant at the 5% level, and many teams act only above 10.83 (p < 0.001).",
+            "Remove internal and test accounts from both the assignment log and the outcomes, and check that the variant recorded in exposure events matches the assignment log."
+          ]
+        },
+        {
+          "title": "Computing the readout in SQL",
+          "minutes": 12,
+          "objectives": [
+            "Reduce experiment data to one row per user",
+            "Compute differences and 95% intervals for proportions and means",
+            "Treat ratio metrics such as average order value correctly"
+          ],
+          "key_points": [
+            "First reduce the data to one row per user with their variant and outcomes, such as converted (0 or 1), revenue and orders; then every mean and variance comes from rows of the unit that was randomised.",
+            "For conversion rates the standard error of the difference is SQRT(p_c(1 - p_c)/n_c + p_t(1 - p_t)/n_t), and the 95% interval is the difference plus or minus 1.96 standard errors.",
+            "For a mean such as revenue per user, use each group's VAR_SAMP: the standard error is SQRT(var_c/n_c + var_t/n_t); revenue is skewed, so with small groups or extreme outliers check the interval with a bootstrap over users.",
+            "A ratio metric such as average order value (revenue / orders) is measured per order, not per randomised user; compute it as a ratio of per-user sums and get its standard error from the delta method or a bootstrap over users, never by treating orders as independent.",
+            "Report each metric's absolute difference, relative lift (difference / control) and interval: one primary metric chosen in advance, secondary metrics that explain it, and guardrail metrics that mustn't get worse."
+          ]
+        },
+        {
+          "title": "Writing the readout and making the decision",
+          "minutes": 10,
+          "objectives": [
+            "Structure an experiment readout",
+            "Interpret intervals, guardrails and segments without over-claiming",
+            "Recommend ship, don't ship, iterate or extend"
+          ],
+          "key_points": [
+            "A readout states the hypothesis, the population and dates, the checks made (sample ratio, exposure logging, data quality), the primary result with its interval, the secondary and guardrail results, and the decision with its reasons.",
+            "An interval that excludes zero says the effect is unlikely to be zero, and its width says how precisely it's known: a lift between 1 and 12 points is probably real but could be small, so plan with the cautious end.",
+            "A guardrail that moves the wrong way without a significant result, such as a lower average order value, is a reason to keep watching it after launch or to test longer, not something to leave out of the readout.",
+            "Segments cut after the fact, by platform or city for instance, are exploratory: among many cuts some differ by chance, so treat a striking segment as a hypothesis for the next test.",
+            "Decide among ship, don't ship, iterate and extend by weighing the evidence against the cost of being wrong, and write down what would change the decision, such as the guardrail's trend over the first month."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Read out the one-page checkout experiment",
+        "tool": "DuckDB in Python",
+        "minutes": 60,
+        "goal": "Check Basketful's one_page_checkout test for a sample ratio mismatch, measure purchases in the 24 hours after first exposure with 95% intervals for conversion, revenue per user and average order value, show how analysing every assigned user dilutes the effect, and write the readout with a decision.",
+        "setup": [
+          "Your course folder, with the data and the reference clean_events.sql",
+          "The starter file lab5_experiment.py"
+        ],
+        "steps": [
+          {
+            "do": "Complete TODO 1: the chi-square statistic for the split, leaving out QA accounts.",
+            "code": "srm AS (SELECT SUM((users - total / 2) ^ 2 / (total / 2)) AS chi_square FROM assigned, totals)",
+            "lang": "sql"
+          },
+          {
+            "do": "Read the exposed view: each assigned user's first experiment_exposure event, with the variant from the assignment log."
+          },
+          {
+            "do": "Complete TODO 2 and TODO 3 in the outcomes view: purchases in the 24 hours from first exposure, for users first exposed before 29 March.",
+            "code": " AND p.event_time >= x.exposed_at\n AND p.event_time < x.exposed_at + INTERVAL 1 DAY\nWHERE x.exposed_at < TIMESTAMP '2026-03-29'",
+            "lang": "sql"
+          },
+          {
+            "do": "Complete TODO 4, then read the rest of the READOUT query: the revenue interval uses VAR_SAMP, and average order value uses the delta method with COVAR_SAMP."
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab5_experiment.py",
+            "lang": "bash",
+            "see": "654 control and 608 treatment users, chi-square 1.677; conversion 0.7341 against 0.7965, a difference of 0.0624 with an interval from 0.009 to 0.1158."
+          },
+          {
+            "do": "Compare the last table's two populations: the same buyers, but a smaller difference when every assigned user is counted."
+          },
+          {
+            "do": "Write a readout of at most 200 words: the checks, the primary result with its interval, revenue per user, average order value as a guardrail, and your decision with what you'd monitor after it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The split is checked without QA accounts: 654 control and 608 treatment users, chi-square 1.677, below 3.84, so no mismatch.",
+            "look_for": [
+              "654",
+              "608",
+              "1.677"
+            ]
+          },
+          {
+            "text": "The exposed population is right: 513 control and 472 treatment users reached checkout during the test.",
+            "look_for": [
+              "513",
+              "472"
+            ]
+          },
+          {
+            "text": "Primary metric: 24-hour conversion is 0.7341 in control and 0.7965 in treatment, a difference of 0.0624 (95% interval 0.009 to 0.1158).",
+            "look_for": [
+              "0.7341",
+              "0.7965",
+              "0.0624",
+              "0.1158"
+            ]
+          },
+          {
+            "text": "Revenue per user rises by 0.94 with an interval from -3.64 to 5.52; average order value falls by 3.21, interval -6.46 to 0.04.",
+            "look_for": [
+              "-3.64",
+              "5.52",
+              "-6.46"
+            ]
+          },
+          {
+            "text": "The dilution table shows the same 451 and 431 buyers, with conversion 0.6896 against 0.7089 for every assigned user and 0.8791 against 0.9131 for exposed users only.",
+            "look_for": [
+              "0.6896",
+              "0.7089",
+              "0.8791",
+              "0.9131"
+            ]
+          },
+          {
+            "text": "The readout reports the conversion lift with its interval, flags average order value as a guardrail to watch, and makes a clear decision.",
+            "look_for": [
+              "guardrail"
+            ]
+          }
+        ],
+        "submit": "Paste your completed queries, the script's output and your readout.",
+        "files": [
+          {
+            "path": "lab5_experiment.py",
+            "content": "\"\"\"Lab 5: read out the one_page_checkout experiment from the assignment table and the events.\"\"\"\n\nfrom pa_common import connect, show\n\nSRM = \"\"\"\nWITH assigned AS (\n    SELECT a.variant, COUNT(*) AS users\n    FROM assignments AS a\n    JOIN users AS u USING (user_id)\n    WHERE a.experiment = 'one_page_checkout' AND NOT u.is_internal\n    GROUP BY a.variant\n),\ntotals AS (SELECT SUM(users) AS total FROM assigned),\n-- TODO 1: the chi-square statistic: the sum over both variants of (users - expected) ^ 2 / expected,\n-- where expected = total / 2\nsrm AS (SELECT 0 AS chi_square)\nSELECT a.variant, a.users,\n       ROUND(a.users / t.total, 4) AS share,\n       ROUND(srm.chi_square, 3) AS chi_square\nFROM assigned AS a, totals AS t, srm\nORDER BY a.variant\n\"\"\"\n\nEXPOSED = \"\"\"\nCREATE OR REPLACE VIEW exposed AS\nSELECT e.user_id, a.variant, MIN(e.event_time) AS exposed_at\nFROM events AS e\nJOIN assignments AS a ON a.user_id = e.user_id AND a.experiment = 'one_page_checkout'\nWHERE e.event_name = 'experiment_exposure'\nGROUP BY e.user_id, a.variant\n\"\"\"\n\nOUTCOMES = \"\"\"\nCREATE OR REPLACE VIEW outcomes AS\nSELECT x.user_id, x.variant,\n       CASE WHEN COUNT(p.event_id) > 0 THEN 1 ELSE 0 END AS converted,\n       COALESCE(SUM(p.revenue), 0) AS revenue,\n       COUNT(p.event_id) AS orders\nFROM exposed AS x\nLEFT JOIN events AS p\n  ON p.user_id = x.user_id\n AND p.event_name = 'purchase'\n -- TODO 2: only purchases in the 24 hours from the user's first exposure\n-- TODO 3: only users first exposed before 29 March, so every user's 24 hours end inside the test\nGROUP BY x.user_id, x.variant\n\"\"\"\n\nREADOUT = \"\"\"\nWITH v AS (\n    SELECT variant, COUNT(*) AS n,\n           AVG(converted) AS conversion,\n           AVG(revenue) AS revenue_per_user,\n           VAR_SAMP(revenue) AS revenue_variance,\n           SUM(revenue) / SUM(orders) AS aov,\n           AVG(orders) AS orders_per_user,\n           VAR_SAMP(orders) AS orders_variance,\n           COVAR_SAMP(revenue, orders) AS covariance\n    FROM outcomes\n    GROUP BY variant\n),\ns AS (\n    SELECT *,\n           0 AS conversion_se2,  -- TODO 4: a proportion's squared standard error, p(1 - p) / n\n           revenue_variance / n AS revenue_se2,\n           (revenue_variance - 2 * aov * covariance + aov ^ 2 * orders_variance)\n               / (n * orders_per_user ^ 2) AS aov_se2\n    FROM v\n),\nc AS (SELECT * FROM s WHERE variant = 'control'),\nt AS (SELECT * FROM s WHERE variant = 'treatment')\nSELECT 'conversion' AS metric, c.n AS n_control, t.n AS n_treatment,\n       ROUND(c.conversion, 4) AS control, ROUND(t.conversion, 4) AS treatment,\n       ROUND(t.conversion - c.conversion, 4) AS difference,\n       ROUND(t.conversion - c.conversion - 1.96 * SQRT(c.conversion_se2 + t.conversion_se2), 4) AS ci_low,\n       ROUND(t.conversion - c.conversion + 1.96 * SQRT(c.conversion_se2 + t.conversion_se2), 4) AS ci_high\nFROM c, t\nUNION ALL\nSELECT 'revenue_per_user', c.n, t.n,\n       ROUND(c.revenue_per_user, 2), ROUND(t.revenue_per_user, 2),\n       ROUND(t.revenue_per_user - c.revenue_per_user, 2),\n       ROUND(t.revenue_per_user - c.revenue_per_user - 1.96 * SQRT(c.revenue_se2 + t.revenue_se2), 2),\n       ROUND(t.revenue_per_user - c.revenue_per_user + 1.96 * SQRT(c.revenue_se2 + t.revenue_se2), 2)\nFROM c, t\nUNION ALL\nSELECT 'average_order_value', c.n, t.n,\n       ROUND(c.aov, 2), ROUND(t.aov, 2), ROUND(t.aov - c.aov, 2),\n       ROUND(t.aov - c.aov - 1.96 * SQRT(c.aov_se2 + t.aov_se2), 2),\n       ROUND(t.aov - c.aov + 1.96 * SQRT(c.aov_se2 + t.aov_se2), 2)\nFROM c, t\n\"\"\"\n\nDILUTED = \"\"\"\nWITH population AS (\n    SELECT a.user_id, a.variant,\n           a.user_id IN (SELECT user_id FROM exposed) AS was_exposed,\n           EXISTS (SELECT 1 FROM events AS p\n                   WHERE p.user_id = a.user_id AND p.event_name = 'purchase'\n                     AND p.event_time >= a.assigned_at AND p.event_time < TIMESTAMP '2026-03-30') AS bought\n    FROM assignments AS a\n    JOIN users AS u ON u.user_id = a.user_id AND NOT u.is_internal\n)\nSELECT 'all assigned' AS analysed, variant, COUNT(*) AS users,\n       SUM(CAST(bought AS INTEGER)) AS buyers, ROUND(AVG(CAST(bought AS INTEGER)), 4) AS conversion\nFROM population GROUP BY variant\nUNION ALL\nSELECT 'exposed only', variant, COUNT(*), SUM(CAST(bought AS INTEGER)), ROUND(AVG(CAST(bought AS INTEGER)), 4)\nFROM population WHERE was_exposed GROUP BY variant\nORDER BY analysed, variant\n\"\"\"\n\ncon = connect()\nshow(con, SRM, \"Assignments by variant, without QA accounts, and the sample ratio check\")\ncon.execute(EXPOSED)\ncon.execute(OUTCOMES)\nshow(con, \"SELECT variant, COUNT(*) AS exposed_users FROM exposed GROUP BY variant ORDER BY variant\",\n     \"Users who reached checkout during the test\")\nshow(con, READOUT, \"Readout: the 24 hours after first exposure, for users exposed 2-28 March (95% intervals)\")\nshow(con, DILUTED, \"Bought during the test: every assigned user, then only those exposed\")\n"
+          }
+        ],
+        "hints": [
+          "^ is the power operator in DuckDB, so (users - total / 2) ^ 2 squares the difference.",
+          "Purchases need the time conditions in the LEFT JOIN's ON clause: in WHERE they would turn the LEFT JOIN into an inner join and drop users who didn't buy.",
+          "Exposures after 28 March would get less than 24 hours of the test's experience, because the test ended on 30 March."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn the event data model, explore the raw log in DuckDB, and build the clean events view and active-user metrics in lab 1.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Use window functions to sessionise events, build the ordered checkout funnel and find the Android bug in lab 2.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Build retention cohort tables, the pooled curve and growth accounting, handling cohorts still in progress.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Match sign-ups to the touches before them and compare four attribution rules in lab 4.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Read out the one-page checkout experiment: split check, triggered analysis, intervals and a written decision.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build the quarterly product review capstone on your own metrics layer, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "A quarterly product review for Basketful",
+    "minutes": 360,
+    "brief": "Basketful's product lead wants this quarter's review built from the event log rather than from screenshots of dashboards. Using the course data (or your own product's events, in the same shape), build a small, reusable metrics layer in DuckDB and answer five questions with it. Is engagement growing (DAU, WAU, MAU and stickiness)? Where does the purchase funnel lose the most people, by platform and week? Did the onboarding flow launched on 23 February improve retention, and how sure can anyone be without an experiment? Which channels bring sign-ups who stay, looking at week-4 retention by first-touch channel, and how much do the attribution rules disagree? And should one_page_checkout ship? Write it up as a memo of at most two pages for the product team, with tables or charts, and say plainly what the data can't tell you.",
+    "deliverables": [
+      "metrics.sql: the views your answers use (clean events, active days, sessions, session steps, user weeks), each with a comment saying what one row is",
+      "A queries file or notebook that answers the five questions, each query with a one-line comment",
+      "Reconciliation checks with their output: growth accounting adds up, attribution credits sum to the attributed sign-ups, and funnel counts never rise from one step to the next",
+      "Week-4 retention by first-touch channel, with each cell's number of eligible users",
+      "An experiment readout: checks, the primary metric with its interval, secondary and guardrail metrics, and a decision",
+      "A memo of at most two pages with three findings, a recommendation for each and the limits of the analysis"
+    ],
+    "rubric": [
+      {
+        "name": "Correct metrics",
+        "points": 25,
+        "description": "Active users, funnel, retention, attribution and experiment numbers are right for the definitions stated; QA accounts are excluded and incomplete cohorts and windows are handled."
+      },
+      {
+        "name": "SQL quality and reuse",
+        "points": 20,
+        "description": "Views build on one another, each states its grain, windows are ordered deterministically, and no query repeats another's logic."
+      },
+      {
+        "name": "Checks and reconciliation",
+        "points": 15,
+        "description": "The reconciliation checks run and pass, and the memo mentions any that didn't and why."
+      },
+      {
+        "name": "Experiment readout",
+        "points": 15,
+        "description": "The readout checks the split and exposure, reports intervals for every metric, treats the ratio metric correctly and makes a justified decision."
+      },
+      {
+        "name": "Insight and recommendations",
+        "points": 15,
+        "description": "Findings are specific and supported, such as the Android checkout drop or the paid_social retention gap, and each recommendation says what to do next and how to verify it."
+      },
+      {
+        "name": "Communication",
+        "points": 10,
+        "description": "The memo is short and clear, and honest about uncertainty and limits, for example that attribution isn't incrementality and a before-and-after comparison isn't an experiment."
+      }
+    ],
+    "submit": "Paste metrics.sql, your queries with their outputs, the reconciliation checks and the memo. A link to a repository is welcome too.",
+    "files": []
+  }
+}
