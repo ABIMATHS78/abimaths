@@ -717,8 +717,8 @@
             "A dirty read sees another transaction's uncommitted change, and a dirty write overwrites one. A non-repeatable read gets a different value when it reads the same row twice; a phantom is a row that appears or disappears when the same search runs again.",
             "A lost update happens when two transactions read a value, both compute from it and both write back, so one change disappears: two clerks each adding stock to the same count.",
             "Read skew: a transaction sees part of another's changes, such as one account after a transfer and the other before it. Write skew: two transactions read overlapping data, each makes a decision that is valid alone, and they write different rows, breaking an invariant together: the last two on-call doctors both going off call.",
-            "The SQL standard defines four isolation levels by which of three phenomena they forbid (dirty reads, non-repeatable reads, phantoms): read uncommitted, read committed, repeatable read and serializable. Real databases differ from the standard's wording, so test the behaviour you rely on.",
-            "Serializable means the outcome equals some serial execution of the transactions. At anything weaker, the application must handle the anomalies its level allows, with explicit locks or constraints."
+            "The SQL standard defines four isolation levels by which of three phenomena they forbid (dirty reads, non-repeatable reads, phantoms): READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ and SERIALIZABLE. Real databases differ from the standard's wording, so test the behaviour you rely on.",
+            "Serialisable execution means the outcome equals some serial execution of the transactions. At anything weaker, the application must handle the anomalies its level allows, with explicit locks or constraints."
           ]
         },
         {
@@ -727,15 +727,15 @@
           "objectives": [
             "Compare the isolation levels of PostgreSQL, InnoDB and SQLite",
             "Predict which anomalies each PostgreSQL level allows",
-            "Handle serialization failures by retrying"
+            "Handle serialisation failures by retrying"
           ],
           "key_points": [
             "PostgreSQL's default is read committed: each statement sees a snapshot taken when the statement starts, so two reads in one transaction can differ. Read uncommitted is accepted but behaves as read committed.",
             "PostgreSQL's repeatable read is snapshot isolation: the whole transaction sees the snapshot taken at its first statement, so neither non-repeatable reads nor phantoms occur. Updating a row changed by a transaction that committed after that snapshot fails with 'could not serialize access due to concurrent update'.",
-            "Snapshot isolation still allows write skew. PostgreSQL's serializable level (serializable snapshot isolation, since 9.1) watches for the read-write dependency patterns that make it possible and aborts a transaction with SQLSTATE 40001, so the application must retry.",
+            "Snapshot isolation still allows write skew. PostgreSQL's SERIALIZABLE level (serialisable snapshot isolation, since 9.1) watches for the read-write dependency patterns that make it possible and aborts a transaction with SQLSTATE 40001, so the application must retry.",
             "InnoDB defaults to repeatable read: plain SELECTs read a snapshot, but locking reads and UPDATEs see the latest committed rows and take next-key locks (a row plus the gap before it) against phantoms. SQL Server's default read committed takes shared locks unless read committed snapshot is enabled.",
-            "SQLite lets one writer at a time commit, so its transactions are serializable. In WAL mode, readers keep the snapshot they started with while a writer commits, and a transaction that read an old snapshot and then tries to write gets SQLITE_BUSY at once.",
-            "At any level, write transactions can fail with serialization or deadlock errors, so make them safe to retry: short, free of side effects outside the database, and wrapped in a retry loop with a limit."
+            "SQLite lets one writer at a time commit, so its transactions are serialisable. In WAL mode, readers keep the snapshot they started with while a writer commits, and a transaction that read an old snapshot and then tries to write gets SQLITE_BUSY at once.",
+            "At any level, write transactions can fail with serialisation or deadlock errors, so make them safe to retry: short, free of side effects outside the database, and wrapped in a retry loop with a limit."
           ],
           "walkthrough": {
             "tool": "psql",
@@ -871,7 +871,7 @@
             ]
           },
           {
-            "text": "Repeatable read turns the lost update into a serialization failure and a retry.",
+            "text": "Repeatable read turns the lost update into a serialisation failure and a retry.",
             "look_for": [
               "final stock 13",
               "final stock 18"
@@ -934,7 +934,7 @@
             "Recognise statements that take heavy table locks"
           ],
           "key_points": [
-            "Shared locks let many transactions read an item; an exclusive lock lets one transaction change it and excludes everyone else. Two-phase locking (2PL) acquires locks as the transaction runs and releases none until it has all it needs; strict 2PL holds them until commit, which makes schedules serializable.",
+            "Shared locks let many transactions read an item; an exclusive lock lets one transaction change it and excludes everyone else. Two-phase locking (2PL) acquires locks as the transaction runs and releases none until it has all it needs; strict 2PL holds them until commit, which makes schedules serialisable.",
             "Pure 2PL makes readers and writers block each other and needs range or predicate locks to stop phantoms; that cost is why MVCC databases use locks mainly between writers and for explicit requests.",
             "In PostgreSQL, SELECT ... FOR UPDATE locks the selected rows against other updates and locking reads until the transaction ends, which makes a read-modify-write safe; FOR SHARE allows other shared lockers but blocks writers.",
             "NOWAIT makes a locking read fail at once instead of waiting; SKIP LOCKED skips rows locked by others, which lets several workers take jobs from one queue table without blocking each other.",
