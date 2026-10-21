@@ -1,0 +1,899 @@
+{
+  "slug": "ml-monitoring-drift",
+  "title": "Monitoring Models in Production: Drift, Data Quality and Alerts",
+  "subtitle": "Catch broken pipelines, measure drift with statistics you build yourself, track performance when labels arrive late, and design alerts and retraining policies people trust.",
+  "category": "AI Engineering",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "rodrigoo-silva",
+    "tatianna-morrison"
+  ],
+  "skills": [
+    "Model monitoring",
+    "Data drift",
+    "Concept drift",
+    "Data quality",
+    "Population stability index",
+    "Statistical testing",
+    "Performance estimation",
+    "Alert design",
+    "Retraining strategy"
+  ],
+  "tools": [
+    "Python",
+    "NumPy",
+    "SciPy",
+    "pandas",
+    "scikit-learn",
+    "Matplotlib"
+  ],
+  "outcomes": [
+    "Design prediction logs and label tables, and catch pipeline incidents with data quality checks",
+    "Implement PSI, KS, chi-squared and Jensen-Shannon drift measures and know what each one misses",
+    "Measure performance on mature labels, estimate it before labels arrive, and detect concept drift",
+    "Learn alert thresholds from history, backtest alert rules and build a model-health dashboard",
+    "Choose and justify a retraining policy, accounting for label delay and feedback loops"
+  ],
+  "prerequisites": "Statistics for Data Science and AI (distributions and hypothesis tests) and Machine Learning Foundations with Python, or equivalent; Deploying and Serving Machine Learning Models helps for context. You need Python 3.10 or later with NumPy, SciPy, pandas, scikit-learn and Matplotlib; no monitoring product is required.",
+  "description": "A model can keep answering requests long after its answers stop being good. This advanced course teaches you to notice: what to record when a model makes predictions, how to catch the pipeline bugs that cause most urgent incidents, and how to tell real changes in the world from noise. You'll build the core of a monitoring system yourself with NumPy and SciPy rather than a library whose API changes, so you know exactly what each number means: population stability index, Kolmogorov-Smirnov and chi-squared tests, Jensen-Shannon distance and a domain classifier.\n\nThe labs follow one fraud model through 20 simulated weeks with a unit bug, an outage, a new payment channel, rising amounts and a new fraud pattern. You'll see which signals catch which incident, why p-values mislead at production volumes, how to report performance honestly when labels arrive weeks late, how to estimate it in the meantime and where that estimate fails, and how to design alerts from backtests rather than rules of thumb. The course ends with retraining policies compared over a simulated year and a capstone that proves a monitoring system with incident drills.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "What to monitor, and the data to do it with",
+      "summary": "Record the prediction log and the labels that monitoring depends on, tell the kinds of drift apart, and catch broken pipelines with cheap data quality checks before any statistics run.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "The prediction log: monitoring starts with records",
+          "minutes": 12,
+          "objectives": [
+            "Design a prediction log that supports every later monitoring question",
+            "Map service, data and model metrics to where each one comes from"
+          ],
+          "key_points": [
+            "Log every prediction with a unique ID, the time, the model version, the raw inputs as the model received them, the score and the decision; without that record, drift and performance can't be measured afterwards.",
+            "Keep labels in a separate table keyed by the same ID, with the date each label became known, and join the two when computing performance; labels arrive later and from other systems.",
+            "Service metrics (traffic, errors, latency) come from the server and its metrics stack; data metrics (missing values, ranges, categories, distributions) come from the log; model metrics (accuracy, calibration, business outcomes) need the labels.",
+            "Log inputs as the model saw them, after the feature pipeline, as well as the source values when you can: a bug between the two shows up only if both are recorded.",
+            "Prediction logs hold personal and sensitive data: apply the same access control, retention limits and minimisation as any other production data store."
+          ]
+        },
+        {
+          "title": "Kinds of drift, and why labels arrive late",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish covariate shift, prior shift and concept drift",
+            "Explain how label delay and feedback loops limit what can be measured"
+          ],
+          "key_points": [
+            "Covariate (data) drift is a change in the inputs' distribution P(X), such as larger payment amounts; prior shift is a change in how common each class is, P(Y); concept drift is a change in P(Y|X), the relationship the model learnt, such as a new fraud pattern.",
+            "Drift can be sudden (a pipeline change), gradual (inflation), recurring (seasons, paydays) or a one-off event; recurring patterns belong in the reference data, not in alerts.",
+            "Many apparent drifts are upstream changes rather than changes in the world: a unit switched from units to cents, a renamed category or a broken join. These need a pipeline fix, not a new model.",
+            "Labels often arrive late, as with fraud chargebacks after weeks or loan defaults after months, so the newest predictions can't be scored yet; input and prediction drift are the early warnings.",
+            "Feedback loops hide outcomes: a declined payment never shows whether it was fraud, so labels exist mostly for what the model let through. A small random sample handled without the model keeps an unbiased view."
+          ]
+        },
+        {
+          "title": "Data quality checks that catch broken pipelines",
+          "minutes": 11,
+          "objectives": [
+            "Write data quality checks for a scored batch against a reference",
+            "Explain why quality checks run before drift statistics"
+          ],
+          "key_points": [
+            "Quality checks compare each new window with a reference period and with business rules: schema and types, missing-value rates, allowed ranges, known category sets, volume, duplicates and freshness.",
+            "They are cheap, need no labels and give a precise message, such as device_age_days 34.9% missing, which tells the on-call engineer where to look.",
+            "Drift statistics can be blind to quality failures: a test that drops missing values never sees a missing-value spike, and a unit bug that affects one channel can stay under a drift threshold.",
+            "Base limits on the business (an instant payment can't exceed the scheme limit) and on the reference (no more than 3% of values above the reference 99th percentile), and version them with the model.",
+            "Run quality checks first and treat failures as incidents in the data pipeline; compute drift only on data that passed, or the drift report becomes a second, noisier alarm for the same bug."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build the prediction log and catch pipeline incidents",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Simulate 20 weeks of instant payments with hidden incidents, train a fraud model on the first eight weeks, write the prediction log and label table a live system keeps, and find the broken weeks with data quality checks alone.",
+        "setup": [
+          "Python 3.10 or later with numpy, pandas, scipy, scikit-learn and matplotlib in a virtual environment you'll keep for the course",
+          "A project folder for all the labs",
+          "The starter files make_payments.py, features.py, train_and_log.py and quality.py"
+        ],
+        "steps": [
+          {
+            "do": "Simulate the payments. The data is synthetic and deliberately fraud-heavy, so weekly metrics are stable enough to read; the docstring lists the incidents, but try to find them from the outputs first.",
+            "code": "python make_payments.py",
+            "lang": "bash",
+            "see": "wrote data/payments.csv: 60722 payments over 20 weeks, fraud rate 0.088"
+          },
+          {
+            "do": "Train on weeks 1-8 and write the prediction log and the label table. features.py holds the feature code that training and scoring share.",
+            "code": "python train_and_log.py",
+            "lang": "bash",
+            "see": "trained fraud-lr-2026.02 on weeks 1-8: 24437 payments, training AUC 0.871"
+          },
+          {
+            "do": "Open data/prediction_log.csv and data/labels.csv. Note the columns of each and that every label has a label_known_at date."
+          },
+          {
+            "do": "Run the quality checks for the live weeks, 9 to 20.",
+            "code": "python quality.py",
+            "lang": "bash",
+            "see": "week 12, week 14 and weeks 15-20 fail; the other weeks are ok"
+          },
+          {
+            "do": "For each failing week, decide whether it's a pipeline incident or a change in the world, and who should be told: the data engineers, the model owners or the fraud team."
+          },
+          {
+            "do": "Add one check of your own to quality.py, such as the share of night-time payments staying within 5 points of the reference, and run it again."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The data was simulated and the model trained on the first eight weeks.",
+            "look_for": [
+              "60722 payments over 20 weeks",
+              "training AUC 0.871"
+            ]
+          },
+          {
+            "text": "The unit bug in week 12 was caught by range and tail checks.",
+            "look_for": [
+              "amount: 81 values outside 0.01-10000",
+              "amount: 20.1% above the reference 99th percentile"
+            ]
+          },
+          {
+            "text": "The outage in week 14 was caught as missing data.",
+            "look_for": [
+              "device_age_days: 34.9% missing"
+            ]
+          },
+          {
+            "text": "The new channel was caught from week 15.",
+            "look_for": [
+              "channel: new values wallet (322 rows)"
+            ]
+          },
+          {
+            "text": "Quiet weeks passed.",
+            "look_for": [
+              "week  9: ok",
+              "week 13: ok"
+            ]
+          },
+          {
+            "text": "The incidents were classified as pipeline problems or real-world change.",
+            "look_for": [
+              "pipeline"
+            ]
+          }
+        ],
+        "submit": "Paste the output of steps 1, 2 and 4, your classification of each failing week, and your new check with its output.",
+        "files": [
+          {
+            "path": "make_payments.py",
+            "content": "\"\"\"Simulate 20 weeks of instant payments for a fraud model, with the incidents a real system meets.\nWeeks 1-8 are the training period. From week 9 the model is live, and:\n  week 12      a pipeline bug sends web amounts in cents (x100)\n  week 14      an upstream outage leaves device_age_days empty for many rows\n  weeks 15-20  a new channel, \"wallet\", appears\n  weeks 16-20  amounts rise gradually (a real change: risk per payment stays the same,\n               but the model, which scores on amount, drifts upwards)\n  weeks 17-20  a new fraud pattern: small app payments from long-trusted devices (concept drift)\nFraud labels arrive late: a chargeback takes 3-40 days; a payment with none after 45 days counts as legitimate.\"\"\"\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\n\nrng = np.random.default_rng(42)\nSTART = pd.Timestamp(\"2026-01-05\")          # a Monday\nframes = []\nfor week in range(1, 21):\n    n = int(rng.normal(3000, 120))\n    channel_p = [0.45, 0.35, 0.20] if week < 15 else [0.40, 0.32, 0.18]\n    channels = [\"card\", \"app\", \"web\"] if week < 15 else [\"card\", \"app\", \"web\", \"wallet\"]\n    if week >= 15:\n        channel_p = channel_p + [0.10]\n    inflation = 1.0 + 0.06 * max(0, week - 15)               # weeks 16-20: up to +30%\n    df = pd.DataFrame({\n        \"ts\": START + pd.to_timedelta(7 * (week - 1), \"D\") + pd.to_timedelta(rng.uniform(0, 7 * 86400, n), \"s\"),\n        \"amount\": np.round(rng.lognormal(3.6, 0.9, n) * inflation, 2),\n        \"hour\": rng.integers(0, 24, n),\n        \"channel\": rng.choice(channels, n, p=channel_p),\n        \"device_age_days\": rng.gamma(2.0, 120, n).round(0),\n        \"merchant_risk\": np.round(rng.beta(2, 8, n), 3),\n        \"tx_last_1h\": rng.poisson(0.8, n),\n    })\n    logit = (-6.4 + 0.6 * np.log(df.amount / inflation) + 1.6 * (df.hour < 5) + 1.0 * (df.channel == \"web\")\n             - 0.007 * df.device_age_days + 6.0 * df.merchant_risk + 0.9 * df.tx_last_1h)\n    if week >= 17:                                            # the new fraud pattern\n        pattern = (df.channel == \"app\") & (df.amount < 40) & (df.device_age_days > 300)\n        logit = logit + 4.0 * pattern\n    df[\"is_fraud\"] = (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\n    if week == 12:                                            # pipeline bug: cents instead of units\n        df.loc[df.channel == \"web\", \"amount\"] *= 100\n    if week == 14:                                            # upstream outage\n        df.loc[rng.random(n) < 0.35, \"device_age_days\"] = np.nan\n    df[\"week\"] = week\n    frames.append(df)\n\ndata = pd.concat(frames, ignore_index=True).sort_values(\"ts\", ignore_index=True)\ndata.insert(0, \"tx_id\", [f\"p{i:06d}\" for i in range(len(data))])\ndelay = np.where(data.is_fraud == 1, rng.integers(3, 41, len(data)), 45)\ndata[\"label_known_at\"] = (data.ts + pd.to_timedelta(delay, \"D\")).dt.floor(\"D\")\nPath(\"data\").mkdir(exist_ok=True)\ndata.to_csv(\"data/payments.csv\", index=False)\nprint(f\"wrote data/payments.csv: {len(data)} payments over 20 weeks, fraud rate {data.is_fraud.mean():.3f}\")\n"
+          },
+          {
+            "path": "features.py",
+            "content": "\"\"\"Feature engineering shared by training and scoring, so both compute features the same way.\"\"\"\nimport numpy as np\n\nMODEL_FEATURES = [\"log_amount\", \"night\", \"device_age_days\", \"merchant_risk\", \"tx_last_1h\", \"channel\"]\nRAW_FEATURES = [\"amount\", \"hour\", \"channel\", \"device_age_days\", \"merchant_risk\", \"tx_last_1h\"]\n\n\ndef add_features(df):\n    out = df.copy()\n    out[\"log_amount\"] = np.log(out[\"amount\"].clip(lower=0.01))\n    out[\"night\"] = (out[\"hour\"] < 5).astype(int)\n    return out\n"
+          },
+          {
+            "path": "train_and_log.py",
+            "content": "\"\"\"Train the fraud model on weeks 1-8, then write what a live system records: a prediction log with\nthe inputs, score and model version of every payment, and a separate table of labels as they arrive.\"\"\"\nimport joblib\nimport pandas as pd\nfrom sklearn.compose import ColumnTransformer\nfrom sklearn.impute import SimpleImputer\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import roc_auc_score\nfrom sklearn.pipeline import Pipeline, make_pipeline\nfrom sklearn.preprocessing import OneHotEncoder, StandardScaler\n\nfrom features import MODEL_FEATURES, RAW_FEATURES, add_features\n\nVERSION = \"fraud-lr-2026.02\"\ndata = add_features(pd.read_csv(\"data/payments.csv\", parse_dates=[\"ts\", \"label_known_at\"]))\ntrain = data[data.week <= 8]\n\nnumeric = [f for f in MODEL_FEATURES if f != \"channel\"]\nmodel = Pipeline([\n    (\"prep\", ColumnTransformer([\n        (\"num\", make_pipeline(SimpleImputer(strategy=\"median\"), StandardScaler()), numeric),\n        (\"cat\", OneHotEncoder(handle_unknown=\"ignore\"), [\"channel\"]),\n    ])),\n    (\"clf\", LogisticRegression(max_iter=1000)),\n])\nmodel.fit(train[MODEL_FEATURES], train.is_fraud)\njoblib.dump(model, \"fraud_model.joblib\")\n\ndata[\"score\"] = model.predict_proba(data[MODEL_FEATURES])[:, 1].round(6)\ndata[\"model_version\"] = VERSION\nlog = data[[\"tx_id\", \"ts\", \"week\", \"model_version\"] + RAW_FEATURES + [\"score\"]]\nlog.to_csv(\"data/prediction_log.csv\", index=False)\ndata[[\"tx_id\", \"is_fraud\", \"label_known_at\"]].to_csv(\"data/labels.csv\", index=False)\n\nprint(f\"trained {VERSION} on weeks 1-8: {len(train)} payments, \"\n      f\"training AUC {roc_auc_score(train.is_fraud, model.predict_proba(train[MODEL_FEATURES])[:, 1]):.3f}\")\nprint(f\"wrote data/prediction_log.csv ({len(log)} rows) and data/labels.csv\")\n"
+          },
+          {
+            "path": "quality.py",
+            "content": "\"\"\"Data quality checks for each week of the prediction log, against the training weeks as reference.\nThey are cheap, need no labels, and catch broken pipelines before drift statistics are even computed.\"\"\"\nimport pandas as pd\n\nlog = pd.read_csv(\"data/prediction_log.csv\", parse_dates=[\"ts\"])\nref = log[log.week <= 8]\nNUMERIC = [\"amount\", \"hour\", \"device_age_days\", \"merchant_risk\", \"tx_last_1h\"]\nLIMITS = {\"amount\": (0.01, 10_000), \"hour\": (0, 23), \"device_age_days\": (0, 20_000),\n          \"merchant_risk\": (0, 1), \"tx_last_1h\": (0, 500)}             # what the business allows\nref_weekly_rows = ref.groupby(\"week\").size().mean()\nref_missing = ref[NUMERIC].isna().mean()\nref_p99 = ref[NUMERIC].quantile(0.99)\nref_channels = set(ref.channel.unique())\n\n\ndef check_week(df):\n    problems = []\n    rows = len(df)\n    if abs(rows / ref_weekly_rows - 1) > 0.25:\n        problems.append(f\"volume {rows} rows vs about {ref_weekly_rows:.0f} expected\")\n    if df.tx_id.duplicated().any():\n        problems.append(f\"{df.tx_id.duplicated().sum()} duplicate tx_id values\")\n    for col in NUMERIC:\n        missing = df[col].isna().mean()\n        if missing > ref_missing[col] + 0.02:\n            problems.append(f\"{col}: {missing:.1%} missing (reference {ref_missing[col]:.1%})\")\n        low, high = LIMITS[col]\n        outside = (~df[col].dropna().between(low, high)).sum()\n        if outside:\n            problems.append(f\"{col}: {outside} values outside {low}-{high}\")\n        tail = (df[col] > ref_p99[col]).mean()\n        if tail > 0.03:\n            problems.append(f\"{col}: {tail:.1%} above the reference 99th percentile (limit 3%)\")\n    new = set(df.channel.unique()) - ref_channels\n    if new:\n        counts = df.channel.value_counts()\n        problems.append(\"channel: new values \" + \", \".join(f\"{c} ({counts[c]} rows)\" for c in sorted(new)))\n    return problems\n\n\nfor week, df in log[log.week >= 9].groupby(\"week\"):\n    problems = check_week(df)\n    print(f\"week {week:2}: \" + (\"ok\" if not problems else \"FAIL \" + \"; \".join(problems)))\n"
+          }
+        ],
+        "hints": [
+          "Week numbers in the output are padded to two characters, so week 9 prints as week  9.",
+          "If your numbers differ slightly, check the library versions; the incidents still show up in the same weeks.",
+          "A new category isn't automatically an incident: it may be a product launch the model has never seen, which is a reason to retrain rather than to fix a pipeline."
+        ]
+      }
+    },
+    {
+      "title": "Measuring drift with statistics",
+      "summary": "Implement PSI, the Kolmogorov-Smirnov and chi-squared tests and Jensen-Shannon distance yourself, learn what each one sees and misses, and why p-values mislead at production volumes.",
+      "instructor": "tatianna-morrison",
+      "lessons": [
+        {
+          "title": "The population stability index, done properly",
+          "minutes": 13,
+          "objectives": [
+            "Compute PSI with quantile bins and a guard for empty bins",
+            "Explain why the PSI rule of thumb is a convention, not a test"
+          ],
+          "key_points": [
+            "PSI = sum over bins of (a − e) × ln(a / e), where e and a are the shares of the reference and current data in each bin; it equals the KL divergence taken both ways, so it is symmetric.",
+            "Take bin edges from the reference's quantiles (deciles are common), with open-ended outer bins, so each bin holds about the same share of the reference and new extremes still land in a bin.",
+            "An empty bin makes ln(a / e) infinite, so implementations replace zero shares with a small epsilon; for a brand-new category, PSI is then dominated by that arbitrary epsilon.",
+            "The readings under 0.1 stable, 0.1 to 0.25 moderate and over 0.25 major come from credit scoring practice; they aren't a statistical test, and in the lab a real unit bug scores 0.203.",
+            "PSI depends on the binning: more bins give larger values for the same data, so fix the binning per feature and compare like with like."
+          ]
+        },
+        {
+          "title": "KS and chi-squared tests, and p-values at scale",
+          "minutes": 12,
+          "objectives": [
+            "Apply the two-sample KS test to numbers and the chi-squared test to categories",
+            "Prefer effect sizes to p-values when samples are large"
+          ],
+          "key_points": [
+            "The two-sample Kolmogorov-Smirnov statistic D is the largest gap between the two empirical cumulative distributions (scipy.stats.ks_2samp); it needs no bins and runs from 0 to 1.",
+            "For categories, scipy.stats.chi2_contingency tests a table of counts (reference and current by category), and Cramér's V = sqrt(chi² / (n × (min(rows, columns) − 1))) turns it into an effect size from 0 to 1.",
+            "With production volumes every difference becomes significant: in the lab, the same 0.05-standard-deviation shift gives p = 0.67 with 500 rows and p ≈ 1e-84 with 500,000, while D stays near 0.02.",
+            "Alert on effect sizes such as D, Cramér's V, PSI or Jensen-Shannon distance, with thresholds learnt from history, and use p-values only as a guard against reading noise in small windows.",
+            "Testing many features multiplies false alarms: at α = 0.05, 40 features with no drift give about two significant results per check; correct with Bonferroni (α / m) or Benjamini-Hochberg, or rank features by effect size."
+          ]
+        },
+        {
+          "title": "Jensen-Shannon distance, and choosing a measure",
+          "minutes": 12,
+          "objectives": [
+            "Compute Jensen-Shannon distance and interpret its range",
+            "Choose a drift measure per feature type, including multivariate drift"
+          ],
+          "key_points": [
+            "Jensen-Shannon divergence averages the KL divergences of each distribution from their mixture M = (P + Q) / 2; it is symmetric and finite even with empty bins. scipy.spatial.distance.jensenshannon returns its square root, the JS distance, between 0 and 1 with base=2.",
+            "Wasserstein distance (scipy.stats.wasserstein_distance) measures how far values moved, in the feature's own units, which is easy to explain: week 20's amounts sit about 16 above the training weeks', while week 12's unit bug scores over 1,000.",
+            "Missing values are invisible to measures computed on the values that are present, so track the missing rate as its own metric, as the week 14 outage shows.",
+            "A domain classifier tests drift across all features together: train a model to tell reference rows from current rows; a cross-validated AUC near 0.5 means they look alike, and its feature importances point at what changed.",
+            "Weight drift by importance: a large shift in a feature the model barely uses matters less than a small one in its strongest feature, and drift in the score itself summarises what the model feels."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a drift report from scratch",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Implement PSI, KS, chi-squared with Cramér's V and Jensen-Shannon distance with NumPy and SciPy, produce a weekly drift report for the live weeks, and see for yourself how p-values, binning and multivariate tests behave.",
+        "setup": [
+          "The project folder from the module 1 lab, with data/prediction_log.csv",
+          "The starter files drift.py, drift_report.py, pvalues_at_scale.py, binning.py and domain_classifier.py"
+        ],
+        "steps": [
+          {
+            "do": "Read drift.py: bin_edges takes inner edges from the reference's quantiles, shares uses searchsorted so the outer bins are open-ended, and EPS guards against empty bins."
+          },
+          {
+            "do": "Run the weekly report: amount, device age, score and channel against weeks 1-8.",
+            "code": "python drift_report.py",
+            "lang": "bash",
+            "see": "A table for weeks 9-20; week 12 amount psi 0.203, and channel psi about 0.7 from week 15"
+          },
+          {
+            "do": "Compare the report with module 1's quality checks. Which incident does the 0.25 rule miss, which one can no drift measure here see, and why is channel PSI so large?"
+          },
+          {
+            "do": "See what sample size does to p-values.",
+            "code": "python pvalues_at_scale.py",
+            "lang": "bash",
+            "see": "KS D settles near 0.020 while the p-value falls from 6.66e-01 to 1.12e-84"
+          },
+          {
+            "do": "See what binning does to PSI.",
+            "code": "python binning.py",
+            "lang": "bash",
+            "see": "week 20 amount PSI rises from 0.076 with 5 bins to 0.106 with 50"
+          },
+          {
+            "do": "Test multivariate drift with a domain classifier.",
+            "code": "python domain_classifier.py",
+            "lang": "bash",
+            "see": "week 10 AUC 0.511 and week 12 AUC 0.599"
+          },
+          {
+            "do": "Add scipy.stats.wasserstein_distance for amount to drift_report.py and run it again. Write a short note choosing one measure for amounts, one for channels and one for the score, with reasons."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The weekly report shows the unit bug and the new channel.",
+            "look_for": [
+              "0.203",
+              "0.720"
+            ]
+          },
+          {
+            "text": "The rule-of-thumb flags only the channel weeks.",
+            "look_for": [
+              "weeks over the 0.25 rule of thumb on amount, score or channel: [15, 16, 17, 18, 19, 20]"
+            ]
+          },
+          {
+            "text": "The p-value collapsed with sample size while the effect stayed small.",
+            "look_for": [
+              "1.12e-84",
+              "0.020"
+            ]
+          },
+          {
+            "text": "PSI changed with the number of bins.",
+            "look_for": [
+              "5 quantile bins: 0.076",
+              "50 quantile bins: 0.106"
+            ]
+          },
+          {
+            "text": "The domain classifier separated week 12 but not week 10.",
+            "look_for": [
+              "week 10: domain classifier AUC 0.511",
+              "week 12: domain classifier AUC 0.599"
+            ]
+          },
+          {
+            "text": "The note chooses a measure per feature type and mentions missing values.",
+            "look_for": [
+              "missing"
+            ]
+          }
+        ],
+        "submit": "Paste the output of steps 2, 4, 5 and 6, your answers from step 3, the Wasserstein column you added and your note.",
+        "files": [
+          {
+            "path": "drift.py",
+            "content": "\"\"\"Drift statistics built from NumPy and SciPy, so you can see exactly what each one measures.\"\"\"\nimport numpy as np\nfrom scipy import stats\nfrom scipy.spatial.distance import jensenshannon\n\nEPS = 1e-4          # stands in for an empty bin, so log(0) never happens\n\n\ndef _clean(values):\n    values = np.asarray(values, dtype=float)\n    return values[~np.isnan(values)]\n\n\ndef bin_edges(reference, bins=10):\n    \"\"\"Inner edges at the reference's quantiles: each bin holds about 1/bins of the reference.\"\"\"\n    qs = np.quantile(_clean(reference), np.linspace(0, 1, bins + 1)[1:-1])\n    return np.unique(qs)\n\n\ndef shares(values, edges):\n    \"\"\"Share of values in each bin; the outer bins are open-ended, so nothing falls outside.\"\"\"\n    idx = np.searchsorted(edges, _clean(values), side=\"right\")\n    counts = np.bincount(idx, minlength=len(edges) + 1)\n    return counts / counts.sum()\n\n\ndef psi(reference, current, bins=10):\n    \"\"\"Population stability index: sum of (actual - expected) * ln(actual / expected) over bins.\"\"\"\n    edges = bin_edges(reference, bins)\n    e = np.clip(shares(reference, edges), EPS, None)\n    a = np.clip(shares(current, edges), EPS, None)\n    return float(np.sum((a - e) * np.log(a / e)))\n\n\ndef category_shares(values, categories):\n    values = list(values)\n    return np.array([values.count(c) for c in categories]) / len(values)\n\n\ndef psi_categorical(reference, current):\n    categories = sorted(set(reference) | set(current))      # a new category is a bin of its own\n    e = np.clip(category_shares(reference, categories), EPS, None)\n    a = np.clip(category_shares(current, categories), EPS, None)\n    return float(np.sum((a - e) * np.log(a / e)))\n\n\ndef ks(reference, current):\n    \"\"\"Two-sample Kolmogorov-Smirnov: D is the largest gap between the two empirical CDFs.\"\"\"\n    result = stats.ks_2samp(_clean(reference), _clean(current))\n    return float(result.statistic), float(result.pvalue)\n\n\ndef chi2(reference, current):\n    \"\"\"Chi-squared test of the category counts, with Cramer's V as the effect size (0 to 1).\"\"\"\n    categories = sorted(set(reference) | set(current))\n    ref, cur = list(reference), list(current)\n    table = np.array([[ref.count(c) for c in categories], [cur.count(c) for c in categories]])\n    statistic, p_value, dof, _ = stats.chi2_contingency(table)\n    v = np.sqrt(statistic / (table.sum() * (min(table.shape) - 1)))\n    return float(statistic), float(p_value), float(v)\n\n\ndef js_distance(reference, current, bins=10):\n    \"\"\"Jensen-Shannon distance with base 2: 0 for identical distributions, 1 at most.\"\"\"\n    edges = bin_edges(reference, bins)\n    return float(jensenshannon(shares(reference, edges), shares(current, edges), base=2))\n"
+          },
+          {
+            "path": "drift_report.py",
+            "content": "\"\"\"Weekly drift report: each live week against the training weeks, feature by feature.\"\"\"\nimport pandas as pd\n\nfrom drift import chi2, js_distance, ks, psi, psi_categorical\n\nlog = pd.read_csv(\"data/prediction_log.csv\")\nref = log[log.week <= 8]\nrows = []\nfor week, cur in log[log.week >= 9].groupby(\"week\"):\n    row = {\"week\": week}\n    for col in [\"amount\", \"device_age_days\", \"score\"]:\n        d, p = ks(ref[col], cur[col])\n        row[f\"{col} psi\"] = psi(ref[col], cur[col])\n        row[f\"{col} ks_d\"] = d\n        row[f\"{col} js\"] = js_distance(ref[col], cur[col])\n    _, p_chan, v_chan = chi2(ref.channel, cur.channel)\n    row[\"channel psi\"] = psi_categorical(ref.channel, cur.channel)\n    row[\"channel cramers_v\"] = v_chan\n    row[\"channel chi2_p\"] = p_chan\n    rows.append(row)\n\nreport = pd.DataFrame(rows).set_index(\"week\")\npd.set_option(\"display.width\", 200)\nprint(report[[\"amount psi\", \"amount ks_d\", \"amount js\", \"device_age_days psi\", \"score psi\",\n              \"channel psi\", \"channel cramers_v\"]].round(3).to_string())\nreport.to_csv(\"drift_report.csv\")\nflagged = report[(report[\"amount psi\"] > 0.25) | (report[\"score psi\"] > 0.25) | (report[\"channel psi\"] > 0.25)]\nprint(\"weeks over the 0.25 rule of thumb on amount, score or channel:\", list(flagged.index))\n"
+          },
+          {
+            "path": "pvalues_at_scale.py",
+            "content": "\"\"\"The same small shift, tested with more and more data: the effect stays put, the p-value collapses.\"\"\"\nimport numpy as np\n\nfrom drift import ks, psi\n\nrng = np.random.default_rng(0)\nprint(f\"{'rows':>8} {'KS D':>7} {'p-value':>10} {'PSI':>7}\")\nfor n in [500, 5_000, 50_000, 500_000]:\n    reference = rng.normal(0.0, 1.0, n)\n    current = rng.normal(0.05, 1.0, n)          # a shift of 5% of a standard deviation\n    d, p = ks(reference, current)\n    print(f\"{n:>8} {d:>7.3f} {p:>10.2e} {psi(reference, current):>7.4f}\")\n"
+          },
+          {
+            "path": "binning.py",
+            "content": "\"\"\"PSI depends on how you bin: the same two samples, binned three ways.\"\"\"\nimport pandas as pd\n\nfrom drift import psi\n\nlog = pd.read_csv(\"data/prediction_log.csv\")\nref, week20 = log[log.week <= 8].amount, log[log.week == 20].amount\nfor bins in (5, 10, 20, 50):\n    print(f\"amount PSI, week 20 vs reference, {bins:>2} quantile bins: {psi(ref, week20, bins):.3f}\")\n"
+          },
+          {
+            "path": "domain_classifier.py",
+            "content": "\"\"\"Multivariate drift: can a classifier tell reference rows from this week's rows? AUC near 0.5 means no.\"\"\"\nimport pandas as pd\nfrom sklearn.ensemble import HistGradientBoostingClassifier\nfrom sklearn.model_selection import cross_val_score\n\nlog = pd.read_csv(\"data/prediction_log.csv\")\nfeatures = [\"amount\", \"hour\", \"device_age_days\", \"merchant_risk\", \"tx_last_1h\"]\nref = log[log.week <= 8].sample(6000, random_state=0)\nfor week in (10, 12, 18, 20):\n    cur = log[log.week == week]\n    X = pd.concat([ref[features], cur[features]])\n    y = [0] * len(ref) + [1] * len(cur)\n    auc = cross_val_score(HistGradientBoostingClassifier(max_iter=100, random_state=0), X, y,\n                          cv=5, scoring=\"roc_auc\").mean()\n    print(f\"week {week}: domain classifier AUC {auc:.3f}\")\n"
+          }
+        ],
+        "hints": [
+          "If the channel PSI looks absurd, work it out by hand for the wallet bin: (0.10 − 0.0001) × ln(0.10 / 0.0001) is about 0.69 on its own.",
+          "domain_classifier.py runs five-fold cross-validation four times and can take a minute.",
+          "Weeks 17-20 show amount drift without any quality failure: that's the gradual rise in amounts, a real change rather than a bug."
+        ]
+      }
+    },
+    {
+      "title": "Performance when labels arrive late",
+      "summary": "Measure performance only on windows whose labels have matured, estimate it from calibrated scores in the meantime, and detect concept drift in the stream of errors once labels arrive.",
+      "instructor": "tatianna-morrison",
+      "lessons": [
+        {
+          "title": "Measuring performance on mature labels",
+          "minutes": 12,
+          "objectives": [
+            "Compute performance by window as known on a given date",
+            "Recognise the bias of scoring windows whose labels are incomplete"
+          ],
+          "key_points": [
+            "Join the prediction log to the labels by ID and compute metrics by prediction window (such as the week a payment was scored), not by the week the label arrived.",
+            "A window is mature when every label it can get has arrived: with chargebacks in 3 to 40 days and payments treated as legitimate after 45, a week is mature 45 days after it ends.",
+            "Scoring an immature window is biased: the labels known early are mostly the positives, so in the lab week 20's precision from known labels is 1.000, from 14 labelled payments, all fraud.",
+            "Report the label coverage beside every metric, and show immature windows as pending rather than as a number.",
+            "Weekly metrics on a few hundred positives are noisy, so compare against the spread seen in stable weeks, or add bootstrap confidence intervals, before calling a change real."
+          ]
+        },
+        {
+          "title": "Estimating performance before labels arrive",
+          "minutes": 12,
+          "objectives": [
+            "Estimate precision and recall from calibrated probabilities",
+            "State the assumptions that make the estimate fail"
+          ],
+          "key_points": [
+            "If the model is calibrated, the expected number of frauds among flagged payments is the sum of their probabilities, so estimated precision = mean score of flagged payments, and estimated recall = flagged scores' sum ÷ all scores' sum.",
+            "This is confidence-based performance estimation (CBPE), the idea behind tools such as NannyML; it gives a figure for this week, weeks before the labels do.",
+            "It assumes the model is still calibrated and that P(Y|X) hasn't changed: covariate shift is fine, but concept drift isn't, and broken inputs aren't either.",
+            "In the lab, the estimate stays near 0.50 while realised precision falls to about 0.42-0.46 after the new fraud pattern appears, and week 12's broken amounts produce an estimate of 0.626 against a real 0.305.",
+            "Treat the estimate as an early indicator alongside prediction drift, and confirm with realised metrics as each window matures."
+          ]
+        },
+        {
+          "title": "Detecting concept drift in the error stream",
+          "minutes": 11,
+          "objectives": [
+            "Run a Page-Hinkley test on a stream of errors",
+            "Trade detection delay against false alarms"
+          ],
+          "key_points": [
+            "Once labels mature, a sequential test on an error measure, such as the daily Brier score (mean squared difference between probability and outcome), detects when errors move up and stay up.",
+            "Page-Hinkley keeps the running mean and a cumulative sum of (value − mean − δ); it alarms when the sum rises more than λ above its lowest point, then resets to learn the new normal.",
+            "δ sets the size of change to ignore and λ the evidence needed: a smaller λ detects sooner but raises more false alarms. In the lab, λ = 0.03 detects the new fraud pattern in week 18 and λ = 0.05 only in week 20.",
+            "CUSUM works in a similar way; both are cheap enough to run on every model, but they see only labelled windows, so the label delay adds to the detection delay.",
+            "An alarm says errors rose, not why: check data quality and drift for the same period before concluding it's concept drift."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Estimate performance without labels, then check it",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Report weekly precision and recall as known at the end of week 20 and again seven weeks later, compare confidence-based estimates with realised values, and detect the new fraud pattern with a Page-Hinkley test on daily errors.",
+        "setup": [
+          "The project folder with data/prediction_log.csv and data/labels.csv",
+          "The starter files performance.py and page_hinkley.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the performance report as of 25 May, the end of week 20.",
+            "code": "python performance.py",
+            "lang": "bash",
+            "see": "Weeks 9-13 have realised values; week 14 is 74% labelled and later weeks are immature"
+          },
+          {
+            "do": "Read the last line: precision from the labels known so far for week 20.",
+            "see": "week 20 precision from the labels known so far: 1.000 (14 of 3157 labelled, 100% of them fraud)"
+          },
+          {
+            "do": "Run it again as of 15 July, when every week is mature.",
+            "code": "python performance.py --as-of 2026-07-15",
+            "lang": "bash",
+            "see": "Realised precision falls to 0.42-0.46 in weeks 15-20 while the estimate stays near 0.50"
+          },
+          {
+            "do": "Explain week 12, where the estimate is 0.626 and the realised precision 0.305, and weeks 17-20. Which assumption of the estimate fails in each?"
+          },
+          {
+            "do": "Run the Page-Hinkley detector on the daily Brier score, then with a higher threshold.",
+            "code": "python page_hinkley.py\npython page_hinkley.py --threshold 0.05",
+            "lang": "bash",
+            "see": "Alarms on 2026-03-24 (week 12) and 2026-05-04 (week 18); with 0.05 the second comes on 2026-05-19"
+          },
+          {
+            "do": "Write a short note: what the team could have known about weeks 17-20 on 25 May, from which signals, and how the label delay adds to the detection delay."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The report shows label coverage and hides immature weeks.",
+            "look_for": [
+              "74%",
+              "immature"
+            ]
+          },
+          {
+            "text": "The naive precision from early labels was shown to be biased.",
+            "look_for": [
+              "week 20 precision from the labels known so far: 1.000"
+            ]
+          },
+          {
+            "text": "With mature labels, realised precision fell below the estimate.",
+            "look_for": [
+              "0.432",
+              "0.508"
+            ]
+          },
+          {
+            "text": "Page-Hinkley detected the bug and the new fraud pattern.",
+            "look_for": [
+              "alarm on 2026-03-24 (week 12)",
+              "alarm on 2026-05-04 (week 18)"
+            ]
+          },
+          {
+            "text": "The higher threshold delayed the second alarm.",
+            "look_for": [
+              "alarm on 2026-05-19 (week 20)"
+            ]
+          },
+          {
+            "text": "The note links the estimate's failure to concept drift and calibration.",
+            "look_for": [
+              "concept drift",
+              "calibrat"
+            ]
+          }
+        ],
+        "submit": "Paste the output of both performance reports and both Page-Hinkley runs, your explanation from step 4 and your note.",
+        "files": [
+          {
+            "path": "performance.py",
+            "content": "\"\"\"Performance by week, as known on a given date. Fraud labels arrive over 3-40 days and a payment\ncounts as legitimate only after 45 days, so recent weeks can't be scored yet. Until they can, the\nmodel's own probabilities give an estimate (confidence-based performance estimation).\"\"\"\nimport argparse\n\nimport pandas as pd\n\nTHRESHOLD = 0.3                       # payments scoring at least this go to manual review\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--as-of\", default=\"2026-05-25\", help=\"the date you run the report (end of week 20)\")\nargs = parser.parse_args()\nas_of = pd.Timestamp(args.as_of)\n\nlog = pd.read_csv(\"data/prediction_log.csv\", parse_dates=[\"ts\"])\nlabels = pd.read_csv(\"data/labels.csv\", parse_dates=[\"label_known_at\"])\ndata = log.merge(labels, on=\"tx_id\")\ndata[\"known\"] = data.label_known_at <= as_of\n\nprint(f\"as of {as_of.date()}, threshold {THRESHOLD}\")\nprint(f\"{'week':>4} {'labelled':>9} {'est prec':>9} {'real prec':>10} {'est recall':>11} {'real recall':>12}\")\nfor week, g in data[data.week >= 9].groupby(\"week\"):\n    flagged = g.score >= THRESHOLD\n    # Expected frauds among flagged rows = sum of their probabilities (valid if the model is calibrated).\n    est_precision = g.score[flagged].mean()\n    est_recall = g.score[flagged].sum() / g.score.sum()\n    coverage = g.known.mean()\n    if coverage == 1.0:\n        tp = (flagged & (g.is_fraud == 1)).sum()\n        real_p, real_r = f\"{tp / flagged.sum():.3f}\", f\"{tp / g.is_fraud.sum():.3f}\"\n    else:\n        real_p = real_r = \"immature\"\n    print(f\"{week:>4} {coverage:>9.0%} {est_precision:>9.3f} {real_p:>10} {est_recall:>11.3f} {real_r:>12}\")\n\nlatest = data[data.week == 20]\nseen = latest[latest.known]\nnaive = (seen.is_fraud[seen.score >= THRESHOLD] == 1).mean()\nprint(f\"week 20 precision from the labels known so far: {naive:.3f} \"\n      f\"({len(seen)} of {len(latest)} labelled, {seen.is_fraud.mean():.0%} of them fraud)\")\n"
+          },
+          {
+            "path": "page_hinkley.py",
+            "content": "\"\"\"Page-Hinkley change detection on the daily Brier score (mean squared error of the probabilities),\nonce labels have matured. It alarms when errors rise above their running mean and stay there.\"\"\"\nimport argparse\n\nimport pandas as pd\n\n\nclass PageHinkley:\n    def __init__(self, delta=0.002, threshold=0.03, min_days=7):\n        self.delta, self.threshold, self.min_days = delta, threshold, min_days\n        self.reset()\n\n    def reset(self):\n        self.n, self.mean, self.cum, self.min_cum = 0, 0.0, 0.0, 0.0\n\n    def update(self, x):\n        \"\"\"Feed one value; True means the mean has shifted upwards.\"\"\"\n        self.n += 1\n        self.mean += (x - self.mean) / self.n\n        self.cum += x - self.mean - self.delta       # delta: changes smaller than this are ignored\n        self.min_cum = min(self.min_cum, self.cum)\n        return self.n >= self.min_days and self.cum - self.min_cum > self.threshold\n\n\nparser = argparse.ArgumentParser()\nparser.add_argument(\"--delta\", type=float, default=0.002)\nparser.add_argument(\"--threshold\", type=float, default=0.03)\nargs = parser.parse_args()\n\nlog = pd.read_csv(\"data/prediction_log.csv\", parse_dates=[\"ts\"])\nlabels = pd.read_csv(\"data/labels.csv\")\ndata = log.merge(labels, on=\"tx_id\")\ndata = data[data.week >= 9]\ndata[\"day\"] = data.ts.dt.floor(\"D\")\ndata[\"brier\"] = (data.score - data.is_fraud) ** 2\ndaily = data.groupby(\"day\").agg(brier=(\"brier\", \"mean\"), week=(\"week\", \"first\"))\n\ndetector = PageHinkley(delta=args.delta, threshold=args.threshold)\nfor day, row in daily.iterrows():\n    if detector.update(row.brier):\n        print(f\"alarm on {day.date()} (week {int(row.week)}): daily Brier {row.brier:.4f}, \"\n              f\"running mean {detector.mean:.4f}\")\n        detector.reset()                              # start learning the new normal\nprint(f\"days monitored: {len(daily)}, mean daily Brier {daily.brier.mean():.4f}\")\n"
+          }
+        ],
+        "hints": [
+          "The estimate needs no labels at all, which is why it has a value for every week.",
+          "Label coverage counts payments whose label_known_at is on or before the as-of date.",
+          "page_hinkley.py uses all labels, as if run in mid-July: it shows when the drift could be detected once labels exist, not what was known in May."
+        ]
+      }
+    },
+    {
+      "title": "Alerts and dashboards people trust",
+      "summary": "Learn thresholds from history, backtest alert rules before they page anyone, build a model-health dashboard, and investigate an alert with a runbook.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "Designing alerts: thresholds, persistence and severity",
+          "minutes": 13,
+          "objectives": [
+            "Learn alert thresholds from a metric's behaviour in a stable period",
+            "Backtest alert rules for false alarms and detection delay"
+          ],
+          "key_points": [
+            "Learn each threshold from history: compute the metric on many windows from a stable period (leaving each window out of its own reference) and alert above a high quantile, such as the 99th percentile plus a margin.",
+            "Thresholds differ by feature, metric and window size, because noise does: a daily window of 400 payments wobbles more than a weekly one of 3,000.",
+            "Persistence, such as two windows in a row, cuts alerts from one-off blips at the cost of a window's delay; in the lab it removes one of week 12's seven alert days.",
+            "Backtest before going live: replay months of windows and count alerts on quiet periods and the delay on known incidents; in the lab the fixed 0.25 rule catches 2 of 7 bug days and none of the drift days.",
+            "Give alerts severities and owners: page only for what needs action now, such as a broken pipeline, send slower drift to a ticket queue, and attach a runbook link to each one."
+          ]
+        },
+        {
+          "title": "Dashboards for model health",
+          "minutes": 11,
+          "objectives": [
+            "Lay out a model-health dashboard by monitoring layer",
+            "Show performance honestly when labels are late"
+          ],
+          "key_points": [
+            "Organise the dashboard by layer, top to bottom: service (volume, errors, latency), data quality, drift, then model performance, so a reader can follow a problem from symptom to cause.",
+            "Plot drift against the thresholds the alerts actually use, and mark deployments, retrains and known incidents on the time axis.",
+            "Show estimated performance and realised performance side by side, with realised values only for mature windows; a line that silently stops is easy to misread.",
+            "Prefer few, decision-oriented panels to many: each should answer a question someone acts on, such as whether the review queue's precision is falling.",
+            "Export monitoring metrics to the team's observability stack, such as Prometheus gauges graphed in Grafana; the course Observability with Prometheus, Grafana and OpenTelemetry covers that machinery."
+          ]
+        },
+        {
+          "title": "Investigating an alert",
+          "minutes": 11,
+          "objectives": [
+            "Follow a runbook from an alert to a decision",
+            "Choose between fixing data, retraining, rolling back and adjusting a threshold"
+          ],
+          "key_points": [
+            "Start with data quality for the same window: many urgent model alerts trace back to a pipeline, schema or upstream change, and those need a data fix, not a new model.",
+            "Then localise: which features, segments and channels moved, whether the score distribution moved, and whether the timing matches a deployment or a business event.",
+            "Decide on evidence: a pipeline bug is fixed and the bad predictions rescored; real drift that hurts performance leads to retraining; a model release that broke things is rolled back.",
+            "Some alerts are expected, such as a known campaign or a seasonal peak: record why, and if they recur, add the pattern to the reference instead of muting the alert.",
+            "Write up each incident briefly (signal, cause, action, time to detect and resolve) and feed the lessons back into checks, thresholds and runbooks."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Backtest alert rules and build a health dashboard",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Learn daily thresholds for amount and score drift from the training weeks, backtest three alert rules on the live weeks for false alarms and detection, and draw a one-page dashboard of model health.",
+        "setup": [
+          "The project folder with the prediction log and labels from module 1",
+          "The starter files drift.py, alerts.py and dashboard.py (drift.py is the module 2 library)"
+        ],
+        "steps": [
+          {
+            "do": "Read alerts.py: thresholds learnt from 56 reference days, each left out of its own reference; then three rules applied to every live day."
+          },
+          {
+            "do": "Run the backtest.",
+            "code": "python alerts.py",
+            "lang": "bash",
+            "see": "learnt thresholds: {'amount': 0.063, 'score': 0.052}, then a table of the three rules"
+          },
+          {
+            "do": "Read the table: alerts on quiet days, the share of week 12's bug days caught, the share of drift days caught in weeks 16-20, and the first alert date for each rule."
+          },
+          {
+            "do": "Change the margin from 1.2 to 1.0 and the quantile from 0.99 to 0.95, run it again and note what changes."
+          },
+          {
+            "do": "Draw the dashboard.",
+            "code": "python dashboard.py",
+            "lang": "bash",
+            "see": "saved monitoring_dashboard.png: 4 panels, 140 days, 13 weeks with mature labels"
+          },
+          {
+            "do": "Open monitoring_dashboard.png. Add the learnt thresholds to the drift panel as dashed lines and label the week 12 incident, then save it again."
+          },
+          {
+            "do": "Write a one-page alert design: each alert's metric, window, threshold, persistence, severity, owner and the first runbook step, and the backtest evidence for it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Thresholds were learnt from the reference days.",
+            "look_for": [
+              "learnt thresholds: {'amount': 0.063, 'score': 0.052}"
+            ]
+          },
+          {
+            "text": "No rule fired on quiet days.",
+            "look_for": [
+              "0 of 28"
+            ]
+          },
+          {
+            "text": "The learnt threshold caught every day of the unit bug and the fixed rule only two.",
+            "look_for": [
+              "fixed PSI > 0.25",
+              "2 of 7",
+              "7 of 7"
+            ]
+          },
+          {
+            "text": "Persistence reduced alerts on the gradual drift.",
+            "look_for": [
+              "15 of 35",
+              "9 of 35"
+            ]
+          },
+          {
+            "text": "The dashboard was drawn.",
+            "look_for": [
+              "saved monitoring_dashboard.png: 4 panels"
+            ]
+          },
+          {
+            "text": "The alert design names thresholds, severity and owners.",
+            "look_for": [
+              "severity",
+              "owner"
+            ]
+          }
+        ],
+        "submit": "Paste the output of both backtests and of dashboard.py, describe your dashboard changes, and paste your alert design.",
+        "files": [
+          {
+            "path": "drift.py",
+            "content": "\"\"\"Drift statistics built from NumPy and SciPy, so you can see exactly what each one measures.\"\"\"\nimport numpy as np\nfrom scipy import stats\nfrom scipy.spatial.distance import jensenshannon\n\nEPS = 1e-4          # stands in for an empty bin, so log(0) never happens\n\n\ndef _clean(values):\n    values = np.asarray(values, dtype=float)\n    return values[~np.isnan(values)]\n\n\ndef bin_edges(reference, bins=10):\n    \"\"\"Inner edges at the reference's quantiles: each bin holds about 1/bins of the reference.\"\"\"\n    qs = np.quantile(_clean(reference), np.linspace(0, 1, bins + 1)[1:-1])\n    return np.unique(qs)\n\n\ndef shares(values, edges):\n    \"\"\"Share of values in each bin; the outer bins are open-ended, so nothing falls outside.\"\"\"\n    idx = np.searchsorted(edges, _clean(values), side=\"right\")\n    counts = np.bincount(idx, minlength=len(edges) + 1)\n    return counts / counts.sum()\n\n\ndef psi(reference, current, bins=10):\n    \"\"\"Population stability index: sum of (actual - expected) * ln(actual / expected) over bins.\"\"\"\n    edges = bin_edges(reference, bins)\n    e = np.clip(shares(reference, edges), EPS, None)\n    a = np.clip(shares(current, edges), EPS, None)\n    return float(np.sum((a - e) * np.log(a / e)))\n\n\ndef category_shares(values, categories):\n    values = list(values)\n    return np.array([values.count(c) for c in categories]) / len(values)\n\n\ndef psi_categorical(reference, current):\n    categories = sorted(set(reference) | set(current))      # a new category is a bin of its own\n    e = np.clip(category_shares(reference, categories), EPS, None)\n    a = np.clip(category_shares(current, categories), EPS, None)\n    return float(np.sum((a - e) * np.log(a / e)))\n\n\ndef ks(reference, current):\n    \"\"\"Two-sample Kolmogorov-Smirnov: D is the largest gap between the two empirical CDFs.\"\"\"\n    result = stats.ks_2samp(_clean(reference), _clean(current))\n    return float(result.statistic), float(result.pvalue)\n\n\ndef chi2(reference, current):\n    \"\"\"Chi-squared test of the category counts, with Cramer's V as the effect size (0 to 1).\"\"\"\n    categories = sorted(set(reference) | set(current))\n    ref, cur = list(reference), list(current)\n    table = np.array([[ref.count(c) for c in categories], [cur.count(c) for c in categories]])\n    statistic, p_value, dof, _ = stats.chi2_contingency(table)\n    v = np.sqrt(statistic / (table.sum() * (min(table.shape) - 1)))\n    return float(statistic), float(p_value), float(v)\n\n\ndef js_distance(reference, current, bins=10):\n    \"\"\"Jensen-Shannon distance with base 2: 0 for identical distributions, 1 at most.\"\"\"\n    edges = bin_edges(reference, bins)\n    return float(jensenshannon(shares(reference, edges), shares(current, edges), base=2))\n"
+          },
+          {
+            "path": "alerts.py",
+            "content": "\"\"\"Backtest alert rules on daily windows. A rule earns trust by staying quiet on normal days and\nfiring early on real incidents, so compare a fixed rule of thumb with thresholds learnt from history.\"\"\"\nimport numpy as np\nimport pandas as pd\n\nfrom drift import psi\n\nlog = pd.read_csv(\"data/prediction_log.csv\", parse_dates=[\"ts\"])\nlog[\"day\"] = log.ts.dt.floor(\"D\")\nref = log[log.week <= 8]\nMETRICS = [\"amount\", \"score\"]\n\n\ndef daily_psi(frame, reference):\n    return {m: psi(reference[m], frame[m]) for m in METRICS}\n\n\n# 1. What does each metric look like on normal days? Leave each reference day out in turn.\nhistory = []\nfor day, frame in ref.groupby(\"day\"):\n    history.append(daily_psi(frame, ref[ref.day != day]))\nhistory = pd.DataFrame(history)\nlearnt = history.quantile(0.99) * 1.2            # a high quantile of normal days, plus a margin\nprint(\"learnt thresholds:\", {m: round(v, 3) for m, v in learnt.items()},\n      f\"(from {len(history)} reference days; max seen {history.max().round(3).to_dict()})\")\n\n# 2. Score every live day, then apply three rules.\nlive = []\nfor day, frame in log[log.week >= 9].groupby(\"day\"):\n    live.append({\"day\": day, \"week\": int(frame.week.iloc[0]), \"rows\": len(frame), **daily_psi(frame, ref)})\nlive = pd.DataFrame(live)\nover_learnt = live[METRICS].gt(learnt).any(axis=1)\nrules = {\n    \"fixed PSI > 0.25\": live[METRICS].gt(0.25).any(axis=1),\n    \"learnt threshold\": over_learnt,\n    \"learnt, 2 days running\": over_learnt & over_learnt.shift(1, fill_value=False),\n}\nquiet = live.week.isin([9, 10, 11, 13])          # weeks with no incident in the simulation\nprint(f\"\\n{'rule':24} {'quiet days alerted':>19} {'week 12 bug':>12} {'weeks 16-20 drift':>18} {'first alert':>12}\")\nfor name, fired in rules.items():\n    first = live.day[fired].min()\n    first = str(first.date()) if pd.notna(first) else \"-\"\n    print(f\"{name:24} {int((fired & quiet).sum()):>11} of {int(quiet.sum()):<5} \"\n          f\"{int((fired & (live.week == 12)).sum()):>6} of 7 \"\n          f\"{int((fired & live.week.between(16, 20)).sum()):>11} of 35 {first:>12}\")\nlive.to_csv(\"daily_metrics.csv\", index=False)\n"
+          },
+          {
+            "path": "dashboard.py",
+            "content": "\"\"\"A one-page model-health dashboard: volume, data quality, drift against learnt thresholds, and\nperformance as far as labels allow. Run alerts.py first: it writes daily_metrics.csv.\"\"\"\nimport matplotlib\n\nmatplotlib.use(\"Agg\")                    # draw to a file, no window needed\nimport matplotlib.pyplot as plt\nimport pandas as pd\n\nlog = pd.read_csv(\"data/prediction_log.csv\", parse_dates=[\"ts\"])\nlog[\"day\"] = log.ts.dt.floor(\"D\")\nlabels = pd.read_csv(\"data/labels.csv\", parse_dates=[\"label_known_at\"])\ndaily = pd.read_csv(\"daily_metrics.csv\", parse_dates=[\"day\"])\nas_of = pd.Timestamp(\"2026-05-25\")\n\nper_day = log.groupby(\"day\").agg(rows=(\"tx_id\", \"size\"),\n                                 missing=(\"device_age_days\", lambda s: s.isna().mean()),\n                                 new_channel=(\"channel\", lambda s: (s == \"wallet\").mean()))\njoined = log.merge(labels, on=\"tx_id\")\nweekly = joined[joined.score >= 0.3].groupby(\"week\").agg(estimated=(\"score\", \"mean\"), real=(\"is_fraud\", \"mean\"))\nmature = joined.groupby(\"week\").label_known_at.max() <= as_of\n\nfig, axes = plt.subplots(4, 1, figsize=(10, 11), sharex=False)\naxes[0].plot(per_day.index, per_day.rows)\naxes[0].set_title(\"Service: payments scored per day\")\naxes[1].plot(per_day.index, per_day.missing, label=\"device_age_days missing\")\naxes[1].plot(per_day.index, per_day.new_channel, label=\"share of unseen channel 'wallet'\")\naxes[1].set_title(\"Data quality\")\naxes[1].legend()\nfor metric in (\"amount\", \"score\"):\n    axes[2].plot(daily.day, daily[metric], label=f\"{metric} PSI vs training weeks\")\naxes[2].axhline(0.25, linestyle=\"--\", color=\"grey\", label=\"0.25 rule of thumb\")\naxes[2].set_title(\"Drift (daily PSI)\")\naxes[2].legend()\naxes[3].plot(weekly.index, weekly.estimated, marker=\"o\", label=\"estimated precision (from scores)\")\naxes[3].plot(weekly.index[mature], weekly.real[mature], marker=\"s\", label=\"realised precision (mature labels)\")\naxes[3].set_title(f\"Model: precision of review queue, labels as of {as_of.date()}\")\naxes[3].set_xlabel(\"week\")\naxes[3].legend()\nfig.tight_layout()\nfig.savefig(\"monitoring_dashboard.png\", dpi=110)\nprint(f\"saved monitoring_dashboard.png: {len(fig.axes)} panels, {len(per_day)} days, \"\n      f\"{int(mature.sum())} weeks with mature labels\")\n"
+          }
+        ],
+        "hints": [
+          "Run alerts.py before dashboard.py: the dashboard reads daily_metrics.csv, which alerts.py writes.",
+          "The quiet weeks are 9, 10, 11 and 13: no incident was simulated in them.",
+          "Missing values and the new channel don't appear in this backtest because PSI on amount and score can't see them; the quality checks from module 1 cover them."
+        ]
+      }
+    },
+    {
+      "title": "Retraining triggers and closing the loop",
+      "summary": "Choose when to retrain, retrain safely on the right window, and keep feedback loops and the monitoring system itself under watch.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "When to retrain: schedules and triggers",
+          "minutes": 12,
+          "objectives": [
+            "Compare scheduled, drift-triggered and performance-triggered retraining",
+            "Explain how label delay limits each trigger"
+          ],
+          "key_points": [
+            "Scheduled retraining (such as every eight weeks) is simple and predictable and keeps up with gradual change; it can retrain when nothing changed or wait too long after a sudden change.",
+            "Drift-triggered retraining reacts to input or score drift, but drift isn't damage: harmless shifts can trigger it, and concept drift that leaves the inputs alone never will, as the lab's simulation shows.",
+            "Performance-triggered retraining reacts to measured damage, but only after labels mature, so it is always at least the label delay behind, and weekly metrics are noisy enough to trigger by chance.",
+            "Combine them: a schedule as the backstop, performance triggers for damage, drift and quality signals for investigation, and a cool-down period so one problem doesn't cause a burst of retrains.",
+            "Never retrain on data that failed quality checks: a model trained on the week of the unit bug learns the bug."
+          ]
+        },
+        {
+          "title": "Retraining safely",
+          "minutes": 12,
+          "objectives": [
+            "Choose a training window for a retrain",
+            "Hand a retrained model over to evaluation and release"
+          ],
+          "key_points": [
+            "The training window trades recency for stability: a short recent window adapts quickly but is noisy and forgets seasons; a long one is stable but slow; weighting recent data is a middle way.",
+            "Only matured labels can be used, so a retrain at week w with a four-week label delay trains on data up to week w − 4 at best.",
+            "Evaluate the retrained model on the newest matured data it didn't train on, against the current champion on the same data and segments, before anything is promoted.",
+            "Hand over through the same release path as any model: registry, gate, then shadow or canary, as in the courses MLOps Foundations: Experiments, Models and Reproducibility with MLflow and Deploying and Serving Machine Learning Models.",
+            "Reset the monitoring reference after a release: drift is measured against the new model's training data, and its first windows set the new baseline."
+          ]
+        },
+        {
+          "title": "Feedback loops and monitoring the monitor",
+          "minutes": 11,
+          "objectives": [
+            "Recognise feedback loops that bias labels and retraining data",
+            "Monitor the monitoring system itself"
+          ],
+          "key_points": [
+            "A model's decisions change its future data: declined payments never get outcome labels, and reviewed ones get better labels than the rest, so retraining data over-represents what the model let through.",
+            "A small holdout handled without the model, or with random exploration, gives unbiased labels to measure the model and retrain on; its cost is part of the monitoring budget.",
+            "Fraudsters adapt to the model itself, so in adversarial settings expect concept drift after every release, and watch the segments the model newly lets through.",
+            "Monitor the monitoring: alert when a drift job doesn't run, when the prediction log stops growing or when labels stop arriving, because a silent monitor looks exactly like a healthy model.",
+            "Review the system periodically: retire alerts nobody acts on, check thresholds against new history, and confirm each runbook still matches the pipeline."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Compare retraining policies over a simulated year",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Simulate 52 weeks in which the fraud pattern gradually changes and labels arrive four weeks late, and compare never retraining, a schedule, a score-drift trigger and a performance trigger on accuracy and number of retrains.",
+        "setup": [
+          "The project folder, with drift.py from module 2",
+          "The starter file retrain_sim.py"
+        ],
+        "steps": [
+          {
+            "do": "Read retrain_sim.py: from week 9, merchant risk matters less and new devices matter more; amounts rise too, harmlessly. Each retrain uses the latest eight weeks with matured labels."
+          },
+          {
+            "do": "Run the simulation.",
+            "code": "python retrain_sim.py",
+            "lang": "bash",
+            "see": "never: mean AUC 0.756 and 0.708 in weeks 45-52; every 8 weeks: 5 retrains, 0.804 and 0.833"
+          },
+          {
+            "do": "Explain why the score-drift policy never retrained although the model was degrading, and why the performance policy retrained only twice."
+          },
+          {
+            "do": "Change LAG from 4 to 1, then to 8, and rerun. Record what happens to the performance-triggered policy each time."
+          },
+          {
+            "do": "Change WINDOW from 8 to 4 and to 16 with the schedule policy, and record the effect."
+          },
+          {
+            "do": "Write a retraining policy for the fraud model: schedule, triggers and thresholds, cool-down, the data quality gate, the training window and the release path, backed by your results."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The simulation compared four policies.",
+            "look_for": [
+              "never",
+              "every 8 weeks",
+              "on score drift",
+              "on performance"
+            ]
+          },
+          {
+            "text": "Never retraining degraded to 0.708 by the last eight weeks.",
+            "look_for": [
+              "0.756",
+              "0.708"
+            ]
+          },
+          {
+            "text": "The schedule retrained five times and did best.",
+            "look_for": [
+              "[16, 24, 32, 40, 48]",
+              "0.833"
+            ]
+          },
+          {
+            "text": "The performance trigger retrained in weeks 14 and 29.",
+            "look_for": [
+              "[14, 29]"
+            ]
+          },
+          {
+            "text": "The explanation says the inputs barely drifted while the relationship changed.",
+            "look_for": [
+              "concept"
+            ]
+          },
+          {
+            "text": "The policy covers triggers, a quality gate and the release path.",
+            "look_for": [
+              "quality",
+              "window"
+            ]
+          }
+        ],
+        "submit": "Paste the output of every run, your explanation from step 3, and your retraining policy.",
+        "files": [
+          {
+            "path": "drift.py",
+            "content": "\"\"\"Drift statistics built from NumPy and SciPy, so you can see exactly what each one measures.\"\"\"\nimport numpy as np\nfrom scipy import stats\nfrom scipy.spatial.distance import jensenshannon\n\nEPS = 1e-4          # stands in for an empty bin, so log(0) never happens\n\n\ndef _clean(values):\n    values = np.asarray(values, dtype=float)\n    return values[~np.isnan(values)]\n\n\ndef bin_edges(reference, bins=10):\n    \"\"\"Inner edges at the reference's quantiles: each bin holds about 1/bins of the reference.\"\"\"\n    qs = np.quantile(_clean(reference), np.linspace(0, 1, bins + 1)[1:-1])\n    return np.unique(qs)\n\n\ndef shares(values, edges):\n    \"\"\"Share of values in each bin; the outer bins are open-ended, so nothing falls outside.\"\"\"\n    idx = np.searchsorted(edges, _clean(values), side=\"right\")\n    counts = np.bincount(idx, minlength=len(edges) + 1)\n    return counts / counts.sum()\n\n\ndef psi(reference, current, bins=10):\n    \"\"\"Population stability index: sum of (actual - expected) * ln(actual / expected) over bins.\"\"\"\n    edges = bin_edges(reference, bins)\n    e = np.clip(shares(reference, edges), EPS, None)\n    a = np.clip(shares(current, edges), EPS, None)\n    return float(np.sum((a - e) * np.log(a / e)))\n\n\ndef category_shares(values, categories):\n    values = list(values)\n    return np.array([values.count(c) for c in categories]) / len(values)\n\n\ndef psi_categorical(reference, current):\n    categories = sorted(set(reference) | set(current))      # a new category is a bin of its own\n    e = np.clip(category_shares(reference, categories), EPS, None)\n    a = np.clip(category_shares(current, categories), EPS, None)\n    return float(np.sum((a - e) * np.log(a / e)))\n\n\ndef ks(reference, current):\n    \"\"\"Two-sample Kolmogorov-Smirnov: D is the largest gap between the two empirical CDFs.\"\"\"\n    result = stats.ks_2samp(_clean(reference), _clean(current))\n    return float(result.statistic), float(result.pvalue)\n\n\ndef chi2(reference, current):\n    \"\"\"Chi-squared test of the category counts, with Cramer's V as the effect size (0 to 1).\"\"\"\n    categories = sorted(set(reference) | set(current))\n    ref, cur = list(reference), list(current)\n    table = np.array([[ref.count(c) for c in categories], [cur.count(c) for c in categories]])\n    statistic, p_value, dof, _ = stats.chi2_contingency(table)\n    v = np.sqrt(statistic / (table.sum() * (min(table.shape) - 1)))\n    return float(statistic), float(p_value), float(v)\n\n\ndef js_distance(reference, current, bins=10):\n    \"\"\"Jensen-Shannon distance with base 2: 0 for identical distributions, 1 at most.\"\"\"\n    edges = bin_edges(reference, bins)\n    return float(jensenshannon(shares(reference, edges), shares(current, edges), base=2))\n"
+          },
+          {
+            "path": "retrain_sim.py",
+            "content": "\"\"\"A year of weekly payments in which fraud slowly changes shape, and labels arrive four weeks late.\nFour retraining policies face the same data; each retrain uses the latest eight weeks of labels.\"\"\"\nimport numpy as np\nimport pandas as pd\nfrom sklearn.linear_model import LogisticRegression\nfrom sklearn.metrics import roc_auc_score\n\nfrom drift import psi\n\nWEEKS, LAG, WINDOW, COOL_DOWN = 52, 4, 8, 4\nFEATURES = [\"merchant_risk\", \"tx_last_1h\", \"night\", \"log_amount\", \"new_device\"]\nrng = np.random.default_rng(11)\n\n\ndef make_week(week, n=2000):\n    t = max(0, week - 8) / 44                       # 0 up to week 8, rising to 1 by week 52\n    X = pd.DataFrame({\n        \"merchant_risk\": rng.beta(2, 8, n),\n        \"tx_last_1h\": rng.poisson(0.8, n),\n        \"night\": (rng.integers(0, 24, n) < 5).astype(int),\n        \"log_amount\": rng.normal(3.6 + 0.3 * t, 0.9, n),       # amounts drift up: harmless\n        \"new_device\": (rng.random(n) < 0.15).astype(int),\n    })\n    logit = (-4.5 + 0.7 * t + (6.0 - 6.0 * t) * X.merchant_risk + 0.9 * X.tx_last_1h\n             + 1.6 * X.night + 0.3 * (X.log_amount - 0.3 * t) + (0.3 + 3.2 * t) * X.new_device)\n    return X, (rng.random(n) < 1 / (1 + np.exp(-logit))).astype(int)\n\n\nDATA = {w: make_week(w) for w in range(1, WEEKS + 1)}\n\n\ndef train(weeks):\n    X = pd.concat([DATA[w][0] for w in weeks])\n    y = np.concatenate([DATA[w][1] for w in weeks])\n    model = LogisticRegression(max_iter=1000).fit(X, y)\n    return model, model.predict_proba(X)[:, 1]\n\n\ndef run(policy):\n    model, train_scores = train(range(1, 9))\n    baseline_auc, last_retrain, retrains, aucs = None, 8, [], {}\n    for week in range(9, WEEKS + 1):\n        X, y = DATA[week]\n        scores = model.predict_proba(X)[:, 1]\n        aucs[week] = roc_auc_score(y, scores)        # the truth, for scoring the policy only\n        matured = week - LAG                          # the newest week whose labels are known\n        due = False\n        if policy == \"every 8 weeks\":\n            due = (week - 8) % 8 == 0\n        elif policy == \"on score drift\" and week - last_retrain >= COOL_DOWN:\n            due = psi(train_scores, scores) > 0.1\n        elif policy == \"on performance\" and week - last_retrain >= COOL_DOWN and matured > last_retrain:\n            Xm, ym = DATA[matured]\n            observed = roc_auc_score(ym, model.predict_proba(Xm)[:, 1])\n            baseline_auc = observed if baseline_auc is None else baseline_auc\n            due = observed < baseline_auc - 0.02\n        if due:\n            model, train_scores = train(range(matured - WINDOW + 1, matured + 1))\n            baseline_auc, last_retrain = None, week\n            retrains.append(week)\n    return retrains, aucs\n\n\nprint(f\"{'policy':16} {'retrains':>8} {'mean AUC wk 9-52':>17} {'mean AUC wk 45-52':>18}  retrained in weeks\")\nfor policy in [\"never\", \"every 8 weeks\", \"on score drift\", \"on performance\"]:\n    retrains, aucs = run(policy)\n    auc = pd.Series(aucs)\n    print(f\"{policy:16} {len(retrains):>8} {auc.mean():>17.3f} {auc.loc[45:].mean():>18.3f}  {retrains}\")\n"
+          }
+        ],
+        "hints": [
+          "The simulation draws all 52 weeks once, before any policy runs, so every policy faces exactly the same data.",
+          "AUC here is computed with true labels for scoring the policies only; the policies themselves see labels only after LAG weeks.",
+          "A single noisy week can set a high baseline for the performance trigger: averaging two or three mature weeks makes it steadier."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Design the prediction log, learn the kinds of drift and catch the pipeline incidents with quality checks.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Implement the drift measures, build the weekly drift report and explore p-values and binning.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Measure performance on mature labels, estimate it from scores and detect concept drift.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Learn thresholds, backtest alert rules and draw the model-health dashboard.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Compare retraining policies over a simulated year and write a retraining policy.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the monitoring capstone with incident drills, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "A monitoring system for a payment-fraud model",
+    "minutes": 540,
+    "brief": "The fraud team's model scores every instant payment, and the last incident went unnoticed for three weeks. Build the monitoring system that would have caught it. Starting from the course's simulator (run it with a new seed, or adapt it), design the prediction log and label table; write data quality checks; compute drift with at least three measures, with thresholds learnt from history and backtested; report performance on mature labels with an estimate for immature weeks; detect degradation in the error stream; and draw a dashboard. Then prove it works with incident drills: inject at least four incidents of different kinds (such as a unit bug, missing data, a new category, gradual covariate drift and concept drift) into a fresh simulation, and report which signals caught each one, and how quickly. Finish with a retraining policy, supported by a simulation, and a runbook for the on-call engineer.",
+    "deliverables": [
+      "The code: quality checks, drift measures, performance report with estimates, change detector, alert backtest and dashboard script",
+      "The prediction log and label table designs, with the columns and why each is there",
+      "An incident drill table: each injected incident, the signals that caught it, the detection delay and any misses",
+      "The dashboard image and the alert design (metric, window, threshold, persistence, severity, owner)",
+      "A retraining policy with the simulation results behind it",
+      "A runbook covering the first hour of an alert"
+    ],
+    "rubric": [
+      {
+        "name": "Data and quality checks",
+        "points": 15,
+        "description": "The log and label tables support every metric reported; quality checks cover schema, missing values, ranges, categories and volume with clear messages."
+      },
+      {
+        "name": "Drift measurement",
+        "points": 20,
+        "description": "At least three drift measures are implemented correctly, chosen per feature type, with thresholds learnt from history and backtested for false alarms."
+      },
+      {
+        "name": "Performance with late labels",
+        "points": 20,
+        "description": "Realised metrics use only mature windows with coverage shown; estimates and a change detector are used and their limits are stated."
+      },
+      {
+        "name": "Incident drills",
+        "points": 25,
+        "description": "At least four different incidents are injected and the report states honestly which signals caught each, when, and what was missed."
+      },
+      {
+        "name": "Operations",
+        "points": 20,
+        "description": "The dashboard, alert design, retraining policy and runbook are clear and consistent, so someone else could run the system on call."
+      }
+    ],
+    "submit": "Paste a link to your repository (or the key files), the incident drill table, the dashboard image description, the alert design, the retraining policy and the runbook.",
+    "files": []
+  }
+}
