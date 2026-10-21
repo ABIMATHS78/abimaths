@@ -1,0 +1,1035 @@
+{
+  "slug": "distributed-systems",
+  "title": "Distributed Systems: Replication, Consensus and Consistency",
+  "subtitle": "Reason precisely about systems that span many machines: clocks, replication, consistency models, Raft consensus and distributed transactions, with simulations you build and break.",
+  "category": "Computer Science",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "wei-cheng-liu",
+    "elena-petrova"
+  ],
+  "skills": [
+    "Distributed systems",
+    "Logical and vector clocks",
+    "Replication",
+    "Quorum systems",
+    "Consistency models",
+    "Linearisability checking",
+    "Raft consensus",
+    "Distributed transactions",
+    "Idempotent processing",
+    "Fault-injection simulation"
+  ],
+  "tools": [
+    "Python",
+    "pytest"
+  ],
+  "outcomes": [
+    "Explain partial failure, fault and timing models, and why physical clocks can't order events",
+    "Order events with Lamport and vector clocks, and detect concurrent writes with version vectors",
+    "Compare leader-follower, multi-leader and leaderless replication, and choose quorums for a workload",
+    "Define linearisable, sequential, causal and eventual consistency precisely, and test histories against them",
+    "Trace Raft's leader election and log replication, and explain the rules that keep it safe",
+    "Choose between two-phase commit, sagas and idempotent processing for work that spans services"
+  ],
+  "prerequisites": "System Design Fundamentals: Scale, Caching and Load Balancing, or experience with replicas, shards and queues; confident Python, including classes and dataclasses; and comfort with pseudocode and short proofs. Install Python 3.10 or newer and pytest (python -m pip install pytest). Every lab is a deterministic simulation that runs on a laptop: no cluster is needed.",
+  "description": "Most systems now run on many machines, and their hardest bugs come from that: messages that arrive late or twice, clocks that disagree, replicas that diverge, and nodes that each believe they're in charge. This advanced course gives you the precise ideas engineers use to reason about such systems. You'll start from fault and timing models and see why physical clocks can't order events, then use Lamport and vector clocks instead. You'll compare leader-follower, multi-leader and leaderless replication, define consistency models from linearisable to eventual and see what CAP and PACELC really say, study Raft in detail and Paxos in outline, and finish with two-phase commit, sagas and the truth about exactly-once processing.\n\nEvery lab is a deterministic Python simulation, so it prints the same result on any laptop: you'll replay a message trace with vector clocks, measure stale reads under different quorums, write a linearisability checker and use it to catch a real quorum anomaly, implement Raft's voting rules and watch elections survive crashes and partitions, and recover a crashed two-phase-commit coordinator. The capstone extends your Raft simulation into a replicated key-value store, checked against Raft's safety properties after every event. The course builds on System Design Fundamentals: Scale, Caching and Load Balancing, and Database Internals: Indexes, Transactions and Query Plans covers what happens inside each node.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Failure, time and clocks",
+      "summary": "Start from what makes distributed systems hard: partial failure, unreliable networks and clocks that disagree. Define the fault and timing models every protocol assumes, then order events without trusting clocks, using Lamport and vector clocks.",
+      "instructor": "elena-petrova",
+      "lessons": [
+        {
+          "title": "Partial failure and system models",
+          "minutes": 13,
+          "objectives": [
+            "Explain partial failure, and why a node can't tell a slow peer from a dead one",
+            "Distinguish crash-stop, crash-recovery, omission and Byzantine faults",
+            "Compare synchronous, partially synchronous and asynchronous timing models"
+          ],
+          "key_points": [
+            "In a distributed system some parts fail while others carry on (partial failure). A message can be lost, delayed, duplicated or reordered, and a sender that gets no reply can't tell whether the request was lost, the receiver crashed, or the reply is just slow.",
+            "Timeouts are the only practical failure detector, and they are guesses: too short and a slow node is declared dead (so two nodes may both act as leader), too long and real failures take a long time to notice.",
+            "Fault models say what a faulty node may do: crash-stop (halts for good), crash-recovery (halts and may restart with only what it had written to stable storage), omission (drops messages) and Byzantine (anything, even malicious). Raft and Paxos assume crash-recovery, not Byzantine faults.",
+            "Timing models: a synchronous system bounds message delays and processing time, an asynchronous one bounds nothing, and a partially synchronous one behaves synchronously most of the time. Practical protocols stay safe under asynchrony and make progress when timing behaves.",
+            "Safety properties say nothing bad ever happens (two nodes never decide differently); liveness properties say something good eventually happens (every request is answered). A well-designed protocol may lose liveness when its timing assumptions break, but never safety.",
+            "Partitions and pauses are real: a switch failure or firewall change can cut a node off, and a long garbage-collection pause can stop a process for seconds. A paused process may wake up and act on stale beliefs, such as still holding a lease, so protocols must expect it."
+          ]
+        },
+        {
+          "title": "Physical clocks and their limits",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish time-of-day clocks from monotonic clocks",
+            "Explain clock skew and why wall-clock timestamps can't order events across machines",
+            "Describe how bounded-uncertainty clocks and hybrid logical clocks help"
+          ],
+          "key_points": [
+            "A time-of-day clock (time.time() in Python, CLOCK_REALTIME) gives wall-clock time and can jump backwards or forwards when it's corrected; a monotonic clock (time.monotonic(), CLOCK_MONOTONIC) only moves forward, and is the right tool for measuring durations and timeouts.",
+            "Quartz clocks drift, and NTP keeps them near a reference by adjusting them: typically to within tens of milliseconds over the internet and around a millisecond on a good local network, and worse when NTP or the network misbehaves. Clocks on different machines always disagree by an unknown amount.",
+            "Last-write-wins with wall-clock timestamps silently loses data: if node A's clock runs ahead, an older write from A can carry a later timestamp than a newer write from B and win, and nobody is told.",
+            "Leap seconds and sudden clock steps have broken software that assumed time never repeats or runs backwards; large operators smear a leap second over many hours instead of inserting it at once.",
+            "Google's Spanner uses TrueTime, which returns an interval [earliest, latest] guaranteed to contain the true time; a transaction waits out the uncertainty (commit wait) before its commit is visible, so timestamp order matches real-time order. GPS receivers and atomic clocks keep the interval to a few milliseconds.",
+            "Hybrid logical clocks (HLC) combine physical time with a logical counter: timestamps stay close to wall-clock time but always respect causality, which is why databases such as CockroachDB use them to order transactions."
+          ]
+        },
+        {
+          "title": "Logical clocks: Lamport and vector clocks",
+          "minutes": 14,
+          "objectives": [
+            "Define the happens-before relation",
+            "Apply the update rules of Lamport clocks and vector clocks",
+            "Use vector clocks to tell causally related events from concurrent ones"
+          ],
+          "key_points": [
+            "Happens-before (→), from Lamport's 1978 paper: a → b if a and b are on the same process and a comes first, if a sends a message and b receives it, or by transitivity. If neither a → b nor b → a, the events are concurrent (a ∥ b).",
+            "Lamport clock: each process keeps a counter, increments it before each local event and each send, attaches it to messages, and on receipt sets it to max(local, received) + 1. Then a → b implies L(a) < L(b), but L(a) < L(b) does not imply a → b.",
+            "Lamport timestamps with the process ID as a tie-breaker give a total order consistent with causality, enough for a fair mutual-exclusion queue, but they can't detect concurrency.",
+            "Vector clock: each process keeps one counter per process, increments its own entry on each event, sends the whole vector, and on receipt takes the element-wise maximum and then increments its own entry. a → b exactly when V(a) ≤ V(b) in every entry and V(a) ≠ V(b).",
+            "When each vector is larger in some entry, such as [2,1,0] and [1,2,0], the events are concurrent. Amazon's Dynamo design and Riak keep a version vector per key in this way, to detect conflicting writes and keep both versions as siblings for the application to merge.",
+            "Vectors grow with the number of participants, so systems keep them small by tracking replicas rather than clients, pruning old entries, or using dotted version vectors."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Order events with Lamport and vector clocks",
+        "tool": "Python 3 and pytest",
+        "minutes": 45,
+        "goal": "Implement the Lamport and vector clock rules, replay a fixed three-process execution and check the clock condition, then use version vectors to keep two concurrent writes to a shopping cart as siblings, where last-write-wins would lose one.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest)",
+          "Download the lab files into a new folder: clocks.py, timeline.py, carts.py and test_clocks.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the tests: the clock rules are TODOs.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 failed"
+          },
+          {
+            "do": "Implement LamportClock.receive: the receive event's timestamp is one more than the larger of the local counter and the message's timestamp.",
+            "code": "self.time = max(self.time, timestamp) + 1\nreturn self.time",
+            "lang": "python"
+          },
+          {
+            "do": "Implement VectorClock.tick (increment this process's own entry and return a tuple copy) and VectorClock.receive (element-wise maximum with the message's vector, then tick)."
+          },
+          {
+            "do": "Implement compare: 'before' when every entry of a is at most the matching entry of b and they differ, 'after' for the reverse, 'equal' when they're identical, and 'concurrent' otherwise."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 passed"
+          },
+          {
+            "do": "Replay the execution.",
+            "code": "python timeline.py",
+            "lang": "bash",
+            "see": "d gets Lamport 3 and vector (2, 2, 0); i gets 3 and (3, 0, 2); j gets 4 and (4, 0, 2)."
+          },
+          {
+            "do": "Read the summary lines. Of the 45 pairs of events, 25 are causally ordered and the Lamport timestamps agree with every one; but 14 of the 20 concurrent pairs also get different Lamport timestamps, so a smaller Lamport timestamp doesn't mean 'happened before'.",
+            "see": "25 causally ordered pairs, 20 concurrent pairs; ... 14 concurrent pairs still get different Lamport timestamps"
+          },
+          {
+            "do": "Draw the execution as a space-time diagram: three horizontal lines, and arrows for m1, m2 and m3. List every event that can have caused j, then check your list against j's vector (4, 0, 2): they are the events whose vectors are at most (4, 0, 2) in every entry."
+          },
+          {
+            "do": "Run the cart simulation.",
+            "code": "python carts.py",
+            "lang": "bash",
+            "see": "After replication, replica A holds 2 siblings: [['bread', 'milk'], ['eggs', 'milk']]"
+          },
+          {
+            "do": "Explain the three lines: why the two writes are concurrent (compare the version vectors {'A': 2} and {'A': 1, 'B': 1}), why the merged write replaces both siblings, and what last-write-wins lost and why Bo's fast clock decided it.",
+            "see": "Last-write-wins keeps ['eggs', 'milk'] (Bo, eggs) and loses ['bread']"
+          },
+          {
+            "do": "Union merges have a flaw: an item removed on one replica comes back if another replica still has it. Say in a sentence or two how an observed-remove set avoids that."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The clock rules pass their tests.",
+            "look_for": [
+              "6 passed"
+            ]
+          },
+          {
+            "text": "Lamport and vector timestamps follow the rules.",
+            "look_for": [
+              "(2, 2, 0)",
+              "(3, 0, 2)",
+              "(4, 0, 2)"
+            ]
+          },
+          {
+            "text": "The clock condition holds, and concurrency that Lamport clocks can't show is found.",
+            "look_for": [
+              "25 causally ordered pairs",
+              "14 concurrent pairs"
+            ]
+          },
+          {
+            "text": "The events that can have caused j are identified: a, b, e, g and i.",
+            "look_for": [
+              "a, b, e, g"
+            ]
+          },
+          {
+            "text": "Version vectors keep concurrent writes as siblings, and the merge supersedes them.",
+            "look_for": [
+              "2 siblings",
+              "['bread', 'eggs', 'milk']"
+            ]
+          },
+          {
+            "text": "Last-write-wins loses a write.",
+            "look_for": [
+              "loses ['bread']"
+            ]
+          }
+        ],
+        "submit": "Paste clocks.py, the pytest summary, the output of timeline.py and carts.py, your list of the events that can have caused j, and your explanations of the cart and of observed-remove sets.",
+        "files": [
+          {
+            "path": "clocks.py",
+            "content": "\"\"\"Lamport clocks, vector clocks and the happens-before comparison.\"\"\"\nfrom __future__ import annotations\n\n\nclass LamportClock:\n    def __init__(self) -> None:\n        self.time = 0\n\n    def tick(self) -> int:\n        \"\"\"A local event: increment, and return the event's timestamp.\"\"\"\n        self.time += 1\n        return self.time\n\n    def send(self) -> int:\n        \"\"\"Sending is an event too: tick, and return the timestamp to attach to the message.\"\"\"\n        return self.tick()\n\n    def receive(self, timestamp: int) -> int:\n        \"\"\"Receiving: jump past the message's timestamp. Return the receive event's timestamp.\"\"\"\n        raise NotImplementedError(\"TODO: max(local, received) + 1\")\n\n\nclass VectorClock:\n    \"\"\"One counter per process; process `pid` increments only its own entry.\"\"\"\n\n    def __init__(self, n: int, pid: int) -> None:\n        self.pid = pid\n        self.v = [0] * n\n\n    def tick(self) -> tuple[int, ...]:\n        raise NotImplementedError(\"TODO: increment this process's entry; return a copy as a tuple\")\n\n    def send(self) -> tuple[int, ...]:\n        return self.tick()\n\n    def receive(self, other: tuple[int, ...]) -> tuple[int, ...]:\n        raise NotImplementedError(\"TODO: element-wise max with the message's vector, then tick\")\n\n\ndef compare(a: tuple[int, ...], b: tuple[int, ...]) -> str:\n    \"\"\"'before' if a happened before b, 'after' if b happened before a, 'equal', or 'concurrent'.\"\"\"\n    raise NotImplementedError(\"TODO: compare element-wise\")\n\n\ndef compare_versions(a: dict[str, int], b: dict[str, int]) -> str:\n    \"\"\"compare() for version vectors stored as {replica: counter}; a missing replica counts as 0.\"\"\"\n    names = sorted(set(a) | set(b))\n    return compare(tuple(a.get(n, 0) for n in names), tuple(b.get(n, 0) for n in names))\n"
+          },
+          {
+            "path": "timeline.py",
+            "content": "\"\"\"Replay a fixed execution of three processes and compare Lamport and vector timestamps.\"\"\"\nfrom itertools import combinations\n\nfrom clocks import LamportClock, VectorClock, compare\n\n# (event, process, kind, message): every receive comes after its send.\nTRACE = [\n    (\"a\", 0, \"local\", None),\n    (\"b\", 0, \"send\", \"m1\"),      # P0 -> P1\n    (\"c\", 1, \"local\", None),\n    (\"d\", 1, \"recv\", \"m1\"),\n    (\"e\", 2, \"local\", None),\n    (\"f\", 1, \"send\", \"m2\"),      # P1 -> P2\n    (\"g\", 2, \"send\", \"m3\"),      # P2 -> P0\n    (\"h\", 2, \"recv\", \"m2\"),\n    (\"i\", 0, \"recv\", \"m3\"),\n    (\"j\", 0, \"local\", None),\n]\n\n\ndef replay():\n    lamport = [LamportClock() for _ in range(3)]\n    vector = [VectorClock(3, p) for p in range(3)]\n    in_flight, stamps = {}, {}\n    for event, p, kind, msg in TRACE:\n        if kind == \"local\":\n            stamps[event] = (lamport[p].tick(), vector[p].tick())\n        elif kind == \"send\":\n            stamps[event] = (lamport[p].send(), vector[p].send())\n            in_flight[msg] = stamps[event]\n        else:\n            lt, vt = in_flight.pop(msg)\n            stamps[event] = (lamport[p].receive(lt), vector[p].receive(vt))\n    return stamps\n\n\nif __name__ == \"__main__\":\n    stamps = replay()\n    print(\"event  process  Lamport  vector\")\n    for event, p, kind, _ in TRACE:\n        lt, vt = stamps[event]\n        print(f\"{event:<6} P{p:<7} {lt:<8} {vt}  {kind}\")\n    ordered = concurrent = 0\n    misleading = []\n    for x, y in combinations([e for e, *_ in TRACE], 2):\n        (lx, vx), (ly, vy) = stamps[x], stamps[y]\n        relation = compare(vx, vy)\n        if relation in (\"before\", \"after\"):\n            ordered += 1\n            first, second = (x, y) if relation == \"before\" else (y, x)\n            assert stamps[first][0] < stamps[second][0], \"the clock condition is broken\"\n        else:\n            concurrent += 1\n            if lx != ly:\n                misleading.append((x, y) if lx < ly else (y, x))\n    print(f\"{ordered} causally ordered pairs, {concurrent} concurrent pairs; \"\n          f\"Lamport order agrees with every causal pair\")\n    print(f\"{len(misleading)} concurrent pairs still get different Lamport timestamps, e.g. \"\n          + \", \".join(f\"{a}({stamps[a][0]}) < {b}({stamps[b][0]})\" for a, b in misleading[:3]))\n"
+          },
+          {
+            "path": "carts.py",
+            "content": "\"\"\"Two replicas of one shopping cart. Version vectors detect concurrent writes and keep both as siblings;\nlast-write-wins by wall-clock time would keep one and silently lose the other.\"\"\"\nfrom clocks import compare_versions\n\n\nclass Replica:\n    def __init__(self, name: str) -> None:\n        self.name = name\n        self.counter = 0\n        self.siblings: list[tuple[dict, frozenset]] = []     # (version vector, cart)\n\n    def get(self):\n        \"\"\"All current values, and the context to send back with the next write: the merged vectors.\"\"\"\n        context: dict[str, int] = {}\n        for vv, _ in self.siblings:\n            for replica, c in vv.items():\n                context[replica] = max(context.get(replica, 0), c)\n        return [set(cart) for _, cart in self.siblings], context\n\n    def _store(self, vv: dict, cart: frozenset) -> None:\n        if any(compare_versions(old, vv) in (\"after\", \"equal\") for old, _ in self.siblings):\n            return                                            # we already have this version or a newer one\n        self.siblings = [(old, c) for old, c in self.siblings if compare_versions(old, vv) != \"before\"]\n        self.siblings.append((vv, cart))\n\n    def put(self, cart: set, context: dict) -> dict:\n        \"\"\"A client write: it supersedes everything in `context`, and nothing else.\"\"\"\n        self.counter += 1\n        vv = dict(context, **{self.name: self.counter})\n        self._store(vv, frozenset(cart))\n        return vv\n\n    def replicate_to(self, other: \"Replica\") -> None:\n        for vv, cart in self.siblings:\n            other._store(dict(vv), cart)\n\n\nif __name__ == \"__main__\":\n    a, b = Replica(\"A\"), Replica(\"B\")\n    _, ctx = a.get()\n    ama_ctx = a.put({\"milk\"}, ctx)                 # Ama adds milk through replica A\n    a.replicate_to(b)\n    carts, bo_ctx = b.get()                        # Bo reads through B and sees the milk...\n    b.put(carts[0] | {\"eggs\"}, bo_ctx)             # ...and adds eggs\n    a.put({\"milk\", \"bread\"}, ama_ctx)              # meanwhile Ama, who hasn't seen the eggs, adds bread\n    a.replicate_to(b)\n    b.replicate_to(a)\n    carts, ctx = a.get()\n    print(f\"After replication, replica A holds {len(carts)} siblings: {sorted(sorted(c) for c in carts)}\")\n    merged = set().union(*carts)\n    a.put(merged, ctx)                             # the next reader merges, and its write supersedes both\n    a.replicate_to(b)\n    print(f\"After the merge both replicas hold: {sorted(a.get()[0][0])} and {sorted(b.get()[0][0])}\")\n    # Last-write-wins by wall clock instead: Bo's phone clock runs 2 s fast, so his earlier write looks newer.\n    writes = [(\"Ama, bread\", 1_000.5, {\"milk\", \"bread\"}), (\"Bo, eggs\", 1_000.2 + 2.0, {\"milk\", \"eggs\"})]\n    who, _, kept = max(writes, key=lambda w: w[1])\n    print(f\"Last-write-wins keeps {sorted(kept)} ({who}) and loses {sorted(merged - kept)}\")\n"
+          },
+          {
+            "path": "test_clocks.py",
+            "content": "from clocks import LamportClock, VectorClock, compare, compare_versions\n\n\ndef test_lamport_receive_jumps_past_the_message():\n    c = LamportClock()\n    c.tick()\n    assert c.receive(7) == 8\n    assert c.receive(2) == 9          # an old timestamp still moves the clock on\n\n\ndef test_vector_tick_and_receive():\n    p1 = VectorClock(3, 1)\n    assert p1.tick() == (0, 1, 0)\n    assert p1.receive((2, 0, 1)) == (2, 2, 1)\n\n\ndef test_compare_all_four_outcomes():\n    assert compare((1, 0, 0), (2, 1, 0)) == \"before\"\n    assert compare((2, 1, 0), (1, 0, 0)) == \"after\"\n    assert compare((1, 2, 0), (2, 1, 0)) == \"concurrent\"\n    assert compare((1, 1, 1), (1, 1, 1)) == \"equal\"\n\n\ndef test_compare_versions_treats_missing_entries_as_zero():\n    assert compare_versions({\"A\": 1}, {\"A\": 1, \"B\": 1}) == \"before\"\n    assert compare_versions({\"A\": 2}, {\"A\": 1, \"B\": 1}) == \"concurrent\"\n\n\ndef test_trace_clock_condition():\n    from timeline import replay\n    stamps = replay()\n    assert stamps[\"d\"] == (3, (2, 2, 0))       # d receives m1 from b\n    assert stamps[\"i\"] == (3, (3, 0, 2))      # i receives m3 from g\n    assert compare(stamps[\"c\"][1], stamps[\"e\"][1]) == \"concurrent\"\n\n\ndef test_cart_siblings_then_merge():\n    from carts import Replica\n    a, b = Replica(\"A\"), Replica(\"B\")\n    ctx = a.put({\"milk\"}, {})\n    a.replicate_to(b)\n    carts, bctx = b.get()\n    b.put(carts[0] | {\"eggs\"}, bctx)\n    a.put({\"milk\", \"bread\"}, ctx)\n    b.replicate_to(a)\n    carts, ctx = a.get()\n    assert len(carts) == 2\n    a.put(set().union(*carts), ctx)\n    assert a.get()[0] == [{\"milk\", \"eggs\", \"bread\"}]\n"
+          }
+        ],
+        "hints": [
+          "receive is maximum-then-increment for both clocks; without the increment, a receive event shares its timestamp with the send.",
+          "In compare, work out 'every entry is at most' and 'every entry is at least' once each: both true means equal.",
+          "A version vector is a vector clock kept per key with one entry per replica; compare_versions treats missing entries as 0 for you."
+        ]
+      }
+    },
+    {
+      "title": "Replication",
+      "summary": "Keep copies of data on several nodes: leader-follower replication and its failover hazards, multi-leader replication and conflict resolution, and leaderless replication with quorums, read repair and anti-entropy.",
+      "instructor": "wei-cheng-liu",
+      "lessons": [
+        {
+          "title": "Leader-follower replication and failover",
+          "minutes": 13,
+          "objectives": [
+            "Compare synchronous, semi-synchronous and asynchronous replication",
+            "Compare statement-based, write-ahead-log and logical replication",
+            "Explain failover hazards, and how fencing prevents split brain"
+          ],
+          "key_points": [
+            "A single leader orders all writes and ships them to followers as a replication log. Statement-based replication resends the SQL and breaks with non-deterministic functions such as now(); write-ahead-log shipping sends page-level changes and ties replicas to one storage format; logical (row-based) replication sends row changes and can cross versions.",
+            "Synchronous replication waits for followers before acknowledging a write, so a confirmed write survives the leader's loss but one slow follower stalls every write; semi-synchronous waits for one follower; asynchronous acknowledges at once, and the newest writes are lost if the leader dies before sending them.",
+            "Lag causes anomalies users notice. Read-your-writes: users see their own updates. Monotonic reads: successive reads never go back in time, even on different replicas. Consistent prefix reads: an answer is never seen before its question. Each needs routing or version tracking, not just more replicas.",
+            "Failover needs a failure detector (usually a timeout), the choice of a new leader (ideally the most up-to-date follower, which is itself a consensus problem) and clients redirected to it. Too short a timeout causes needless failovers during load spikes; too long a timeout lengthens outages.",
+            "Split brain: an old leader that was only paused or partitioned may still accept writes. Fencing stops it: each leadership term carries a monotonically increasing epoch, and storage and peers reject requests that carry an older one.",
+            "Fencing tokens make leases safe too: the lock service hands out an increasing token with each lease, the client sends it with every write, and storage rejects tokens lower than the highest it has seen, so a client that paused past its lease can't overwrite newer data."
+          ]
+        },
+        {
+          "title": "Multi-leader replication and conflicts",
+          "minutes": 12,
+          "objectives": [
+            "Identify when multi-leader replication is worth its complexity",
+            "Compare conflict resolution strategies, from last-write-wins to CRDTs",
+            "Explain how the replication topology affects causality"
+          ],
+          "key_points": [
+            "Multi-leader replication lets several nodes accept writes and replicate to each other asynchronously. It suits several data centres (each writes locally), devices that work offline (each is a leader) and collaborative editing, at the price of write conflicts.",
+            "Avoid conflicts where possible: send every write for a record to the same home leader (for example by the user's region), so conflicts arise only when that routing changes.",
+            "Last-write-wins keeps the write with the highest timestamp and silently discards the others. It's simple but loses data whenever writes are truly concurrent, and with skewed clocks it can discard the write that really happened last.",
+            "Better resolution merges: keep every concurrent version as a sibling and let the application merge them, or use CRDTs (conflict-free replicated data types), such as counters and observed-remove sets, which converge to the same state whatever order replicas exchange updates in.",
+            "A G-counter (grow-only counter) keeps one count per replica: an increment touches only the local entry, merging takes the element-wise maximum, and the value is the sum. A PN-counter pairs two G-counters, one for increments and one for decrements.",
+            "Topology matters: in circular and star topologies one failed node can stop replication for others; in all-to-all topologies messages can overtake each other, so an update may arrive before the insert it depends on unless replicas track causality, for example with version vectors."
+          ]
+        },
+        {
+          "title": "Leaderless replication and quorums",
+          "minutes": 14,
+          "objectives": [
+            "Explain how N, W and R determine what a quorum read can see",
+            "Describe read repair, anti-entropy, sloppy quorums and hinted handoff",
+            "Explain why quorums alone don't make a store linearisable"
+          ],
+          "key_points": [
+            "In leaderless (Dynamo-style) replication, as in Cassandra and Riak, a coordinator sends each write to all N replicas of a key and waits for W acknowledgements, and a read asks R replicas and takes the newest version among the replies.",
+            "If W + R > N, every read set overlaps every successful write set in at least one replica, so a read after a completed write sees it or something newer. N = 3, W = 2, R = 2 is a common choice: reads and writes both survive one unavailable replica.",
+            "With W + R ≤ N, reads and writes can touch disjoint replicas, so stale reads are expected: lower latency and higher availability in exchange for consistency, for data where a stale value is acceptable.",
+            "Replicas that missed writes catch up through read repair (a read that finds an old version writes the newest back to that replica) and anti-entropy (a background process compares replicas, often with Merkle trees to find the differing ranges cheaply).",
+            "A sloppy quorum accepts writes on nodes outside the key's N home replicas when those are unreachable, and hinted handoff forwards them home later. Availability rises, but W + R > N no longer guarantees overlap with the home replicas.",
+            "Strict quorums still aren't linearisable on their own: concurrent writes settled by timestamps lose updates, a write that fails on some replicas isn't undone on the others, and while a write is still reaching replicas one reader can see the new value and a later reader the old one."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Simulate quorum reads and writes",
+        "tool": "Python 3 and pytest",
+        "minutes": 50,
+        "goal": "Implement quorum writes and reads with read repair, then measure, for seven N, W, R settings on a lossy network, how often writes succeed and reads answer, how often reads are stale, and how often they return a write that was reported as failed.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest)",
+          "Download the lab files into a new folder: quorum.py, experiment.py and test_quorum.py"
+        ],
+        "steps": [
+          {
+            "do": "Read quorum.py: replicas keep the newest version of each key, and reaches() decides, from a seeded random generator, whether one message gets through."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "5 failed, 1 passed"
+          },
+          {
+            "do": "Implement write: apply the write on each replica that reaches() returns True for (call it once per replica, in order), count the acknowledgements, and return whether there were at least W. Undo nothing when the write fails.",
+            "code": "acks = 0\nfor replica in self.replicas:\n    if self.reaches(replica):\n        replica.apply(key, self.version, value)\n        acks += 1\nreturn acks >= self.w",
+            "lang": "python"
+          },
+          {
+            "do": "Implement the rest of read: among the R chosen replicas, take the newest (version, value); with read_repair on, apply it to each chosen replica whose version was older, and count each repair."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 passed"
+          },
+          {
+            "do": "Run the experiment.",
+            "code": "python experiment.py",
+            "lang": "bash",
+            "see": "Seven lines of rates, two read-repair lines and the failure line."
+          },
+          {
+            "do": "Find the settings with W + R > N: their stale reads are exactly 0.00%, as the overlap argument promises, while every W + R ≤ N setting shows some.",
+            "see": "N=3 W=1 R=1 W+R<=N: ... stale 19.42%; N=3 W=2 R=2 W+R>N : ... stale  0.00%"
+          },
+          {
+            "do": "Look at 'saw a failed write': with W = 3, about half the writes fail, yet 36.53% of reads return one of them, because the replicas that stored it never roll it back. Explain why a client told 'write failed' can't assume the old value is still there.",
+            "see": "N=3 W=3 R=1 W+R>N : writes ok  50.8%, reads answered  98.9%, stale  0.00%, saw a failed write 36.53%"
+          },
+          {
+            "do": "Compare the read-repair lines: one read of each key raises the fully replicated keys from 488 to 719 of 1,000. Explain why it doesn't reach 1,000 with R = 2.",
+            "see": "with read repair   : fully replicated keys 488 -> 719 after one read each (282 repairs)"
+          },
+          {
+            "do": "Read the failure line, then choose N, W and R for two workloads and justify each in two sentences: a shopping cart that must always accept writes, and a configuration store that must never return stale data.",
+            "see": "One of three replicas down: W=3: 0% of writes succeed, W=2: 100% of writes succeed"
+          }
+        ],
+        "checks": [
+          {
+            "text": "Quorum writes and reads pass their tests.",
+            "look_for": [
+              "6 passed"
+            ]
+          },
+          {
+            "text": "Stale-read rates match: zero with overlapping quorums, non-zero without.",
+            "look_for": [
+              "19.42%",
+              "3.23%"
+            ]
+          },
+          {
+            "text": "Reads return writes that were reported as failed.",
+            "look_for": [
+              "6.65%",
+              "36.53%"
+            ]
+          },
+          {
+            "text": "Read repair raises the number of fully replicated keys.",
+            "look_for": [
+              "488 -> 719",
+              "282 repairs"
+            ]
+          },
+          {
+            "text": "With one replica down, W = 3 can't write and W = 2 can; quorums are chosen for both workloads.",
+            "look_for": [
+              "W=3: 0% of writes succeed"
+            ]
+          }
+        ],
+        "submit": "Paste quorum.py, the pytest summary, everything experiment.py printed, your explanations, and your N, W and R choices for the two workloads.",
+        "files": [
+          {
+            "path": "quorum.py",
+            "content": "\"\"\"Leaderless replication: N replicas, a write quorum W and a read quorum R.\n\nA coordinator stamps each write with an increasing version (standing in for a timestamp) and sends\nit to every replica; each message is lost with probability `loss`. Replicas keep the newest version\nthey have seen for each key (last-write-wins by version).\n\"\"\"\nfrom __future__ import annotations\n\nimport random\nfrom dataclasses import dataclass, field\n\nVersioned = tuple[int, object]          # (version, value); version 0 means \"never written\"\nMISSING: Versioned = (0, None)\n\n\n@dataclass\nclass Replica:\n    name: str\n    up: bool = True\n    data: dict = field(default_factory=dict)\n\n    def apply(self, key: str, version: int, value: object) -> None:\n        current = self.data.get(key, MISSING)\n        if version > current[0]:\n            self.data[key] = (version, value)\n\n\nclass Cluster:\n    def __init__(self, n: int = 3, w: int = 2, r: int = 2, loss: float = 0.0, seed: int = 0,\n                 read_repair: bool = False) -> None:\n        self.replicas = [Replica(f\"r{i}\") for i in range(n)]\n        self.n, self.w, self.r, self.loss = n, w, r, loss\n        self.rng = random.Random(seed)\n        self.read_repair = read_repair\n        self.version = 0\n        self.repairs = 0\n\n    def reaches(self, replica: Replica) -> bool:\n        \"\"\"Does one message get through to this replica (and its reply back)?\"\"\"\n        return replica.up and self.rng.random() >= self.loss\n\n    def write(self, key: str, value: object) -> bool:\n        \"\"\"Send the write to all N replicas; it succeeds if at least W acknowledge.\n        Replicas that stored a write that failed overall keep it: nothing is rolled back.\"\"\"\n        self.version += 1\n        raise NotImplementedError(\"TODO: apply on every replica the message reaches; count acks; compare with W\")\n\n    def read(self, key: str) -> Versioned | None:\n        \"\"\"Ask the replicas; if fewer than R answer, return None (unavailable). Otherwise take R of the\n        answers at random and return the newest. With read repair, write that newest version back to\n        each of the R replicas whose answer was older.\"\"\"\n        answering = [rep for rep in self.replicas if self.reaches(rep)]\n        if len(answering) < self.r:\n            return None\n        chosen = self.rng.sample(answering, self.r)\n        raise NotImplementedError(\"TODO: newest of the chosen replicas' versions; optional read repair\")\n"
+          },
+          {
+            "path": "experiment.py",
+            "content": "\"\"\"Stale reads, reads of failed writes, read repair and node failures, for several quorum settings.\"\"\"\nfrom quorum import Cluster\n\nCONFIGS = [(3, 1, 1), (3, 2, 1), (3, 1, 2), (3, 2, 2), (3, 3, 1), (5, 2, 2), (5, 3, 3)]\n\n\ndef staleness(n: int, w: int, r: int, rounds: int = 5_000, loss: float = 0.2) -> str:\n    \"\"\"Write a new value, then read it back, `rounds` times on one key.\"\"\"\n    c = Cluster(n, w, r, loss=loss, seed=42)\n    last_ok = 0\n    ok_writes = reads = unavailable = stale = saw_failed = 0\n    for i in range(1, rounds + 1):\n        if c.write(\"x\", i):\n            ok_writes += 1\n            last_ok = c.version\n        got = c.read(\"x\")\n        if got is None:\n            unavailable += 1\n            continue\n        reads += 1\n        stale += got[0] < last_ok\n        saw_failed += got[0] > last_ok\n    overlap = \"W+R>N \" if w + r > n else \"W+R<=N\"\n    return (f\"N={n} W={w} R={r} {overlap}: writes ok {ok_writes / rounds:6.1%}, reads answered \"\n            f\"{reads / rounds:6.1%}, stale {stale / max(reads, 1):6.2%}, saw a failed write \"\n            f\"{saw_failed / max(reads, 1):6.2%}\")\n\n\ndef repair(read_repair: bool) -> str:\n    \"\"\"1,000 keys written once, then each read once: how many end up on all three replicas?\"\"\"\n    c = Cluster(3, 2, 2, loss=0.2, seed=7, read_repair=read_repair)\n    keys = [f\"k{i}\" for i in range(1_000)]\n    for k in keys:\n        c.write(k, \"v\")\n    before = sum(all(rep.data.get(k, (0,))[0] > 0 for rep in c.replicas) for k in keys)\n    for k in keys:\n        c.read(k)\n    after = sum(all(rep.data.get(k, (0,))[0] > 0 for rep in c.replicas) for k in keys)\n    label = \"with read repair   \" if read_repair else \"without read repair\"\n    return f\"{label}: fully replicated keys {before} -> {after} after one read each ({c.repairs} repairs)\"\n\n\ndef one_node_down() -> str:\n    out = []\n    for w in (3, 2):\n        c = Cluster(3, w, 2, seed=1)\n        c.replicas[2].up = False\n        ok = sum(c.write(\"x\", i) for i in range(100))\n        out.append(f\"W={w}: {ok}% of writes succeed\")\n    return \"One of three replicas down: \" + \", \".join(out)\n\n\nif __name__ == \"__main__\":\n    for cfg in CONFIGS:\n        print(staleness(*cfg))\n    print(repair(False))\n    print(repair(True))\n    print(one_node_down())\n"
+          },
+          {
+            "path": "test_quorum.py",
+            "content": "from quorum import Cluster\n\n\ndef test_write_succeeds_with_w_acks():\n    c = Cluster(3, 2, 2)\n    assert c.write(\"x\", \"a\") is True\n    assert all(rep.data[\"x\"] == (1, \"a\") for rep in c.replicas)\n\n\ndef test_failed_write_is_not_rolled_back():\n    c = Cluster(3, 2, 1)\n    c.replicas[1].up = c.replicas[2].up = False\n    assert c.write(\"x\", \"a\") is False            # only one ack\n    assert c.replicas[0].data[\"x\"] == (1, \"a\")   # but r0 kept it\n\n\ndef test_read_returns_the_newest_of_r_replies():\n    c = Cluster(3, 3, 3)\n    c.write(\"x\", \"a\")\n    c.replicas[0].apply(\"x\", 9, \"newer\")         # one replica has a newer version\n    assert c.read(\"x\") == (9, \"newer\")\n\n\ndef test_overlap_means_no_stale_reads():\n    c = Cluster(3, 2, 2, loss=0.3, seed=5)\n    last_ok = 0\n    for i in range(1, 2_000):\n        if c.write(\"x\", i):\n            last_ok = c.version\n        got = c.read(\"x\")\n        assert got is None or got[0] >= last_ok\n\n\ndef test_read_repair_fixes_the_stale_replicas_it_read():\n    c = Cluster(3, 1, 3, read_repair=True)\n    c.replicas[0].apply(\"x\", 5, \"new\")\n    assert c.read(\"x\") == (5, \"new\")\n    assert all(rep.data[\"x\"] == (5, \"new\") for rep in c.replicas)\n    assert c.repairs == 2\n\n\ndef test_unavailable_when_fewer_than_r_answer():\n    c = Cluster(3, 2, 2)\n    c.replicas[0].up = c.replicas[1].up = False\n    assert c.read(\"x\") is None\n"
+          }
+        ],
+        "hints": [
+          "The seeds are fixed, so results depend on calling reaches() exactly once per replica in write; calling it twice for a replica changes every later number.",
+          "max(replies, key=lambda v: v[0]) picks the newest (version, value) pair.",
+          "Count a repair only when you actually write a newer version to a replica."
+        ]
+      }
+    },
+    {
+      "title": "Consistency models and CAP",
+      "summary": "Say precisely what a replicated system promises: linearisability, sequential and causal consistency, session guarantees and eventual consistency. Then use CAP and PACELC to reason about what each guarantee costs during partitions and in normal operation.",
+      "instructor": "elena-petrova",
+      "lessons": [
+        {
+          "title": "Linearisability",
+          "minutes": 14,
+          "objectives": [
+            "Define linearisability in terms of invocations, responses and real-time order",
+            "Decide whether a history of reads and writes is linearisable",
+            "Explain when systems need linearisability and what it costs"
+          ],
+          "key_points": [
+            "A history is linearisable if every operation appears to take effect atomically at one instant (its linearisation point) between its invocation and its response, and the resulting order is a legal sequential history: each read returns the latest write before it in that order.",
+            "Linearisability respects real time: if A's response comes before B's invocation, A must be ordered before B. Operations that overlap in time may be ordered either way.",
+            "Once any read has returned a new value, every read that starts later must return that value or a newer one. A system that lets one client see 2 and a later client see 1 isn't linearisable, even though both values were really written.",
+            "It's what makes a leader election, a unique-username check or a distributed lock safe: everyone agrees on one up-to-date value. It's also local: a system of linearisable objects is linearisable as a whole.",
+            "Linearisability isn't serialisability. Linearisability is a recency guarantee for single operations on single objects; serialisability is an isolation guarantee for transactions over many objects, with no real-time requirement. Strict serialisability provides both.",
+            "The cost is coordination: each operation needs a round trip to a quorum or the leader, so latency grows with distance, and replicas cut off from the majority must refuse requests rather than answer from possibly stale data."
+          ]
+        },
+        {
+          "title": "Sequential, causal and eventual consistency",
+          "minutes": 13,
+          "objectives": [
+            "Distinguish sequential consistency from linearisability",
+            "Explain causal consistency and the four session guarantees",
+            "Define eventual and strong eventual consistency"
+          ],
+          "key_points": [
+            "Sequential consistency (Lamport, 1979) requires one total order of all operations, seen by every process and consistent with each process's own program order, but not with real time: a read may return a stale value as long as everyone sees the same order.",
+            "Causal consistency requires only that operations related by happens-before are seen by everyone in that order; concurrent operations may be seen in different orders on different replicas. Unlike linearisability it can stay available during partitions, and it needs causality tracking.",
+            "Session guarantees make weak consistency usable for one client: read your writes, monotonic reads (never older data after newer), monotonic writes (your writes apply in the order you made them) and writes follow reads (a write is ordered after the writes you had read).",
+            "Eventual consistency promises only that if writes stop, the replicas eventually converge to the same value; it says nothing about what reads return meanwhile or how long convergence takes.",
+            "Strong eventual consistency adds that replicas that have received the same set of updates are in the same state, whatever order the updates arrived in. CRDTs provide it without coordination.",
+            "From strongest to weakest: linearisable, sequential, causal, eventual. Choose the weakest model each part of an application can tolerate, and mix them: linearisable account balances, causal comments."
+          ]
+        },
+        {
+          "title": "CAP and PACELC",
+          "minutes": 12,
+          "objectives": [
+            "State the CAP theorem precisely, with its definitions of consistency and availability",
+            "Explain why 'pick two of three' misleads",
+            "Use PACELC to compare systems in normal operation as well as during partitions"
+          ],
+          "key_points": [
+            "CAP (Brewer's conjecture, proved by Gilbert and Lynch in 2002): during a network partition, a replicated system must choose between consistency, meaning linearisability, and availability, meaning every request to a non-failed node gets a non-error response.",
+            "'Pick two of three' misleads: partitions aren't optional in a distributed system, so the real choice is what to do while one lasts. A 'CA' system is one that assumes partitions never happen, which in practice means a single node or a single reliable network.",
+            "A CP choice refuses or times out requests on the minority side of a partition, as etcd and ZooKeeper do; an AP choice keeps answering on both sides and reconciles afterwards, as Dynamo-style stores do in their default settings.",
+            "CAP's availability is all or nothing, and its consistency is only linearisability. Most systems sit between the corners, and many let each request choose, such as Cassandra's consistency levels.",
+            "PACELC (Abadi): if there is a Partition, choose Availability or Consistency; Else, in normal operation, choose Latency or Consistency. Even without partitions, waiting for remote replicas costs latency, and that trade-off affects every request.",
+            "Dynamo-style stores in their default settings are usually described as PA/EL, and systems that replicate every write synchronously through consensus, such as Spanner, as PC/EC. Classify a deployment by its configuration, not by its product name."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Check histories for linearisability",
+        "tool": "Python 3 and pytest",
+        "minutes": 60,
+        "goal": "Write a checker that searches for a legal order of a history's operations, use it to decide which of seven histories are linearisable or only sequentially consistent, then catch real anomalies in simulated quorum reads and confirm that ABD's write-back removes them.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest)",
+          "Download the lab files into a new folder: checker.py, histories.py, quorum_register.py, run_checks.py and test_checker.py"
+        ],
+        "steps": [
+          {
+            "do": "Read checker.py's docstring: both questions ask whether some order of the operations is allowed by a rule and is a legal register history."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 failed"
+          },
+          {
+            "do": "Implement real_time_ok: an operation may come next only if no other remaining operation ended before it started.",
+            "code": "return all(other is op or not other.end < op.start for other in remaining)",
+            "lang": "python"
+          },
+          {
+            "do": "Implement program_order_ok: an operation may come next only if no earlier operation of the same client remains."
+          },
+          {
+            "do": "Implement search: succeed when nothing remains; skip states already known to fail; try each operation the rule allows, skipping reads whose value isn't the current one; recurse with the new register value (a write's value, or the same value after a read); if no choice works, undo, remember the failed state and fail."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Run the checks.",
+            "code": "python run_checks.py",
+            "lang": "bash",
+            "see": "new value, then the old value: linearisable: no, sequentially consistent: yes"
+          },
+          {
+            "do": "Explain each named history's verdict in a sentence. For the linearisable ones, check that the printed order places every operation at a point inside its own interval.",
+            "see": "three clients, overlapping: ... order: A:w1[0,4] B:r1[1,5] C:r1[6,7] A:w2[5,9] B:r2[8,12] C:r2[10,11]"
+          },
+          {
+            "do": "Read the simulation lines: with quorum reads alone, 27 of 500 simulated histories aren't linearisable; with ABD's write-back, none are.",
+            "see": "quorum reads only  : 27 of 500 histories not linearisable, 20 not sequentially consistent; with ABD write-back: 0 of 500 histories not linearisable, 0 not sequentially consistent"
+          },
+          {
+            "do": "Study the counterexample (seed 20). Find the two reads by R0 that break linearisability, explain how a write that had reached only one replica produced them, and why writing the value back to a majority before returning prevents it.",
+            "see": "W:w1[10,85] R1:r1[49,60] R0:r1[50,59] R2:r1[56,68] R0:r0[70,81] ..."
+          },
+          {
+            "do": "Weigh the cost: ABD makes every read take two round trips instead of one. Say in two sentences when you'd pay it and when you wouldn't."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The checker passes its tests.",
+            "look_for": [
+              "7 passed"
+            ]
+          },
+          {
+            "text": "The named histories get the right verdicts, with valid orders for the linearisable ones.",
+            "look_for": [
+              "B:r0[2,3] A:w1[0,10]",
+              "C:r1[6,7] A:w2[5,9]"
+            ]
+          },
+          {
+            "text": "Quorum reads alone produce non-linearisable histories; ABD's write-back produces none.",
+            "look_for": [
+              "27 of 500 histories not linearisable",
+              "0 of 500 histories not linearisable"
+            ]
+          },
+          {
+            "text": "The counterexample is explained: R0 reads 1, then 0.",
+            "look_for": [
+              "seed 20",
+              "R0:r0[70,81]"
+            ]
+          }
+        ],
+        "submit": "Paste checker.py, the pytest summary, everything run_checks.py printed, your one-sentence explanations of the verdicts, and your analysis of the counterexample and of ABD's cost.",
+        "files": [
+          {
+            "path": "checker.py",
+            "content": "\"\"\"Decide whether a history of reads and writes on one register is linearisable or sequentially consistent.\n\nBoth questions have the same shape: is there an order of all the operations that (1) a rule allows and\n(2) is a legal register history, where every read returns the value of the latest write before it\n(or the initial value)? Linearisability's rule respects real time; sequential consistency's respects\nonly each client's own order.\n\"\"\"\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass Op:\n    client: str\n    kind: str        # \"w\" (write) or \"r\" (read)\n    value: int       # the value written, or the value the read returned\n    start: int       # invocation time\n    end: int         # response time\n\n    def __str__(self) -> str:\n        return f\"{self.client}:{self.kind}{self.value}[{self.start},{self.end}]\"\n\n\ndef real_time_ok(op: Op, remaining: list[Op]) -> bool:\n    \"\"\"Linearisability: `op` may come next only if no other remaining op ended before `op` started.\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef program_order_ok(op: Op, remaining: list[Op]) -> bool:\n    \"\"\"Sequential consistency: `op` may come next only if no earlier op of the same client remains.\"\"\"\n    raise NotImplementedError(\"TODO\")\n\n\ndef find_order(history: list[Op], rule, initial: int = 0) -> list[Op] | None:\n    \"\"\"Depth-first search for a legal order allowed by `rule`; return it, or None if there is none.\n    Failed (remaining set, register value) states are remembered, so no state is explored twice.\"\"\"\n    ops = sorted(history, key=lambda o: (o.start, o.end))\n    order: list[Op] = []\n    failed: set[tuple[frozenset, int]] = set()\n\n    def search(remaining: frozenset, value: int) -> bool:\n        raise NotImplementedError(\"TODO: try each op the rule allows; a read must return `value`; recurse\")\n\n    return list(order) if search(frozenset(range(len(ops))), initial) else None\n\n\ndef linearizable(history: list[Op], initial: int = 0) -> list[Op] | None:\n    return find_order(history, real_time_ok, initial)\n\n\ndef sequentially_consistent(history: list[Op], initial: int = 0) -> list[Op] | None:\n    return find_order(history, program_order_ok, initial)\n"
+          },
+          {
+            "path": "histories.py",
+            "content": "\"\"\"Small named histories. Times are in milliseconds; the register starts at 0.\"\"\"\nfrom checker import Op\n\nHISTORIES = {\n    \"read after write\": [Op(\"A\", \"w\", 1, 0, 1), Op(\"B\", \"r\", 1, 2, 3)],\n    \"read overlapping a write sees the old value\": [Op(\"A\", \"w\", 1, 0, 10), Op(\"B\", \"r\", 0, 2, 3)],\n    \"read overlapping a write sees the new value\": [Op(\"A\", \"w\", 1, 0, 10), Op(\"B\", \"r\", 1, 2, 3)],\n    \"new value, then the old value\": [Op(\"A\", \"w\", 1, 0, 10), Op(\"B\", \"r\", 1, 2, 3), Op(\"C\", \"r\", 0, 4, 5)],\n    \"stale read after the write finished\": [Op(\"A\", \"w\", 1, 0, 1), Op(\"B\", \"r\", 0, 2, 3)],\n    \"two readers see two writes in opposite orders\": [\n        Op(\"A\", \"w\", 1, 0, 1), Op(\"B\", \"w\", 2, 0, 1),\n        Op(\"C\", \"r\", 1, 2, 3), Op(\"C\", \"r\", 2, 4, 5),\n        Op(\"D\", \"r\", 2, 2, 3), Op(\"D\", \"r\", 1, 4, 5)],\n    \"three clients, overlapping\": [\n        Op(\"A\", \"w\", 1, 0, 4), Op(\"B\", \"r\", 1, 1, 5), Op(\"A\", \"w\", 2, 5, 9),\n        Op(\"C\", \"r\", 1, 6, 7), Op(\"B\", \"r\", 2, 8, 12), Op(\"C\", \"r\", 2, 10, 11)],\n}\n"
+          },
+          {
+            "path": "quorum_register.py",
+            "content": "\"\"\"A register on three replicas, simulated event by event with random, sometimes long, message delays.\n\nOne writer writes 1, 2, 3, ...: it sends each value to all replicas and finishes when two acknowledge.\nReaders ask all replicas and take the highest value among the first two replies. With write_back=True a\nreader first writes that value back to the replicas and waits for two acknowledgements before returning\nit: the ABD algorithm (Attiya, Bar-Noy and Dolev), which makes the register linearisable.\n\"\"\"\nfrom __future__ import annotations\n\nimport heapq\nimport random\n\nfrom checker import Op\n\n\ndef simulate(seed: int, write_back: bool, writes: int = 3, readers: int = 3, reads_each: int = 2) -> list[Op]:\n    rng = random.Random(seed)\n    state = [0, 0, 0]                                   # each replica's value\n    queue: list = []\n    seq = 0\n    history: list[Op] = []\n    pending: dict = {}\n\n    def at(time: int, action: str, *args) -> None:\n        nonlocal seq\n        seq += 1\n        heapq.heappush(queue, (time, seq, action, args))\n\n    def delay() -> int:\n        \"\"\"Most messages take 1-10 ms; one in five is slow (40-120 ms), as on a congested network.\"\"\"\n        return rng.randint(1, 10) if rng.random() < 0.8 else rng.randint(40, 120)\n\n    def send_value(t: int, op_id, value: int) -> None:\n        \"\"\"Deliver `value` to every replica; each replica's acknowledgement comes back to op_id.\"\"\"\n        for i in range(3):\n            d = delay()\n            at(t + d, \"apply\", i, value)\n            at(t + d + delay(), \"ack\", op_id)\n\n    at(rng.randint(0, 10), \"start_write\", 1)\n    for c in range(readers):\n        at(rng.randint(0, 60), \"start_read\", f\"R{c}\", 1)\n\n    while queue:\n        t, _, action, args = heapq.heappop(queue)\n        if action == \"apply\":\n            i, value = args\n            state[i] = max(state[i], value)\n        elif action == \"start_write\":\n            (value,) = args\n            pending[(\"w\", value)] = {\"start\": t, \"acks\": 0}\n            send_value(t, (\"w\", value), value)\n        elif action == \"start_read\":\n            client, n = args\n            op_id = (\"r\", client, n)\n            pending[op_id] = {\"start\": t, \"replies\": [], \"acks\": 0}\n            for i in range(3):\n                at(t + delay(), \"query\", op_id, i)\n        elif action == \"query\":\n            op_id, i = args\n            at(t + delay(), \"reply\", op_id, state[i])     # the replica answers with what it has now\n        elif action == \"reply\":\n            op_id, value = args\n            p = pending[op_id]\n            p[\"replies\"].append(value)\n            if len(p[\"replies\"]) == 2:                    # a majority has answered\n                p[\"value\"] = max(p[\"replies\"])\n                if write_back:\n                    send_value(t, op_id, p[\"value\"])\n                else:\n                    finish(t, op_id, p, history, at, rng, writes, reads_each)\n        elif action == \"ack\":\n            (op_id,) = args\n            p = pending[op_id]\n            p[\"acks\"] += 1\n            if p[\"acks\"] == 2:                            # a majority has acknowledged\n                finish(t, op_id, p, history, at, rng, writes, reads_each)\n    return history\n\n\ndef finish(t, op_id, p, history, at, rng, writes, reads_each) -> None:\n    if op_id[0] == \"w\":\n        value = op_id[1]\n        history.append(Op(\"W\", \"w\", value, p[\"start\"], t))\n        if value < writes:\n            at(t + rng.randint(1, 10), \"start_write\", value + 1)\n    else:\n        _, client, n = op_id\n        history.append(Op(client, \"r\", p[\"value\"], p[\"start\"], t))\n        if n < reads_each:\n            at(t + rng.randint(1, 20), \"start_read\", client, n + 1)\n"
+          },
+          {
+            "path": "run_checks.py",
+            "content": "from checker import linearizable, sequentially_consistent\nfrom histories import HISTORIES\nfrom quorum_register import simulate\n\n\ndef verdict(history) -> str:\n    lin, sc = linearizable(history), sequentially_consistent(history)\n    text = f\"linearisable: {'yes' if lin else 'no '}  sequentially consistent: {'yes' if sc else 'no '}\"\n    return text + (f\"  order: {' '.join(map(str, lin))}\" if lin else \"\")\n\n\nif __name__ == \"__main__\":\n    for name, history in HISTORIES.items():\n        print(f\"{name}:\\n    {verdict(history)}\")\n    for write_back in (False, True):\n        bad_lin = bad_sc = 0\n        example = None\n        for seed in range(500):\n            h = simulate(seed, write_back)\n            if not linearizable(h):\n                bad_lin += 1\n                example = example or (seed, h)\n            bad_sc += sequentially_consistent(h) is None\n        label = \"with ABD write-back\" if write_back else \"quorum reads only  \"\n        print(f\"{label}: {bad_lin} of 500 histories not linearisable, {bad_sc} not sequentially consistent\")\n        if example:\n            seed, h = example\n            print(f\"    first counterexample (seed {seed}): \" + \" \".join(map(str, sorted(h, key=lambda o: o.start))))\n"
+          },
+          {
+            "path": "test_checker.py",
+            "content": "from checker import Op, linearizable, sequentially_consistent\nfrom histories import HISTORIES\nfrom quorum_register import simulate\n\n\ndef test_sequential_history():\n    order = linearizable(HISTORIES[\"read after write\"])\n    assert [str(o) for o in order] == [\"A:w1[0,1]\", \"B:r1[2,3]\"]\n\n\ndef test_overlapping_reads_may_see_either_value():\n    assert linearizable(HISTORIES[\"read overlapping a write sees the old value\"])\n    assert linearizable(HISTORIES[\"read overlapping a write sees the new value\"])\n\n\ndef test_new_then_old_is_not_linearisable_but_is_sequential():\n    h = HISTORIES[\"new value, then the old value\"]\n    assert linearizable(h) is None\n    assert sequentially_consistent(h) is not None\n\n\ndef test_stale_read_after_completion():\n    h = HISTORIES[\"stale read after the write finished\"]\n    assert linearizable(h) is None\n    assert sequentially_consistent(h) is not None\n\n\ndef test_opposite_orders_are_not_even_sequential():\n    h = HISTORIES[\"two readers see two writes in opposite orders\"]\n    assert linearizable(h) is None and sequentially_consistent(h) is None\n\n\ndef test_a_read_can_never_return_a_value_nobody_wrote():\n    assert linearizable([Op(\"A\", \"r\", 5, 0, 1)]) is None\n\n\ndef test_abd_histories_are_linearisable():\n    assert all(linearizable(simulate(seed, write_back=True)) for seed in range(100))\n"
+          }
+        ],
+        "hints": [
+          "A read may go next only if its value equals the current register value; a write always may, and sets the value.",
+          "Remembering failed (remaining, value) states is what keeps the search fast; without it, a history of a dozen operations can take a very long time.",
+          "If every history comes out linearisable, check real_time_ok's comparison: an operation that ENDED before this one STARTED must go first."
+        ]
+      }
+    },
+    {
+      "title": "Consensus: Raft and Paxos",
+      "summary": "Get a group of nodes to agree despite crashes and an unreliable network: what consensus guarantees and why majorities matter, Raft's leader election, log replication and safety rules in detail, and Paxos in outline.",
+      "instructor": "wei-cheng-liu",
+      "lessons": [
+        {
+          "title": "The consensus problem",
+          "minutes": 12,
+          "objectives": [
+            "State the properties a consensus protocol must provide",
+            "Explain what the FLP result rules out, and how practical systems get around it",
+            "Size a cluster from the number of crash failures it must survive"
+          ],
+          "key_points": [
+            "Consensus gets nodes to agree on one value: agreement (no two correct nodes decide differently), validity (the value decided was proposed by someone), integrity (each node decides at most once) and termination (every correct node eventually decides).",
+            "Many problems reduce to it: electing one leader, committing a transaction everywhere or nowhere, granting a lock or a unique name, and above all the replicated state machine, where every node applies the same commands in the same order from a replicated log.",
+            "The FLP result (Fischer, Lynch and Paterson, 1985): in a fully asynchronous system, no deterministic protocol can guarantee that consensus terminates if even one process may crash. Practical protocols keep safety always, and rely on timeouts (partial synchrony) or randomisation for liveness.",
+            "Majority quorums tolerate crashes: with 2f + 1 nodes, any two majorities of f + 1 share at least one node, so a decision made by one majority is seen by the next. Three nodes survive one failure and five survive two; a fourth node adds no tolerance over three.",
+            "Coordination services such as etcd (Raft), ZooKeeper (Zab) and Consul (Raft) package consensus behind simple operations (key-value writes, compare-and-set, leases, watches), so applications rarely need to implement it themselves.",
+            "Consensus is expensive: each decision needs at least a round trip to a majority, and the leader limits throughput. Use it for metadata and coordination, and spread bulk data over many independent consensus groups."
+          ]
+        },
+        {
+          "title": "Raft: leader election",
+          "minutes": 14,
+          "objectives": [
+            "Describe Raft's terms and its follower, candidate and leader roles",
+            "Apply the rules for granting a vote, including the election restriction",
+            "Explain how randomised timeouts resolve split votes"
+          ],
+          "key_points": [
+            "Raft divides time into numbered terms; each term starts with an election and has at most one leader. Every message carries the sender's term: a node that sees a higher term adopts it and becomes a follower, and requests carrying a stale term are rejected.",
+            "A follower that hears nothing from a leader within its election timeout becomes a candidate: it increments its term, votes for itself and sends RequestVote to every other node. Votes from a majority make it leader, and its heartbeats (empty AppendEntries) hold off new elections.",
+            "Each node grants at most one vote per term, first come first served, and must persist currentTerm and votedFor to stable storage before replying, so a restart can't let it vote twice in one term.",
+            "The election restriction: a node votes only for a candidate whose log is at least as up to date as its own, comparing the last entries' terms first and then the log lengths. Committed entries are on a majority, so a candidate missing one can't collect a majority of votes.",
+            "Election timeouts are randomised (the Raft paper suggests 150 to 300 ms), so usually one node times out first and wins before others start. When votes split, the candidates time out again with new random timeouts, and a later term elects a leader.",
+            "Timing requirement: broadcast time ≪ election timeout ≪ mean time between failures. A timeout close to the round-trip time causes needless elections; a long one makes recovery from a leader crash slow."
+          ]
+        },
+        {
+          "title": "Raft: log replication and safety",
+          "minutes": 15,
+          "objectives": [
+            "Trace how a leader replicates entries with AppendEntries",
+            "Explain when an entry is committed, including the current-term rule",
+            "Describe how Raft serves linearisable reads and changes membership"
+          ],
+          "key_points": [
+            "The leader appends each client command to its log and sends AppendEntries with the new entries, the index and term of the entry just before them (prevLogIndex, prevLogTerm) and its commit index. A follower accepts only if its log has an entry at prevLogIndex with term prevLogTerm.",
+            "After a rejection the leader decrements that follower's nextIndex and retries until the logs match; the follower then deletes any conflicting entries and appends the leader's. Entries flow only from leader to followers, and a leader never overwrites or deletes its own entries.",
+            "Log matching property: if two logs contain an entry with the same index and term, the logs are identical in every entry up to that index. The prevLogIndex and prevLogTerm check maintains it by induction.",
+            "An entry is committed once the leader has stored it on a majority, which also commits every earlier entry. But a leader counts replicas only for entries of its own current term: an older-term entry on a majority can still be overwritten, so it's committed only when a current-term entry after it is.",
+            "Committed entries are applied to the state machine in log order on every node. A new leader doesn't know which entries are committed until it commits one from its own term, so it appends a no-op entry as soon as it takes office.",
+            "Reads must be linearisable too: the leader confirms it's still leader with a heartbeat round to a majority (ReadIndex) or a lease that relies on bounded clock drift. Membership changes go through the log, one server at a time or with joint consensus, and snapshots compact the log."
+          ]
+        },
+        {
+          "title": "Paxos in brief",
+          "minutes": 12,
+          "objectives": [
+            "Describe the roles and the two phases of single-decree Paxos",
+            "Explain how Multi-Paxos avoids repeating the first phase",
+            "Compare Paxos with Raft and its other relatives"
+          ],
+          "key_points": [
+            "Single-decree Paxos (Lamport) agrees on one value using proposers, acceptors and learners. Phase 1: a proposer picks a unique proposal number n and sends Prepare(n); each acceptor promises to ignore proposals numbered below n and reports the highest-numbered proposal it has accepted, if any.",
+            "Phase 2: with promises from a majority, the proposer sends Accept(n, v), where v is the value of the highest-numbered proposal reported in those promises, or its own value if none was. An acceptor accepts unless it has promised a higher number; v is chosen once a majority accept proposal n.",
+            "That rule is the heart of safety: once a value may have been chosen by a majority, every proposal with a higher number carries the same value, because its Prepare majority overlaps the accepting majority.",
+            "Competing proposers can pre-empt each other indefinitely, a liveness problem rather than a safety one, so practical systems elect one distinguished proposer, with timeouts, to make proposals.",
+            "Multi-Paxos runs one Paxos instance per log slot: a stable leader runs phase 1 once for all future slots and then needs only phase 2, one round trip per entry, the same steady-state cost as Raft.",
+            "Raft was designed to be easier to understand and implement than Paxos as the literature describes it. Raft, Multi-Paxos, Viewstamped Replication and ZooKeeper's Zab share the core: a leader, numbered terms (ballots, epochs or views) and majority quorums."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Simulate a Raft leader election",
+        "tool": "Python 3 and pytest",
+        "minutes": 60,
+        "goal": "Implement Raft's election rules (starting an election, granting votes under the election restriction, counting votes) and run them in a deterministic simulator: a normal start, a leader crash, a partition that strands the old leader, and a candidate with a stale log that can't win.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest)",
+          "Download the lab files into a new folder: raft.py, sim.py, scenarios.py and test_raft.py"
+        ],
+        "steps": [
+          {
+            "do": "Read raft.py and sim.py. Nodes never touch the network: they call sim.send, sim.reset_election_timer and sim.became_leader, so the tests can use a fake simulator."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 failed, 1 passed: only the heartbeat test passes."
+          },
+          {
+            "do": "Implement log_is_up_to_date: compare the last entries' terms first; only if they're equal, compare the lengths.",
+            "code": "if last_term != self.last_log_term():\n    return last_term > self.last_log_term()\nreturn last_index >= self.last_log_index()",
+            "lang": "python"
+          },
+          {
+            "do": "Implement on_election_timeout, in this order: become candidate, increment the term, vote for yourself (votes = {self.name}), clear leader, call self.sim.reset_election_timer(self), then send RequestVote to each peer in self.peers order. The simulator draws random numbers in call order, so a different order gives a different timeline."
+          },
+          {
+            "do": "Implement on_request_vote: adopt a higher term first with become_follower; then grant only if the request's term is the current term, you haven't voted for another candidate in it, and the candidate's log is up to date. When you grant, record the vote and reset your election timer."
+          },
+          {
+            "do": "Implement on_vote_reply: step down on a higher term; ignore refusals, replies for other terms, and replies once you're no longer a candidate; otherwise add the vote, and with a majority become leader and call self.sim.became_leader(self)."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Run the scenarios.",
+            "code": "python scenarios.py",
+            "lang": "bash",
+            "see": "t=  201 ms  n3 becomes leader of term 1 with votes from ['n1', 'n3', 'n4']"
+          },
+          {
+            "do": "Read the crash scenario: after n3 crashes, n5 times out first and wins term 2.",
+            "see": "t= 1146 ms  n5 becomes leader of term 2 with votes from ['n1', 'n2', 'n5']"
+          },
+          {
+            "do": "Read the partition scenario: the majority side elects n5 in term 2 while n3 still believes it leads term 1; when the partition heals, n3 sees term 2 and steps down.",
+            "see": "t= 2015 ms  n3 steps down: it saw term 2"
+          },
+          {
+            "do": "Explain why n3, still 'leader' of term 1 during the partition, couldn't commit anything, and what would happen if n1 had been cut off on its own instead: its term would keep rising, and on rejoining it would force the leader to step down. Raft's PreVote extension, in Diego Ongaro's dissertation, prevents that."
+          },
+          {
+            "do": "Read the stale-log scenario: n1 times out first, but every node refuses it; n5 gets only n1's vote; n2 wins term 5. Explain each refusal with the election restriction.",
+            "see": "t=  223 ms  n2 becomes leader of term 5 with votes from ['n1', 'n2', 'n4']"
+          },
+          {
+            "do": "Try seeds 1 to 10 in start_up and note whether any first election splits the votes and needs a second term. Report what you find."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The election rules pass their tests.",
+            "look_for": [
+              "7 passed"
+            ]
+          },
+          {
+            "text": "A leader is elected at start-up.",
+            "look_for": [
+              "n3 becomes leader of term 1 with votes from ['n1', 'n3', 'n4']"
+            ]
+          },
+          {
+            "text": "A crashed leader is replaced in a higher term.",
+            "look_for": [
+              "n5 becomes leader of term 2 with votes from ['n1', 'n2', 'n5']"
+            ]
+          },
+          {
+            "text": "After the partition heals, the stale leader steps down.",
+            "look_for": [
+              "n3 steps down: it saw term 2"
+            ]
+          },
+          {
+            "text": "A candidate with a stale log can't win.",
+            "look_for": [
+              "n3 refuses n1 a vote",
+              "n2 becomes leader of term 5"
+            ]
+          }
+        ],
+        "submit": "Paste raft.py, the pytest summary, everything scenarios.py printed, your explanations of the partition and stale-log scenarios, and what you found with other seeds.",
+        "files": [
+          {
+            "path": "raft.py",
+            "content": "\"\"\"Raft leader election (section 5.2 of the Raft paper), without log replication.\n\nEach node's log is only the list of its entries' terms: enough for the election restriction.\nNode methods never touch the network directly: they call self.sim.send(...), so the simulator in\nsim.py (or a test) decides when and whether messages arrive.\n\"\"\"\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\n@dataclass(frozen=True)\nclass RequestVote:\n    term: int\n    candidate: str\n    last_log_index: int\n    last_log_term: int\n\n\n@dataclass(frozen=True)\nclass VoteReply:\n    term: int\n    voter: str\n    granted: bool\n\n\n@dataclass(frozen=True)\nclass AppendEntries:          # a heartbeat: no entries in this lab\n    term: int\n    leader: str\n\n\n@dataclass(frozen=True)\nclass AppendReply:\n    term: int\n    follower: str\n    success: bool\n\n\nclass Node:\n    def __init__(self, name: str, peers: list[str], sim, log_terms: tuple[int, ...] = ()) -> None:\n        self.name, self.peers, self.sim = name, list(peers), sim\n        self.current_term = 0          # persistent state: written to disk before answering any RPC\n        self.voted_for: str | None = None\n        self.log = list(log_terms)     # the term of each entry; entry i (from 1) is log[i - 1]\n        self.role = \"follower\"\n        self.votes: set[str] = set()\n        self.leader: str | None = None\n\n    # helpers -----------------------------------------------------------------------------------\n    def last_log_index(self) -> int:\n        return len(self.log)\n\n    def last_log_term(self) -> int:\n        return self.log[-1] if self.log else 0\n\n    def majority(self) -> int:\n        return (len(self.peers) + 1) // 2 + 1\n\n    def become_follower(self, term: int) -> None:\n        \"\"\"Adopt a newer term: forget any vote cast in an older term.\"\"\"\n        if term > self.current_term:\n            self.current_term, self.voted_for = term, None\n        self.role, self.votes = \"follower\", set()\n\n    def log_is_up_to_date(self, last_term: int, last_index: int) -> bool:\n        \"\"\"Is a log ending (last_term, last_index) at least as up to date as ours? (Raft paper, 5.4.1)\"\"\"\n        raise NotImplementedError(\"TODO: compare last terms first, then lengths\")\n\n    # events --------------------------------------------------------------------------------------\n    def on_election_timeout(self) -> None:\n        \"\"\"No heartbeat in time: start an election for the next term.\"\"\"\n        raise NotImplementedError(\"TODO: become candidate, new term, vote for self, reset timer, ask every peer\")\n\n    def on_request_vote(self, msg: RequestVote) -> VoteReply:\n        \"\"\"Grant at most one vote per term, and only to a candidate whose log is at least as up to date.\"\"\"\n        raise NotImplementedError(\"TODO: higher term first; then the vote rules; reset the timer when granting\")\n\n    def on_vote_reply(self, msg: VoteReply) -> None:\n        \"\"\"Count votes for the current term; a majority makes this node leader.\"\"\"\n        raise NotImplementedError(\"TODO: step down on a higher term; ignore stale replies; count; become leader\")\n\n    def on_append_entries(self, msg: AppendEntries) -> AppendReply:\n        \"\"\"A heartbeat from a leader of this term or a newer one keeps us a follower.\"\"\"\n        if msg.term < self.current_term:\n            return AppendReply(self.current_term, self.name, False)\n        self.become_follower(msg.term)\n        self.leader = msg.leader\n        self.sim.reset_election_timer(self)\n        return AppendReply(self.current_term, self.name, True)\n\n    def on_append_reply(self, msg: AppendReply) -> None:\n        if msg.term > self.current_term:\n            self.become_follower(msg.term)\n"
+          },
+          {
+            "path": "sim.py",
+            "content": "\"\"\"A discrete-event simulator for raft.py: random message delays, crashes and partitions, fully seeded.\"\"\"\nfrom __future__ import annotations\n\nimport heapq\nimport random\n\nfrom raft import AppendEntries, AppendReply, Node, RequestVote, VoteReply\n\nHEARTBEAT_MS = 50\nELECTION_TIMEOUT_MS = (150, 300)\nDELAY_MS = (5, 15)\n\n\nclass Sim:\n    def __init__(self, names: list[str], seed: int = 1, logs: dict | None = None,\n                 first_timeouts: dict | None = None, verbose: bool = True) -> None:\n        self.rng = random.Random(seed)\n        self.now = 0\n        self.queue: list = []\n        self.seq = 0\n        self.blocked: set[tuple[str, str]] = set()\n        self.verbose = verbose\n        self.show_votes = False\n        self.leaders: list[tuple[int, int, str]] = []          # (time, term, leader)\n        self.timers: dict[str, int] = {}\n        self.nodes = {n: Node(n, [p for p in names if p != n], self, tuple((logs or {}).get(n, ())))\n                      for n in names}\n        for name, node in self.nodes.items():\n            self.reset_election_timer(node, (first_timeouts or {}).get(name))\n        self.down: set[str] = set()\n\n    # the interface Node uses -----------------------------------------------------------------------\n    def send(self, src: str, dst: str, msg) -> None:\n        if src in self.down or (src, dst) in self.blocked:\n            return\n        self._at(self.now + self.rng.randint(*DELAY_MS), self._deliver, src, dst, msg)\n\n    def reset_election_timer(self, node: Node, timeout: int | None = None) -> None:\n        self.seq += 1\n        self.timers[node.name] = token = self.seq\n        timeout = timeout if timeout is not None else self.rng.randint(*ELECTION_TIMEOUT_MS)\n        self._at(self.now + timeout, self._timer, node, token)\n\n    def became_leader(self, node: Node) -> None:\n        self.leaders.append((self.now, node.current_term, node.name))\n        self.log(f\"{node.name} becomes leader of term {node.current_term} with votes from {sorted(node.votes)}\")\n        self._heartbeat(node, node.current_term)\n\n    # scenario controls ---------------------------------------------------------------------------\n    def run_until(self, t: int) -> None:\n        while self.queue and self.queue[0][0] <= t:\n            self.now, _, fn, args = heapq.heappop(self.queue)\n            fn(*args)\n        self.now = t\n\n    def crash(self, name: str) -> None:\n        self.down.add(name)\n        self.log(f\"{name} crashes\")\n\n    def partition(self, *groups: set[str]) -> None:\n        self.blocked = {(a, b) for g in groups for h in groups if g is not h for a in g for b in h}\n        self.log(\"partition: \" + \" | \".join(\",\".join(sorted(g)) for g in groups))\n\n    def heal(self) -> None:\n        self.blocked = set()\n        self.log(\"partition healed\")\n\n    def leader_now(self) -> str | None:\n        live = [n for n in self.nodes.values() if n.name not in self.down and n.role == \"leader\"]\n        return max(live, key=lambda n: n.current_term).name if live else None\n\n    def log(self, text: str) -> None:\n        if self.verbose:\n            print(f\"t={self.now:>5} ms  {text}\")\n\n    # internals -----------------------------------------------------------------------------------\n    def _at(self, t: int, fn, *args) -> None:\n        self.seq += 1\n        heapq.heappush(self.queue, (t, self.seq, fn, args))\n\n    def _timer(self, node: Node, token: int) -> None:\n        if node.name in self.down or self.timers.get(node.name) != token or node.role == \"leader\":\n            return\n        node.on_election_timeout()\n        self.log(f\"{node.name} times out and asks for votes in term {node.current_term}\")\n\n    def _heartbeat(self, node: Node, term: int) -> None:\n        if node.name in self.down or node.role != \"leader\" or node.current_term != term:\n            return\n        for peer in node.peers:\n            self.send(node.name, peer, AppendEntries(term, node.name))\n        self._at(self.now + HEARTBEAT_MS, self._heartbeat, node, term)\n\n    def _deliver(self, src: str, dst: str, msg) -> None:\n        node = self.nodes[dst]\n        if dst in self.down or (src, dst) in self.blocked:\n            return\n        was_leader = node.role == \"leader\"\n        if isinstance(msg, RequestVote):\n            self.send(dst, src, node.on_request_vote(msg))\n        elif isinstance(msg, VoteReply):\n            if self.show_votes:\n                self.log(f\"{msg.voter} {'grants' if msg.granted else 'refuses'} {dst} a vote (term {msg.term})\")\n            node.on_vote_reply(msg)\n        elif isinstance(msg, AppendEntries):\n            self.send(dst, src, node.on_append_entries(msg))\n        elif isinstance(msg, AppendReply):\n            node.on_append_reply(msg)\n        if was_leader and node.role != \"leader\":\n            self.log(f\"{dst} steps down: it saw term {node.current_term}\")\n            self.reset_election_timer(node)                  # a follower again: it needs a timer\n"
+          },
+          {
+            "path": "scenarios.py",
+            "content": "\"\"\"Four elections, each from a fixed seed, so every run prints the same timeline.\"\"\"\nfrom sim import Sim\n\nNAMES = [\"n1\", \"n2\", \"n3\", \"n4\", \"n5\"]\n\n\ndef heading(text: str) -> None:\n    print(f\"\\n== {text}\")\n\n\ndef start_up() -> None:\n    heading(\"Five nodes start; nobody is leader\")\n    sim = Sim(NAMES, seed=3)\n    sim.run_until(1_000)\n    print(f\"Leaders elected: {sim.leaders}\")\n\n\ndef leader_crash() -> None:\n    heading(\"The leader crashes\")\n    sim = Sim(NAMES, seed=3)\n    sim.run_until(1_000)\n    sim.crash(sim.leader_now())\n    sim.run_until(2_000)\n    print(f\"Leaders elected: {sim.leaders}\")\n\n\ndef partition() -> None:\n    heading(\"A partition leaves the old leader in the minority\")\n    sim = Sim(NAMES, seed=3)\n    sim.run_until(1_000)\n    old = sim.leader_now()\n    minority = {old, next(n for n in NAMES if n != old)}\n    sim.partition(minority, set(NAMES) - minority)\n    sim.run_until(2_000)\n    sim.heal()\n    sim.run_until(2_500)\n    print(f\"Leaders elected: {sim.leaders}; leader now: {sim.leader_now()}\")\n\n\ndef stale_log() -> None:\n    heading(\"The first node to time out has a stale log\")\n    logs = {\"n1\": (1,), \"n2\": (1, 1, 2), \"n3\": (1, 1, 2), \"n4\": (1, 1, 2), \"n5\": (1, 1)}\n    sim = Sim(NAMES, seed=8, logs=logs, first_timeouts={\"n1\": 150})\n    sim.show_votes = True\n    for node in sim.nodes.values():\n        node.current_term = 2\n    sim.run_until(1_000)\n    print(f\"Leaders elected: {sim.leaders}\")\n\n\nif __name__ == \"__main__\":\n    start_up()\n    leader_crash()\n    partition()\n    stale_log()\n"
+          },
+          {
+            "path": "test_raft.py",
+            "content": "from raft import AppendEntries, Node, RequestVote, VoteReply\n\n\nclass FakeSim:\n    def __init__(self):\n        self.sent, self.timer_resets, self.leaders = [], 0, []\n\n    def send(self, src, dst, msg):\n        self.sent.append((src, dst, msg))\n\n    def reset_election_timer(self, node, timeout=None):\n        self.timer_resets += 1\n\n    def became_leader(self, node):\n        self.leaders.append(node.name)\n\n\ndef node(name=\"n1\", log=(), term=0):\n    n = Node(name, [p for p in [\"n1\", \"n2\", \"n3\", \"n4\", \"n5\"] if p != name], FakeSim(), log)\n    n.current_term = term\n    return n\n\n\ndef test_timeout_starts_an_election():\n    n = node()\n    n.on_election_timeout()\n    assert (n.role, n.current_term, n.voted_for, n.votes) == (\"candidate\", 1, \"n1\", {\"n1\"})\n    assert sorted(dst for _, dst, _ in n.sim.sent) == [\"n2\", \"n3\", \"n4\", \"n5\"]\n    assert all(m == RequestVote(1, \"n1\", 0, 0) for _, _, m in n.sim.sent)\n\n\ndef test_one_vote_per_term():\n    n = node(\"n2\")\n    assert n.on_request_vote(RequestVote(1, \"n1\", 0, 0)).granted\n    assert not n.on_request_vote(RequestVote(1, \"n3\", 0, 0)).granted\n    assert n.on_request_vote(RequestVote(1, \"n1\", 0, 0)).granted        # a retried request: same answer\n    assert n.voted_for == \"n1\" and n.current_term == 1\n\n\ndef test_reject_a_stale_term():\n    n = node(\"n2\", term=5)\n    reply = n.on_request_vote(RequestVote(4, \"n1\", 9, 4))\n    assert reply == VoteReply(5, \"n2\", False)\n\n\ndef test_election_restriction():\n    n = node(\"n2\", log=(1, 1, 2), term=2)\n    assert not n.on_request_vote(RequestVote(3, \"n1\", 5, 1)).granted     # lower last term, though longer\n    assert not n.on_request_vote(RequestVote(4, \"n3\", 2, 2)).granted     # same last term, shorter\n    assert n.on_request_vote(RequestVote(5, \"n4\", 1, 3)).granted         # higher last term wins, though shorter\n    assert n.current_term == 5\n\n\ndef test_majority_makes_a_leader():\n    n = node()\n    n.on_election_timeout()\n    n.on_vote_reply(VoteReply(1, \"n2\", True))\n    n.on_vote_reply(VoteReply(1, \"n3\", False))\n    assert n.role == \"candidate\"\n    n.on_vote_reply(VoteReply(1, \"n4\", True))\n    assert n.role == \"leader\" and n.sim.leaders == [\"n1\"]\n\n\ndef test_stale_and_newer_replies():\n    n = node()\n    n.on_election_timeout()\n    n.on_vote_reply(VoteReply(0, \"n2\", True))      # from an old term: ignored\n    assert n.votes == {\"n1\"}\n    n.on_vote_reply(VoteReply(7, \"n3\", False))     # a newer term: step down\n    assert (n.role, n.current_term, n.voted_for) == (\"follower\", 7, None)\n\n\ndef test_heartbeat_from_current_leader_resets_the_timer():\n    n = node(\"n2\", term=3)\n    assert n.on_append_entries(AppendEntries(3, \"n1\")).success\n    assert n.leader == \"n1\" and n.sim.timer_resets == 1\n    assert not n.on_append_entries(AppendEntries(2, \"n5\")).success\n"
+          }
+        ],
+        "hints": [
+          "When a message carries a higher term, call become_follower(msg.term) before deciding anything: it clears voted_for for the new term.",
+          "voted_for in (None, msg.candidate) gives a candidate's retried request the same answer.",
+          "Only a candidate counts votes, and only for its current term; replies from an older election must be ignored."
+        ]
+      }
+    },
+    {
+      "title": "Distributed transactions and exactly-once",
+      "summary": "Make changes that span several nodes or services: two-phase commit and why it blocks, sagas and their compensating actions, and the truth about exactly-once: at-least-once delivery plus idempotent, deduplicated processing.",
+      "instructor": "elena-petrova",
+      "lessons": [
+        {
+          "title": "Two-phase commit",
+          "minutes": 13,
+          "objectives": [
+            "Trace the prepare and commit phases of two-phase commit",
+            "Explain why 2PC blocks when the coordinator fails",
+            "Describe how systems make the coordinator highly available"
+          ],
+          "key_points": [
+            "Two-phase commit (2PC) makes a transaction across several participants (databases or shards) commit everywhere or nowhere. Phase 1: the coordinator sends Prepare; each participant writes the transaction durably, keeps its locks and votes yes, or votes no and aborts.",
+            "Phase 2: if every vote was yes, the coordinator durably logs commit, then tells everyone; if any vote was no or timed out, it logs abort. Once logged, the decision is final, and participants that voted yes must obey it, even after crashing and restarting.",
+            "A yes vote is a promise: the participant can no longer abort on its own. If the coordinator crashes after the votes, prepared participants are in doubt: they hold their locks and can't decide alone, because another participant may already have committed or aborted.",
+            "So 2PC blocks: in-doubt transactions wait for the coordinator to recover (it reads its log and resends the decision) or for an administrator. Three-phase commit avoids blocking only by assuming bounded network delays, which real networks don't provide, so it's rarely used.",
+            "Spanner and similar systems make 2PC effectively non-blocking by making the coordinator and each participant a consensus group, so the decision survives any single machine failure. XA transactions provide 2PC across different products, with in-doubt locks as the price.",
+            "2PC needs every participant up for every transaction and holds locks for at least two round trips, so it suits a few closely coupled databases, not long-running business processes across services."
+          ]
+        },
+        {
+          "title": "Sagas and the outbox pattern",
+          "minutes": 12,
+          "objectives": [
+            "Design a saga with compensating transactions",
+            "Compare orchestrated and choreographed sagas",
+            "Handle the isolation anomalies that sagas allow"
+          ],
+          "key_points": [
+            "A saga splits a long business transaction into a sequence of local transactions, each committed in one service; if a step fails, the saga runs compensating transactions for the completed steps in reverse order (cancel the hotel, then the flight).",
+            "Compensation is a semantic undo, not a rollback: other parties may have seen the earlier steps, so a compensation may send an email or issue a credit note. Compensations must be idempotent and must eventually succeed, so they're retried until they do.",
+            "Orchestration puts a coordinator in charge, telling each service what to do and recording the saga's state; choreography has each service react to the previous step's event. Orchestration is easier to follow and change as sagas grow; choreography avoids a central component but spreads the logic.",
+            "Sagas give up isolation: other transactions can see intermediate states, leading to lost updates or to reading data that a compensation later reverses. Countermeasures: semantic locks (a 'pending' status), commutative updates, and putting the step that can't be undone after every step that might fail.",
+            "Each step must update its database and emit the event that triggers the next step atomically: write the event to an outbox table in the same local transaction, and let a relay or change-data-capture publish it, so the saga can't stall between a commit and a lost message.",
+            "Use sagas when the steps cross services or take a long time, and 2PC (or a single database) when the data must change atomically and the participants are few and close together."
+          ]
+        },
+        {
+          "title": "Exactly-once: what is and isn't possible",
+          "minutes": 13,
+          "objectives": [
+            "Distinguish at-most-once, at-least-once and effectively-once processing",
+            "Explain why a sender can never be sure a message was processed exactly once",
+            "Build effectively-once processing from retries, idempotence and atomic commits"
+          ],
+          "key_points": [
+            "At-most-once: send once and never retry, so messages can be lost. At-least-once: retry until acknowledged, so messages can be duplicated. Over a network that loses messages, a sender can never be certain a message arrived (the Two Generals' problem), so it must risk loss or risk duplicates.",
+            "What systems call exactly-once is effectively-once processing: at-least-once delivery plus processing whose effect happens once, through idempotent operations, deduplication by a unique ID, or committing the output together with the input position.",
+            "Kafka's exactly-once semantics combine idempotent producers (the broker discards a producer's duplicate retries using sequence numbers) with transactions that write output messages and consumer offsets atomically. The guarantee holds inside Kafka; effects on other systems need their own idempotence.",
+            "Deduplication needs a key that names the logical operation, a store of seen keys updated atomically with the effect, and a retention window longer than the longest possible retry delay; after the window, a very late duplicate gets through.",
+            "Prefer operations that are idempotent by design: 'set balance to 90 if the version is 7' (a conditional write) is safe to repeat; 'subtract 10' isn't. Fencing tokens apply the same idea to leases, so a delayed request from an old lease holder is rejected.",
+            "End to end, the guarantee is only as strong as the weakest hop: a deduplicating broker doesn't help if the client resubmits with a new ID, so carry the original request ID from the user's click through every service."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Two-phase commit and a saga, with failures",
+        "tool": "Python 3 and pytest",
+        "minutes": 50,
+        "goal": "Implement a two-phase-commit coordinator that logs its decision before announcing it and recovers from crashes at three points, then an orchestrated saga that compensates completed steps in reverse order and retries a compensation that times out.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest)",
+          "Download the lab files into a new folder: twopc.py, saga.py, demo.py and test_txn.py"
+        ],
+        "steps": [
+          {
+            "do": "Read twopc.py: a participant's yes vote writes 'prepared' to its log and keeps its locks until it hears the decision. Each log list stands for records forced to disk."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 failed"
+          },
+          {
+            "do": "Implement Coordinator.run: log ('begin', txid); collect every vote; decide commit only if all are yes; log the decision; send it to each participant in order; log ('end', txid). Raise CoordinatorCrash at the three crash points the docstring names.",
+            "code": "self.log.append((\"begin\", txid))\nvotes = [p.prepare(txid) for p in self.participants]\nif crash_at == \"after_votes\":\n    raise CoordinatorCrash(txid)",
+            "lang": "python"
+          },
+          {
+            "do": "Implement recover: for each transaction with a 'begin' but no 'end' record, use the logged decision, or log and use 'abort' if there is none (presumed abort); send the decision to every participant still prepared; log 'end'."
+          },
+          {
+            "do": "Implement run_saga: do each step; on StepFailed, compensate the completed steps in reverse order, retrying each undo after a TemporaryError, and append the log lines the docstring gives."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Run the demo.",
+            "code": "python demo.py",
+            "lang": "bash",
+            "see": "All vote yes: commit; states ['committed', 'committed', 'committed'], then the crash cases."
+          },
+          {
+            "do": "Read the first crash case: all three participants are prepared and holding locks, and with no decision in the log, recovery aborts. Explain why aborting is safe there but would be wrong once the decision had been logged.",
+            "see": "Crash after the votes: coordinator crashed; in doubt and holding locks: ['orders', 'payments', 'stock'] ... recovery finishes {'tx1': 'abort'}"
+          },
+          {
+            "do": "Read the mid-commit case: orders had already committed, so recovery must commit the others. Explain why a participant can never decide on its own once it has voted yes.",
+            "see": "Crash part-way through phase 2: coordinator crashed; in doubt and holding locks: ['payments', 'stock'] ... recovery finishes {'tx1': 'commit'}"
+          },
+          {
+            "do": "Read the saga lines: the refused payment triggers 'undo hotel' and then 'undo flight', and the flight's first cancellation times out and is retried.",
+            "see": "compensated: do flight, do hotel, failed payment, undo hotel, retry undo flight, undo flight"
+          },
+          {
+            "do": "Name one isolation problem this saga has (what could another customer see between 'do hotel' and 'undo hotel'?) and one countermeasure from the lesson."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The coordinator, its recovery and the saga pass their tests.",
+            "look_for": [
+              "7 passed"
+            ]
+          },
+          {
+            "text": "The votes decide the outcome: all yes commits, one no aborts everyone.",
+            "look_for": [
+              "All vote yes: commit",
+              "Stock votes no: abort"
+            ]
+          },
+          {
+            "text": "Recovery presumes abort without a logged decision, and completes a logged commit.",
+            "look_for": [
+              "recovery finishes {'tx1': 'abort'}",
+              "recovery finishes {'tx1': 'commit'}"
+            ]
+          },
+          {
+            "text": "Prepared participants hold their locks until recovery releases them.",
+            "look_for": [
+              "in doubt and holding locks",
+              "locks held: 0"
+            ]
+          },
+          {
+            "text": "The saga compensates in reverse order and retries the compensation that timed out.",
+            "look_for": [
+              "undo hotel, retry undo flight, undo flight"
+            ]
+          }
+        ],
+        "submit": "Paste twopc.py and saga.py, the pytest summary, everything demo.py printed, and your explanations of the crash cases and of the saga's isolation problem.",
+        "files": [
+          {
+            "path": "twopc.py",
+            "content": "\"\"\"Two-phase commit with a durable coordinator log, crash points and recovery.\n\nEverything in a `log` list stands for records forced to disk: they survive a crash. Everything else\n(the coordinator's variables during run) is lost when it crashes.\n\"\"\"\nfrom __future__ import annotations\n\n\nclass CoordinatorCrash(Exception):\n    pass\n\n\nclass Participant:\n    def __init__(self, name: str, vote: str = \"yes\") -> None:\n        self.name, self.vote = name, vote\n        self.log: list[tuple[str, str]] = []\n        self.state: dict[str, str] = {}        # txid -> prepared, committed or aborted\n        self.locks: set[str] = set()           # transactions holding this participant's locks\n\n    def prepare(self, txid: str) -> str:\n        \"\"\"Phase 1. A yes vote is a promise: the work is on disk and the locks are held until the decision.\"\"\"\n        if self.vote == \"no\":\n            self.log.append((\"abort\", txid))\n            self.state[txid] = \"aborted\"\n            return \"no\"\n        self.log.append((\"prepared\", txid))\n        self.state[txid] = \"prepared\"\n        self.locks.add(txid)\n        return \"yes\"\n\n    def commit(self, txid: str) -> None:\n        self.log.append((\"commit\", txid))\n        self.state[txid] = \"committed\"\n        self.locks.discard(txid)\n\n    def abort(self, txid: str) -> None:\n        self.log.append((\"abort\", txid))\n        self.state[txid] = \"aborted\"\n        self.locks.discard(txid)\n\n\nclass Coordinator:\n    def __init__(self, participants: list[Participant]) -> None:\n        self.participants = participants\n        self.log: list[tuple[str, str]] = []\n\n    def run(self, txid: str, crash_at: str | None = None) -> str:\n        \"\"\"Run 2PC for txid and return 'commit' or 'abort'.\n\n        Log ('begin', txid) first. Collect every vote; the decision is commit only if all voted yes.\n        Log the decision BEFORE telling anyone, send it to every participant, then log ('end', txid).\n        Raise CoordinatorCrash at crash_at: 'after_votes' (votes in, nothing decided), 'after_decision'\n        (decision logged, nobody told) or 'mid_commit' (only the first participant told).\n        \"\"\"\n        raise NotImplementedError(\"TODO: begin, phase 1, log the decision, phase 2, end; crash where asked\")\n\n    def recover(self) -> dict[str, str]:\n        \"\"\"After a restart, finish every transaction that has a 'begin' but no 'end' record.\n        Use the logged decision; with none, abort (presumed abort) and log that decision first.\n        Return {txid: decision} for the transactions it finished.\"\"\"\n        raise NotImplementedError(\"TODO: read the log; resend logged decisions; presume abort otherwise\")\n"
+          },
+          {
+            "path": "saga.py",
+            "content": "\"\"\"A trip-booking saga: book a flight, book a hotel, charge the card; compensate on failure.\"\"\"\nfrom __future__ import annotations\n\n\nclass StepFailed(Exception):\n    \"\"\"The service refused: the saga can't go forward.\"\"\"\n\n\nclass TemporaryError(Exception):\n    \"\"\"A timeout or an outage: try again.\"\"\"\n\n\nclass Service:\n    def __init__(self, name: str, refuse: set[str] = frozenset(), flaky_undos: int = 0) -> None:\n        self.name = name\n        self.refuse = set(refuse)            # trips this service refuses\n        self.flaky_undos = flaky_undos       # the first few compensations fail with a TemporaryError\n        self.bookings: dict[str, str] = {}\n\n    def do(self, trip: str) -> None:\n        if trip in self.refuse:\n            raise StepFailed(f\"{self.name} refused {trip}\")\n        self.bookings[trip] = \"booked\"\n\n    def undo(self, trip: str) -> None:\n        \"\"\"Compensate. Idempotent: cancelling twice, or cancelling something never booked, is harmless.\"\"\"\n        if self.flaky_undos:\n            self.flaky_undos -= 1\n            raise TemporaryError(f\"{self.name} timed out\")\n        if self.bookings.get(trip) == \"booked\":\n            self.bookings[trip] = \"cancelled\"\n\n\ndef run_saga(trip: str, steps: list[Service], log: list[str], max_attempts: int = 10) -> str:\n    \"\"\"Run each step in order, appending 'do <name>' to log for each success. If a step raises\n    StepFailed, append 'failed <name>', then compensate the completed steps in reverse order, retrying\n    each undo after a TemporaryError (append 'retry undo <name>') until it succeeds ('undo <name>').\n    Return 'completed' or 'compensated'.\"\"\"\n    raise NotImplementedError(\"TODO\")\n"
+          },
+          {
+            "path": "demo.py",
+            "content": "from saga import Service, run_saga\nfrom twopc import Coordinator, CoordinatorCrash, Participant\n\n\ndef two_phase(label: str, votes=(\"yes\", \"yes\", \"yes\"), crash_at=None) -> None:\n    ps = [Participant(n, v) for n, v in zip((\"orders\", \"payments\", \"stock\"), votes)]\n    coordinator = Coordinator(ps)\n    try:\n        result = coordinator.run(\"tx1\", crash_at)\n        print(f\"{label}: {result}; states {[p.state['tx1'] for p in ps]}\")\n        return\n    except CoordinatorCrash:\n        doubt = [p.name for p in ps if p.state.get(\"tx1\") == \"prepared\"]\n        print(f\"{label}: coordinator crashed; in doubt and holding locks: {doubt}\")\n    # The coordinator restarts with only its log.\n    restarted = Coordinator(ps)\n    restarted.log = coordinator.log\n    finished = restarted.recover()\n    print(f\"    recovery finishes {finished}; states {[p.state['tx1'] for p in ps]}, \"\n          f\"locks held: {sum(len(p.locks) for p in ps)}\")\n\n\ndef saga(label: str, trip: str, refuse_payment: bool = False) -> None:\n    flight = Service(\"flight\", flaky_undos=1)\n    hotel = Service(\"hotel\")\n    payment = Service(\"payment\", refuse={trip} if refuse_payment else set())\n    log: list[str] = []\n    result = run_saga(trip, [flight, hotel, payment], log)\n    print(f\"{label}: {result}: {', '.join(log)}; bookings flight={flight.bookings.get(trip)} \"\n          f\"hotel={hotel.bookings.get(trip)}\")\n\n\nif __name__ == \"__main__\":\n    two_phase(\"All vote yes\")\n    two_phase(\"Stock votes no\", votes=(\"yes\", \"yes\", \"no\"))\n    two_phase(\"Crash after the votes\", crash_at=\"after_votes\")\n    two_phase(\"Crash after logging the decision\", crash_at=\"after_decision\")\n    two_phase(\"Crash part-way through phase 2\", crash_at=\"mid_commit\")\n    saga(\"Saga trip-1\", \"trip-1\")\n    saga(\"Saga trip-2, card refused\", \"trip-2\", refuse_payment=True)\n"
+          },
+          {
+            "path": "test_txn.py",
+            "content": "import pytest\n\nfrom saga import Service, run_saga\nfrom twopc import Coordinator, CoordinatorCrash, Participant\n\n\ndef cluster(*votes):\n    ps = [Participant(f\"p{i}\", v) for i, v in enumerate(votes)]\n    return Coordinator(ps), ps\n\n\ndef test_all_yes_commits_and_releases_locks():\n    c, ps = cluster(\"yes\", \"yes\")\n    assert c.run(\"t\") == \"commit\"\n    assert [p.state[\"t\"] for p in ps] == [\"committed\", \"committed\"]\n    assert not any(p.locks for p in ps)\n    assert c.log == [(\"begin\", \"t\"), (\"commit\", \"t\"), (\"end\", \"t\")]\n\n\ndef test_one_no_aborts_everyone():\n    c, ps = cluster(\"yes\", \"no\", \"yes\")\n    assert c.run(\"t\") == \"abort\"\n    assert {p.state[\"t\"] for p in ps} == {\"aborted\"}\n\n\ndef test_the_decision_is_logged_before_it_is_sent():\n    c, ps = cluster(\"yes\", \"yes\")\n    with pytest.raises(CoordinatorCrash):\n        c.run(\"t\", crash_at=\"after_decision\")\n    assert (\"commit\", \"t\") in c.log\n    assert [p.state[\"t\"] for p in ps] == [\"prepared\", \"prepared\"]     # in doubt: blocked\n\n\ndef test_recovery_presumes_abort_without_a_decision():\n    c, ps = cluster(\"yes\", \"yes\")\n    with pytest.raises(CoordinatorCrash):\n        c.run(\"t\", crash_at=\"after_votes\")\n    assert c.recover() == {\"t\": \"abort\"}\n    assert [p.state[\"t\"] for p in ps] == [\"aborted\", \"aborted\"]\n\n\ndef test_recovery_finishes_a_half_sent_commit():\n    c, ps = cluster(\"yes\", \"yes\", \"yes\")\n    with pytest.raises(CoordinatorCrash):\n        c.run(\"t\", crash_at=\"mid_commit\")\n    assert c.recover() == {\"t\": \"commit\"}\n    assert {p.state[\"t\"] for p in ps} == {\"committed\"}\n    assert c.recover() == {}                       # recovering twice changes nothing\n\n\ndef test_saga_compensates_in_reverse_and_retries():\n    flight, hotel = Service(\"flight\"), Service(\"hotel\", flaky_undos=2)\n    pay = Service(\"payment\", refuse={\"x\"})\n    log = []\n    assert run_saga(\"x\", [flight, hotel, pay], log) == \"compensated\"\n    assert log == [\"do flight\", \"do hotel\", \"failed payment\", \"retry undo hotel\", \"retry undo hotel\",\n                   \"undo hotel\", \"undo flight\"]\n    assert flight.bookings[\"x\"] == hotel.bookings[\"x\"] == \"cancelled\"\n\n\ndef test_saga_completes():\n    log = []\n    assert run_saga(\"y\", [Service(\"a\"), Service(\"b\")], log) == \"completed\"\n    assert log == [\"do a\", \"do b\"]\n"
+          }
+        ],
+        "hints": [
+          "Append the decision to self.log before the loop that sends it: that one rule is what makes recovery possible.",
+          "In recover, don't resend to a participant that has already committed or aborted: check that its state is still 'prepared'.",
+          "Python's for ... else runs the else block only when the loop never reached break: a tidy place for 'this compensation keeps failing'."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn the fault and timing models, see why physical clocks can't order events, and finish the vector-clock lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Compare the three styles of replication, reason about quorums, and measure stale reads in the quorum lab.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Define the consistency models precisely, read CAP and PACELC carefully, and build the linearisability checker.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Study Raft's election, replication and safety rules and Paxos in outline, and simulate Raft elections.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Work through two-phase commit, sagas and effectively-once processing, and recover a crashed coordinator in the lab.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build the Raft key-value store capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Build a replicated key-value store on Raft",
+    "minutes": 600,
+    "brief": "Extend your Module 4 simulator into a replicated key-value store that clients can rely on. Add log replication to raft.py: entries become (term, command) pairs; the leader appends client commands, sends AppendEntries with prevLogIndex, prevLogTerm, the entries and its commit index, and backs off nextIndex after a rejection; followers apply the consistency check and remove conflicting entries; the leader advances its commit index only for current-term entries stored on a majority, and appends a no-op when it takes office; every node applies committed entries in order to a dictionary. Clients send set and get commands to the leader (followers redirect them), each with a client ID and sequence number so that a retried command is applied once, and reads are made linearisable by going through the log or by confirming leadership with a heartbeat round first. Then attack it: run at least five fault scenarios with fixed seeds (a leader crash; a follower crash and restart that keeps its persisted term, vote and log; a partition and heal; 10% message loss; and the Figure 8 case from the Raft paper), call invariants.check_all after every event, and check the history of client operations from a small run with your Module 3 linearisability checker. Finally, write a report on the design, the scenarios, every invariant failure you hit and how you fixed it.",
+    "deliverables": [
+      "raft.py and sim.py with log replication, commitment, applying entries, client sessions and linearisable reads",
+      "A scenarios script with at least five seeded fault scenarios that calls invariants.check_all after every event",
+      "pytest tests for AppendEntries (the consistency check, conflict removal, the commit rule) and for duplicate client commands",
+      "A history of client operations from one run, checked with your linearisability checker",
+      "A report of 1,500 to 2,500 words on the design, each scenario's outcome, the bugs the invariants caught and the Figure 8 case"
+    ],
+    "rubric": [
+      {
+        "name": "Log replication",
+        "points": 25,
+        "description": "AppendEntries implements the consistency check, conflict removal and nextIndex back-off, and the logs converge after every scenario."
+      },
+      {
+        "name": "Commit and apply rules",
+        "points": 20,
+        "description": "The commit index advances only for current-term entries on a majority, a new leader appends a no-op, and every entry is applied once, in order."
+      },
+      {
+        "name": "Fault scenarios and invariants",
+        "points": 20,
+        "description": "Five or more seeded scenarios run with check_all after every event and no violations, and restarts keep exactly the persistent state Raft requires."
+      },
+      {
+        "name": "Clients and linearisability",
+        "points": 15,
+        "description": "Duplicate commands are applied once, reads are linearisable by a stated method, and a recorded history passes the checker."
+      },
+      {
+        "name": "Report",
+        "points": 20,
+        "description": "The report justifies each design choice, explains each scenario, shows at least one bug the invariants caught and its fix, and walks through the Figure 8 case."
+      }
+    ],
+    "submit": "Paste raft.py, sim.py and your scenarios script, the pytest summary, each scenario's final lines, the linearisability check's result and your report.",
+    "files": [
+      {
+        "path": "invariants.py",
+        "content": "\"\"\"Raft's safety properties (Figure 3 of the Raft paper) as checks to run after every simulated event.\n\nA snapshot maps each node to its state:\n    {\"n1\": {\"term\": 3, \"role\": \"leader\", \"log\": [(1, \"set x 1\"), (3, \"noop\")], \"commit_index\": 2}, ...}\nLog indexes count from 1 (log[0] is index 1) and commit_index 0 means nothing is committed.\nleaders_by_term maps each term to every node that was ever leader in it.\ncommitted lists every commit as {\"index\": i, \"entry\": (term, command), \"term\": term it was committed in}.\n\"\"\"\nfrom __future__ import annotations\n\n\nclass SafetyViolation(AssertionError):\n    pass\n\n\ndef election_safety(leaders_by_term: dict[int, set[str]]) -> None:\n    \"\"\"At most one leader per term.\"\"\"\n    for term, names in leaders_by_term.items():\n        if len(names) > 1:\n            raise SafetyViolation(f\"election safety: term {term} had leaders {sorted(names)}\")\n\n\ndef log_matching(snapshot: dict) -> None:\n    \"\"\"If two logs have an entry with the same index and term, they are identical up to that index.\"\"\"\n    names = sorted(snapshot)\n    for i, a in enumerate(names):\n        for b in names[i + 1:]:\n            la, lb = snapshot[a][\"log\"], snapshot[b][\"log\"]\n            for idx in range(min(len(la), len(lb)) - 1, -1, -1):\n                if la[idx][0] == lb[idx][0]:\n                    if la[: idx + 1] != lb[: idx + 1]:\n                        raise SafetyViolation(f\"log matching: {a} and {b} share term {la[idx][0]} at index \"\n                                              f\"{idx + 1} but differ before it\")\n                    break\n\n\ndef state_machine_safety(snapshot: dict) -> None:\n    \"\"\"No two nodes have committed (and so applied) different entries at the same index.\"\"\"\n    names = sorted(snapshot)\n    for i, a in enumerate(names):\n        for b in names[i + 1:]:\n            n = min(snapshot[a][\"commit_index\"], snapshot[b][\"commit_index\"])\n            if snapshot[a][\"log\"][:n] != snapshot[b][\"log\"][:n]:\n                raise SafetyViolation(f\"state machine safety: {a} and {b} committed different entries \"\n                                      f\"in their first {n}\")\n\n\ndef leader_completeness(snapshot: dict, committed: list[dict]) -> None:\n    \"\"\"A leader of term T holds every entry committed in term T or earlier.\"\"\"\n    for name, s in snapshot.items():\n        if s[\"role\"] != \"leader\":\n            continue\n        for c in committed:\n            if c[\"term\"] <= s[\"term\"]:\n                i = c[\"index\"]\n                if len(s[\"log\"]) < i or s[\"log\"][i - 1] != c[\"entry\"]:\n                    raise SafetyViolation(f\"leader completeness: {name} (term {s['term']}) lacks entry {i} \"\n                                          f\"{c['entry']}, committed in term {c['term']}\")\n\n\ndef check_all(snapshot: dict, leaders_by_term: dict[int, set[str]], committed: list[dict]) -> None:\n    election_safety(leaders_by_term)\n    log_matching(snapshot)\n    state_machine_safety(snapshot)\n    leader_completeness(snapshot, committed)\n"
+      },
+      {
+        "path": "test_invariants.py",
+        "content": "import pytest\n\nfrom invariants import (SafetyViolation, check_all, election_safety, leader_completeness, log_matching,\n                        state_machine_safety)\n\nGOOD = {\n    \"n1\": {\"term\": 3, \"role\": \"leader\", \"log\": [(1, \"x=1\"), (1, \"y=2\"), (3, \"noop\")], \"commit_index\": 3},\n    \"n2\": {\"term\": 3, \"role\": \"follower\", \"log\": [(1, \"x=1\"), (1, \"y=2\"), (3, \"noop\")], \"commit_index\": 2},\n    \"n3\": {\"term\": 2, \"role\": \"follower\", \"log\": [(1, \"x=1\"), (2, \"z=9\")], \"commit_index\": 1},\n}\nCOMMITTED = [{\"index\": 1, \"entry\": (1, \"x=1\"), \"term\": 1}, {\"index\": 2, \"entry\": (1, \"y=2\"), \"term\": 3},\n             {\"index\": 3, \"entry\": (3, \"noop\"), \"term\": 3}]\n\n\ndef test_a_healthy_cluster_passes():\n    check_all(GOOD, {1: {\"n1\"}, 2: {\"n3\"}, 3: {\"n1\"}}, COMMITTED)\n\n\ndef test_two_leaders_in_one_term():\n    with pytest.raises(SafetyViolation):\n        election_safety({4: {\"n1\", \"n2\"}})\n\n\ndef test_logs_that_share_an_entry_but_not_its_history():\n    bad = {\"a\": {\"log\": [(1, \"x\"), (2, \"y\")]}, \"b\": {\"log\": [(1, \"w\"), (2, \"y\")]}}\n    with pytest.raises(SafetyViolation):\n        log_matching(bad)\n\n\ndef test_different_committed_entries():\n    bad = {\"a\": {\"log\": [(1, \"x\")], \"commit_index\": 1}, \"b\": {\"log\": [(1, \"y\")], \"commit_index\": 1}}\n    with pytest.raises(SafetyViolation):\n        state_machine_safety(bad)\n\n\ndef test_a_new_leader_missing_a_committed_entry():\n    snapshot = {\"n3\": {\"term\": 4, \"role\": \"leader\", \"log\": [(1, \"x=1\"), (2, \"z=9\")], \"commit_index\": 1}}\n    with pytest.raises(SafetyViolation):\n        leader_completeness(snapshot, COMMITTED)\n\n\ndef test_a_stale_leader_need_not_hold_later_commits():\n    snapshot = {\"n3\": {\"term\": 2, \"role\": \"leader\", \"log\": [(1, \"x=1\"), (2, \"z=9\")], \"commit_index\": 1}}\n    leader_completeness(snapshot, COMMITTED)      # entries 2 and 3 were committed in term 3\n"
+      }
+    ]
+  }
+}
