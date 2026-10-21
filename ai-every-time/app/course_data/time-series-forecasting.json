@@ -1,0 +1,941 @@
+{
+  "slug": "time-series-forecasting",
+  "title": "Time Series Analysis and Forecasting",
+  "subtitle": "Analyse and forecast time series in Python: decomposition, stationarity, exponential smoothing, SARIMA and gradient boosting, tested with honest backtests and prediction intervals.",
+  "category": "Data Science",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "thandiwe-dlamini",
+    "sigridur-bjornsdottir"
+  ],
+  "skills": [
+    "Time series analysis",
+    "Seasonal decomposition",
+    "Stationarity testing",
+    "Autocorrelation analysis",
+    "Exponential smoothing (ETS)",
+    "ARIMA and SARIMA",
+    "Feature-based forecasting",
+    "Backtesting",
+    "Forecast accuracy metrics",
+    "Prediction intervals"
+  ],
+  "tools": [
+    "Python 3",
+    "pandas",
+    "statsmodels",
+    "scikit-learn",
+    "JupyterLab"
+  ],
+  "outcomes": [
+    "Prepare daily time series in pandas: a regular calendar, gaps filled sensibly, and known future events",
+    "Decompose a series into trend and seasonal components and measure their strength",
+    "Test for stationarity and read ACF and PACF plots to choose differencing and model orders",
+    "Fit, diagnose and compare ETS and SARIMA models with calendar regressors in statsmodels",
+    "Forecast with gradient boosting on lag and calendar features without leaking the future",
+    "Backtest forecasters from rolling origins, choose metrics that fit the decision, and check interval coverage"
+  ],
+  "prerequisites": "Python and pandas, as in Data Analysis with Python and pandas, and basic statistics, as in Statistics for Data Science and AI. Machine Learning Foundations with Python helps for module 4. Install Python 3.10 or later, then pip install pandas statsmodels scikit-learn matplotlib; JupyterLab is optional but used in the walkthroughs.",
+  "description": "Every organisation that holds stock, staffs a service or plans a budget forecasts something. This course teaches you to analyse a time series and forecast it well, with the methods professionals rely on and the testing that shows whether they work. You'll work with four years of daily medicine demand from a fictional rural health district, with weekly and seasonal patterns, public holidays, outreach campaigns and gaps in the reporting, the kind of data a district medical store really has to plan from.\n\nYou'll clean and decompose the series, test for stationarity and read autocorrelation, fit exponential smoothing and SARIMA models with statsmodels, and build a gradient boosting forecaster on lag and calendar features without leaking the future. Then you'll evaluate them properly: rolling-origin backtests, metrics chosen for the decision (and why MAPE so often misleads), and prediction intervals whose coverage you check. It goes well beyond the forecasting lesson in AI-Powered Business Intelligence Fundamentals and the time-based cross-validation in Feature Engineering and Model Evaluation. Every lab prints real results that your instructor checks, and the capstone produces four-week forecasts with intervals for three medicines.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Time series data, components and baselines",
+      "summary": "Get a daily series into shape in pandas, see its trend and seasonal patterns with decomposition, and set the baselines that every forecast has to beat.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "Time series data in pandas",
+          "minutes": 12,
+          "objectives": [
+            "Index a series by time and give it a regular frequency",
+            "Find and fill gaps without inventing patterns",
+            "Resample between daily, weekly and monthly views"
+          ],
+          "key_points": [
+            "A time series is a sequence of measurements in time order, usually at a regular interval such as daily; in pandas it's a Series with a DatetimeIndex, for example from pd.read_csv(..., parse_dates=['date'], index_col='date').",
+            "asfreq('D') puts a series on a complete daily calendar, so days missing from an export appear as NaN instead of silently vanishing; most forecasting models assume exactly one value per period.",
+            "Tell missing values from real zeros: a day with no report is unknown, while a closed clinic really dispensed nothing; filling a gap with 0 invents a collapse in demand, and dropping zeros hides real closures.",
+            "Fill short gaps in a seasonal series from the same point in the cycle, such as the mean of the same weekday a week before and after, rather than with a straight line drawn across the weekly pattern.",
+            "resample('W').sum() or resample('MS').mean() aggregates to a coarser frequency: sum quantities and average rates, and drop partial periods at either end, which give misleading totals.",
+            "Know what the series measures: units dispensed fall when stock runs out, so on stock-out days dispensing records supply rather than demand, and those days need flagging before any model learns from them."
+          ]
+        },
+        {
+          "title": "Trend, seasonality and decomposition",
+          "minutes": 12,
+          "objectives": [
+            "Describe the trend, seasonal and remainder components of a series",
+            "Choose between additive and multiplicative decomposition",
+            "Decompose a series with STL or MSTL and measure seasonal strength"
+          ],
+          "key_points": [
+            "A decomposition splits a series into a trend (the slowly changing level), one or more seasonal components (patterns that repeat with a fixed period, such as 7 days or a year) and a remainder, whatever is left.",
+            "Additive decomposition, y = trend + season + remainder, suits seasonal swings of constant size; when swings grow with the level, use a multiplicative one, or take logs first, since log(trend × season) = log trend + log season.",
+            "STL (Seasonal-Trend decomposition using LOESS) estimates components with local regressions, lets the seasonal pattern change slowly and resists outliers with robust=True; MSTL extends it to several periods, such as weekly and yearly patterns in daily data.",
+            "Classical decomposition (seasonal_decompose) uses centred moving averages, so it loses values at both ends of the series and assumes the seasonal pattern never changes; prefer STL or MSTL for real data.",
+            "Seasonal strength, max(0, 1 - Var(remainder) / Var(seasonal + remainder)), runs from 0 to 1; a value near 1 means the pattern dominates the noise, and any useful forecast has to reproduce it."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Decompose the demand series with MSTL",
+            "steps": [
+              {
+                "do": "Open a notebook in the course folder and load the cleaned series with the course helper.",
+                "code": "from ts_common import load, clean_series\ny = clean_series(load())\ny.tail()",
+                "lang": "python",
+                "see": "The last five days of 2025: 245 and 96 at the weekend, then 577, 570 and 531."
+              },
+              {
+                "do": "Plot the last year to see the patterns before decomposing anything.",
+                "code": "y[\"2025\"].plot(figsize=(10, 3))",
+                "lang": "python",
+                "see": "A saw-tooth with a deep low every Sunday, and higher demand from November to March."
+              },
+              {
+                "do": "Decompose log demand with weekly and yearly periods.",
+                "code": "import numpy as np\nfrom statsmodels.tsa.seasonal import MSTL\nres = MSTL(np.log(y), periods=(7, 365)).fit()",
+                "lang": "python",
+                "see": "It finishes in a second or two."
+              },
+              {
+                "do": "Plot the components.",
+                "code": "res.plot()",
+                "lang": "python",
+                "see": "Panels for the data, the trend, seasonal_7, seasonal_365 and the residual."
+              },
+              {
+                "do": "Turn one week of the weekly component back into multipliers.",
+                "code": "np.exp(res.seasonal[\"seasonal_7\"][\"2025-12-01\":\"2025-12-07\"]).round(2)",
+                "lang": "python",
+                "see": "About 1.8 on Monday 1 December, falling to about 0.8 on Saturday and 0.3 on Sunday."
+              },
+              {
+                "do": "Work out the strength of each seasonal component.",
+                "code": "for col in res.seasonal.columns:\n    s = res.seasonal[col]\n    print(col, round(max(0, 1 - np.var(res.resid) / np.var(s + res.resid)), 3))",
+                "lang": "python",
+                "see": "seasonal_7 0.98 and seasonal_365 0.922: both patterns are strong."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Baselines and a first honest test",
+          "minutes": 12,
+          "objectives": [
+            "Build naive, seasonal naive, mean and drift forecasts",
+            "Hold out the most recent period to test a forecast",
+            "Explain why every model has to beat a baseline"
+          ],
+          "key_points": [
+            "The naive forecast repeats the last value; seasonal naive repeats the value from one season earlier, such as the same weekday last week; the mean forecast repeats the historical average; drift extends the line from the first value to the last.",
+            "Baselines cost almost nothing and set the bar: a model that can't beat seasonal naive on a strongly seasonal series isn't worth its complexity, however well it fits the training data.",
+            "Test on the future: hold out the most recent stretch, as long as the forecast horizon, fit on everything before it, and never let the test period inform the model, its features or its tuning.",
+            "The horizon comes from the decision: a store that orders every four weeks needs forecasts 1 to 28 days ahead, so measure errors over those 28 days, not just one day ahead.",
+            "One holdout is a single sample of the future and is dominated by whatever happened in it, such as holidays; backtests from several origins, in module 5, give a steadier comparison."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Clean, decompose and baseline the demand series",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Generate four years of daily medicine demand, find and fill the gaps in the export, decompose the series into trend, weekly and yearly components, and score four baseline forecasts on the last 28 days.",
+        "setup": [
+          "Python 3.10 or later with pandas, statsmodels, scikit-learn and matplotlib: pip install pandas statsmodels scikit-learn matplotlib",
+          "A course folder with the starter files make_demand.py, ts_common.py and lab1_explore.py; keep using it for every lab",
+          "Results here come from statsmodels 0.14 or later; other versions can differ in the last decimal place"
+        ],
+        "steps": [
+          {
+            "do": "Generate the data: daily oral rehydration salts (ORS), paracetamol and amoxicillin dispensed in a fictional rural health district, 2022 to 2025.",
+            "code": "python make_demand.py",
+            "lang": "bash",
+            "see": "Wrote 1434 days to demand.csv"
+          },
+          {
+            "do": "Read ts_common.py: load() reads the export, clean_series() is the reference cleaning later labs use, calendar() builds regressors known in advance, and scores() computes the error metrics."
+          },
+          {
+            "do": "Complete TODO 1: put the ORS series on a daily calendar so missing days appear.",
+            "code": "y = raw.asfreq(\"D\")",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: fill each gap from the same weekday a week before and after, then interpolate whatever is left.",
+            "code": "filled = y.fillna((y.shift(7) + y.shift(-7)) / 2).interpolate()",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 3, the seasonal strength of each MSTL component, and TODO 4, the seasonal naive and drift baselines.",
+            "code": "\"seasonal naive\": np.tile(train.iloc[-7:].to_numpy(), 4),",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab1_explore.py",
+            "lang": "bash",
+            "see": "27 missing days and 9 blanks, the longest gap 2024-07-08 to 2024-07-12; strengths 0.980 (weekly) and 0.922 (yearly); seasonal naive scores MAE 71.8."
+          },
+          {
+            "do": "Write three sentences: which baseline wins and why, and which days in the holdout you expect any model to find hardest (look at the calendar for December)."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The gaps are found: 1,461 calendar days, 27 missing days and 9 blank values, and the longest gap runs from 8 to 12 July 2024.",
+            "look_for": [
+              "1461",
+              "27",
+              "2024-07-08",
+              "2024-07-12"
+            ]
+          },
+          {
+            "text": "No gaps remain after filling, and the weekday means run from 447.1 on Monday to 67.6 on Sunday.",
+            "look_for": [
+              "Still missing after filling: 0",
+              "447.1",
+              "67.6"
+            ]
+          },
+          {
+            "text": "The decomposition shows strong weekly and yearly seasonality: strengths 0.980 and 0.922.",
+            "look_for": [
+              "0.980",
+              "0.922"
+            ]
+          },
+          {
+            "text": "The baselines are scored on the holdout: seasonal naive MAE 71.8, naive 161.5, mean 185.3, drift 161.0.",
+            "look_for": [
+              "71.8",
+              "161.5",
+              "185.3",
+              "161.0"
+            ]
+          },
+          {
+            "text": "The note says seasonal naive wins because of the weekly pattern, and expects the December public holidays to be hardest.",
+            "look_for": [
+              "holiday"
+            ]
+          }
+        ],
+        "submit": "Paste your completed TODOs, the output of python lab1_explore.py and your three sentences.",
+        "files": [
+          {
+            "path": "make_demand.py",
+            "content": "\"\"\"Generate the course data: four years of daily medicine demand in a fictional rural health district.\n\n    python make_demand.py\n\ndemand.csv has one row per day from 2022-01-01 to 2025-12-31 as the district's reporting system exported it,\nso some days are missing and a few values are blank:\n\ndate                 the day\nholiday              1 on a public holiday, when most clinics close\ncampaign             1 on a day of a planned community outreach campaign (known months in advance)\nors_sachets          oral rehydration salts sachets dispensed (the series used in the labs)\nparacetamol_packs    paracetamol packs dispensed\namoxicillin_courses  amoxicillin courses dispensed (small numbers, sometimes zero)\n\nOnly random.random() and basic arithmetic are used, with a fixed seed, so everyone gets the same data.\n\"\"\"\n\nimport csv\nimport math\nimport random\nfrom datetime import date, timedelta\nfrom pathlib import Path\n\nR, RP, RA, RM = (random.Random(seed) for seed in (7, 8, 9, 10))   # one generator per series, one for gaps\nSTART, DAYS = date(2022, 1, 1), 1461\nWEEKDAY = [1.30, 1.12, 1.05, 1.02, 0.98, 0.55, 0.20]                  # Monday to Sunday\nORS_MONTH = [1.30, 1.35, 1.20, 1.00, 0.85, 0.75, 0.72, 0.75, 0.85, 0.95, 1.10, 1.22]   # the rainy season peaks\nPARA_MONTH = [0.95, 0.95, 1.00, 1.05, 1.12, 1.20, 1.22, 1.15, 1.02, 0.95, 0.92, 0.92]  # the cold season peaks\nMID = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]       # mid-month day of the year\nHOLIDAYS = [(1, 1), (3, 21), (4, 27), (5, 1), (6, 16), (8, 9), (9, 24), (12, 16), (12, 25), (12, 26)]\nCAMPAIGNS = [date(2022, 3, 14), date(2022, 10, 10), date(2023, 3, 13), date(2023, 10, 9),\n             date(2024, 3, 11), date(2024, 10, 7), date(2025, 3, 10), date(2025, 10, 13)]    # Mondays\nOUTAGE = (date(2024, 7, 8), date(2024, 7, 12))                       # the reporting system was down\n\n\ndef seasonal(table, d):\n    \"\"\"The month factor for day d, interpolated between mid-month points, wrapping round the year.\"\"\"\n    doy = d.timetuple().tm_yday - 1\n    for i in range(12):\n        a, b = MID[i], MID[(i + 1) % 12] + (365 if i == 11 else 0)\n        x = doy if doy >= MID[0] or i < 11 else doy + 365\n        if a <= x < b:\n            w = (x - a) / (b - a)\n            return table[i] * (1 - w) + table[(i + 1) % 12] * w\n    return table[0]\n\n\ndef normal(r):\n    return sum(r.random() for _ in range(12)) - 6.0\n\n\ndef poisson(lam):\n    limit, k, p = math.exp(-lam), 0, 1.0\n    while True:\n        p *= RA.random()\n        if p <= limit:\n            return k\n        k += 1\n\n\ndef main():\n    campaign_days = {c + timedelta(days=i) for c in CAMPAIGNS for i in range(5)}\n    rows = []\n    for t in range(DAYS):\n        d = START + timedelta(days=t)\n        holiday = int((d.month, d.day) in HOLIDAYS)\n        campaign = int(d in campaign_days)\n        week = WEEKDAY[d.weekday()] * (0.25 if holiday else 1.0)\n        ors = (300 + 0.06 * t) * seasonal(ORS_MONTH, d) * week * (1.6 if campaign else 1.0)\n        ors = max(0, round(ors * (1 + 0.08 * normal(R))))\n        para = (520 + 0.05 * t) * seasonal(PARA_MONTH, d) * week\n        para = max(0, round(para * (1 + 0.06 * normal(RP))))\n        amox = poisson((11 + 0.002 * t) * seasonal(ORS_MONTH, d) ** 0.5 * week)\n        if OUTAGE[0] <= d <= OUTAGE[1] or RM.random() < 0.015:\n            continue                                    # the day never reached the export\n        values = [ors, para, amox]\n        if RM.random() < 0.006:\n            values[0] = \"\"                               # a clinic's report arrived empty\n        rows.append([d.isoformat(), holiday, campaign, *values])\n    out = Path(__file__).with_name(\"demand.csv\")\n    with open(out, \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"date\", \"holiday\", \"campaign\", \"ors_sachets\", \"paracetamol_packs\", \"amoxicillin_courses\"])\n        w.writerows(rows)\n    print(f\"Wrote {len(rows)} days to {out.name}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "ts_common.py",
+            "content": "\"\"\"Helpers for every lab: load the district's demand export, clean a series, build the calendar, and score forecasts.\n\n    from ts_common import load, clean_series, calendar, scores, TEST_START\n\"\"\"\n\nfrom datetime import date, timedelta\nfrom pathlib import Path\n\nimport numpy as np\nimport pandas as pd\n\nHERE = Path(__file__).parent\nHORIZON = 28                     # forecast four weeks ahead: the district orders stock every four weeks\nTEST_START = \"2025-12-04\"        # the last 28 days are the holdout\nHOLIDAYS = [(1, 1), (3, 21), (4, 27), (5, 1), (6, 16), (8, 9), (9, 24), (12, 16), (12, 25), (12, 26)]\nCAMPAIGNS = [date(2022, 3, 14), date(2022, 10, 10), date(2023, 3, 13), date(2023, 10, 9),\n             date(2024, 3, 11), date(2024, 10, 7), date(2025, 3, 10), date(2025, 10, 13)]   # five weekdays each\n\n\ndef load():\n    \"\"\"The raw export, indexed by date.\"\"\"\n    if not (HERE / \"demand.csv\").exists():\n        raise SystemExit(\"No data yet: run python make_demand.py first.\")\n    return pd.read_csv(HERE / \"demand.csv\", parse_dates=[\"date\"], index_col=\"date\")\n\n\ndef clean_series(df, column=\"ors_sachets\"):\n    \"\"\"A daily series without gaps: each missing day gets the mean of the same weekday a week before and\n    a week after, and anything still missing is interpolated.\"\"\"\n    y = df[column].asfreq(\"D\")\n    return y.fillna((y.shift(7) + y.shift(-7)) / 2).interpolate()\n\n\ndef calendar(index):\n    \"\"\"Regressors known in advance for any dates: holiday and campaign flags, and two pairs of yearly\n    Fourier terms (smooth waves with periods of one year and half a year).\"\"\"\n    days = {c + timedelta(days=i) for c in CAMPAIGNS for i in range(5)}\n    t = (index - pd.Timestamp(\"2022-01-01\")).days.to_numpy()\n    out = pd.DataFrame(index=index)\n    out[\"holiday\"] = [int((d.month, d.day) in HOLIDAYS) for d in index]\n    out[\"campaign\"] = [int(d.date() in days) for d in index]\n    for k in (1, 2):\n        out[f\"sin{k}\"] = np.sin(2 * np.pi * k * t / 365.25)\n        out[f\"cos{k}\"] = np.cos(2 * np.pi * k * t / 365.25)\n    return out\n\n\ndef scores(actual, forecast, train=None, m=7):\n    \"\"\"MAE, RMSE, MAPE (%), WAPE (%) and, given the training series, MASE against a seasonal naive forecast.\"\"\"\n    a, f = np.asarray(actual, float), np.asarray(forecast, float)\n    e = a - f\n    with np.errstate(divide=\"ignore\", invalid=\"ignore\"):          # MAPE is infinite when an actual is 0\n        out = {\"MAE\": np.mean(np.abs(e)), \"RMSE\": np.sqrt(np.mean(e ** 2)),\n               \"MAPE\": 100 * np.mean(np.abs(e) / np.abs(a)), \"WAPE\": 100 * np.sum(np.abs(e)) / np.sum(np.abs(a))}\n    if train is not None:\n        tr = np.asarray(train, float)\n        out[\"MASE\"] = out[\"MAE\"] / np.mean(np.abs(tr[m:] - tr[:-m]))\n    return {k: round(float(v), 3) for k, v in out.items()}\n"
+          },
+          {
+            "path": "lab1_explore.py",
+            "content": "\"\"\"Lab 1: find the gaps, fill them, decompose the series and score four baseline forecasts.\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom statsmodels.tsa.seasonal import MSTL\n\nfrom ts_common import HORIZON, TEST_START, load, scores\n\ndf = load()\nraw = df[\"ors_sachets\"]\nprint(f\"Rows: {len(df)} from {df.index.min().date()} to {df.index.max().date()}\")\n\n# TODO 1: put the series on a daily calendar so missing days become NaN\ny = raw\nprint(f\"Days in the calendar: {len(y)}; missing days: {len(y) - len(df)}; blank values: {raw.isna().sum()}\")\ngaps = y.isna()\nrun_id = (~gaps).cumsum()                       # consecutive missing days share a run_id\nlengths = gaps.groupby(run_id).sum()\ndays = y.index[(run_id == lengths.idxmax()) & gaps]\nprint(f\"Longest gap: {lengths.max()} days, {days[0].date()} to {days[-1].date()}\")\n\n# TODO 2: fill each gap with the mean of the same weekday a week before and after, then interpolate\nfilled = y.interpolate()\nprint(f\"Still missing after filling: {filled.isna().sum()}\")\n\nweekday = filled.groupby(filled.index.dayofweek).mean().round(1)\nprint(\"Mean by weekday (Mon..Sun):\", weekday.tolist())\nmonth = filled.groupby(filled.index.month).mean().round(1)\nprint(\"Mean by month (Jan..Dec):\", month.tolist())\n\n# Decompose log demand into a trend, a weekly and a yearly seasonal component, and a remainder\nres = MSTL(np.log(filled), periods=(7, 365)).fit()\nfor col in res.seasonal.columns:\n    s = res.seasonal[col]\n    # TODO 3: the seasonal strength: max(0, 1 - Var(remainder) / Var(seasonal + remainder))\n    strength = 0.0\n    print(f\"Strength of {col}: {strength:.3f}\")\ntrend = np.exp(res.trend)\nprint(f\"Trend level: {trend.iloc[0]:.1f} at the start, {trend.iloc[-1]:.1f} at the end\")\n\ntrain, test = filled[:pd.Timestamp(TEST_START) - pd.Timedelta(days=1)], filled[TEST_START:]\nh = np.arange(1, HORIZON + 1)\nbaselines = {\n    \"naive\": np.repeat(train.iloc[-1], HORIZON),\n    # TODO 4: seasonal naive (the last week, repeated) and drift (the line from the first to the last value)\n    \"seasonal naive\": np.repeat(np.nan, HORIZON),\n    \"mean\": np.repeat(train.mean(), HORIZON),\n    \"drift\": np.repeat(np.nan, HORIZON),\n}\nfor name, forecast in baselines.items():\n    s = scores(test, forecast)\n    print(f\"{name:15} MAE {s['MAE']:7.1f}  RMSE {s['RMSE']:7.1f}\")\n"
+          }
+        ],
+        "hints": [
+          "y.isna().sum() counts the missing values once the series is on a daily calendar.",
+          "np.tile(a, 4) repeats an array four times: seven days repeated give 28.",
+          "Drift's slope is (last - first) / (number of values - 1)."
+        ]
+      }
+    },
+    {
+      "title": "Stationarity and autocorrelation",
+      "summary": "Learn what stationarity means and why models rely on it, make a series stationary with transformations and differencing, and read autocorrelation to see what structure is left to model.",
+      "instructor": "sigridur-bjornsdottir",
+      "lessons": [
+        {
+          "title": "Stationarity, transformations and differencing",
+          "minutes": 12,
+          "objectives": [
+            "Explain stationarity and why ARIMA-type models need it",
+            "Stabilise variance with logs or Box-Cox transformations",
+            "Remove trend and seasonality by differencing, without overdoing it"
+          ],
+          "key_points": [
+            "A (weakly) stationary series has a constant mean, a constant variance and autocorrelations that depend only on the lag, not on when you look; trends, seasonality and variance that changes with the level all break it.",
+            "A log or Box-Cox transformation stabilises variance that grows with the level and turns multiplicative patterns additive; forecast on that scale and transform back, remembering that exp of a forecast of log demand is nearer the median than the mean.",
+            "First differencing, y_t - y_(t-1), removes a trend or a wandering level; seasonal differencing, y_t - y_(t-7) for a weekly pattern in daily data, removes a repeating seasonal pattern.",
+            "Difference as little as possible: take the seasonal difference first when the pattern is strong, since it may remove the trend as well; a large negative autocorrelation at lag 1, around -0.4 to -0.5 or below, is the classic sign of over-differencing.",
+            "A model of differences must be added back up to forecast the original series; the d and D in ARIMA(p, d, q)(P, D, Q)s do that automatically, which is why they're usually set in the model rather than by differencing by hand."
+          ]
+        },
+        {
+          "title": "Testing for stationarity: ADF and KPSS",
+          "minutes": 10,
+          "objectives": [
+            "Run and interpret the ADF and KPSS tests",
+            "Use the two tests together and know their blind spots"
+          ],
+          "key_points": [
+            "The augmented Dickey-Fuller (ADF) test's null hypothesis is a unit root, a non-stationary random-walk-like series, so a small p-value is evidence of stationarity; statsmodels' adfuller returns the statistic, the p-value and the number of lags used.",
+            "The KPSS test turns the roles round: its null is stationarity, so a small p-value is evidence against it; statsmodels' kpss only reports p-values between 0.01 and 0.1 and warns when the true one lies outside that range.",
+            "Read them together: both pointing to stationarity is good evidence; KPSS stationary but ADF not suggests a trend-stationary series, whose deterministic trend should be removed; ADF stationary but KPSS not suggests one that needs differencing.",
+            "Neither test is designed for seasonal patterns, and both lose power with structural breaks or short series; slowly decaying autocorrelation at the seasonal lags is the clearer sign that a seasonal difference is needed.",
+            "Treat the tests as a guide, not a rule: choose the simplest differencing that leaves residual autocorrelation looking like noise, and confirm the choice by comparing forecasts in a backtest."
+          ]
+        },
+        {
+          "title": "Autocorrelation: ACF, PACF and white noise",
+          "minutes": 12,
+          "objectives": [
+            "Read ACF and PACF plots",
+            "Use them to suggest AR, MA and seasonal terms",
+            "Test whether what's left is white noise"
+          ],
+          "key_points": [
+            "The autocorrelation function (ACF) gives the correlation between a series and itself k periods earlier; the partial autocorrelation (PACF) gives that correlation after removing the effect of the lags in between.",
+            "A seasonal series has ACF spikes at multiples of its period, such as lags 7, 14 and 21 for a weekly pattern; spikes that die away very slowly mean the series needs seasonal differencing before any ARMA terms are chosen.",
+            "On a stationary series, an ACF that cuts off after lag q while the PACF tails off suggests MA(q), and a PACF that cuts off after lag p while the ACF tails off suggests AR(p); read the seasonal lags the same way for seasonal terms.",
+            "After a weekly difference, a single negative ACF spike at lag 7, with little at 14 or 21 and a PACF that tails off at 7, 14 and 21, is the classic signature of a seasonal MA(1) term, written (0, 1, 1) with period 7.",
+            "White noise has no autocorrelation, and about 95% of its sample autocorrelations fall within ±1.96/√n; the Ljung-Box test checks many lags at once, and a small p-value means there's still structure for a model to capture."
+          ],
+          "walkthrough": {
+            "tool": "JupyterLab",
+            "title": "Read the ACF and PACF of the demand series",
+            "steps": [
+              {
+                "do": "Load the cleaned series and take logs.",
+                "code": "import numpy as np\nfrom statsmodels.graphics.tsaplots import plot_acf, plot_pacf\nfrom ts_common import load, clean_series\nly = np.log(clean_series(load()))",
+                "lang": "python"
+              },
+              {
+                "do": "Plot the ACF of log demand over four weeks of lags.",
+                "code": "plot_acf(ly, lags=28)",
+                "lang": "python",
+                "see": "Tall spikes at 7, 14, 21 and 28 that barely shrink (0.87, 0.857, 0.853, 0.844): weekly seasonality that needs a seasonal difference."
+              },
+              {
+                "do": "Take the weekly difference and plot its ACF.",
+                "code": "d7 = ly.diff(7).dropna()\nplot_acf(d7, lags=28)",
+                "lang": "python",
+                "see": "A small spike at lag 1 (0.14), a large negative one at lag 7 (-0.447), and almost nothing at 14, 21 or 28."
+              },
+              {
+                "do": "Plot the PACF of the weekly difference.",
+                "code": "plot_pacf(d7, lags=28)",
+                "lang": "python",
+                "see": "Negative spikes at 7, 14, 21 and 28 that shrink (-0.445, -0.31, -0.185, -0.125): the PACF tails off at the seasonal lags."
+              },
+              {
+                "do": "Work out the white-noise band for this many values.",
+                "code": "1.96 / np.sqrt(len(d7))",
+                "lang": "python",
+                "see": "About 0.051. statsmodels' plot_pacf draws this band; plot_acf draws a band that widens with the lag (Bartlett's formula)."
+              },
+              {
+                "do": "Put the evidence together: a seasonal difference, a seasonal MA(1) term and a small term at lag 1 suggest SARIMA(1,0,0)(0,1,1)7 or SARIMA(0,0,1)(0,1,1)7, to compare by AIC in module 3."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Make the series stationary and read its autocorrelation",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Test log demand and three differenced versions with ADF and KPSS, read the autocorrelations that point to seasonal differencing and a seasonal MA term, spot over-differencing, and propose a SARIMA model.",
+        "setup": [
+          "Your course folder from lab 1, with demand.csv",
+          "The starter file lab2_stationarity.py"
+        ],
+        "steps": [
+          {
+            "do": "Complete TODO 1: the ADF and KPSS p-values for each version of the series.",
+            "code": "s = s.dropna()\nadf_p = adfuller(s, autolag=\"AIC\")[1]\nkpss_p = kpss(s, regression=\"c\", nlags=\"auto\")[1]",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: a Ljung-Box test of the weekly difference over 14 lags.",
+            "code": "lb = acorr_ljungbox(versions[\"weekly difference\"].dropna(), lags=[14])",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab2_stationarity.py",
+            "lang": "bash",
+            "see": "ADF p = 0.0667 for log demand and 0.0000 after any differencing; the ACF of log demand is 0.870 at lag 7 and 0.857 at lag 14."
+          },
+          {
+            "do": "Read the weekly difference: its ACF is -0.447 at lag 7 and -0.030 at lag 14, while its PACF is -0.445 at 7 and -0.310 at 14."
+          },
+          {
+            "do": "Read the over-differenced version (weekly then first difference): its ACF at lag 1 is -0.441."
+          },
+          {
+            "do": "Write a short paragraph: which differencing you'd choose and why, what the two tests say about log demand, and the SARIMA orders the ACF and PACF suggest."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The tests are right: ADF p-value 0.0667 for log demand and 0.0000 for every differenced version.",
+            "look_for": [
+              "0.0667",
+              "0.0000"
+            ]
+          },
+          {
+            "text": "The ACF of log demand shows weekly seasonality: 0.870 at lag 7 and 0.857 at lag 14.",
+            "look_for": [
+              "0.870",
+              "0.857"
+            ]
+          },
+          {
+            "text": "The weekly difference has one negative seasonal spike: ACF -0.447 at lag 7 and -0.030 at lag 14.",
+            "look_for": [
+              "-0.447",
+              "-0.030"
+            ]
+          },
+          {
+            "text": "Over-differencing shows as an ACF of -0.441 at lag 1.",
+            "look_for": [
+              "-0.441"
+            ]
+          },
+          {
+            "text": "The Ljung-Box test finds structure left in the weekly difference: statistic 362.4.",
+            "look_for": [
+              "362.4"
+            ]
+          },
+          {
+            "text": "The paragraph chooses the weekly difference alone and proposes a seasonal MA term, such as SARIMA(1,0,0)(0,1,1)7.",
+            "look_for": [
+              "(0,1,1)"
+            ]
+          }
+        ],
+        "submit": "Paste your two completed TODOs, the script's output and your paragraph.",
+        "files": [
+          {
+            "path": "lab2_stationarity.py",
+            "content": "\"\"\"Lab 2: test which transformation makes the series stationary, and read its autocorrelation.\"\"\"\n\nimport warnings\n\nimport numpy as np\nfrom statsmodels.stats.diagnostic import acorr_ljungbox\nfrom statsmodels.tsa.stattools import acf, adfuller, kpss, pacf\n\nfrom ts_common import clean_series, load\n\nwarnings.filterwarnings(\"ignore\")          # kpss warns when its p-value is beyond its table (below 0.01 or above 0.1)\n\nly = np.log(clean_series(load()))\nversions = {\n    \"log\": ly,\n    \"first difference\": ly.diff(),\n    \"weekly difference\": ly.diff(7),\n    \"weekly then first difference\": ly.diff(7).diff(),\n}\nprint(f\"{'series':30} {'ADF p':>8} {'KPSS p':>8}\")\nfor name, s in versions.items():\n    s = s.dropna()\n    # TODO 1: the ADF test's p-value (null: a unit root) and the KPSS test's (null: stationary)\n    adf_p = kpss_p = float(\"nan\")\n    print(f\"{name:30} {adf_p:8.4f} {kpss_p:8.4f}\")\n\n# The autocorrelation at lags 1, 7 and 14, and the partial autocorrelation of the weekly difference\nfor name in [\"log\", \"weekly difference\", \"weekly then first difference\"]:\n    r = acf(versions[name].dropna(), nlags=14)\n    print(f\"ACF of {name}: lag 1 {r[1]:.3f}, lag 7 {r[7]:.3f}, lag 14 {r[14]:.3f}\")\np = pacf(versions[\"weekly difference\"].dropna(), nlags=14)\nprint(f\"PACF of weekly difference: lag 1 {p[1]:.3f}, lag 2 {p[2]:.3f}, lag 7 {p[7]:.3f}, lag 14 {p[14]:.3f}\")\n\n# TODO 2: is the weekly difference white noise? A Ljung-Box test over 14 lags\nprint(\"Ljung-Box on the weekly difference, 14 lags: not done yet\")\n"
+          }
+        ],
+        "hints": [
+          "adfuller and kpss both return a tuple; the p-value is its second item, [1].",
+          "KPSS p-values of exactly 0.1 mean 'at least 0.1': statsmodels caps them and warns (the script hides the warning).",
+          "The ADF test on log demand gives 0.0667, not significant at 5%, while KPSS doesn't reject stationarity: the pattern of a trend-stationary series."
+        ]
+      }
+    },
+    {
+      "title": "Exponential smoothing and ARIMA",
+      "summary": "Fit the two classical families of forecasting models with statsmodels: exponential smoothing (ETS), and SARIMA with regressors for holidays and campaigns, chosen by AIC and checked through their residuals.",
+      "instructor": "sigridur-bjornsdottir",
+      "lessons": [
+        {
+          "title": "Exponential smoothing and ETS models",
+          "minutes": 12,
+          "objectives": [
+            "Explain simple, Holt and Holt-Winters exponential smoothing",
+            "Fit an ETS model in statsmodels and read its parameters",
+            "Choose additive, multiplicative and damped components"
+          ],
+          "key_points": [
+            "Simple exponential smoothing forecasts with a weighted average of past values whose weights shrink geometrically: the level updates as l_t = αy_t + (1 - α)l_(t-1), so α near 1 follows recent values and a small α averages a long history.",
+            "Holt's method adds a trend updated with its own smoothing parameter β, and Holt-Winters adds a seasonal component updated with γ; a γ near 0 means the seasonal pattern is treated as fixed.",
+            "ETS models (error, trend, seasonal) put these methods on a statistical footing with additive or multiplicative errors, which gives a likelihood for comparing models by AIC, and prediction intervals; statsmodels has ETSModel.",
+            "A damped trend multiplies the trend by φ, between 0 and 1, at every step ahead, so long-range forecasts level off instead of extending a trend for ever; statsmodels bounds φ below at 0.8 by default.",
+            "ETS has no way to include known future events such as public holidays or campaigns, so it forecasts them as ordinary days; when they matter, use a model with regressors or adjust those days by hand."
+          ]
+        },
+        {
+          "title": "ARIMA models",
+          "minutes": 12,
+          "objectives": [
+            "Explain the AR, I and MA parts of ARIMA(p, d, q)",
+            "Identify candidate orders and compare them by AIC",
+            "Check a fitted model through its residuals"
+          ],
+          "key_points": [
+            "ARIMA(p, d, q) models the series after d differences with p autoregressive terms (weights on its own past values) and q moving-average terms (weights on past forecast errors).",
+            "Find candidates from the ACF and PACF of the differenced series, then compare a small grid of nearby orders by AIC (Akaike information criterion), which rewards fit and penalises parameters: lower is better, and differences under about 2 are effectively ties.",
+            "AIC only compares models fitted to the same data with the same differencing, because differencing changes the series being fitted; compare models with different d or D by their errors in a backtest instead.",
+            "Check the chosen model's residuals: they should look like white noise, with no ACF spikes and a Ljung-Box p-value well above 0.05; leftover structure means the model has missed a pattern.",
+            "The differencing decides what long-range forecasts do: with d = 0 they return to the mean, with d = 1 they flatten at a level, and with d = 1 plus a constant, or d = 2, they follow a straight line."
+          ]
+        },
+        {
+          "title": "SARIMA and regressors for known events",
+          "minutes": 12,
+          "objectives": [
+            "Add seasonal terms with SARIMA(p, d, q)(P, D, Q)s",
+            "Include holidays, campaigns and Fourier terms as regressors",
+            "Interpret regression coefficients on a log scale"
+          ],
+          "key_points": [
+            "SARIMA(p, d, q)(P, D, Q)s adds seasonal AR and MA terms at multiples of the period s, and D seasonal differences: SARIMA(1,0,0)(0,1,1)7 takes one weekly difference and has one AR term and one weekly MA term.",
+            "statsmodels' SARIMAX adds regressors (exog): the model becomes a regression with SARIMA errors, and every regressor's future values must be supplied to forecast, so use only what's known in advance, such as public holidays and planned campaigns.",
+            "Fourier terms, sine and cosine waves with periods of a year and its fractions, let a SARIMA with a weekly period follow a smooth yearly pattern too, since a seasonal period of s = 365 is impractical to estimate.",
+            "On log demand, a regressor's coefficient b multiplies demand by exp(b): a holiday coefficient of -1.33 means about 0.27 of a normal day's demand, and a campaign coefficient of 0.49 about 1.63 times.",
+            "Seasonal models need history: several full cycles to estimate seasonal terms, and enough occurrences of each event, such as several years of each public holiday, to estimate its effect."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Fit ETS and SARIMA models and compare them",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Fit an ETS model and a small grid of SARIMA models with calendar regressors to log demand, choose by AIC, check the residuals, and compare all of them with seasonal naive on the 28-day holdout.",
+        "setup": [
+          "Your course folder, with demand.csv and ts_common.py",
+          "The starter file lab3_models.py; the SARIMA fits take a minute or two"
+        ],
+        "steps": [
+          {
+            "do": "Read the ETS line: additive errors, a damped additive trend and an additive weekly season, fitted to log demand.",
+            "code": "ETSModel(np.log(train), error=\"add\", trend=\"add\", damped_trend=True,\n         seasonal=\"add\", seasonal_periods=7).fit(disp=False)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 1, the SARIMA grid: add the orders (0, 1), (1, 1) and (2, 1) to the list. Each model has a weekly difference, a seasonal MA term and the calendar regressors.",
+            "code": "for p, q in [(1, 0), (0, 1), (1, 1), (2, 1)]:",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab3_models.py",
+            "lang": "bash",
+            "see": "ETS scores MAE 63.7 against seasonal naive's 71.8; SARIMA(1,0,0)(0,1,1)7 has the lowest AIC, -2569.4, and scores MAE 19.3 with the calendar."
+          },
+          {
+            "do": "Read the residual check: a Ljung-Box p-value of 0.221 means no clear structure is left."
+          },
+          {
+            "do": "Compare the three holidays in the holdout: with the calendar, SARIMA forecasts about 124 to 136; without it, about 398 to 468."
+          },
+          {
+            "do": "Write a short comparison: which model you'd use, how much of its advantage comes from the calendar, and why the (1,0) and (0,1) models are effectively tied."
+          }
+        ],
+        "checks": [
+          {
+            "text": "ETS is fitted and scored: MAE 63.7 with alpha 0.125, gamma 0.000 and phi 0.800.",
+            "look_for": [
+              "63.7",
+              "0.125",
+              "0.800"
+            ]
+          },
+          {
+            "text": "All four SARIMA orders are compared by AIC, and (1, 0) wins narrowly at -2569.4 against -2569.3.",
+            "look_for": [
+              "-2569.4",
+              "-2569.3",
+              "-2567.0"
+            ]
+          },
+          {
+            "text": "The chosen model's residuals pass the Ljung-Box check (p-value 0.221), and the holiday and campaign effects are about 0.27 and 1.63 times normal demand.",
+            "look_for": [
+              "0.221",
+              "x0.27",
+              "x1.63"
+            ]
+          },
+          {
+            "text": "SARIMA with the calendar scores MAE 19.3 on the holdout, against 78.1 without it.",
+            "look_for": [
+              "19.3",
+              "78.1"
+            ]
+          },
+          {
+            "text": "The comparison credits the calendar regressors for most of the gain and calls an AIC difference of 0.1 a tie.",
+            "look_for": [
+              "calendar"
+            ]
+          }
+        ],
+        "submit": "Paste your completed grid, the script's output and your comparison.",
+        "files": [
+          {
+            "path": "lab3_models.py",
+            "content": "\"\"\"Lab 3: fit exponential smoothing and SARIMA models to log demand, and compare them on the holdout.\"\"\"\n\nimport warnings\n\nimport numpy as np\nimport pandas as pd\nfrom statsmodels.stats.diagnostic import acorr_ljungbox\nfrom statsmodels.tsa.exponential_smoothing.ets import ETSModel\nfrom statsmodels.tsa.statespace.sarimax import SARIMAX\n\nfrom ts_common import HORIZON, TEST_START, calendar, clean_series, load, scores\n\nwarnings.filterwarnings(\"ignore\")\n\ny = clean_series(load())\ntrain, test = y[:pd.Timestamp(TEST_START) - pd.Timedelta(days=1)], y[TEST_START:]\nX = calendar(y.index)\nX_train, X_test = X.loc[train.index], X.loc[test.index]\n\nsnaive = np.tile(train.iloc[-7:].to_numpy(), 4)\nprint(f\"{'seasonal naive':32} MAE {scores(test, snaive)['MAE']:6.1f}\")\n\n# ETS with additive errors, a damped additive trend and additive weekly seasonality, on log demand\nets = ETSModel(np.log(train), error=\"add\", trend=\"add\", damped_trend=True,\n               seasonal=\"add\", seasonal_periods=7).fit(disp=False)\nets_fc = np.exp(ets.forecast(HORIZON))\nprint(f\"{'ETS(A,Ad,A)':32} MAE {scores(test, ets_fc)['MAE']:6.1f}  alpha {ets.smoothing_level:.3f}  \"\n      f\"gamma {ets.smoothing_seasonal:.3f}  phi {ets.damping_trend:.3f}\")\n\n# TODO 1: compare SARIMA orders by AIC: ARMA(p, q) errors with a seasonal difference and a seasonal MA term\nfits = {}\nfor p, q in [(1, 0)]:                       # add (0, 1), (1, 1) and (2, 1)\n    fits[(p, q)] = SARIMAX(np.log(train), exog=X_train, order=(p, 0, q), seasonal_order=(0, 1, 1, 7)).fit(disp=False)\n    print(f\"SARIMA({p},0,{q})(0,1,1)7 with calendar   AIC {fits[(p, q)].aic:9.1f}\")\nbest = min(fits, key=lambda k: fits[k].aic)\nmodel = fits[best]\nlb_p = acorr_ljungbox(model.resid[8:], lags=[14])[\"lb_pvalue\"].iloc[0]\nprint(f\"Best by AIC: {best}; Ljung-Box p-value of its residuals (14 lags): {lb_p:.3f}\")\nprint(f\"Holiday coefficient {model.params['holiday']:.3f} (x{np.exp(model.params['holiday']):.2f} demand); \"\n      f\"campaign {model.params['campaign']:.3f} (x{np.exp(model.params['campaign']):.2f})\")\n\n# Forecast the holdout with the best SARIMA and score it, then the same model without the calendar\nsarima_fc = np.exp(model.get_forecast(HORIZON, exog=X_test).predicted_mean)\nprint(f\"{'SARIMA with calendar':32} MAE {scores(test, sarima_fc)['MAE']:6.1f}\")\nplain = SARIMAX(np.log(train), order=(best[0], 0, best[1]), seasonal_order=(0, 1, 1, 7)).fit(disp=False)\nplain_fc = np.exp(plain.forecast(HORIZON))\nprint(f\"{'SARIMA without calendar':32} MAE {scores(test, plain_fc)['MAE']:6.1f}\")\ndays = test.index[test.index.isin(pd.to_datetime([\"2025-12-16\", \"2025-12-25\", \"2025-12-26\"]))]\nprint(\"Holidays in the holdout, actual / with calendar / without:\")\nfor d in days:\n    print(f\"  {d.date()}  {test[d]:5.0f}  {sarima_fc[d]:7.1f}  {plain_fc[d]:7.1f}\")\n"
+          }
+        ],
+        "hints": [
+          "SARIMAX needs exog for the forecast period as well: get_forecast(HORIZON, exog=X_test).",
+          "exp() turns forecasts of log demand back into sachets.",
+          "If a fit warns that it didn't converge, the script hides the warning; check that its AIC is close to the others'."
+        ]
+      }
+    },
+    {
+      "title": "Forecasting with machine learning",
+      "summary": "Turn a series into a supervised learning problem with lag and calendar features, forecast four weeks ahead with gradient boosting, and avoid the leaks that make such models look better than they are.",
+      "instructor": "thandiwe-dlamini",
+      "lessons": [
+        {
+          "title": "From a series to a table of features",
+          "minutes": 12,
+          "objectives": [
+            "Build lag, rolling and calendar features",
+            "Choose lags that respect the forecast horizon",
+            "Spot features that leak the future"
+          ],
+          "key_points": [
+            "Feature-based forecasting turns a series into rows: the target is the value on a day, and the features describe what was known before it, such as earlier values (lags), statistics of earlier values and calendar facts.",
+            "Every feature must exist at forecast time: to forecast up to 28 days ahead with one model, use lags of at least 28 days, such as y.shift(28), and rolling statistics of shifted values, such as y.shift(28).rolling(28).mean().",
+            "A rolling statistic that isn't shifted includes the day being predicted, and a centred window includes days after it; both leak the target and make holdout errors look better than real forecasts will be.",
+            "Calendar features (day of week, month, public holidays, planned campaigns, Fourier terms) are known for any future date and let the model learn their effects from the whole history at once.",
+            "Tree models can't predict beyond the range of targets they were trained on, so they can't extend a trend by themselves; model the target relative to a recent level, such as log(y / rolling mean), and convert back after predicting."
+          ]
+        },
+        {
+          "title": "Gradient boosting forecasters: direct and recursive strategies",
+          "minutes": 12,
+          "objectives": [
+            "Fit HistGradientBoostingRegressor to lag and calendar features",
+            "Compare direct and recursive multi-step strategies",
+            "Produce quantile forecasts for intervals"
+          ],
+          "key_points": [
+            "Gradient boosting builds an ensemble of shallow trees, each fitted to the errors of those before it; scikit-learn's HistGradientBoostingRegressor is fast on large tables and handles missing values without imputation.",
+            "A recursive strategy trains a one-step model and feeds each forecast back in as the next step's lag, so errors compound over the horizon; a direct strategy trains a model per horizon, or one model whose lags are all at least the horizon, so no forecast is reused.",
+            "One model can learn from many related series at once, such as every clinic's demand with a clinic feature, which helps series with short histories; classical models such as ARIMA are usually fitted to one series at a time.",
+            "loss='quantile' with quantile=0.1 and quantile=0.9 trains models for the 10th and 90th percentiles, an 80% interval; check how often held-out values fall inside it, because quantile models can be badly calibrated, especially on rare days such as holidays.",
+            "Machine learning forecasters shine with many related series, rich known-in-advance features or non-linear effects; on one regular series a well-specified SARIMA or ETS model is often as accurate, and easier to explain."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Forecast four weeks ahead with gradient boosting",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Build lag and calendar features that are all at least 28 days old, train a gradient boosting model on demand relative to its recent level, see how a leaky feature flatters the score, and test a quantile interval.",
+        "setup": [
+          "Your course folder, with demand.csv and ts_common.py",
+          "The starter file lab4_boosting.py"
+        ],
+        "steps": [
+          {
+            "do": "Read features(): the calendar from ts_common plus the day of the week, the month and lagged demand, all shifted by at least 28 days."
+          },
+          {
+            "do": "Complete TODO 1: add a 35-day lag and the same weekday 52 weeks earlier.",
+            "code": "X[\"lag35\"] = y.shift(35)\nX[\"lag364\"] = y.shift(364)",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: the model predicts log(demand / mean28), so turn its predictions back into sachets.",
+            "code": "forecast = X.loc[test_rows, \"mean28\"] * np.exp(model.predict(X[test_rows]))",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 3: make the two interval models quantile models.",
+            "code": "HistGradientBoostingRegressor(loss=\"quantile\", quantile=q, max_iter=300,\n                              learning_rate=0.05, random_state=0)",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab4_boosting.py",
+            "lang": "bash",
+            "see": "1069 training rows from 2022-12-31; MAE 27.9 on the holdout, 25.9 with the leaky feature, and the 80% interval covers 0.607 of the holdout."
+          },
+          {
+            "do": "Write a short note: how gradient boosting compares with lab 3's SARIMA (MAE 19.3), why the leaky feature's better score can't be trusted, and what the interval's coverage tells you."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The features need a year of history, so training starts on 2022-12-31 with 1,069 rows.",
+            "look_for": [
+              "1069",
+              "2022-12-31"
+            ]
+          },
+          {
+            "text": "Gradient boosting forecasts the holdout with MAE 27.9 and RMSE 38.7.",
+            "look_for": [
+              "27.9",
+              "38.7"
+            ]
+          },
+          {
+            "text": "The leaky, unshifted 7-day mean improves the score to MAE 25.9.",
+            "look_for": [
+              "25.9"
+            ]
+          },
+          {
+            "text": "The 80% quantile interval covers only 0.607 of the holdout, with a mean width of 80.1.",
+            "look_for": [
+              "0.607",
+              "80.1"
+            ]
+          },
+          {
+            "text": "The note says the leaky score is unachievable in practice and that the interval is too narrow for an 80% interval.",
+            "look_for": [
+              "leak"
+            ]
+          }
+        ],
+        "submit": "Paste your three completed TODOs, the script's output and your note.",
+        "files": [
+          {
+            "path": "lab4_boosting.py",
+            "content": "\"\"\"Lab 4: forecast four weeks ahead with gradient boosting on lag and calendar features.\"\"\"\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.ensemble import HistGradientBoostingRegressor\n\nfrom ts_common import HORIZON, TEST_START, calendar, clean_series, load, scores\n\n\ndef features(y):\n    \"\"\"One row per day, using only values at least 28 days old, so one model can forecast 1 to 28 days ahead.\"\"\"\n    X = calendar(y.index)\n    X[\"dayofweek\"] = y.index.dayofweek\n    X[\"month\"] = y.index.month\n    X[\"lag28\"] = y.shift(28)\n    # TODO 1: a 35-day lag, and the same weekday 52 weeks earlier (lag 364)\n    # the mean of the 28 days that end 28 days before the day being forecast\n    X[\"mean28\"] = y.shift(28).rolling(28).mean()\n    return X\n\n\ndef main():\n    y = clean_series(load())\n    X = features(y)\n    target = np.log(y / X[\"mean28\"])                 # demand relative to its recent level, so trees needn't extrapolate\n    ok = X.notna().all(axis=1)\n    cut = pd.Timestamp(TEST_START)\n    train_rows, test_rows = ok & (X.index < cut), X.index >= cut\n    print(f\"Training rows: {train_rows.sum()} from {X.index[train_rows][0].date()}; test rows: {test_rows.sum()}\")\n\n    # TODO 2: fit HistGradientBoostingRegressor on the training rows, forecast the test rows, and score it\n    model = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05, random_state=0)\n    model.fit(X[train_rows], target[train_rows])\n    forecast = X.loc[test_rows, \"mean28\"]           # replace: mean28 times exp(the model's prediction)\n    s = scores(y[test_rows], forecast)\n    print(f\"Gradient boosting, direct 1-28 days: MAE {s['MAE']:.1f}  RMSE {s['RMSE']:.1f}\")\n\n    # The leak: a 7-day rolling mean that forgets to shift, so it includes the day being predicted\n    leaky = X.assign(mean7=y.rolling(7).mean())\n    model_leak = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05, random_state=0)\n    model_leak.fit(leaky[train_rows], target[train_rows])\n    leak_fc = leaky.loc[test_rows, \"mean28\"] * np.exp(model_leak.predict(leaky[test_rows]))\n    print(f\"With an unshifted 7-day mean (a leak): MAE {scores(y[test_rows], leak_fc)['MAE']:.1f}\")\n\n    # TODO 3: 10% and 90% quantile models for an 80% interval, and how often the holdout falls inside it\n    bounds = {}\n    for q in (0.1, 0.9):\n        m = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05, random_state=0)   # make it a quantile model\n        m.fit(X[train_rows], target[train_rows])\n        bounds[q] = X.loc[test_rows, \"mean28\"] * np.exp(m.predict(X[test_rows]))\n    inside = ((y[test_rows] >= bounds[0.1]) & (y[test_rows] <= bounds[0.9])).mean()\n    print(f\"80% interval: covers {inside:.3f} of the holdout, mean width {np.mean(bounds[0.9] - bounds[0.1]):.1f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "X.notna().all(axis=1) keeps only rows where every feature exists; lag364 needs a year of history.",
+          "A leak doesn't always look dramatic: a plausible small improvement is exactly why it goes unnoticed.",
+          "Keep main() guarded by if __name__ == '__main__': lab 5 imports features() from this file."
+        ]
+      }
+    },
+    {
+      "title": "Backtesting, metrics and prediction intervals",
+      "summary": "Evaluate forecasters the way they'll be used: backtests from several origins, metrics chosen for the decision, and prediction intervals whose coverage is checked.",
+      "instructor": "sigridur-bjornsdottir",
+      "lessons": [
+        {
+          "title": "Backtesting with rolling origins",
+          "minutes": 12,
+          "objectives": [
+            "Run a rolling-origin backtest with TimeSeriesSplit",
+            "Choose the number of folds, the test size and the gap",
+            "Keep tuning and feature choices out of the test folds"
+          ],
+          "key_points": [
+            "A backtest (time series cross-validation) repeats the holdout from several forecast origins: fit on the data up to each origin, forecast the next horizon, and pool the errors, which gives a steadier estimate than one test period.",
+            "TimeSeriesSplit(n_splits=6, test_size=28) gives six consecutive 28-day test windows at the end of the data, each after an expanding training window; max_train_size makes the window slide instead, and gap leaves days out between training and test.",
+            "Refit the model at every origin, as it would be refitted in production, and use only information available at that origin, including for filling gaps, transforming the series and building features.",
+            "Tune hyperparameters and model orders on earlier folds or inside each training window, and keep the final folds for the comparison; picking a model because it won on the very folds you report gives an optimistic score.",
+            "Look at errors by horizon and by period, not only overall: errors usually grow with the horizon, and a model that wins on average can still fail on the days that matter, such as holidays or the season's peak."
+          ]
+        },
+        {
+          "title": "Forecast accuracy metrics, and the traps in MAPE",
+          "minutes": 12,
+          "objectives": [
+            "Compute MAE, RMSE, MAPE, WAPE and MASE",
+            "Choose a metric that fits the decision",
+            "Recognise when MAPE misleads"
+          ],
+          "key_points": [
+            "MAE, the mean absolute error, is in the series' units and is smallest for a forecast of the median; RMSE, the root mean squared error, is smallest for the mean and punishes large errors, such as a missed holiday, much more.",
+            "MAPE, the mean absolute percentage error, divides each error by the actual value, so it's infinite or undefined when an actual is zero and explodes when actuals are small, letting a few quiet days dominate the average.",
+            "MAPE caps the cost of forecasting too low at 100% but not the cost of forecasting too high, so choosing forecasts by MAPE favours ones that run low: for an actual of 100, forecasting 0 costs 100% while forecasting 250 costs 150%.",
+            "WAPE, the sum of absolute errors divided by the sum of actuals, weights days by volume and copes with zeros; MASE divides the MAE by the in-sample MAE of a seasonal naive forecast, so below 1 beats that baseline and series of different sizes compare fairly.",
+            "Choose the metric from the decision: running out of stock on busy days calls for errors in units, such as MAE or WAPE, and when under- and over-forecasting cost different amounts, a weighted or quantile loss fits better than any symmetric metric."
+          ]
+        },
+        {
+          "title": "Prediction intervals and coverage",
+          "minutes": 12,
+          "objectives": [
+            "Explain what a prediction interval promises",
+            "Get intervals from models, quantile regression and past errors",
+            "Check an interval's coverage in a backtest"
+          ],
+          "key_points": [
+            "A prediction interval gives a range that should contain a future value with a stated probability, such as 80%; it's wider than a confidence interval for a mean, because it includes the noise in a single future value.",
+            "Model-based intervals, such as SARIMAX's get_forecast(...).conf_int(alpha=0.2) or ETS's, assume the model is right and its errors are well behaved; they widen with the horizon but miss uncertainty from choosing the model and from unusual events.",
+            "Empirical intervals take quantiles of past forecast errors, such as the 10th and 90th percentiles of log(actual / forecast) from earlier backtest folds, and apply them to new forecasts; they work with any model, including gradient boosting.",
+            "Check coverage: in a backtest, an 80% interval should contain about 80% of actual values; far less means it's too narrow, far more means it's wider than it needs to be, and coverage is worth checking by horizon and by season too.",
+            "Use intervals for decisions: stocking to the 90th percentile of total demand over the lead time runs out about one period in ten if that percentile is well calibrated, so the service level a store chooses sets the quantile to plan for."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Backtest the forecasters and check their intervals",
+        "tool": "Python",
+        "minutes": 60,
+        "goal": "Backtest seasonal naive, ETS, SARIMA and gradient boosting from six origins, compare MAE, RMSE, MAPE, WAPE and MASE, see MAPE break on a small-count series, and check the coverage of two kinds of 80% interval.",
+        "setup": [
+          "Your course folder, with demand.csv, ts_common.py and your completed lab4_boosting.py (this lab imports its features function)",
+          "The starter file lab5_backtest.py; it fits 24 models and takes a few minutes"
+        ],
+        "steps": [
+          {
+            "do": "Read the loop: TimeSeriesSplit(n_splits=6, test_size=28) gives six origins from 16 July to 3 December 2025, and every model is refitted at each one."
+          },
+          {
+            "do": "Complete TODO 1: SARIMA's 80% interval, taken on the log scale and turned back into sachets.",
+            "code": "sar_lo, sar_hi = np.exp(pred.conf_int(alpha=0.2)).to_numpy().T",
+            "lang": "python"
+          },
+          {
+            "do": "Complete TODO 2: an empirical 80% interval for gradient boosting from the errors of the earlier folds.",
+            "code": "lo, hi = np.quantile(np.concatenate(gb_errors), [0.1, 0.9])",
+            "lang": "python"
+          },
+          {
+            "do": "Run the script.",
+            "code": "python lab5_backtest.py",
+            "lang": "bash",
+            "see": "SARIMA wins on every metric (MAE 20.0, WAPE 6.2, MASE 0.401); ETS barely beats seasonal naive (MASE 0.962)."
+          },
+          {
+            "do": "Read the amoxicillin section: 2 of the 168 days are zero, so MAPE is infinite, and on the other days scaling the forecast down by 20% lowers MAPE while MAE and WAPE get worse."
+          },
+          {
+            "do": "Read the interval coverage: SARIMA's 80% intervals cover 0.905 of the backtest days and the empirical ones 0.729."
+          },
+          {
+            "do": "Write a recommendation of at most 150 words: the model and metric you'd use for the four-weekly order, and how you'd adjust the intervals."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The backtest uses six 28-day folds, the first from 2025-07-17 and the last ending 2025-12-31.",
+            "look_for": [
+              "2025-07-17",
+              "2025-12-31"
+            ]
+          },
+          {
+            "text": "SARIMA has the lowest errors: MAE 20.0, RMSE 28.1, WAPE 6.2 and MASE 0.401.",
+            "look_for": [
+              "20.0",
+              "28.1",
+              "0.401"
+            ]
+          },
+          {
+            "text": "Gradient boosting comes second (MASE 0.593), and ETS and seasonal naive score MASE 0.962 and 0.983.",
+            "look_for": [
+              "0.593",
+              "0.962",
+              "0.983"
+            ]
+          },
+          {
+            "text": "MAPE breaks on amoxicillin: infinite with 2 zero days, and lower (40.0 against 42.3) for a forecast scaled down by 20% that has a worse MAE (3.84 against 3.14).",
+            "look_for": [
+              "inf",
+              "40.0",
+              "42.3",
+              "3.84"
+            ]
+          },
+          {
+            "text": "Interval coverage is checked: 0.905 for SARIMA's 80% intervals and 0.729 for the empirical ones.",
+            "look_for": [
+              "0.905",
+              "0.729"
+            ]
+          },
+          {
+            "text": "The recommendation picks a metric in units, such as MAE or WAPE, rather than MAPE, and says SARIMA's intervals are wider than they need to be.",
+            "look_for": [
+              "WAPE"
+            ]
+          }
+        ],
+        "submit": "Paste your two completed TODOs, the script's output and your recommendation.",
+        "files": [
+          {
+            "path": "lab5_backtest.py",
+            "content": "\"\"\"Lab 5: backtest four forecasters from six origins, compare metrics, and check prediction intervals.\"\"\"\n\nimport warnings\n\nimport numpy as np\nimport pandas as pd\nfrom sklearn.ensemble import HistGradientBoostingRegressor\nfrom sklearn.model_selection import TimeSeriesSplit\nfrom statsmodels.tsa.exponential_smoothing.ets import ETSModel\nfrom statsmodels.tsa.statespace.sarimax import SARIMAX\n\nfrom lab4_boosting import features\nfrom ts_common import HORIZON, calendar, clean_series, load, scores\n\nwarnings.filterwarnings(\"ignore\")\ny = clean_series(load())\nX = calendar(y.index)\nF = features(y)\ngb_target = np.log(y / F[\"mean28\"])\nrows = []                                            # one row per model, day and fold\ngb_errors = []                                       # log(actual / forecast) from earlier folds\n\n# Six folds, each testing the 28 days after its origin and training on everything before it\nsplits = TimeSeriesSplit(n_splits=6, test_size=HORIZON)\nfor fold, (tr, te) in enumerate(splits.split(y), 1):\n    train, test = y.iloc[tr], y.iloc[te]\n    fc = {\"seasonal naive\": np.tile(train.iloc[-7:].to_numpy(), 4)}\n    ets = ETSModel(np.log(train), error=\"add\", trend=\"add\", damped_trend=True, seasonal=\"add\",\n                   seasonal_periods=7).fit(disp=False)\n    fc[\"ETS\"] = np.exp(ets.forecast(HORIZON)).to_numpy()\n    sar = SARIMAX(np.log(train), exog=X.iloc[tr], order=(1, 0, 0), seasonal_order=(0, 1, 1, 7)).fit(disp=False)\n    pred = sar.get_forecast(HORIZON, exog=X.iloc[te])\n    fc[\"SARIMA\"] = np.exp(pred.predicted_mean).to_numpy()\n    # TODO 1: SARIMA's 80% prediction interval, from conf_int(alpha=0.2), back on the original scale\n    sar_lo = sar_hi = fc[\"SARIMA\"]\n    ok = F.iloc[tr].notna().all(axis=1).to_numpy()\n    gb = HistGradientBoostingRegressor(max_iter=300, learning_rate=0.05, random_state=0)\n    gb.fit(F.iloc[tr][ok], gb_target.iloc[tr][ok])\n    fc[\"gradient boosting\"] = (F.iloc[te][\"mean28\"] * np.exp(gb.predict(F.iloc[te]))).to_numpy()\n    # TODO 2: an empirical 80% interval from the 10th and 90th percentiles of earlier folds' errors\n    if gb_errors:\n        lo, hi = 0.0, 0.0\n        emp_lo, emp_hi = fc[\"gradient boosting\"] * np.exp(lo), fc[\"gradient boosting\"] * np.exp(hi)\n    else:\n        emp_lo = emp_hi = np.full(HORIZON, np.nan)\n    gb_errors.append(np.log(test.to_numpy() / fc[\"gradient boosting\"]))\n    for name, f in fc.items():\n        rows.append(pd.DataFrame({\"model\": name, \"fold\": fold, \"date\": test.index, \"h\": np.arange(1, HORIZON + 1),\n                                  \"actual\": test.to_numpy(), \"forecast\": f,\n                                  \"sar_lo\": sar_lo, \"sar_hi\": sar_hi, \"emp_lo\": emp_lo, \"emp_hi\": emp_hi}))\n    print(f\"Fold {fold}: origin {train.index[-1].date()}, tests {test.index[0].date()} to {test.index[-1].date()}\")\n\nbt = pd.concat(rows, ignore_index=True)\nfirst_train = y.iloc[:len(y) - 6 * HORIZON]\n\n# Every metric for every model over all 168 backtest days\nprint(f\"\\n{'model':18} {'MAE':>7} {'RMSE':>7} {'MAPE':>7} {'WAPE':>7} {'MASE':>7}\")\nfor name, g in bt.groupby(\"model\", sort=False):\n    s = scores(g[\"actual\"], g[\"forecast\"], first_train)\n    print(f\"{name:18} {s['MAE']:7.1f} {s['RMSE']:7.1f} {s['MAPE']:7.1f} {s['WAPE']:7.1f} {s['MASE']:7.3f}\")\n\nsar = bt[bt[\"model\"] == \"SARIMA\"].copy()\nby_week = sar.groupby((sar[\"h\"] - 1) // 7 + 1).apply(lambda g: np.mean(np.abs(g.actual - g.forecast)))\nprint(\"\\nSARIMA MAE by week of the horizon:\", by_week.round(1).tolist())\n\n# MAPE's traps on a small-count series: amoxicillin, forecast with the mean of each weekday over the last 4 weeks\namox = clean_series(load(), \"amoxicillin_courses\")\nparts = []\nfor tr, te in splits.split(amox):\n    recent = amox.iloc[tr].iloc[-28:]\n    profile = recent.groupby(recent.index.dayofweek).mean()\n    parts.append(pd.DataFrame({\"actual\": amox.iloc[te].to_numpy(),\n                               \"forecast\": profile.reindex(amox.index[te].dayofweek).to_numpy()}))\nam = pd.concat(parts, ignore_index=True)\nnonzero = am[\"actual\"] > 0\nprint(f\"\\nAmoxicillin: {int((~nonzero).sum())} of {len(am)} backtest days are zero\")\nfor k in (1.0, 0.8):\n    s, s_nz = scores(am[\"actual\"], k * am[\"forecast\"]), scores(am[\"actual\"][nonzero], k * am[\"forecast\"][nonzero])\n    print(f\"Forecast x{k}: MAE {s['MAE']:.2f}, WAPE {s['WAPE']:.1f}, MAPE {s['MAPE']}, MAPE on non-zero days {s_nz['MAPE']:.1f}\")\n\ncover = ((sar[\"actual\"] >= sar[\"sar_lo\"]) & (sar[\"actual\"] <= sar[\"sar_hi\"])).mean()\nprint(f\"\\nSARIMA 80% intervals: coverage {cover:.3f}, mean width {np.mean(sar['sar_hi'] - sar['sar_lo']):.1f}\")\ngbe = bt[(bt[\"model\"] == \"gradient boosting\") & bt[\"emp_lo\"].notna()]\ncover = ((gbe[\"actual\"] >= gbe[\"emp_lo\"]) & (gbe[\"actual\"] <= gbe[\"emp_hi\"])).mean()\nprint(f\"Gradient boosting, empirical 80% intervals (folds 2-6): coverage {cover:.3f}, \"\n      f\"mean width {np.mean(gbe['emp_hi'] - gbe['emp_lo']):.1f}\")\n"
+          }
+        ],
+        "hints": [
+          "conf_int() returns a DataFrame with a lower and an upper column; .to_numpy().T splits it into two arrays.",
+          "Fold 1 has no earlier errors to calibrate an empirical interval, so its coverage is measured on folds 2 to 6.",
+          "MASE uses the in-sample MAE of a weekly seasonal naive forecast on the data before the first origin."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Prepare the series in pandas, decompose it with MSTL and score the baselines in lab 1.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Test stationarity, choose the differencing and read the ACF and PACF in lab 2.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Fit ETS and SARIMA models with calendar regressors, choose by AIC and check residuals in lab 3.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Build leak-free lag features and forecast with gradient boosting in lab 4.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Backtest all four forecasters, compare metrics and check interval coverage in lab 5.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Forecast three medicines for the capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Four-week medicine forecasts for the district store",
+    "minutes": 420,
+    "brief": "The district medical store orders oral rehydration salts, paracetamol and amoxicillin every four weeks, and wants forecasts it can trust for 1 to 28 January 2026. Using demand.csv, forecast all three medicines daily with 80% prediction intervals, backed by a backtest from at least six origins. The series differ: ORS has a strong rainy-season peak and campaign spikes, paracetamol peaks in the cold season, and amoxicillin is small counts with some zero days, so a metric or method that suits one may not suit another. Choose a method per medicine with reasons, check its residuals and its interval coverage, and give the store a 28-day total for each medicine with an upper planning figure. Finish with a one-page note for the store manager.",
+    "deliverables": [
+      "A backtest of at least three methods per medicine, including seasonal naive, from at least six origins, with MAE, WAPE and MASE (and MAPE only where it's defined and meaningful)",
+      "Your chosen method for each medicine, with the reason and its residual checks",
+      "Daily forecasts for 1 to 28 January 2026 with 80% prediction intervals, and those intervals' coverage in your backtest",
+      "A 28-day total for each medicine with an upper planning figure, such as its 90th percentile, and how you worked it out",
+      "A one-page note for the store manager: the forecasts, how far to trust them, and what would change them, such as a campaign added to the plan"
+    ],
+    "rubric": [
+      {
+        "name": "Backtest design",
+        "points": 20,
+        "description": "Rolling origins with refits, no information from after each origin, the same folds for every method, and errors examined by horizon."
+      },
+      {
+        "name": "Model choice and diagnostics",
+        "points": 20,
+        "description": "Methods suit each series, orders or settings are justified, and residuals are checked for leftover structure."
+      },
+      {
+        "name": "Metrics fit for purpose",
+        "points": 15,
+        "description": "Metrics match the ordering decision, MAPE is avoided or handled where actuals are small or zero, and MASE compares series fairly."
+      },
+      {
+        "name": "Intervals and coverage",
+        "points": 20,
+        "description": "80% intervals are produced for every day, their backtest coverage is reported, and they're adjusted when coverage is far from 80%."
+      },
+      {
+        "name": "Forecasts and planning figures",
+        "points": 10,
+        "description": "January forecasts handle the 1 January holiday, and the 28-day totals and upper figures are computed correctly, not by adding daily percentiles."
+      },
+      {
+        "name": "Communication",
+        "points": 15,
+        "description": "The note is clear to a store manager, honest about uncertainty and specific about what would change the forecasts."
+      }
+    ],
+    "submit": "Paste your code (or a link to your notebook), the backtest tables, the January forecasts with intervals, the 28-day totals and the note.",
+    "files": []
+  }
+}

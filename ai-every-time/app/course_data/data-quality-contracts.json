@@ -1,0 +1,908 @@
+{
+  "slug": "data-quality-contracts",
+  "title": "Data Quality, Testing and Data Contracts",
+  "subtitle": "Measure data quality, test data in pipelines with pandera, agree data contracts between producers and consumers, and catch and handle bad data before it does harm.",
+  "category": "Data Engineering",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "tatianna-morrison",
+    "ximena-castillo"
+  ],
+  "skills": [
+    "Data quality dimensions",
+    "Data profiling",
+    "Data validation with pandera",
+    "Data contracts",
+    "Schema evolution",
+    "Data observability",
+    "Anomaly detection",
+    "Data lineage",
+    "Data incident response"
+  ],
+  "tools": [
+    "Python",
+    "pandas",
+    "pandera",
+    "pytest",
+    "PyYAML",
+    "DuckDB"
+  ],
+  "outcomes": [
+    "Measure data against the six common dimensions of quality and report the results as a scorecard",
+    "Write pandera schemas and unit tests that validate data in a pipeline and quarantine the rows that fail",
+    "Write a data contract and classify schema changes as safe or breaking for the consumers who rely on it",
+    "Monitor freshness, volume and distributions with checks that respect seasonality, and use lineage to find impact and causes",
+    "Stop bad data with write-audit-publish, and run a data incident from detection to a blameless review"
+  ],
+  "prerequisites": "Python with pandas, as in Data Analysis with Python and pandas, and basic SQL from SQL for Data Analysis with DataGrip. Data Engineering Foundations: Batch and Streaming Pipelines helps. Install Python 3.10 or later and pip install \"pandera[pandas]\" pytest pyyaml duckdb. Monitoring Models in Production: Drift, Data Quality and Alerts and Site Reliability Engineering: SLOs, Error Budgets and Incidents make good next steps.",
+  "description": "Bad data rarely announces itself. A temperature typed in Fahrenheit, a clinic code that doesn't exist, a nightly load that quietly stopped: each one passes through a pipeline and ends up in a dashboard, a report or a model that someone trusts. This course teaches the practices that catch these problems early and handle them well when they slip through. You'll measure quality along the six common dimensions, write data tests as code with pandera and unit-test the rules themselves, and agree data contracts that say what producers promise and what consumers can rely on, with a checker that spots breaking changes before they ship.\n\nThe second half moves to production: freshness and volume monitors, anomaly checks that don't cry wolf every Sunday, lineage that tells you who an incident affects, and the write-audit-publish pattern and circuit breakers that keep bad batches away from the people who rely on them. Every lab works on the same clinic network's data, with problems planted at known places, so you can see exactly what each check catches and what it misses. The capstone has you build the whole layer for a pipeline and run a game day against it.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "What data quality means, and how to measure it",
+      "summary": "The dimensions of data quality, how to turn them into rules you can measure, and where in a pipeline quality breaks, with a scorecard built for a clinic network's visit extract.",
+      "instructor": "tatianna-morrison",
+      "lessons": [
+        {
+          "title": "The dimensions of data quality",
+          "minutes": 12,
+          "objectives": [
+            "Define the common dimensions of data quality, with examples",
+            "Explain why quality means fitness for a particular use"
+          ],
+          "key_points": [
+            "Data quality means fitness for an intended use: the same table can be good enough for a monthly trend chart and not good enough for calling individual patients back.",
+            "A widely used set of six dimensions, popularised by DAMA UK, is completeness, uniqueness, validity, accuracy, consistency and timeliness.",
+            "Completeness asks whether required values are present, uniqueness whether each real-world thing is recorded once, and validity whether values follow the rules for type, format, range and allowed values.",
+            "Accuracy asks whether values match reality, which the data alone can't prove: it needs a trusted reference, such as a sample checked against paper registers or another system of record.",
+            "Consistency asks whether values agree, within a row (a visit can't be recorded before it happened) or across datasets; timeliness asks whether data is available and up to date when it's needed.",
+            "A value can be valid but inaccurate, such as a plausible weight typed wrongly, so validity checks catch only part of the problem."
+          ]
+        },
+        {
+          "title": "Turning dimensions into measurable rules",
+          "minutes": 12,
+          "objectives": [
+            "Write data quality rules as testable assertions",
+            "Profile a dataset and report a quality scorecard"
+          ],
+          "key_points": [
+            "A data quality rule is a testable assertion about the data, such as 'age_years is between 0 and 120', which each row either passes or fails.",
+            "Measure each rule as a count of failing rows and a pass rate, and compare the rate with a threshold agreed with the people who use the data, rather than expecting perfection.",
+            "Profiling, counting rows, nulls, distinct values, minimums, maximums and the most frequent values in each column, is the quick first look that suggests which rules to write.",
+            "One bad value can break several rules, such as a visit date in the future that also makes the record look as if it was written before the visit, so count failing rows as well as failed checks.",
+            "Report quality as a scorecard grouped by dimension and tracked over time, so problems are visible and improvements can be measured."
+          ]
+        },
+        {
+          "title": "Where quality breaks in a pipeline",
+          "minutes": 11,
+          "objectives": [
+            "Identify where in a pipeline different quality problems arise",
+            "Explain why checks belong as close to the source as possible"
+          ],
+          "key_points": [
+            "At the source, people and systems enter wrong, missing or duplicated values, such as a temperature typed in Fahrenheit into a Celsius field.",
+            "In transit, files arrive late, twice or not at all, schemas change without warning, and encodings or time zones are misread.",
+            "In transformation, a join on a non-unique key multiplies rows, a filter silently drops records, and an inner join loses rows whose keys don't match.",
+            "Over time, data goes stale, reference lists drift and distributions shift, so checks that passed last month can fail without any code changing.",
+            "Problems are cheapest to fix close to where they start: shifting left means validating at ingestion and agreeing rules with the producers, not only cleaning up in the warehouse."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Score a clinic extract on six dimensions",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Profile a visit extract with known problems, write a rule in pandas for each dimension, and report a scorecard, including an accuracy rate measured against a sample checked on paper.",
+        "setup": [
+          "Python 3.10 or later, with a virtual environment and pandas (pip install pandas)",
+          "The starter files make_visits.py and profile.py in a new lab folder; the later labs use the same folder and its data"
+        ],
+        "steps": [
+          {
+            "do": "Create the data: a 404-row visit extract taken on 31 March 2025, the clinic list, and a register sample of 20 visits whose weights were checked against the paper registers.",
+            "code": "python make_visits.py",
+            "lang": "bash",
+            "see": "visits.csv: 404 rows; clinics.csv: 8 rows; extract date 2025-03-31"
+          },
+          {
+            "do": "Run profile.py as it is. It profiles the nulls, checks three rules and measures accuracy.",
+            "code": "python profile.py",
+            "lang": "bash",
+            "see": "404 rows, 9 columns, Null counts: {'patient_ref': 6}, and weights match the register in 17 of 20."
+          },
+          {
+            "do": "TODO: add the six rules listed in rules(). Each is a boolean Series that is True where a row passes, for example:",
+            "code": "\"validity: clinic_id is a known clinic\": visits[\"clinic_id\"].isin(clinics[\"clinic_id\"]),",
+            "lang": "python"
+          },
+          {
+            "do": "Run it again and read the scorecard.",
+            "code": "python profile.py",
+            "lang": "bash",
+            "see": "Nine rules, with 10 rows recorded late and 5 recorded before their visit; Rows passing every rule: 364 of 404."
+          },
+          {
+            "do": "Look at the rows that fail the consistency rule. Two of them are also the two visits dated after the extract: one bad value, two broken rules.",
+            "code": "import pandas as pd\nv = pd.read_csv(\"data/visits.csv\", parse_dates=[\"visit_date\", \"recorded_at\"])\nprint(v[v[\"recorded_at\"] < v[\"visit_date\"]][[\"visit_id\", \"visit_date\", \"recorded_at\"]])",
+            "lang": "python"
+          },
+          {
+            "do": "For two uses, the monthly malaria dashboard and calling patients back with positive results, write which failing rules should block the data, which should warn, and which can just be reported."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The extract is profiled and the missing patient references found.",
+            "look_for": [
+              "404 rows, 9 columns",
+              "{'patient_ref': 6}"
+            ]
+          },
+          {
+            "text": "Rules cover validity, consistency and timeliness.",
+            "look_for": [
+              "validity: clinic_id is a known clinic",
+              "consistency: recorded_at not before visit_date",
+              "timeliness: recorded within 2 days"
+            ]
+          },
+          {
+            "text": "The scorecard counts the rows that pass every rule.",
+            "look_for": [
+              "Rows passing every rule: 364 of 404"
+            ]
+          },
+          {
+            "text": "Accuracy is measured against the register sample.",
+            "look_for": [
+              "17 of 20 sampled visits"
+            ]
+          },
+          {
+            "text": "Thresholds are chosen separately for the dashboard and for calling patients.",
+            "look_for": [
+              "dashboard",
+              "block"
+            ]
+          }
+        ],
+        "submit": "Paste your six rules, the output of python profile.py, the consistency rows, and your table of block, warn or report decisions for the two uses.",
+        "files": [
+          {
+            "path": "make_visits.py",
+            "content": "\"\"\"Write the clinic network's visit extract, with known data quality problems, to the data folder.\n\nOnly random.Random(11).random() is used, so every computer writes exactly the same rows.\nRun:  python make_visits.py\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, datetime, timedelta\nfrom pathlib import Path\n\nOUT = Path(\"data\")\nEXTRACT_DATE = date(2025, 3, 31)          # the day this extract was taken\nrng = random.Random(11)\n\n\ndef between(lo, hi):\n    return lo + int(rng.random() * (hi - lo + 1))\n\n\nCLINICS = [(\"C01\", \"Pisac Health Post\", \"Calca\"), (\"C02\", \"Urubamba Clinic\", \"Urubamba\"),\n           (\"C03\", \"Ollantaytambo Clinic\", \"Urubamba\"), (\"C04\", \"Calca Health Centre\", \"Calca\"),\n           (\"C05\", \"Chinchero Health Post\", \"Urubamba\"), (\"C06\", \"Maras Health Post\", \"Urubamba\"),\n           (\"C07\", \"Lamay Clinic\", \"Calca\"), (\"C08\", \"Yucay Health Post\", \"Urubamba\")]\nTESTS = [\"negative\", \"negative\", \"negative\", \"positive\", \"not_done\"]\n\n\ndef visit(n):\n    day = date(2025, 3, 1) + timedelta(days=between(0, 29))\n    recorded = datetime(day.year, day.month, day.day, 8) + timedelta(minutes=between(0, 36 * 60))\n    age = between(0, 85)\n    weight = round(3.5 + age * 0.9 if age < 18 else 48 + rng.random() * 40, 1)\n    return {\"visit_id\": f\"V{n:05d}\", \"patient_ref\": f\"P{between(1000, 1999)}\", \"clinic_id\": CLINICS[between(0, 7)][0],\n            \"visit_date\": day.isoformat(), \"age_years\": age, \"weight_kg\": weight,\n            \"temperature_c\": round(36.1 + rng.random() * 2.8, 1), \"malaria_test\": TESTS[between(0, 4)],\n            \"recorded_at\": recorded.isoformat(sep=\" \")}\n\n\ndef main():\n    OUT.mkdir(exist_ok=True)\n    rows = [visit(n) for n in range(1, 401)]\n    for i in (12, 57, 101, 188, 240, 333):                  # completeness: no patient reference\n        rows[i][\"patient_ref\"] = \"\"\n    for i, age in ((20, -1), (90, 140), (150, 230), (260, -4), (377, 199)):   # validity: impossible ages\n        rows[i][\"age_years\"] = age\n    for i, temp in ((33, 98.6), (144, 101.3), (299, 99.1)):  # validity: recorded in Fahrenheit\n        rows[i][\"temperature_c\"] = temp\n    for i in (5, 77, 210, 355):                              # validity: a clinic that doesn't exist\n        rows[i][\"clinic_id\"] = \"C99\"\n    for i in (64, 128, 192):                                 # validity: inconsistent spelling\n        rows[i][\"malaria_test\"] = \"Positive \"\n    for i in (45, 170, 315):                                 # consistency: recorded before the visit\n        d = date.fromisoformat(rows[i][\"visit_date\"])\n        rows[i][\"recorded_at\"] = datetime(d.year, d.month, d.day, 7) - timedelta(days=2)\n    for i in range(380, 390):                                # timeliness: recorded 9 days after the visit\n        d = date.fromisoformat(rows[i][\"visit_date\"])\n        rows[i][\"visit_date\"] = (d - timedelta(days=9)).isoformat() if d.day > 10 else rows[i][\"visit_date\"]\n        rows[i][\"recorded_at\"] = datetime(d.year, d.month, d.day, 16) + timedelta(days=0 if d.day > 10 else 9)\n    for i in (395, 398):                                     # validity: a visit date after the extract date\n        rows[i][\"visit_date\"] = \"2025-04-12\"\n        rows[i][\"recorded_at\"] = \"2025-03-30 09:15:00\"\n    rows += [dict(rows[i]) for i in (3, 99, 205, 311)]       # uniqueness: the same visit sent twice\n    for r in rows:\n        r[\"recorded_at\"] = str(r[\"recorded_at\"])\n    with open(OUT / \"visits.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.DictWriter(f, fieldnames=list(rows[0]))\n        w.writeheader()\n        w.writerows(rows)\n    with open(OUT / \"clinics.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"clinic_id\", \"clinic_name\", \"district\"])\n        w.writerows(CLINICS)\n    with open(OUT / \"register_check.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:   # a paper-register audit\n        w = csv.writer(f)\n        w.writerow([\"visit_id\", \"weight_kg\"])\n        for i in range(0, 400, 20):\n            weight = rows[i][\"weight_kg\"]\n            w.writerow([rows[i][\"visit_id\"], round(weight + 10, 1) if i in (40, 160, 280) else weight])\n    print(f\"visits.csv: {len(rows)} rows; clinics.csv: {len(CLINICS)} rows; extract date {EXTRACT_DATE}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "profile.py",
+            "content": "\"\"\"Score the visit extract against data quality rules, grouped by dimension.\n\nUsage:  python profile.py\n\"\"\"\nimport pandas as pd\n\nEXTRACT_DATE = pd.Timestamp(\"2025-03-31\")\nALLOWED_TESTS = [\"negative\", \"positive\", \"not_done\"]\n\n\ndef load():\n    visits = pd.read_csv(\"data/visits.csv\", parse_dates=[\"visit_date\", \"recorded_at\"])\n    clinics = pd.read_csv(\"data/clinics.csv\")\n    register = pd.read_csv(\"data/register_check.csv\")\n    return visits, clinics, register\n\n\ndef rules(visits, clinics):\n    \"\"\"Each rule is a boolean Series: True where a row passes.\"\"\"\n    delay = visits[\"recorded_at\"] - visits[\"visit_date\"]\n    return {\n        \"completeness: patient_ref is present\": visits[\"patient_ref\"].notna(),\n        \"uniqueness: no repeated visit_id\": ~visits[\"visit_id\"].duplicated(keep=\"first\"),\n        \"validity: age_years between 0 and 120\": visits[\"age_years\"].between(0, 120),\n        # TODO: add these rules, named in the same style:\n        #   validity: temperature_c between 30 and 45\n        #   validity: malaria_test is an allowed value      (one of ALLOWED_TESTS)\n        #   validity: clinic_id is a known clinic           (in clinics[\"clinic_id\"])\n        #   validity: visit_date not after the extract      (EXTRACT_DATE)\n        #   consistency: recorded_at not before visit_date\n        #   timeliness: recorded within 2 days              (use delay)\n    }\n\n\ndef accuracy(visits, register):\n    \"\"\"Accuracy needs a trusted reference: compare weights with a sample checked against paper registers.\"\"\"\n    sample = register.merge(visits.drop_duplicates(\"visit_id\"), on=\"visit_id\", suffixes=(\"_register\", \"\"))\n    matches = (sample[\"weight_kg\"] == sample[\"weight_kg_register\"]).sum()\n    return matches, len(sample)\n\n\ndef main():\n    visits, clinics, register = load()\n    print(f\"{len(visits)} rows, {visits.shape[1]} columns\")\n    print(\"Null counts:\", {c: int(n) for c, n in visits.isna().sum().items() if n})\n    results = rules(visits, clinics)\n    for name, passed in results.items():\n        print(f\"{name:<48} {int((~passed).sum()):>3} failing  {passed.mean():6.1%} pass\")\n    every = pd.concat(results, axis=1).all(axis=1)\n    print(f\"Rows passing every rule: {int(every.sum())} of {len(visits)}\")\n    matches, checked = accuracy(visits, register)\n    print(f\"accuracy: weight matches the register in {matches} of {checked} sampled visits\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "Series.between(30, 45) includes both ends.",
+          "Subtracting two datetime columns gives a timedelta; compare it with pd.Timedelta(days=2).",
+          "duplicated(keep=\"first\") marks the second and later copies, so it counts extra copies."
+        ]
+      }
+    },
+    {
+      "title": "Testing data with pandera",
+      "summary": "Data validation as code: pandera schemas and checks, lazy validation and failure reports, quarantine, unit tests for the rules themselves, and how Great Expectations, Soda and dbt tests compare.",
+      "instructor": "ximena-castillo",
+      "lessons": [
+        {
+          "title": "Schemas and checks in pandera",
+          "minutes": 13,
+          "objectives": [
+            "Write a pandera DataFrameSchema with column types and checks",
+            "Choose between object-based and class-based schemas"
+          ],
+          "key_points": [
+            "pandera validates dataframes against a schema written in Python; install it with pip install \"pandera[pandas]\", and current versions import the pandas API with import pandera.pandas as pa.",
+            "A DataFrameSchema maps column names to Column objects, each with a data type, checks, and options such as nullable, unique and required; coerce=True converts types, such as text to datetimes, before checking.",
+            "Built-in checks include Check.in_range, Check.isin, Check.str_matches and comparisons such as Check.le; a custom check is a function returning a boolean or a boolean Series.",
+            "Checks given to the schema itself see the whole DataFrame, which suits rules across columns, such as recorded_at not being before visit_date; strict=True rejects columns the schema doesn't know.",
+            "The class-based DataFrameModel declares the same rules as typed attributes with Field(...), and the @pa.check_types decorator validates a function's DataFrame arguments and result when it's called.",
+            "A check created with raise_warning=True issues a warning instead of failing, for rules worth watching but not worth stopping a pipeline for."
+          ]
+        },
+        {
+          "title": "Validating in a pipeline: failures, quarantine and tests",
+          "minutes": 12,
+          "objectives": [
+            "Collect and report every failure with lazy validation",
+            "Quarantine failing rows, and unit-test the rules themselves"
+          ],
+          "key_points": [
+            "By default, validation stops at the first failure with a SchemaError; validate(df, lazy=True) runs every check and raises SchemaErrors, whose failure_cases table lists each failing value, column, check and row index.",
+            "Grouping failure_cases by check reports what failed and how often, and the row index separates the valid rows from the rows to quarantine, with their reasons.",
+            "Quarantine keeps good rows flowing while bad ones wait, with their reasons, to be fixed and replayed; use it only where partial data is acceptable, and reject the whole batch where it isn't.",
+            "Data rules are code, so unit-test them: give each rule a row that passes and a row that breaks it, and run the tests with pytest whenever the schema changes.",
+            "Validate at the boundaries: when data enters the pipeline, after transformations that could break it, and before it's published to the people and systems that rely on it."
+          ],
+          "walkthrough": {
+            "tool": "Python REPL",
+            "title": "Read a pandera failure report",
+            "steps": [
+              {
+                "do": "In your lab folder, once the module 2 schema is finished, start Python and load the extract and the schema.",
+                "code": "import pandas as pd\nimport pandera.pandas as pa\nfrom visit_schema import visit_schema\nvisits = pd.read_csv(\"data/visits.csv\", dtype={\"patient_ref\": \"string\"})\nclinic_ids = pd.read_csv(\"data/clinics.csv\")[\"clinic_id\"].tolist()\nschema = visit_schema(clinic_ids, pd.Timestamp(\"2025-03-31\"))",
+                "lang": "python"
+              },
+              {
+                "do": "Validate the default way: pandera stops at the first failure.",
+                "code": "schema.validate(visits)",
+                "lang": "python",
+                "see": "SchemaError: series 'visit_id' contains duplicate values, and nothing about the rest."
+              },
+              {
+                "do": "Validate lazily and keep the error, which carries every failure.",
+                "code": "try:\n    schema.validate(visits, lazy=True)\nexcept pa.errors.SchemaErrors as e:\n    err = e\nerr.failure_cases.shape",
+                "lang": "python",
+                "see": "(72, 6): columns schema_context, column, check, check_number, failure_case and index."
+              },
+              {
+                "do": "Count failure cases by check.",
+                "code": "err.failure_cases.groupby(\"check\").size()",
+                "lang": "python",
+                "see": "not_nullable 6 and field_uniqueness 4, but 45 for the dataframe-wide check: it reports all nine columns of each of its 5 failing rows."
+              },
+              {
+                "do": "Count failing rows instead, which is what a quarantine report needs.",
+                "code": "err.failure_cases.groupby(\"check\")[\"index\"].nunique()\nerr.failure_cases[\"index\"].nunique()",
+                "lang": "python",
+                "see": "5 rows for the dataframe-wide check, and 30 rows failing at least one check."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Other tools: Great Expectations, Soda and dbt tests",
+          "minutes": 10,
+          "objectives": [
+            "Compare pandera with other data testing tools",
+            "Choose a tool for where the data lives"
+          ],
+          "key_points": [
+            "Great Expectations describes rules as expectations, such as expect_column_values_to_be_between, grouped into suites and run against batches of data, with results published as human-readable Data Docs.",
+            "Soda writes checks in a YAML-based language, SodaCL, and runs them as SQL in the warehouse, which suits data that never leaves the database.",
+            "dbt has generic data tests (unique, not_null, accepted_values and relationships) declared in YAML next to the models they test, plus singular tests written as SQL queries that return the failing rows.",
+            "pandera suits Python pipelines and dataframes in memory, and warehouse tools suit SQL pipelines; whichever you choose, keep the rules in version control and run them automatically on every load.",
+            "Tests of code and tests of data catch different problems: correct code can still receive bad data, so pipelines need both."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Validate and quarantine visits with pandera",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Finish a pandera schema for the visits until its unit tests pass, then validate the whole extract lazily, report every failure by check, and split the rows into a clean file and a quarantine file with reasons.",
+        "setup": [
+          "Your module 1 lab folder, with its data folder",
+          "pandera, pytest and pandas in your virtual environment: pip install \"pandera[pandas]\" pytest",
+          "The starter files visit_schema.py, validate_visits.py and test_visit_schema.py"
+        ],
+        "steps": [
+          {
+            "do": "Read visit_schema.py and run the tests. They give each rule a row that breaks it, so they describe what the schema must do.",
+            "code": "pytest -q",
+            "lang": "bash",
+            "see": "4 failed, 6 passed: four rules are missing."
+          },
+          {
+            "do": "TODO: complete the schema: clinic_id in the clinic list, temperature_c between 30 and 45, malaria_test one of ALLOWED_TESTS, and a dataframe-wide check that recorded_at isn't before visit_date.",
+            "code": "pa.Check(lambda df: df[\"recorded_at\"] >= df[\"visit_date\"], name=\"recorded_after_visit\",\n         error=\"recorded_at is before visit_date\")",
+            "lang": "python"
+          },
+          {
+            "do": "Run the tests until they all pass.",
+            "code": "pytest -q",
+            "lang": "bash",
+            "see": "10 passed"
+          },
+          {
+            "do": "Validate the extract. Validation is lazy, so every failure is collected; failing rows go to quarantine with their reasons and the rest to the clean folder.",
+            "code": "python validate_visits.py",
+            "lang": "bash",
+            "see": "A warning about late recording, the rows failing each check, then valid rows: 374; quarantined rows: 30."
+          },
+          {
+            "do": "Open quarantine/visits_rejected.csv and find V00396: it fails two checks, so it's listed once with both reasons."
+          },
+          {
+            "do": "The timeliness rule only warns. Explain in two sentences why it's a warning here, and what would make you turn it into a failure."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The unit tests all pass.",
+            "look_for": [
+              "10 passed"
+            ]
+          },
+          {
+            "text": "Every rule's failures are counted.",
+            "look_for": [
+              "patient_ref: not_nullable: 6",
+              "visit_id: field_uniqueness: 4",
+              "row: recorded_at is before visit_date: 5"
+            ]
+          },
+          {
+            "text": "Clinic, temperature and test-value failures are found.",
+            "look_for": [
+              "temperature_c: in_range(30, 45): 3",
+              "malaria_test: isin"
+            ]
+          },
+          {
+            "text": "Rows are split into valid and quarantined.",
+            "look_for": [
+              "valid rows: 374; quarantined rows: 30"
+            ]
+          },
+          {
+            "text": "The late-recording rule warns instead of failing, with an explanation.",
+            "look_for": [
+              "recorded more than 2 days late"
+            ]
+          }
+        ],
+        "submit": "Paste your completed visit_schema.py, the pytest summary, the output of validate_visits.py, the quarantine line for V00396, and your two sentences.",
+        "files": [
+          {
+            "path": "visit_schema.py",
+            "content": "\"\"\"The rules a visit row must follow, as a pandera schema.\"\"\"\nimport pandas as pd\nimport pandera.pandas as pa\n\nALLOWED_TESTS = [\"negative\", \"positive\", \"not_done\"]\n\n\ndef visit_schema(clinic_ids, extract_date):\n    return pa.DataFrameSchema(\n        columns={\n            \"visit_id\": pa.Column(str, pa.Check.str_matches(r\"^V\\d{5}$\"), unique=True,\n                                  report_duplicates=\"exclude_first\"),\n            \"patient_ref\": pa.Column(str, pa.Check.str_matches(r\"^P\\d{4}$\"), nullable=False),\n            \"clinic_id\": pa.Column(str),          # TODO: only the clinics in clinic_ids\n            \"visit_date\": pa.Column(pa.DateTime, pa.Check.le(extract_date)),\n            \"age_years\": pa.Column(int, pa.Check.in_range(0, 120)),\n            \"weight_kg\": pa.Column(float, pa.Check.in_range(0.5, 300)),\n            \"temperature_c\": pa.Column(float),    # TODO: between 30 and 45 degrees Celsius\n            \"malaria_test\": pa.Column(str),       # TODO: one of ALLOWED_TESTS\n            \"recorded_at\": pa.Column(pa.DateTime),\n        },\n        checks=[\n            # TODO: a dataframe-wide check, named recorded_after_visit with the error message\n            # \"recorded_at is before visit_date\", that fails rows where recorded_at < visit_date\n            pa.Check(lambda df: df[\"recorded_at\"] - df[\"visit_date\"] <= pd.Timedelta(days=2),\n                     name=\"recorded_within_2_days\", raise_warning=True),\n        ],\n        strict=True,     # no columns the contract doesn't know about\n        coerce=True,     # convert types where possible, such as text dates to datetimes\n    )\n"
+          },
+          {
+            "path": "validate_visits.py",
+            "content": "\"\"\"Validate the visit extract with pandera, report every failure, and quarantine the rows that fail.\n\nUsage:  python validate_visits.py\n\"\"\"\nimport warnings\nfrom pathlib import Path\n\nimport pandas as pd\nimport pandera.pandas as pa\n\nfrom visit_schema import visit_schema\n\nEXTRACT_DATE = pd.Timestamp(\"2025-03-31\")\n\n\ndef split(visits, schema):\n    \"\"\"Return (valid rows, rejected rows with their reasons, a summary of failures by column and check).\"\"\"\n    try:\n        schema.validate(visits, lazy=True)          # lazy: collect every failure instead of stopping at one\n        return visits, visits.iloc[0:0], None\n    except pa.errors.SchemaErrors as err:\n        cases = err.failure_cases.dropna(subset=[\"index\"])\n        # A dataframe-wide check reports every column of a failing row; label those failures \"row\".\n        target = cases[\"column\"].where(cases[\"schema_context\"] == \"Column\", \"row\")\n        cases = cases.assign(reason=target + \": \" + cases[\"check\"].astype(str))\n        reasons = cases.groupby(\"index\")[\"reason\"].apply(lambda r: \"; \".join(sorted(set(r))))\n        bad = visits.index.isin(reasons.index)\n        rejected = visits[bad].assign(reasons=reasons)\n        summary = cases.groupby(\"reason\")[\"index\"].nunique()\n        return visits[~bad], rejected, summary\n\n\ndef main():\n    visits = pd.read_csv(\"data/visits.csv\", dtype={\"patient_ref\": \"string\"})\n    clinic_ids = pd.read_csv(\"data/clinics.csv\")[\"clinic_id\"].tolist()\n    schema = visit_schema(clinic_ids, EXTRACT_DATE)\n    with warnings.catch_warnings(record=True) as caught:\n        warnings.simplefilter(\"always\")\n        valid, rejected, summary = split(visits, schema)\n    for w in caught:\n        if \"recorded_within_2_days\" in str(w.message):\n            print(\"Warning: some visits were recorded more than 2 days late\")\n    if summary is not None:\n        print(\"Rows failing each check:\")\n        for reason, count in summary.items():\n            print(f\"  {reason}: {count}\")\n    Path(\"clean\").mkdir(exist_ok=True)\n    Path(\"quarantine\").mkdir(exist_ok=True)\n    valid.to_csv(\"clean/visits_valid.csv\", index=False)\n    rejected.to_csv(\"quarantine/visits_rejected.csv\", index=False)\n    print(f\"valid rows: {len(valid)}; quarantined rows: {len(rejected)}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "test_visit_schema.py",
+            "content": "\"\"\"Unit tests for the visit schema: each rule gets a row that breaks it. Run with:  pytest -q\"\"\"\nimport pandas as pd\nimport pandera.pandas as pa\nimport pytest\n\nfrom visit_schema import visit_schema\n\nGOOD = {\"visit_id\": \"V00001\", \"patient_ref\": \"P1507\", \"clinic_id\": \"C05\", \"visit_date\": \"2025-03-14\",\n        \"age_years\": 79, \"weight_kg\": 66.6, \"temperature_c\": 36.6, \"malaria_test\": \"negative\",\n        \"recorded_at\": \"2025-03-15 04:09:00\"}\nSCHEMA = visit_schema([\"C01\", \"C05\"], pd.Timestamp(\"2025-03-31\"))\nFAILS = (pa.errors.SchemaError, pa.errors.SchemaErrors)   # some failures are collected into SchemaErrors\n\n\ndef frame(*rows):\n    return pd.DataFrame([{**GOOD, **changes} for changes in rows])\n\n\ndef test_a_good_row_passes():\n    SCHEMA.validate(frame({}))\n\n\n@pytest.mark.parametrize(\"changes\", [\n    {\"age_years\": -1},                                   # impossible age\n    {\"temperature_c\": 98.6},                             # Fahrenheit in a Celsius column\n    {\"malaria_test\": \"Positive \"},                       # not one of the allowed values\n    {\"clinic_id\": \"C99\"},                                # unknown clinic\n    {\"patient_ref\": None},                               # missing patient reference\n    {\"visit_date\": \"2025-04-12\", \"recorded_at\": \"2025-04-12 09:00:00\"},   # after the extract date\n    {\"recorded_at\": \"2025-03-12 07:00:00\"},              # recorded before the visit\n], ids=[\"age\", \"fahrenheit\", \"test-value\", \"clinic\", \"patient-ref\", \"future-date\", \"recorded-early\"])\ndef test_a_broken_rule_fails(changes):\n    with pytest.raises(FAILS):\n        SCHEMA.validate(frame(changes))\n\n\ndef test_a_repeated_visit_id_fails():\n    with pytest.raises(FAILS):\n        SCHEMA.validate(frame({}, {}))\n\n\ndef test_an_unexpected_column_fails():\n    with pytest.raises(FAILS):\n        SCHEMA.validate(frame({}).assign(notes=\"free text\"))\n"
+          }
+        ],
+        "hints": [
+          "pa.Check.isin(clinic_ids) and pa.Check.in_range(30, 45) are column checks; pass them as the second argument of pa.Column.",
+          "A dataframe-wide check goes in the checks list of DataFrameSchema, not on a column.",
+          "If pytest can't import visit_schema, run it from the folder that holds the file."
+        ]
+      }
+    },
+    {
+      "title": "Schema evolution and data contracts",
+      "summary": "How schemas change without breaking consumers, what a data contract between producers and consumers contains, and how to enforce contracts in CI and at run time, with a checker that classifies changes as safe or breaking.",
+      "instructor": "tatianna-morrison",
+      "lessons": [
+        {
+          "title": "Schema evolution: safe and breaking changes",
+          "minutes": 12,
+          "objectives": [
+            "Classify schema changes as safe or breaking for consumers",
+            "Plan a breaking change with expand and contract"
+          ],
+          "key_points": [
+            "A change is safe for existing consumers when every dataset valid under the new schema is also valid under the old one, so code built on the old schema keeps working.",
+            "Adding a column, making a column required and narrowing a range or a list of allowed values are usually safe; removing or renaming a column, changing its type, allowing nulls and adding allowed values are breaking.",
+            "Semantic changes break consumers without changing the schema: a temperature switched from Celsius to Fahrenheit, or revenue switched from gross to net, passes every type check.",
+            "Expand and contract makes a breaking change safely: add the new column beside the old one, fill both, move consumers over, then remove the old column in a new major version after a notice period.",
+            "Apache Iceberg tracks columns by ID, so renaming or reordering columns doesn't corrupt old data; plain CSV and Parquet files rely on column names or positions, so treat a rename there as breaking."
+          ]
+        },
+        {
+          "title": "What a data contract contains",
+          "minutes": 12,
+          "objectives": [
+            "Describe the parts of a data contract",
+            "Explain the responsibilities of producers and consumers"
+          ],
+          "key_points": [
+            "A data contract is an agreement, kept as a versioned file, between the team that produces a dataset and the teams that consume it, about what the data looks like, what it means and how it's delivered.",
+            "It names the dataset and its owner, gives the schema (fields, types, required fields, allowed values and ranges), defines each field's meaning and units, and lists quality rules.",
+            "It also sets service levels, such as how fresh the data will be and how many rows a normal day brings, and the change process: how much notice a breaking change gets and how versions are numbered.",
+            "Semantic versioning suits contracts: a breaking change needs a new major version, a safe addition a new minor version, and a wording fix a patch.",
+            "Open standards such as the Open Data Contract Standard (ODCS) describe contracts in YAML, and open-source tools such as the Data Contract CLI can lint a contract, test data against it and report breaking changes.",
+            "The producer owns meeting the contract and announcing changes; consumers own relying only on what the contract promises, not on accidents of today's data."
+          ]
+        },
+        {
+          "title": "Enforcing contracts in CI and at run time",
+          "minutes": 12,
+          "objectives": [
+            "Enforce a contract before changes merge and while data flows",
+            "Decide what happens when a batch violates its contract"
+          ],
+          "key_points": [
+            "In CI, a check compares the proposed contract or schema with the published one and fails the build if a change is breaking without a new major version, so the problem is found in review, not in production.",
+            "At run time, each batch is validated against the contract as it's produced or ingested; a violation blocks or quarantines the batch and alerts the producer, not just the consumers.",
+            "Generating validation code, such as a pandera schema, from the contract file keeps the rules in one place, so the documentation and the checks can't drift apart.",
+            "Consumer-driven tests let each consumer add checks for the guarantees it actually relies on, which tells producers exactly who a change would affect.",
+            "A contract works only if both sides own it: it needs a named owner, a channel for questions, and a review of breaking changes with the consumers before they ship."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Write a data contract and catch a breaking change",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Validate data against a YAML data contract through a pandera schema generated from it, finish a checker that classifies contract changes as safe or breaking, and redesign a proposed change so it ships without breaking anyone.",
+        "setup": [
+          "Your lab folder, with the data folder and the clean folder from the module 2 lab",
+          "PyYAML and pandera in your virtual environment: pip install pyyaml \"pandera[pandas]\"",
+          "The starter files contract_v1.yaml, contract_v2.yaml and check_contract.py"
+        ],
+        "steps": [
+          {
+            "do": "Read contract_v1.yaml: owner, fields with types, units, allowed values and ranges, and the service levels and change notice."
+          },
+          {
+            "do": "Validate the raw extract and then the clean file against the contract. check_contract.py builds a pandera schema from the YAML, so the contract and the checks can't drift apart.",
+            "code": "python check_contract.py validate contract_v1.yaml data/visits.csv\npython check_contract.py validate contract_v1.yaml clean/visits_valid.csv",
+            "lang": "bash",
+            "see": "The raw extract fails six checks and exits with status 1; the clean file meets the contract."
+          },
+          {
+            "do": "Compare the proposed contract_v2.yaml with v1 using the starter checker.",
+            "code": "python check_contract.py diff contract_v1.yaml contract_v2.yaml",
+            "lang": "bash",
+            "see": "3 breaking of 5 changes, though v2 changes more than that."
+          },
+          {
+            "do": "TODO: finish diff() so it also classifies changes to allowed values, ranges, units and patterns, then run it again.",
+            "code": "added = sorted(set(b.get(\"allowed\", [])) - set(a[\"allowed\"]))\nif added:\n    changes.append((\"BREAKING\", f\"{name}: new allowed values {added}\"))",
+            "lang": "python",
+            "see": "4 breaking of 7 changes; the new version should be 2.0.0, and it says 1.1.0."
+          },
+          {
+            "do": "Design a safe version: copy contract_v1.yaml to contract_v2_safe.yaml, add the new age field alongside age_years (expand and contract) and the optional referred_to, set the version, and check it.",
+            "code": "python check_contract.py diff contract_v1.yaml contract_v2_safe.yaml",
+            "lang": "bash",
+            "see": "0 breaking of 2 changes, and exit status 0."
+          },
+          {
+            "do": "Write a short change notice for consumers: what's new in your safe version, when age_years will be removed, and which version will remove it."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The contract rejects the raw extract and accepts the clean rows.",
+            "look_for": [
+              "FAIL patient_ref: not_nullable",
+              "every row meets the contract"
+            ]
+          },
+          {
+            "text": "The finished checker flags new allowed values as breaking.",
+            "look_for": [
+              "malaria_test: new allowed values ['inconclusive']"
+            ]
+          },
+          {
+            "text": "Narrowing a range is classified as safe.",
+            "look_for": [
+              "temperature_c: range narrowed to 30..43"
+            ]
+          },
+          {
+            "text": "The proposed v2 needs a major version.",
+            "look_for": [
+              "4 breaking of 7 changes",
+              "the new version should be 2.0.0"
+            ]
+          },
+          {
+            "text": "The redesigned version is safe and correctly numbered.",
+            "look_for": [
+              "0 breaking of 2 changes",
+              "should be 1.1.0, and it says 1.1.0"
+            ]
+          }
+        ],
+        "submit": "Paste your finished diff() code, the output of both validate runs and both diff runs, your contract_v2_safe.yaml, and your change notice.",
+        "files": [
+          {
+            "path": "contract_v1.yaml",
+            "content": "# Data contract: clinic visits, published by the clinic records team for analysts and the outbreak model.\nid: clinic-visits\nversion: 1.0.0\nowner: clinic-records-team\ncontact: data-help channel, clinic records team\ndescription: One row per patient visit, as recorded by the clinics' records system.\nschema:\n  - name: visit_id\n    type: string\n    required: true\n    unique: true\n    pattern: '^V\\d{5}$'\n  - name: patient_ref\n    type: string\n    required: true\n    pattern: '^P\\d{4}$'\n    description: Pseudonymised patient reference; never a name or national ID.\n  - name: clinic_id\n    type: string\n    required: true\n    allowed: [C01, C02, C03, C04, C05, C06, C07, C08]\n  - name: visit_date\n    type: date\n    required: true\n  - name: age_years\n    type: integer\n    required: true\n    min: 0\n    max: 120\n  - name: weight_kg\n    type: number\n    required: true\n    unit: kilogram\n    min: 0.5\n    max: 300\n  - name: temperature_c\n    type: number\n    required: true\n    unit: degree Celsius\n    min: 30\n    max: 45\n  - name: malaria_test\n    type: string\n    required: true\n    allowed: [negative, positive, not_done]\n  - name: recorded_at\n    type: timestamp\n    required: true\nsla:\n  freshness_hours: 26        # the newest load is never more than 26 hours old\n  min_rows_per_day: 8        # fewer rows than this on a weekday means something is missing\n  change_notice_days: 30     # breaking changes are announced 30 days ahead, as a new major version\n"
+          },
+          {
+            "path": "contract_v2.yaml",
+            "content": "# Proposed version of the clinic visits contract, published by the clinic records team for analysts and the outbreak model.\nid: clinic-visits\nversion: 1.1.0\nowner: clinic-records-team\ncontact: data-help channel, clinic records team\ndescription: One row per patient visit, as recorded by the clinics' records system.\nschema:\n  - name: visit_id\n    type: string\n    required: true\n    unique: true\n    pattern: '^V\\d{5}$'\n  - name: patient_ref\n    type: string\n    required: false\n    pattern: '^P\\d{4}$'\n    description: Pseudonymised patient reference; never a name or national ID.\n  - name: clinic_id\n    type: string\n    required: true\n    allowed: [C01, C02, C03, C04, C05, C06, C07, C08]\n  - name: visit_date\n    type: timestamp\n    required: true\n  - name: age\n    type: integer\n    required: true\n    min: 0\n    max: 120\n  - name: weight_kg\n    type: number\n    required: true\n    unit: kilogram\n    min: 0.5\n    max: 300\n  - name: temperature_c\n    type: number\n    required: true\n    unit: degree Celsius\n    min: 30\n    max: 43\n  - name: malaria_test\n    type: string\n    required: true\n    allowed: [negative, positive, not_done, inconclusive]\n  - name: recorded_at\n    type: timestamp\n    required: true\n  - name: referred_to\n    type: string\n    required: false\nsla:\n  freshness_hours: 26        # the newest load is never more than 26 hours old\n  min_rows_per_day: 8        # fewer rows than this on a weekday means something is missing\n  change_notice_days: 30     # breaking changes are announced 30 days ahead, as a new major version\n"
+          },
+          {
+            "path": "check_contract.py",
+            "content": "\"\"\"Check data against a data contract, and compare two versions of a contract.\n\nUsage:\n    python check_contract.py validate contract_v1.yaml data/visits.csv\n    python check_contract.py diff contract_v1.yaml contract_v2.yaml\nBoth exit with status 1 when they find a problem, so a CI pipeline can stop on them.\n\"\"\"\nimport math\nimport sys\n\nimport pandas as pd\nimport pandera.pandas as pa\nimport yaml\n\nTYPES = {\"string\": str, \"integer\": int, \"number\": float, \"date\": pa.DateTime, \"timestamp\": pa.DateTime}\n\n\ndef load(path):\n    with open(path, encoding=\"utf-8\") as f:\n        return yaml.safe_load(f)\n\n\ndef schema_from(contract):\n    \"\"\"Turn the contract's field list into a pandera schema.\"\"\"\n    columns = {}\n    for field in contract[\"schema\"]:\n        checks = []\n        if \"allowed\" in field:\n            checks.append(pa.Check.isin(field[\"allowed\"]))\n        if \"min\" in field or \"max\" in field:\n            checks.append(pa.Check.in_range(field.get(\"min\", -math.inf), field.get(\"max\", math.inf)))\n        if \"pattern\" in field:\n            checks.append(pa.Check.str_matches(field[\"pattern\"]))\n        required = field.get(\"required\", False)\n        columns[field[\"name\"]] = pa.Column(TYPES[field[\"type\"]], checks, required=required, nullable=not required,\n                                           unique=field.get(\"unique\", False))\n    return pa.DataFrameSchema(columns, coerce=True)\n\n\ndef validate(contract, csv_path):\n    text_fields = {f[\"name\"]: \"string\" for f in contract[\"schema\"] if f[\"type\"] == \"string\"}\n    data = pd.read_csv(csv_path, dtype=text_fields)\n    print(f\"Contract {contract['id']} {contract['version']}: checking {len(data)} rows of {csv_path}\")\n    try:\n        schema_from(contract).validate(data, lazy=True)\n    except pa.errors.SchemaErrors as err:\n        cases = err.failure_cases\n        for (column, check), group in cases.groupby([\"column\", \"check\"]):\n            print(f\"  FAIL {column}: {check}: {group['index'].nunique()} rows\")\n        return 1\n    print(\"  every row meets the contract\")\n    return 0\n\n\ndef diff(old, new):\n    \"\"\"Classify each change from the consumers' side: SAFE if every batch valid under the new version is\n    also valid under the old one, so consumers built on the old version keep working; otherwise BREAKING.\"\"\"\n    before = {f[\"name\"]: f for f in old[\"schema\"]}\n    after = {f[\"name\"]: f for f in new[\"schema\"]}\n    changes = []\n    for name in sorted(before.keys() - after.keys()):\n        changes.append((\"BREAKING\", f\"{name}: removed (a rename is a removal plus an addition)\"))\n    for name in sorted(after.keys() - before.keys()):\n        kind = \"required\" if after[name].get(\"required\") else \"optional\"\n        changes.append((\"SAFE\", f\"{name}: added ({kind})\"))\n    for name in sorted(before.keys() & after.keys()):\n        a, b = before[name], after[name]\n        if a[\"type\"] != b[\"type\"]:\n            changes.append((\"BREAKING\", f\"{name}: type {a['type']} -> {b['type']}\"))\n        if a.get(\"required\") and not b.get(\"required\"):\n            changes.append((\"BREAKING\", f\"{name}: now optional, so consumers may receive nulls\"))\n        if b.get(\"required\") and not a.get(\"required\"):\n            changes.append((\"SAFE\", f\"{name}: now required\"))\n        # TODO: classify these changes too, with the same rule (could consumers now get data they don't expect?):\n        #   allowed values: new values are BREAKING (\"new allowed values [...]\"); fewer values are SAFE\n        #   min and max: a wider range is BREAKING (\"range widened to lo..hi\"); a narrower one SAFE (\"range narrowed to lo..hi\")\n        #   unit: any change is BREAKING (\"unit old -> new\"), even though the type is the same\n        #   pattern: any change is BREAKING (\"pattern changed; review it by hand\")\n    for verdict, text in sorted(changes):\n        print(f\"{verdict:<9} {text}\")\n    major, minor, _ = (int(x) for x in old[\"version\"].split(\".\"))\n    breaking = sum(verdict == \"BREAKING\" for verdict, _ in changes)\n    expected = f\"{major + 1}.0.0\" if breaking else f\"{major}.{minor + 1}.0\"\n    print(f\"{breaking} breaking of {len(changes)} changes; the new version should be {expected}, \"\n          f\"and it says {new['version']}\")\n    return 1 if breaking or new[\"version\"] != expected else 0\n\n\ndef main():\n    if len(sys.argv) != 4 or sys.argv[1] not in (\"validate\", \"diff\"):\n        sys.exit(__doc__)\n    if sys.argv[1] == \"validate\":\n        sys.exit(validate(load(sys.argv[2]), sys.argv[3]))\n    sys.exit(diff(load(sys.argv[2]), load(sys.argv[3])))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "A range is wider when the new min is lower or the new max higher; math.inf stands in for a missing limit.",
+          "If the clean file fails, rerun validate_visits.py from module 2 with your finished schema: the starter schema let some bad rows through.",
+          "echo $? (or $LASTEXITCODE in PowerShell) shows the exit status a CI pipeline would see."
+        ]
+      }
+    },
+    {
+      "title": "Monitoring: freshness, volume, anomalies and lineage",
+      "summary": "Watching data in production: freshness and volume checks, anomaly detection that respects seasonality and resists outliers, and lineage that shows what a problem affects and where it came from.",
+      "instructor": "ximena-castillo",
+      "lessons": [
+        {
+          "title": "Freshness and volume checks",
+          "minutes": 11,
+          "objectives": [
+            "Define freshness and volume checks with thresholds",
+            "Explain why monitoring complements rule-based tests"
+          ],
+          "key_points": [
+            "Rule-based tests check what's in a batch; monitoring watches data over time, catching problems no rule describes, such as a table that has silently stopped updating.",
+            "A freshness check compares the time of the newest data, or of the last successful load, with now, and alerts when the gap passes the service level, such as 26 hours for a daily load.",
+            "Volume checks compare row counts with what's expected: a sudden drop often means a source or a load partly failed, and a sudden jump often means duplicates.",
+            "Schema checks watch for columns added, removed or retyped, and distribution checks watch metrics such as null rates, distinct counts and averages of key columns.",
+            "Data observability is the name for these checks together, usually with lineage, so data teams find problems before the people using the data do."
+          ]
+        },
+        {
+          "title": "Anomaly detection without the false alarms",
+          "minutes": 13,
+          "objectives": [
+            "Detect anomalies in data metrics with z-scores and robust statistics",
+            "Account for seasonality and avoid alert fatigue"
+          ],
+          "key_points": [
+            "A z-score measures how many standard deviations a value is from the mean of recent history; flagging |z| above a threshold such as 3 is simple, but spikes and patterns in the history inflate the standard deviation and hide real problems.",
+            "Robust statistics resist outliers: the modified z-score, 0.6745 x (value - median) / MAD, uses the median and the median absolute deviation, and a common rule of thumb flags scores above 3.5.",
+            "Seasonality causes false alarms: a clinic network that loads fewer rows every Sunday trips a naive check each week, so compare each day with the same weekday in previous weeks.",
+            "Every alert should lead to an action: too many false alarms teach people to ignore alerts (alert fatigue), so tune thresholds on history, route alerts to the dataset's owner and review them regularly.",
+            "Check the direction that matters: a rising null rate is a problem while a falling one usually isn't, so a one-sided test raises fewer false alarms."
+          ]
+        },
+        {
+          "title": "Lineage: impact and root cause",
+          "minutes": 11,
+          "objectives": [
+            "Use lineage to find what a data problem affects",
+            "Trace a problem upstream to its likely cause"
+          ],
+          "key_points": [
+            "Lineage records how data flows: which jobs read which datasets and write which others, at table level or, more precisely, at column level.",
+            "Downstream lineage answers impact questions: when a table is wrong, which reports, dashboards and models use it, and which owners must be told.",
+            "Upstream lineage answers root-cause questions: which sources and jobs fed a broken dashboard, and so where to look first.",
+            "OpenLineage is an open standard for collecting lineage: jobs emit run events, such as START, COMPLETE and FAIL, naming their input and output datasets; integrations exist for Airflow, Spark and dbt, and Marquez is its reference implementation.",
+            "Lineage is a graph, so a breadth-first search along its edges, forwards for impact or backwards for causes, lists every affected or contributing asset."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Monitor loads and trace the impact",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Run freshness and volume checks on 60 days of load statistics, see a naive z-score miss a real drop and raise false alarms, write a seasonal check and a robust null-rate check that find the real problems, and use lineage to list who an incident affects.",
+        "setup": [
+          "Your lab folder and virtual environment from the earlier labs",
+          "The starter files make_load_stats.py, monitor.py, lineage.json and impact.py"
+        ],
+        "steps": [
+          {
+            "do": "Create the load statistics: one nightly load a day from 1 January to 1 March 2025, with fewer rows every Sunday.",
+            "code": "python make_load_stats.py",
+            "lang": "bash",
+            "see": "load_stats.csv: 60 loads, 2025-01-01 to 2025-03-01"
+          },
+          {
+            "do": "Run the monitor as it is. Freshness is checked against a 26-hour service level, and a naive z-score compares each day with the previous 14.",
+            "code": "python monitor.py",
+            "lang": "bash",
+            "see": "STALE after 30.6 hours; with a threshold of 3 the z-score flags nothing, and with 2 it flags six Sundays."
+          },
+          {
+            "do": "TODO 1: write volume_seasonal(): compare each day with the median of the same weekday over the four previous weeks, and flag changes of more than 30%.",
+            "code": "same_day = pd.concat([rows.shift(7 * k) for k in range(1, weeks + 1)], axis=1).median(axis=1, skipna=False)",
+            "lang": "python"
+          },
+          {
+            "do": "TODO 2: write null_rate_robust(): the modified z-score of each day's null rate against the median and MAD of the previous 28 days, flagging scores above 3.5.",
+            "see": "A one-sided test: only rises are flagged."
+          },
+          {
+            "do": "Run the monitor again.",
+            "code": "python monitor.py",
+            "lang": "bash",
+            "see": "The seasonal check flags only 2025-02-11 (Tue), and the null-rate check only 2025-02-20 (Thu)."
+          },
+          {
+            "do": "The 20 February problem was in staging.visits_clean. List everything downstream of it, with the owners to tell, then everything upstream of the malaria dashboard.",
+            "code": "python impact.py downstream staging.visits_clean\npython impact.py upstream \"dashboard: malaria cases by district\"",
+            "lang": "bash",
+            "see": "5 assets downstream, three of them with owners; 8 assets upstream."
+          },
+          {
+            "do": "Add a new report, \"report: weekly malaria bulletin\", fed by marts.fact_visits and owned by the district health office, to lineage.json, and run the downstream query again.",
+            "see": "downstream of staging.visits_clean: 6 assets"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The freshness check finds the stale table.",
+            "look_for": [
+              "30.6 hours ago",
+              "STALE"
+            ]
+          },
+          {
+            "text": "The naive z-score misses the drop and raises false alarms on Sundays.",
+            "look_for": [
+              "volume, naive z-score above 3: []",
+              "2025-02-23 (Sun)"
+            ]
+          },
+          {
+            "text": "The seasonal check finds the real volume drop and nothing else.",
+            "look_for": [
+              "volume, same weekday median: ['2025-02-11 (Tue)']"
+            ]
+          },
+          {
+            "text": "The robust check finds the null-rate spike.",
+            "look_for": [
+              "null rate, modified z-score: ['2025-02-20 (Thu)']"
+            ]
+          },
+          {
+            "text": "Lineage lists the affected assets and owners, including the new report.",
+            "look_for": [
+              "tell: epidemiology team",
+              "downstream of staging.visits_clean: 6 assets"
+            ]
+          }
+        ],
+        "submit": "Paste your two functions, the output of monitor.py before and after, the output of both impact.py queries after your lineage change, and one sentence on why the naive check failed.",
+        "files": [
+          {
+            "path": "make_load_stats.py",
+            "content": "\"\"\"Write 60 days of load statistics for the visits table to data/load_stats.csv.\n\nEach row is one nightly load: when it finished, how many rows it loaded, and the share of rows with no\npatient reference. Only random.Random(5).random() is used, so the file is the same on every computer.\nRun:  python make_load_stats.py\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, datetime, timedelta\nfrom pathlib import Path\n\nrng = random.Random(5)\n\n\ndef main():\n    Path(\"data\").mkdir(exist_ok=True)\n    rows = []\n    for n in range(60):\n        day = date(2025, 1, 1) + timedelta(days=n)\n        sunday = day.weekday() == 6\n        loaded = (30 if sunday else 120) + int(rng.random() * 11) - 5\n        null_rate = round(0.005 + rng.random() * 0.01, 4)\n        if day == date(2025, 2, 11):\n            loaded = 52                     # a clinic's upload failed: about half the rows are missing\n        if day == date(2025, 2, 20):\n            null_rate = 0.095               # a form change stopped patient references being saved\n        finished = datetime(day.year, day.month, day.day, 2) + timedelta(days=1, minutes=int(rng.random() * 40))\n        rows.append([day.isoformat(), \"visits\", loaded, null_rate, finished.isoformat(sep=\" \")])\n    with open(\"data/load_stats.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"load_date\", \"table_name\", \"rows_loaded\", \"null_rate_patient_ref\", \"finished_at\"])\n        w.writerows(rows)\n    print(f\"load_stats.csv: {len(rows)} loads, {rows[0][0]} to {rows[-1][0]}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "monitor.py",
+            "content": "\"\"\"Freshness, volume and anomaly checks on the visits table's load statistics.\n\nUsage:  python monitor.py\n\"\"\"\nimport pandas as pd\n\nNOW = pd.Timestamp(\"2025-03-03 09:00\")     # when the monitor runs\nFRESHNESS_SLA_HOURS = 26\n\n\ndef freshness(stats):\n    age = (NOW - stats[\"finished_at\"].max()) / pd.Timedelta(hours=1)\n    status = \"OK\" if age <= FRESHNESS_SLA_HOURS else \"STALE\"\n    print(f\"freshness: last load finished {age:.1f} hours ago (SLA {FRESHNESS_SLA_HOURS} h): {status}\")\n\n\ndef volume_zscore(stats, window=14, threshold=3.0):\n    \"\"\"Naive check: compare each day with the mean and standard deviation of the previous 14 days.\"\"\"\n    rows = stats[\"rows_loaded\"]\n    mean = rows.shift(1).rolling(window).mean()\n    std = rows.shift(1).rolling(window).std()\n    z = (rows - mean) / std\n    return stats.loc[z.abs() > threshold, \"load_date\"].dt.strftime(\"%Y-%m-%d (%a)\").tolist()\n\n\ndef volume_seasonal(stats, weeks=4, tolerance=0.3):\n    \"\"\"Compare each day with the median of the same weekday over the previous four weeks.\"\"\"\n    # TODO 1: for each day, take the median of rows_loaded 7, 14, 21 and 28 days earlier (shift(7 * k)),\n    # work out the relative change from that median, and return the dates where its size is above tolerance,\n    # formatted like the other checks. Days without four weeks of history can't be judged.\n    return []\n\n\ndef null_rate_robust(stats, window=28, threshold=3.5):\n    \"\"\"Modified z-score: distance from the median in units of the median absolute deviation (MAD).\"\"\"\n    # TODO 2: over the previous 28 days (shift(1).rolling(window)), find the median and the median absolute\n    # deviation (MAD: the median of |x - median|); score = 0.6745 * (rate - median) / MAD; return the dates\n    # whose score is above threshold. Only rises matter here: more missing references, not fewer.\n    return []\n\n\ndef main():\n    stats = pd.read_csv(\"data/load_stats.csv\", parse_dates=[\"load_date\", \"finished_at\"])\n    freshness(stats)\n    print(\"volume, naive z-score above 3:\", volume_zscore(stats, threshold=3.0))\n    print(\"volume, naive z-score above 2:\", volume_zscore(stats, threshold=2.0))\n    print(\"volume, same weekday median:\", volume_seasonal(stats))\n    print(\"null rate, modified z-score:\", null_rate_robust(stats))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "lineage.json",
+            "content": "{\n  \"edges\": [\n    [\"clinic_records_db.visits\", \"raw.visits\"],\n    [\"clinic_records_db.clinics\", \"raw.clinics\"],\n    [\"raw.visits\", \"staging.visits_clean\"],\n    [\"raw.clinics\", \"staging.clinics\"],\n    [\"staging.visits_clean\", \"marts.fact_visits\"],\n    [\"staging.clinics\", \"marts.dim_clinic\"],\n    [\"marts.fact_visits\", \"dashboard: malaria cases by district\"],\n    [\"marts.dim_clinic\", \"dashboard: malaria cases by district\"],\n    [\"marts.fact_visits\", \"report: clinic staffing\"],\n    [\"marts.dim_clinic\", \"report: clinic staffing\"],\n    [\"marts.fact_visits\", \"ml.outbreak_features\"],\n    [\"ml.outbreak_features\", \"model: outbreak early warning\"]\n  ],\n  \"owners\": {\n    \"dashboard: malaria cases by district\": \"district health office\",\n    \"report: clinic staffing\": \"clinic operations\",\n    \"model: outbreak early warning\": \"epidemiology team\"\n  }\n}\n"
+          },
+          {
+            "path": "impact.py",
+            "content": "\"\"\"Use table-level lineage to find what a data problem affects (downstream) and where it may come from (upstream).\n\nUsage:  python impact.py downstream staging.visits_clean\n        python impact.py upstream \"dashboard: malaria cases by district\"\n\"\"\"\nimport json\nimport sys\nfrom collections import deque\n\n\ndef walk(start, edges, direction):\n    \"\"\"Breadth-first search over the lineage graph, in either direction.\"\"\"\n    nexts = {}\n    for source, target in edges:\n        a, b = (source, target) if direction == \"downstream\" else (target, source)\n        nexts.setdefault(a, []).append(b)\n    seen, queue, order = {start}, deque([start]), []\n    while queue:\n        for node in sorted(nexts.get(queue.popleft(), [])):\n            if node not in seen:\n                seen.add(node)\n                order.append(node)\n                queue.append(node)\n    return order\n\n\ndef main():\n    direction, start = sys.argv[1], sys.argv[2]\n    lineage = json.load(open(\"lineage.json\", encoding=\"utf-8\"))\n    found = walk(start, lineage[\"edges\"], direction)\n    print(f\"{direction} of {start}: {len(found)} assets\")\n    for node in found:\n        owner = lineage[\"owners\"].get(node)\n        print(f\"  {node}\" + (f\"  (tell: {owner})\" if owner else \"\"))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "median(axis=1, skipna=False) leaves the first four weeks without a median, so they can't be flagged.",
+          "rolling(window).apply(lambda x: (abs(x - x.median())).median(), raw=False) gives the MAD.",
+          "Flag only score > threshold, not the absolute value: a falling null rate isn't a problem."
+        ]
+      }
+    },
+    {
+      "title": "Handling data incidents",
+      "summary": "When bad data gets through: severity, containment, communication, backfills and blameless reviews, and the patterns, write-audit-publish and circuit breakers, that keep bad data away from the people who rely on it.",
+      "instructor": "tatianna-morrison",
+      "lessons": [
+        {
+          "title": "The data incident lifecycle",
+          "minutes": 12,
+          "objectives": [
+            "Run a data incident from detection to resolution",
+            "Communicate with the people affected"
+          ],
+          "key_points": [
+            "A data incident is any event in which data that people or systems rely on is wrong, late or missing, and it deserves the same discipline as a service outage.",
+            "Triage sets the severity by impact: who uses the data, for which decisions, and how much of it is affected, which lineage helps answer quickly.",
+            "Contain first: pause the pipeline or the affected downstream jobs, mark dashboards as under investigation, and stop bad data spreading before working on the cause.",
+            "Communicate early and regularly through the channel the contract names: what's affected, what people should do in the meantime, and when the next update will come.",
+            "Resolve by fixing the cause, correcting the data and backfilling the affected partitions with idempotent re-runs, then confirm the numbers are right before closing the incident."
+          ]
+        },
+        {
+          "title": "Prevention patterns and blameless reviews",
+          "minutes": 12,
+          "objectives": [
+            "Use write-audit-publish and circuit breakers to stop bad data",
+            "Write a blameless incident review with actions"
+          ],
+          "key_points": [
+            "Write-audit-publish (WAP) writes each batch to a staging area, runs the audits there, and publishes it, usually in a single transaction or an atomic swap, only if every audit passes.",
+            "A circuit breaker stops downstream jobs, such as dashboard refreshes and model training, when upstream checks fail, so a bad batch doesn't flow on automatically.",
+            "Table formats such as Apache Iceberg and Delta Lake keep snapshots, so a table can be rolled back to before a bad load, and Iceberg branches support write-audit-publish directly.",
+            "A runbook for each important dataset lists its checks, owners and consumers, and the steps to pause, fix and backfill it, so whoever is on call can act quickly.",
+            "A blameless review records the timeline, impact, root cause and actions with owners, and asks what the system allowed rather than who made a mistake, so people report problems early.",
+            "Every incident should leave a new or better check behind, so the same failure is caught automatically next time."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Stop a bad batch with write-audit-publish",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Load daily batches through write-audit-publish in DuckDB: see a broken batch reach the published table without a gate, add the gate so it's quarantined instead and downstream refreshes stop, publish the corrected resend idempotently, and write the incident up.",
+        "setup": [
+          "Your lab folder (wap.py reads data/clinics.csv from the module 1 lab)",
+          "DuckDB for Python in your virtual environment: pip install duckdb",
+          "The starter files make_batches.py, wap.py and incident_report.md"
+        ],
+        "steps": [
+          {
+            "do": "Create three batches: a clean one for 10 March, a broken one for 11 March, and the corrected resend for 11 March.",
+            "code": "python make_batches.py",
+            "lang": "bash",
+            "see": "visits_2025-03-10.csv: 12 rows, visits_2025-03-11.csv: 15 rows, visits_2025-03-11_v2.csv: 14 rows"
+          },
+          {
+            "do": "Run the starter, which audits but publishes anyway, on the first two batches, then look at the report.",
+            "code": "python wap.py batches/visits_2025-03-10.csv\npython wap.py batches/visits_2025-03-11.csv\npython wap.py --report",
+            "lang": "bash",
+            "see": "Both batches published: 15 rows for 11 March, including a duplicate, an unknown clinic and a missing patient reference, and the dashboard rebuilt from 27 rows."
+          },
+          {
+            "do": "TODO: add the gate in run(): if any audit failed, quarantine the staged rows with a summary of the failed audits and return False before anything is published.",
+            "code": "if failed:\n    summary = \", \".join(f\"{audit} ({n})\" for audit, n in failed.items())\n    ...",
+            "lang": "python"
+          },
+          {
+            "do": "Start again with a fresh database and replay the incident: the clean batch, the broken batch, the corrected resend, and the resend again.",
+            "code": "rm clinic.duckdb   # on Windows: del clinic.duckdb\npython wap.py batches/visits_2025-03-10.csv\npython wap.py batches/visits_2025-03-11.csv\npython wap.py batches/visits_2025-03-11_v2.csv\npython wap.py batches/visits_2025-03-11_v2.csv\npython wap.py --report",
+            "lang": "bash",
+            "see": "The broken batch is BLOCKED and the refresh skipped; the resend publishes 14 rows, and again with 14 replaced."
+          },
+          {
+            "do": "Fill in incident_report.md for the 11 March incident: impact (use the lineage from module 4), timeline, detection, root cause, resolution and at least two actions with owners."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The broken batch is blocked with the audits it failed.",
+            "look_for": [
+              "visits_2025-03-11.csv: BLOCKED",
+              "no repeated visit_id (1), patient_ref present (1), known clinic (1)"
+            ]
+          },
+          {
+            "text": "The circuit breaker skips the downstream refresh after a blocked batch.",
+            "look_for": [
+              "refresh skipped"
+            ]
+          },
+          {
+            "text": "The corrected resend is published, and publishing it again replaces rather than duplicates it.",
+            "look_for": [
+              "published 14 rows for 2025-03-11 (14 replaced)"
+            ]
+          },
+          {
+            "text": "The published table holds only good data, and the bad batch is kept in quarantine.",
+            "look_for": [
+              "published 2025-03-11: 14 rows",
+              "quarantined visits_2025-03-11.csv: 15 rows"
+            ]
+          },
+          {
+            "text": "A blameless incident report with impact, root cause and owned actions.",
+            "look_for": [
+              "Root cause",
+              "Actions"
+            ]
+          }
+        ],
+        "submit": "Paste your gate code, the output of the replay and the report, and your completed incident report.",
+        "files": [
+          {
+            "path": "make_batches.py",
+            "content": "\"\"\"Write three daily visit batches to the batches folder: a clean one for 10 March, a broken one for\n11 March, and the corrected file the clinic records team sends for 11 March after the incident.\n\nOnly random.Random(3).random() is used, so the files are the same on every computer.\nRun:  python make_batches.py\n\"\"\"\nimport csv\nimport random\nfrom pathlib import Path\n\nrng = random.Random(3)\nFIELDS = [\"visit_id\", \"patient_ref\", \"clinic_id\", \"visit_date\", \"age_years\", \"weight_kg\", \"temperature_c\",\n          \"malaria_test\", \"recorded_at\"]\n\n\ndef between(lo, hi):\n    return lo + int(rng.random() * (hi - lo + 1))\n\n\ndef day_rows(day, first_id, count):\n    rows = []\n    for n in range(count):\n        age = between(1, 80)\n        rows.append([f\"V{first_id + n:05d}\", f\"P{between(1000, 1999)}\", f\"C0{between(1, 8)}\", day, age,\n                     round(9 + age * 0.8 if age < 18 else 50 + rng.random() * 35, 1),\n                     round(36.2 + rng.random() * 2.5, 1), [\"negative\", \"positive\", \"not_done\"][between(0, 2)],\n                     f\"{day} {between(8, 17):02d}:{between(0, 59):02d}:00\"])\n    return rows\n\n\ndef write(name, rows):\n    with open(Path(\"batches\") / name, \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow(FIELDS)\n        w.writerows(rows)\n    print(f\"{name}: {len(rows)} rows\")\n\n\ndef main():\n    Path(\"batches\").mkdir(exist_ok=True)\n    write(\"visits_2025-03-10.csv\", day_rows(\"2025-03-10\", 20001, 12))\n    good = day_rows(\"2025-03-11\", 20013, 14)\n    broken = [list(r) for r in good] + [list(good[3])]   # one visit sent twice\n    broken[5][2] = \"C99\"                                 # an unknown clinic\n    broken[8][1] = \"\"                                    # a missing patient reference\n    write(\"visits_2025-03-11.csv\", broken)\n    write(\"visits_2025-03-11_v2.csv\", good)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "wap.py",
+            "content": "\"\"\"Write-audit-publish for daily visit batches: load a batch into staging, audit it there, and publish it to\nthe table people query only if every audit passes. Downstream refreshes run only after a publish.\n\nUsage:  python wap.py batches/visits_2025-03-10.csv\n        python wap.py --report\n\"\"\"\nimport sys\nfrom pathlib import Path\n\nimport duckdb\n\nDB = \"clinic.duckdb\"\nAUDITS = {   # each query counts problem rows in staging; 0 means the audit passes\n    \"has rows\": \"SELECT CASE WHEN count(*) = 0 THEN 1 ELSE 0 END FROM staging\",\n    \"one visit date\": \"SELECT count(DISTINCT visit_date) - 1 FROM staging\",\n    \"no repeated visit_id\": \"SELECT count(*) - count(DISTINCT visit_id) FROM staging\",\n    \"patient_ref present\": \"SELECT count(*) FROM staging WHERE patient_ref IS NULL\",\n    \"known clinic\": \"SELECT count(*) FROM staging WHERE clinic_id NOT IN (SELECT clinic_id FROM clinics)\",\n    \"temperature 30 to 45\": \"SELECT count(*) FROM staging WHERE temperature_c NOT BETWEEN 30 AND 45\",\n}\nCOLUMNS = (\"visit_id VARCHAR, patient_ref VARCHAR, clinic_id VARCHAR, visit_date DATE, age_years INTEGER, \"\n           \"weight_kg DOUBLE, temperature_c DOUBLE, malaria_test VARCHAR, recorded_at TIMESTAMP\")\n\n\ndef setup(con):\n    con.execute(\"CREATE TABLE IF NOT EXISTS clinics AS SELECT * FROM read_csv('data/clinics.csv', header = true)\")\n    con.execute(f\"CREATE TABLE IF NOT EXISTS visits ({COLUMNS})\")\n    con.execute(f\"CREATE TABLE IF NOT EXISTS quarantine (source_file VARCHAR, failed_audits VARCHAR, {COLUMNS})\")\n    con.execute(\"CREATE TABLE IF NOT EXISTS audit_log (source_file VARCHAR, audit VARCHAR, problem_rows INTEGER, \"\n                \"checked_at TIMESTAMP)\")\n\n\ndef run(con, path):\n    name = Path(path).name\n    # WRITE: the batch goes to staging, never straight into the published table\n    con.execute(f\"CREATE OR REPLACE TABLE staging ({COLUMNS})\")\n    con.execute(\"INSERT INTO staging SELECT * FROM read_csv(?, header = true, all_varchar = true)\", [str(path)])\n    # AUDIT: every check runs against staging, and every result is logged\n    results = {audit: con.execute(sql).fetchone()[0] for audit, sql in AUDITS.items()}\n    for audit, problems in results.items():\n        con.execute(\"INSERT INTO audit_log VALUES (?, ?, ?, current_timestamp)\", [name, audit, problems])\n    failed = {audit: n for audit, n in results.items() if n}\n    staged = con.execute(\"SELECT count(*) FROM staging\").fetchone()[0]\n    # TODO: the gate. If any audit failed, copy the staged rows into quarantine with the file name and a\n    # summary such as \"known clinic (1), patient_ref present (1)\", print a line starting\n    # f\"{name}: BLOCKED, failed audits: ...\" and return False, so nothing is published.\n    # PUBLISH: replace this date's rows in one transaction, so readers see all of the batch or none of it\n    day = con.execute(\"SELECT min(visit_date) FROM staging\").fetchone()[0]\n    con.execute(\"BEGIN TRANSACTION\")\n    replaced = con.execute(\"DELETE FROM visits WHERE visit_date = ?\", [day]).fetchone()[0]\n    con.execute(\"INSERT INTO visits SELECT * FROM staging\")\n    con.execute(\"COMMIT\")\n    print(f\"{name}: published {staged} rows for {day} ({replaced} replaced)\")\n    return True\n\n\ndef refresh_downstream(con):\n    rows = con.execute(\"SELECT count(*) FROM visits\").fetchone()[0]\n    print(f\"downstream: dashboard extract rebuilt from {rows} published rows\")\n\n\ndef report(con):\n    for day, rows in con.execute(\"SELECT visit_date, count(*) FROM visits GROUP BY 1 ORDER BY 1\").fetchall():\n        print(f\"published {day}: {rows} rows\")\n    for source, failed, rows in con.execute(\"SELECT source_file, any_value(failed_audits), count(*) \"\n                                            \"FROM quarantine GROUP BY 1 ORDER BY 1\").fetchall():\n        print(f\"quarantined {source}: {rows} rows ({failed})\")\n\n\ndef main():\n    if len(sys.argv) != 2:\n        sys.exit(__doc__)\n    con = duckdb.connect(DB)\n    setup(con)\n    if sys.argv[1] == \"--report\":\n        report(con)\n    elif run(con, sys.argv[1]):\n        refresh_downstream(con)          # the circuit breaker: nothing downstream runs after a blocked batch\n    else:\n        print(\"downstream: refresh skipped, an incident needs triage\")\n    con.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "incident_report.md",
+            "content": "# Data incident report\n\nKeep it blameless: describe what the system and the process allowed, not who made a mistake.\n\n## Summary\nWhat happened, in two or three sentences.\n\n## Impact\nWhich tables, dashboards, reports and models were affected, for how long, and who relies on them.\n\n## Timeline\nWhen the bad data arrived, when it was detected and how, when consumers were told, when it was contained,\nfixed and backfilled. Use times, not just dates.\n\n## Detection\nWhich check caught it, or who noticed. Could a check have caught it sooner?\n\n## Root cause\nWhy the bad data was produced, and why it got as far as it did. Ask \"why?\" until you reach something you can change.\n\n## Resolution\nWhat was done to contain it, correct it and backfill, and how you confirmed the data was right again.\n\n## What went well, and what didn't\n\n## Actions\nEach with an owner and a date: new or stricter checks, contract changes, alerts, runbook updates.\n"
+          }
+        ],
+        "hints": [
+          "INSERT INTO quarantine SELECT ?, ?, * FROM staging copies the staged rows with the file name and the summary in front.",
+          "Return before the BEGIN TRANSACTION, so a blocked batch never touches the published table.",
+          "Publishing deletes the date's rows and inserts the new ones in one transaction, which is why a repeat is safe."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn the dimensions of data quality, and score the clinic extract in the module 1 lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Write pandera schemas and unit tests, and validate and quarantine the visits.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Study schema evolution and data contracts, and catch a breaking change with the contract checker.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Monitor freshness, volume and anomalies, and trace impact with lineage.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Handle data incidents, and stop a bad batch with write-audit-publish.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the capstone quality layer, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Build a quality and contract layer for a pipeline",
+    "minutes": 540,
+    "brief": "Take a pipeline, either the clinic visits from this course extended with a second table (such as laboratory results) or a dataset of your own with at least two tables, and give it the protection a team would rely on. Write a data contract for each published dataset, enforce it with pandera in CI and at run time, monitor freshness, volume and at least one distribution metric with checks that respect seasonality, record its lineage, and publish every batch through write-audit-publish with a circuit breaker. Then run a game day: inject at least three different problems, such as a breaking schema change, a partial load and a silent unit change, show which checks catch each one (and admit which don't), and write a blameless review of one of them.",
+    "deliverables": [
+      "Data contracts in YAML with owners, schemas, meanings and units, quality rules, service levels and a change policy, under version control",
+      "pandera schemas built from or matching the contracts, pytest unit tests for every rule, and a CI step that fails on a breaking contract change without a new major version",
+      "A monitoring script for freshness, volume and a distribution metric with seasonal or robust thresholds, and its output over at least 30 days of history",
+      "A lineage graph of the pipeline and an impact report for one failing table",
+      "A write-audit-publish loader with quarantine and a circuit breaker, and the output of a run that blocks a bad batch and then publishes the corrected one",
+      "A game-day log: each injected problem, the check that caught it or why none did, and the fix",
+      "A blameless incident review for one problem, with actions, owners and dates"
+    ],
+    "rubric": [
+      {
+        "name": "Contracts and versioning",
+        "points": 20,
+        "description": "Contracts are complete and specific, including units and service levels; versions follow the change policy; breaking changes are caught in CI."
+      },
+      {
+        "name": "Tests and validation",
+        "points": 20,
+        "description": "Every rule has passing and failing unit tests; run-time validation reports every failure and quarantines or blocks as the contract says."
+      },
+      {
+        "name": "Monitoring",
+        "points": 15,
+        "description": "Freshness, volume and distribution checks run on real history, with thresholds chosen to avoid false alarms and justified."
+      },
+      {
+        "name": "Prevention",
+        "points": 15,
+        "description": "Write-audit-publish publishes atomically and idempotently; the circuit breaker stops downstream work after a failed audit."
+      },
+      {
+        "name": "Game day and lineage",
+        "points": 15,
+        "description": "At least three different problems injected and traced; gaps in coverage are admitted and followed up; impact is worked out from lineage."
+      },
+      {
+        "name": "Incident review",
+        "points": 15,
+        "description": "Blameless, with a clear timeline, impact, root cause and actions that would prevent or catch the problem next time."
+      }
+    ],
+    "submit": "Paste your contracts, a link to your repository (or your code), the CI output for a breaking change, the monitor and loader outputs, your game-day log and your incident review."
+  }
+}
