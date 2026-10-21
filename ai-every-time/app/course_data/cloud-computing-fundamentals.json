@@ -1,0 +1,942 @@
+{
+  "slug": "cloud-computing-fundamentals",
+  "title": "Cloud Computing Fundamentals",
+  "subtitle": "Understand how the cloud works, from service models and regions to compute, storage, networking, access and cost, with AWS, Azure and Google Cloud side by side and labs that need no account.",
+  "category": "Cloud & DevOps",
+  "kind": "course",
+  "level": "beginner",
+  "instructors": [
+    "carlos-ramirez",
+    "mouhamadouu-ba"
+  ],
+  "skills": [
+    "Cloud service models",
+    "Shared responsibility",
+    "Regions and availability zones",
+    "Cloud compute and serverless",
+    "Cloud storage and databases",
+    "Virtual networks",
+    "Identity and access management",
+    "Cloud cost management"
+  ],
+  "tools": [
+    "Python",
+    "boto3 and moto",
+    "Functions Framework",
+    "Azurite",
+    "pandas",
+    "AWS CLI",
+    "Azure CLI",
+    "Google Cloud CLI"
+  ],
+  "outcomes": [
+    "Explain what makes a service cloud computing, and choose between IaaS, PaaS, SaaS and serverless",
+    "Describe regions and availability zones, and design for availability across zones",
+    "Compare the main compute, storage, database and networking services of AWS, Azure and Google Cloud",
+    "Apply the shared responsibility model and least-privilege access to a cloud design",
+    "Estimate cloud costs in usage terms and control them with budgets, alerts and tags"
+  ],
+  "prerequisites": "No cloud experience needed. Comfort with a terminal (Linux Command Line Essentials) and reading short Python programs (Python Programming with PyCharm) helps. Install Python 3.10 or later, and Node.js or Docker for one lab. No cloud account or payment card is needed. Containerisation and Orchestration with Docker and Kubernetes and Infrastructure as Code with Terraform make good next steps.",
+  "description": "Cloud computing runs most of the software people use every day, yet its basics are often buried under product names. This course explains the ideas that stay the same whichever provider you use, and names the services of AWS, Microsoft Azure and Google Cloud side by side so you can find your way in any of them. You'll learn what makes something a cloud service, the difference between IaaS, PaaS, SaaS and serverless, who is responsible for what, how regions and availability zones keep services running, and how compute, storage, databases, networks and identity fit together.\n\nEvery lab runs on your own computer, with no cloud account and no charges: you'll create and clean up storage through API calls on an emulator, run a serverless function locally, share a private file with a time-limited link on the Azure Storage emulator, plan a network and test a least-privilege policy, and analyse a month of usage against a budget. Optional steps show the free command-line tools for readers with a free-tier account. The capstone has you design a small deployment for all three providers and prove its core flow works locally.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "What cloud computing is",
+      "summary": "What makes something a cloud service, the deployment models, the service models from IaaS to SaaS and serverless, and who is responsible for what, with examples from AWS, Microsoft Azure and Google Cloud side by side.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "Cloud computing defined",
+          "minutes": 12,
+          "objectives": [
+            "Describe the five essential characteristics of cloud computing",
+            "Compare public, private, hybrid and multi-cloud deployments"
+          ],
+          "key_points": [
+            "The US National Institute of Standards and Technology (NIST) defines cloud computing by five characteristics: on-demand self-service, broad network access, resource pooling, rapid elasticity and measured service.",
+            "On-demand self-service means you create servers, storage or databases yourself, through a console or an API call, in minutes, without asking anyone; measured service means you pay for what you use, metered by the hour, the second, the gigabyte or the request.",
+            "Elasticity means capacity grows and shrinks with demand, often automatically, so you neither buy for the busiest day nor run out on it; resource pooling means many customers share the provider's hardware, kept apart by software.",
+            "A public cloud, such as AWS, Microsoft Azure or Google Cloud, is run by a provider for many customers; a private cloud serves one organisation; hybrid cloud connects the two, and multi-cloud uses more than one provider.",
+            "Cloud turns up-front capital spending on hardware into an operating cost that follows usage, which helps when demand is uncertain but needs watching, because usage that nobody turns off keeps costing money."
+          ]
+        },
+        {
+          "title": "Service models: IaaS, PaaS, SaaS and serverless",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish IaaS, PaaS, SaaS and serverless by what you manage",
+            "Match common services from AWS, Azure and Google Cloud to each model"
+          ],
+          "key_points": [
+            "Infrastructure as a service (IaaS) rents virtual machines, disks and networks, and you manage the operating system and everything above it: Amazon EC2, Azure Virtual Machines and Google Compute Engine.",
+            "Platform as a service (PaaS) runs your code or data on a managed platform, so you don't patch servers: AWS Elastic Beanstalk, Azure App Service and Google App Engine for applications, and managed databases such as Amazon RDS.",
+            "Software as a service (SaaS) is a finished application you use through a browser or an API, such as email, office suites or customer relationship management; you manage your data and who can use it.",
+            "Serverless means the provider runs and scales the servers entirely, often down to zero when idle, and bills per request or per unit of work: AWS Lambda, Azure Functions and Google's Cloud Run functions (formerly Cloud Functions) run code in response to events.",
+            "Moving from IaaS to SaaS, you control less but manage less; choose the most managed model that still gives you the control you need, because less to manage usually means fewer things to get wrong."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Use a local emulator as if it were the cloud",
+            "steps": [
+              {
+                "do": "Install moto's server mode and the AWS SDK for Python. moto imitates AWS's APIs on your own computer: no account and no charges.",
+                "code": "pip install boto3 \"moto[server]\"",
+                "lang": "bash"
+              },
+              {
+                "do": "Start the emulator and leave it running.",
+                "code": "moto_server -p 5000",
+                "lang": "bash",
+                "see": "Running on http://127.0.0.1:5000"
+              },
+              {
+                "do": "In a second terminal, start Python and point the SDK at the emulator instead of AWS.",
+                "code": "import boto3\ns3 = boto3.client(\"s3\", endpoint_url=\"http://localhost:5000\", region_name=\"us-east-1\",\n                  aws_access_key_id=\"testing\", aws_secret_access_key=\"testing\")",
+                "lang": "python"
+              },
+              {
+                "do": "Create a bucket, store an object and list the buckets: on-demand self-service, by API call.",
+                "code": "s3.create_bucket(Bucket=\"walkthrough-demo\")\ns3.put_object(Bucket=\"walkthrough-demo\", Key=\"hello.txt\", Body=b\"hello, cloud\")\n[b[\"Name\"] for b in s3.list_buckets()[\"Buckets\"]]",
+                "lang": "python",
+                "see": "['walkthrough-demo']"
+              },
+              {
+                "do": "Open http://localhost:5000/moto-api/ in a browser to see the resources the emulator is holding."
+              },
+              {
+                "do": "Stop the emulator with Ctrl+C in its terminal. Its resources lived only in memory, so they're gone, and there is nothing to pay for or clean up."
+              }
+            ]
+          }
+        },
+        {
+          "title": "The shared responsibility model",
+          "minutes": 11,
+          "objectives": [
+            "Explain what the provider and the customer each secure",
+            "Show how responsibility shifts between IaaS, PaaS and SaaS"
+          ],
+          "key_points": [
+            "Security and operations are shared: the provider secures the cloud itself, its data centres, hardware, network and virtualisation, while you secure what you put in it; AWS describes this as security of the cloud versus security in the cloud.",
+            "With IaaS you patch and harden the operating system, configure the firewall and manage the software you install; with PaaS the provider patches the platform; with SaaS it runs almost everything.",
+            "Some things are always yours, whatever the service model: your data and how it's classified, who has access and with what permissions, and how your accounts and keys are protected.",
+            "Many cloud security incidents come from customer-side settings, such as storage left open to the internet or over-generous permissions, so learning your side of the model matters more than worrying about the provider's.",
+            "Providers publish their own versions of the model, and Google Cloud also speaks of shared fate, offering secure defaults and blueprints, but the split for each service is in its documentation: read it before you rely on an assumption."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Cloud as an API: create, use and delete storage on an emulator",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Use the AWS SDK for Python against moto, a local emulator, to list availability zones, create and tag a storage bucket, upload and list objects, and clean everything up, all by API calls and without an account.",
+        "setup": [
+          "Python 3.10 or later, with a virtual environment for this course",
+          "boto3 and moto: pip install boto3 \"moto[s3,ec2]\"",
+          "The starter file first_calls.py in a new lab folder",
+          "Optional: a free-tier account with AWS, Azure or Google Cloud and its command-line tool, for the last step"
+        ],
+        "steps": [
+          {
+            "do": "Read first_calls.py. Everything inside with mock_aws() is answered by moto, and the fake credentials mean no call can reach a real account."
+          },
+          {
+            "do": "Run it as it is.",
+            "code": "python first_calls.py",
+            "lang": "bash",
+            "see": "Availability zones in eu-west-1: eu-west-1a, eu-west-1b, eu-west-1c, then the bucket, three objects of 24 bytes and their metadata."
+          },
+          {
+            "do": "TODO 1: tag the bucket with team=analytics and cost-centre=cc-104, then print the tags back. Tags are how module 5 will find out who is spending what.",
+            "code": "s3.put_bucket_tagging(Bucket=BUCKET, Tagging={\"TagSet\": [{\"Key\": \"team\", \"Value\": \"analytics\"},\n                                                {\"Key\": \"cost-centre\", \"Value\": \"cc-104\"}]})",
+            "lang": "python"
+          },
+          {
+            "do": "TODO 2: clean up the way you would in a real account: delete every object, then the bucket, then list what's left. A bucket can't be deleted while it still holds objects."
+          },
+          {
+            "do": "Run it again and check the end of the output.",
+            "code": "python first_calls.py",
+            "lang": "bash",
+            "see": "Tags: {'team': 'analytics', 'cost-centre': 'cc-104'} and Buckets left after clean-up: []"
+          },
+          {
+            "do": "Fill in a responsibility table for three services from this module (a virtual machine, a managed database and an email SaaS): for each, who patches the operating system, who backs up the data, and who decides who can read it."
+          },
+          {
+            "do": "Optional, with a free-tier account: install the provider's command-line tool, sign in, and run its read-only identity command, which costs nothing.",
+            "code": "aws configure    # or: aws configure sso\naws sts get-caller-identity\n\naz login\naz account show\n\ngcloud init\ngcloud config list",
+            "lang": "bash"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The script lists the zones of a region through the API.",
+            "look_for": [
+              "eu-west-1a, eu-west-1b, eu-west-1c"
+            ]
+          },
+          {
+            "text": "Objects are uploaded and listed with their metadata.",
+            "look_for": [
+              "Objects under 2025/: 3",
+              "{'source': 'weighbridge'}"
+            ]
+          },
+          {
+            "text": "The bucket is tagged for cost allocation.",
+            "look_for": [
+              "'cost-centre': 'cc-104'"
+            ]
+          },
+          {
+            "text": "Everything is cleaned up at the end.",
+            "look_for": [
+              "Buckets left after clean-up: []"
+            ]
+          },
+          {
+            "text": "The responsibility table covers all three services.",
+            "look_for": [
+              "database",
+              "patch"
+            ]
+          }
+        ],
+        "submit": "Paste your two TODO changes, the output of the final run, and your responsibility table.",
+        "files": [
+          {
+            "path": "first_calls.py",
+            "content": "\"\"\"Create, use and delete cloud storage with nothing but API calls, against moto's local stand-in for AWS.\n\nInside the \"with mock_aws()\" block every AWS call is answered on your computer: no account, no charges.\nRun:  python first_calls.py\n\"\"\"\nimport os\n\nimport boto3\nfrom moto import mock_aws\n\n# Fake credentials, so nothing can ever reach a real account by mistake.\nos.environ.update(AWS_ACCESS_KEY_ID=\"testing\", AWS_SECRET_ACCESS_KEY=\"testing\", AWS_DEFAULT_REGION=\"eu-west-1\")\nREGION = \"eu-west-1\"\nBUCKET = \"coop-harvest-reports-demo\"\n\n\ndef main():\n    with mock_aws():\n        ec2 = boto3.client(\"ec2\", region_name=REGION)\n        zones = [z[\"ZoneName\"] for z in ec2.describe_availability_zones()[\"AvailabilityZones\"]]\n        print(f\"Availability zones in {REGION}: {', '.join(zones)}\")\n\n        s3 = boto3.client(\"s3\", region_name=REGION)\n        s3.create_bucket(Bucket=BUCKET, CreateBucketConfiguration={\"LocationConstraint\": REGION})\n        location = s3.get_bucket_location(Bucket=BUCKET)[\"LocationConstraint\"]\n        print(f\"Created bucket {BUCKET} in {location}\")\n\n        # TODO 1: tag the bucket with team=analytics and cost-centre=cc-104 using put_bucket_tagging,\n        # then print the tags that get_bucket_tagging returns.\n\n        for month in (\"2025/01\", \"2025/02\", \"2025/03\"):\n            body = f\"month,tonnes\\n{month},{len(month) * 3}\\n\".encode()\n            s3.put_object(Bucket=BUCKET, Key=f\"{month}/summary.csv\", Body=body, Metadata={\"source\": \"weighbridge\"})\n        listing = s3.list_objects_v2(Bucket=BUCKET, Prefix=\"2025/\")\n        print(f\"Objects under 2025/: {listing['KeyCount']}\")\n        for obj in listing[\"Contents\"]:\n            print(f\"  {obj['Key']}  {obj['Size']} bytes\")\n        head = s3.head_object(Bucket=BUCKET, Key=\"2025/03/summary.csv\")\n        print(f\"Metadata on 2025/03/summary.csv: {head['Metadata']}\")\n\n        # TODO 2: clean up as you would in a real account: delete every object, then the bucket,\n        # and print the buckets that are left.\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "get_bucket_tagging returns {\"TagSet\": [{\"Key\": ..., \"Value\": ...}]}: turn it into a dictionary with a comprehension.",
+          "list_objects_v2(Bucket=BUCKET)[\"Contents\"] gives the objects to delete with delete_object.",
+          "If you see an error about credentials, run the script from a terminal where no real AWS profile is forced on it, or set AWS_PROFILE to nothing."
+        ]
+      }
+    },
+    {
+      "title": "Global infrastructure and compute",
+      "summary": "Regions, availability zones and edge locations and how to choose between them; the compute options from virtual machines to containers and functions; and designing for availability and elasticity, with a serverless function run locally.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "Regions, availability zones and edge locations",
+          "minutes": 12,
+          "objectives": [
+            "Explain regions, availability zones and edge locations",
+            "Choose a region for a workload"
+          ],
+          "key_points": [
+            "A region is a geographic area with its own set of data centres, such as AWS eu-west-1 in Ireland, Azure West Europe in the Netherlands or Google Cloud europe-west1 in Belgium; most services and their data stay in the region you choose.",
+            "An availability zone is one or more data centres in a region with independent power, cooling and networking, close enough for fast links; regions usually have three or more, and spreading across them survives the loss of one.",
+            "Naming differs: AWS zones look like eu-west-1a, Google Cloud zones like europe-west1-b, and Azure numbers zones 1, 2 and 3 within a region; on AWS and Azure the same name can map to different physical zones in different accounts.",
+            "Edge locations, far more numerous than regions, run content delivery networks and DNS close to users, such as Amazon CloudFront, Azure Front Door and Google Cloud CDN, so content loads quickly worldwide.",
+            "Choose a region by where your users are (latency), what the law requires about where data is kept (data residency), which services the region offers, and price, which varies between regions; Azure also pairs many regions for disaster recovery."
+          ]
+        },
+        {
+          "title": "Compute options: virtual machines, containers and functions",
+          "minutes": 13,
+          "objectives": [
+            "Compare virtual machines, containers and functions as ways to run code",
+            "Match each to services on AWS, Azure and Google Cloud"
+          ],
+          "key_points": [
+            "Virtual machines give a whole server to configure, sized by instance or machine type (CPU, memory, sometimes GPUs) and started from an image: the right choice for software that expects a server, or for full control.",
+            "Scaling groups run identical VMs from a template and add or remove them with demand: AWS Auto Scaling groups, Azure Virtual Machine Scale Sets and Google Cloud managed instance groups.",
+            "Containers package an application with its dependencies; managed Kubernetes (Amazon EKS, Azure Kubernetes Service, Google Kubernetes Engine) runs many of them, and serverless containers (AWS Fargate, Azure Container Apps, Google Cloud Run) run them without managing servers.",
+            "Functions run a small piece of code per event, such as an HTTP request, a file upload or a message, and scale automatically; they suit short, bursty work but have limits on run time, and the first call after a quiet spell can be slower (a cold start).",
+            "Prefer the most managed option that fits: functions or serverless containers for web APIs and event handling, VMs for software that needs a server, and Kubernetes when you run many services and have people to operate it."
+          ]
+        },
+        {
+          "title": "Designing for availability and elasticity",
+          "minutes": 12,
+          "objectives": [
+            "Design an application that survives the failure of a zone",
+            "Calculate the availability of components in series and in parallel"
+          ],
+          "key_points": [
+            "Scale out, adding more instances, rather than up, using a bigger instance: identical instances behind a load balancer, in at least two zones, keep serving when one instance or one zone fails.",
+            "Keep instances stateless, with sessions and files in a database, cache or object storage, so any instance can serve any request and new ones can start at any time.",
+            "Health checks let a load balancer stop sending traffic to a failed instance, and autoscaling replaces it or adds capacity when a metric, such as CPU use or queue length, crosses a threshold.",
+            "Components that all must work are in series, and their availabilities multiply, so the whole is less available than its weakest part; redundant copies are in parallel, and fail only if every copy fails.",
+            "A service level agreement (SLA) is the availability a provider commits to, usually with service credits if it's missed; it often requires a multi-zone set-up, so check its conditions before designing to it."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Run a serverless function locally, and do the availability maths",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Write an HTTP function with Google Cloud's open-source Functions Framework, run and test it on your own computer, validate its input, and work out how much redundancy across zones improves a design's availability.",
+        "setup": [
+          "Your course virtual environment",
+          "The Functions Framework for Python: pip install functions-framework",
+          "curl, which macOS, Linux and Windows 10 or later include, or a web browser",
+          "The starter files main.py and availability.py"
+        ],
+        "steps": [
+          {
+            "do": "Read main.py: quote() is an ordinary Python function that receives a Flask request and returns a dictionary, which becomes a JSON response."
+          },
+          {
+            "do": "Start the function locally, the same way Cloud Run functions would serve it.",
+            "code": "functions-framework --target=quote --port=8080",
+            "lang": "bash",
+            "see": "The server starts on port 8080."
+          },
+          {
+            "do": "In a second terminal, call it.",
+            "code": "curl \"http://localhost:8080/?distance_km=12\"",
+            "lang": "bash",
+            "see": "{\"distance_km\":12.0,\"fee\":12.1,\"unit\":\"credits\"}"
+          },
+          {
+            "do": "Send it bad input. Text is rejected already, but a distance of 80 km is quoted as if it were fine.",
+            "code": "curl \"http://localhost:8080/?distance_km=abc\"\ncurl \"http://localhost:8080/?distance_km=80\"",
+            "lang": "bash"
+          },
+          {
+            "do": "TODO: reject distances of zero or less and over 50 km with a 400 response. Stop the server with Ctrl+C, start it again and repeat the call.",
+            "code": "if not 0 < km <= 50:\n    return {\"error\": \"distance_km must be more than 0 and at most 50\"}, 400",
+            "lang": "python",
+            "see": "{\"error\":\"distance_km must be more than 0 and at most 50\"}"
+          },
+          {
+            "do": "Run the availability calculation. The percentages are assumptions for the exercise, not any provider's figures.",
+            "code": "python availability.py",
+            "lang": "bash",
+            "see": "One VM at 99.5000%, two VMs in different zones at 99.9975%, and the full designs below them."
+          },
+          {
+            "do": "TODO: add the design with a standby database in a second zone, and run it again.",
+            "code": "show(\"load balancer + two VMs + database standby\", in_series(lb, in_parallel(vm, vm), in_parallel(db, db)))",
+            "lang": "python",
+            "see": "99.9874%, about 5.4 minutes down per 30 days."
+          },
+          {
+            "do": "In a few sentences: which single change helped most, and why does availability in series fall below the weakest part? Name the equivalent of your function on AWS and Azure."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The function returns a quote as JSON.",
+            "look_for": [
+              "\"fee\":12.1"
+            ]
+          },
+          {
+            "text": "Out-of-range distances get a 400 error.",
+            "look_for": [
+              "must be more than 0 and at most 50"
+            ]
+          },
+          {
+            "text": "Redundancy across zones is calculated.",
+            "look_for": [
+              "two VMs in different zones",
+              "99.9975%"
+            ]
+          },
+          {
+            "text": "The standby database design is added.",
+            "look_for": [
+              "load balancer + two VMs + database standby",
+              "99.9874%"
+            ]
+          },
+          {
+            "text": "The answer names the equivalent services.",
+            "look_for": [
+              "Lambda",
+              "Azure Functions"
+            ]
+          }
+        ],
+        "submit": "Paste your changed main.py and availability.py, the curl commands with their responses, the output of availability.py, and your answers.",
+        "files": [
+          {
+            "path": "main.py",
+            "content": "\"\"\"An HTTP function that quotes a delivery fee, written for Google Cloud's Functions Framework.\n\nRun it locally:  functions-framework --target=quote --port=8080\nThen call it:    curl \"http://localhost:8080/?distance_km=12\"\n\"\"\"\nimport functions_framework\n\nBASE_FEE = 2.5      # in credits, a made-up unit for this course\nPER_KM = 0.8\n\n\n@functions_framework.http\ndef quote(request):\n    \"\"\"request is a Flask request; the return value becomes the HTTP response.\"\"\"\n    try:\n        km = float(request.args.get(\"distance_km\", \"\"))\n    except ValueError:\n        return {\"error\": \"distance_km must be a number\"}, 400\n    # TODO: reject distances of zero or less, and over 50 km, with a 400 response and an error message.\n    return {\"distance_km\": km, \"fee\": round(BASE_FEE + PER_KM * km, 2), \"unit\": \"credits\"}\n"
+          },
+          {
+            "path": "availability.py",
+            "content": "\"\"\"Availability arithmetic for a simple design. The percentages are assumptions for the exercise,\nnot any provider's figures: use the ones in your provider's service level agreements.\n\nRun:  python availability.py\n\"\"\"\nMINUTES_PER_30_DAYS = 30 * 24 * 60\n\n\ndef in_series(*parts):\n    \"\"\"Every part must be up: multiply the availabilities.\"\"\"\n    total = 1.0\n    for a in parts:\n        total *= a\n    return total\n\n\ndef in_parallel(*parts):\n    \"\"\"At least one part must be up: 1 minus the chance that all are down (assuming independent failures).\"\"\"\n    all_down = 1.0\n    for a in parts:\n        all_down *= 1 - a\n    return 1 - all_down\n\n\ndef show(name, a):\n    print(f\"{name:<44} {a * 100:.4f}%  about {(1 - a) * MINUTES_PER_30_DAYS:.1f} minutes down per 30 days\")\n\n\ndef main():\n    vm, db, lb = 0.995, 0.999, 0.9999\n    show(\"one VM\", vm)\n    show(\"two VMs in different zones\", in_parallel(vm, vm))\n    show(\"load balancer + one VM + database\", in_series(lb, vm, db))\n    show(\"load balancer + two VMs + database\", in_series(lb, in_parallel(vm, vm), db))\n    # TODO: add a line for a load balancer, two VMs and a database with a standby in a second zone,\n    # where the database pair is in_parallel(db, db).\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "Restart functions-framework after each change to main.py, or add --debug to reload automatically.",
+          "Returning a tuple (body, 400) sets the HTTP status code.",
+          "in_parallel assumes the copies fail independently, which is why they belong in different zones."
+        ]
+      }
+    },
+    {
+      "title": "Storage and databases",
+      "summary": "Object, block and file storage; storage classes, lifecycle rules, redundancy and other ways to protect data; and managed relational, NoSQL and analytics databases, with object storage practised on Azurite, the Azure Storage emulator.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "Object, block and file storage",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish object, block and file storage",
+            "Choose the right kind for a workload"
+          ],
+          "key_points": [
+            "Object storage keeps files as objects (data, metadata and a key) in buckets or containers, reached over HTTP, with practically unlimited capacity: Amazon S3, Azure Blob Storage and Google Cloud Storage.",
+            "Object keys look like paths, such as 2025/03/plot-02.jpg, but the namespace is flat: listing by a prefix gives the effect of folders, and objects are replaced whole rather than edited in place.",
+            "Block storage gives a virtual machine a disk that the operating system formats, suited to databases and boot volumes: Amazon EBS, Azure Managed Disks and Google Persistent Disk.",
+            "File storage shares a file system between many machines over protocols such as NFS or SMB: Amazon EFS, Azure Files and Google Filestore.",
+            "Use object storage for files, backups, data lakes and static websites, block storage for one server's disks, and file storage where several servers need the same folders."
+          ]
+        },
+        {
+          "title": "Storage classes, lifecycle and protecting data",
+          "minutes": 12,
+          "objectives": [
+            "Use storage classes and lifecycle rules to match cost to access",
+            "Protect stored data with redundancy, versioning, encryption and limited sharing"
+          ],
+          "key_points": [
+            "Storage classes trade storage price against access cost and speed: S3 Standard, Standard-IA and the Glacier classes; Azure's Hot, Cool, Cold and Archive tiers; and Google's Standard, Nearline, Coldline and Archive classes.",
+            "Colder classes cost less to store but more to read, and often charge a minimum storage duration, so they suit data read rarely; lifecycle rules move or delete objects automatically as they age.",
+            "Redundancy copies data within a zone, across zones or to another region; Azure names its options LRS, ZRS, GRS and GZRS, and versioning keeps earlier versions of objects so a mistaken overwrite or delete can be undone.",
+            "Object storage is encrypted at rest by default on all three providers, with keys they manage or, if you need control, keys you manage in a key service; encryption doesn't replace access control.",
+            "Keep buckets and containers private and share single objects with a time-limited signed link: an S3 presigned URL, an Azure shared access signature (SAS) or a Cloud Storage signed URL."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Start Azurite, the Azure Storage emulator",
+            "steps": [
+              {
+                "do": "Install Azurite with npm (it needs Node.js), or skip to the Docker step.",
+                "code": "npm install -g azurite",
+                "lang": "bash"
+              },
+              {
+                "do": "Start only the blob service, keeping its data in a folder of your own. --skipApiVersionCheck lets newer SDK versions talk to it.",
+                "code": "azurite-blob --location ./azurite-data --skipApiVersionCheck",
+                "lang": "bash",
+                "see": "Azurite Blob service successfully listens on http://127.0.0.1:10000"
+              },
+              {
+                "do": "Or run it with Docker instead.",
+                "code": "docker run -p 10000:10000 mcr.microsoft.com/azure-storage/azurite \\\n  azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck",
+                "lang": "bash"
+              },
+              {
+                "do": "Connect from code with the development connection string, which every Azure Storage SDK understands.",
+                "code": "from azure.storage.blob import BlobServiceClient\nservice = BlobServiceClient.from_connection_string(\"UseDevelopmentStorage=true\")",
+                "lang": "python"
+              },
+              {
+                "do": "Stop it with Ctrl+C when you've finished; delete the data folder to start afresh."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Managed databases",
+          "minutes": 11,
+          "objectives": [
+            "Compare relational, NoSQL and analytical database services",
+            "Explain what a managed database looks after for you"
+          ],
+          "key_points": [
+            "Managed relational databases run engines such as PostgreSQL, MySQL and SQL Server for you: Amazon RDS and Aurora, Azure SQL Database and Azure Database for PostgreSQL and MySQL, and Google Cloud SQL, AlloyDB and Spanner.",
+            "Managed means the provider installs, patches, backs up and fails over the database server, while you still design the schema, tune queries, choose who can connect and decide how long backups are kept.",
+            "High availability puts a standby copy in another zone that takes over automatically; read replicas spread read traffic; point-in-time restore recovers the database to a moment before a mistake.",
+            "NoSQL services suit very large scale, flexible records or key-based access: Amazon DynamoDB, Azure Cosmos DB, and Google's Firestore and Bigtable.",
+            "Data warehouses analyse large volumes with SQL, storing data by column: Amazon Redshift, Google BigQuery and Microsoft Fabric, as the Data Warehousing and Dimensional Modelling course explains."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Object storage on Azurite: containers, blobs and a shared access signature",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Use the Azure Storage SDK against Azurite to create a private container, upload blobs with content types and metadata, list them by prefix, show that anonymous access is refused, and share one blob with a read-only link that expires in an hour.",
+        "setup": [
+          "Node.js and Azurite (npm install -g azurite), or Docker, as in the lesson's walkthrough",
+          "The Azure Storage Blob SDK in your course virtual environment: pip install azure-storage-blob",
+          "The starter file blob_lab.py"
+        ],
+        "steps": [
+          {
+            "do": "Start Azurite's blob service and leave it running.",
+            "code": "azurite-blob --location ./azurite-data --skipApiVersionCheck",
+            "lang": "bash"
+          },
+          {
+            "do": "Read blob_lab.py, then run it in a second terminal.",
+            "code": "python blob_lab.py",
+            "lang": "bash",
+            "see": "The container, the three March blobs, plot-02's size, content type and metadata, and Anonymous download refused: HTTP 403."
+          },
+          {
+            "do": "TODO: create a read-only SAS for 2025/03/plot-02.jpg that expires in one hour, download the blob with it, and print the status and size.",
+            "code": "sas = generate_blob_sas(account_name=ACCOUNT, account_key=KEY, container_name=CONTAINER,\n                        blob_name=\"2025/03/plot-02.jpg\", permission=BlobSasPermissions(read=True),\n                        expiry=datetime.now(timezone.utc) + timedelta(hours=1))",
+            "lang": "python"
+          },
+          {
+            "do": "Run it again.",
+            "code": "python blob_lab.py",
+            "lang": "bash",
+            "see": "Download with a read-only SAS: HTTP 200, 29 bytes"
+          },
+          {
+            "do": "Answer in a few sentences: why does the blob listing use a prefix rather than a folder, why share a SAS rather than make the container public, and what are the equivalents of a SAS on AWS and Google Cloud?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The container is created and the blobs listed by prefix.",
+            "look_for": [
+              "Created container field-photos",
+              "Blobs from March: ['2025/03/plot-01.jpg', '2025/03/plot-02.jpg', '2025/03/plot-03.jpg']"
+            ]
+          },
+          {
+            "text": "Content type and metadata are stored with the blob.",
+            "look_for": [
+              "image/jpeg",
+              "{'farm': 'pisac', 'crop': 'potato'}"
+            ]
+          },
+          {
+            "text": "The private container refuses anonymous downloads.",
+            "look_for": [
+              "Anonymous download refused"
+            ]
+          },
+          {
+            "text": "A read-only SAS downloads the one blob.",
+            "look_for": [
+              "Download with a read-only SAS: HTTP 200, 29 bytes"
+            ]
+          },
+          {
+            "text": "The answers name the AWS and Google Cloud equivalents.",
+            "look_for": [
+              "presigned",
+              "signed URL"
+            ]
+          }
+        ],
+        "submit": "Paste your SAS code, the output of the final run, and your answers.",
+        "files": [
+          {
+            "path": "blob_lab.py",
+            "content": "\"\"\"Object storage on Azurite, the Azure Storage emulator: a private container, blobs with metadata,\nlisting by prefix, and a time-limited shared access signature (SAS) for one blob.\n\nStart Azurite first (see the lab steps), then run:  python blob_lab.py\n\"\"\"\nimport urllib.error\nimport urllib.request\nfrom datetime import datetime, timedelta, timezone\n\nfrom azure.storage.blob import BlobSasPermissions, BlobServiceClient, ContentSettings, generate_blob_sas\n\n# Azurite's development account. Its name and key are published in Azure's documentation for local\n# development only; never use them, or any key written in code, for a real account.\nACCOUNT = \"devstoreaccount1\"\nKEY = \"Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==\"\nCONTAINER = \"field-photos\"\n\n\ndef main():\n    service = BlobServiceClient.from_connection_string(\"UseDevelopmentStorage=true\")\n    container = service.create_container(CONTAINER)          # private: no anonymous access\n    print(f\"Created container {CONTAINER} at {container.url}\")\n\n    for plot in (\"plot-01\", \"plot-02\", \"plot-03\"):\n        container.upload_blob(f\"2025/03/{plot}.jpg\", data=b\"\\xff\\xd8 not really a photo \" + plot.encode(),\n                              content_settings=ContentSettings(content_type=\"image/jpeg\"),\n                              metadata={\"farm\": \"pisac\", \"crop\": \"potato\"})\n    container.upload_blob(\"2025/04/plot-01.jpg\", data=b\"\\xff\\xd8 april\")\n    march = [b.name for b in container.list_blobs(name_starts_with=\"2025/03/\")]\n    print(f\"Blobs from March: {march}\")\n    props = container.get_blob_client(\"2025/03/plot-02.jpg\").get_blob_properties()\n    print(f\"plot-02: {props.size} bytes, {props.content_settings.content_type}, metadata {props.metadata}\")\n\n    blob_url = container.get_blob_client(\"2025/03/plot-02.jpg\").url\n    try:\n        urllib.request.urlopen(blob_url)\n    except urllib.error.HTTPError as err:\n        print(f\"Anonymous download refused: HTTP {err.code}\")\n\n    # TODO: make a read-only SAS for 2025/03/plot-02.jpg that expires in one hour, with generate_blob_sas\n    # (account_name=ACCOUNT, account_key=KEY, container_name, blob_name, permission and expiry), download\n    # blob_url + \"?\" + sas with urllib, and print how many bytes came back.\n\n    service.delete_container(CONTAINER)\n    print(f\"Deleted container {CONTAINER}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "If the script can't connect, check Azurite is still running and listening on port 10000.",
+          "An error saying an API version isn't supported means Azurite was started without --skipApiVersionCheck, or needs updating.",
+          "The account key in the file is Azurite's published development key; real keys belong in a secret store, never in code."
+        ]
+      }
+    },
+    {
+      "title": "Networking, identity and access",
+      "summary": "Virtual networks, subnets and routing; firewalls, load balancers and DNS; and identity and access management with least privilege, compared across AWS, Azure and Google Cloud and practised with a network plan and a policy check.",
+      "instructor": "mouhamadouu-ba",
+      "lessons": [
+        {
+          "title": "Virtual networks and subnets",
+          "minutes": 12,
+          "objectives": [
+            "Plan a virtual network with public and private subnets",
+            "Compare how AWS, Azure and Google Cloud scope networks and subnets"
+          ],
+          "key_points": [
+            "A virtual network is your private, isolated network in the cloud, with an address range written in CIDR notation such as 10.20.0.0/16: an Amazon VPC, an Azure Virtual Network (VNet) or a Google Cloud VPC network.",
+            "Subnets divide that range; a public subnet routes to the internet through an internet gateway, while a private subnet has no inbound route from the internet and reaches out, for updates, through a NAT gateway.",
+            "Scope differs: an AWS VPC belongs to a region and each subnet to one availability zone; an Azure VNet belongs to a region and its subnets span zones; a Google Cloud VPC network is global and its subnets are regional.",
+            "Each provider reserves some addresses in every subnet, five on AWS and Azure and four in a Google Cloud subnet's primary range, so a /24 gives 251 or 252 usable addresses rather than 256.",
+            "Plan address ranges before you build: avoid overlapping the ranges of your offices and other networks you might connect, and leave space to add subnets later."
+          ]
+        },
+        {
+          "title": "Controlling traffic: firewalls, load balancers and DNS",
+          "minutes": 12,
+          "objectives": [
+            "Control traffic with stateful firewall rules",
+            "Describe load balancers, DNS and private connections"
+          ],
+          "key_points": [
+            "Stateful firewall rules allow inbound and outbound traffic by protocol, port and source, and automatically allow the replies: AWS security groups, Azure network security groups and Google Cloud VPC firewall rules; AWS network ACLs add a stateless layer per subnet.",
+            "Open as little as possible: allow web traffic to the load balancer only, allow the application servers to accept traffic only from the load balancer, and never open administration ports such as SSH to the whole internet.",
+            "Load balancers spread traffic over healthy instances: layer 4 balancers handle TCP and UDP, layer 7 balancers understand HTTP; examples are AWS Elastic Load Balancing, Azure Load Balancer and Application Gateway, and Google Cloud Load Balancing.",
+            "Managed DNS turns names into addresses and can route users to healthy or nearby endpoints: Amazon Route 53, Azure DNS and Google Cloud DNS.",
+            "Private connections link your own sites to the cloud without the public internet: a site-to-site VPN, or dedicated links such as AWS Direct Connect, Azure ExpressRoute and Google Cloud Interconnect."
+          ]
+        },
+        {
+          "title": "Identity and access management",
+          "minutes": 13,
+          "objectives": [
+            "Explain identities, permissions and least privilege in the cloud",
+            "Compare how AWS, Azure and Google Cloud grant access"
+          ],
+          "key_points": [
+            "Identity and access management (IAM) decides who, people or software, can do what to which resources; start from nothing allowed, and grant only what each identity needs, which is least privilege.",
+            "AWS attaches JSON policies, statements with an Effect, Actions and Resources, to users, groups and roles; anything not allowed is denied, and an explicit Deny overrides any Allow.",
+            "Azure assigns roles, such as Reader or Storage Blob Data Reader, to users, groups or managed identities at a scope (a management group, subscription, resource group or resource), using identities from Microsoft Entra ID.",
+            "Google Cloud grants roles to principals, such as users, groups and service accounts, on a resource or on a project, folder or organisation, and grants are inherited downwards; predefined roles are safer than the broad basic roles Owner, Editor and Viewer.",
+            "Protect the most powerful accounts, such as the AWS root user, with multi-factor authentication and no everyday use, and prefer roles and short-lived credentials to long-lived access keys in code.",
+            "Turn on audit logs, AWS CloudTrail, Azure's activity log and Google Cloud Audit Logs, so you can see who did what and when."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Plan a network and write a least-privilege policy",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Carve a /16 network into public and private subnets in three zones without overlaps, compare the usable addresses on each provider, and write an access policy that lets an analyst read reports and nothing else, tested with a simplified model of AWS policy evaluation.",
+        "setup": [
+          "Python 3.10 or later; these scripts use only the standard library",
+          "The starter files plan_network.py, access_check.py and admin_policy.json"
+        ],
+        "steps": [
+          {
+            "do": "Run the network plan as it is: three public /24 subnets, one per zone.",
+            "code": "python plan_network.py",
+            "lang": "bash",
+            "see": "public-a 10.20.0.0/24 with 251 usable addresses on AWS and Azure and 252 on Google Cloud."
+          },
+          {
+            "do": "TODO: give each zone a private /20, skipping the first /20, which already holds the public subnets, and run it again.",
+            "code": "subnets[f\"private-{zone}\"] = large[i + 1]",
+            "lang": "python",
+            "see": "6 subnets, overlaps: none, with private-a at 10.20.16.0/20."
+          },
+          {
+            "do": "Test the over-generous policy an administrator might hand out: Allow * on *.",
+            "code": "python access_check.py admin_policy.json",
+            "lang": "bash",
+            "see": "2 of 6 decisions as intended"
+          },
+          {
+            "do": "Write analyst_policy.json: allow s3:ListBucket on arn:aws:s3:::coop-harvest-reports and s3:GetObject on the objects inside it (arn:aws:s3:::coop-harvest-reports/*), and nothing else.",
+            "code": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\"Effect\": \"Allow\", \"Action\": \"s3:ListBucket\", \"Resource\": \"arn:aws:s3:::coop-harvest-reports\"}\n  ]\n}",
+            "lang": "json"
+          },
+          {
+            "do": "Test it until every decision is as intended.",
+            "code": "python access_check.py analyst_policy.json",
+            "lang": "bash",
+            "see": "6 of 6 decisions as intended"
+          },
+          {
+            "do": "Write a second version that allows s3:* on the reports bucket but adds a Deny for s3:PutObject and s3:DeleteObject, and test it. Which decisions now say DENY (explicit)?"
+          },
+          {
+            "do": "In a few sentences: how would you give the same analyst read access to a storage container in Azure and to a bucket in Google Cloud, and which subnets would the web servers and the database go in?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The private subnets are added without overlaps.",
+            "look_for": [
+              "private-a  10.20.16.0/20",
+              "6 subnets, overlaps: none"
+            ]
+          },
+          {
+            "text": "Usable addresses reflect each provider's reserved addresses.",
+            "look_for": [
+              "AWS 4091, Azure 4091, Google Cloud 4092"
+            ]
+          },
+          {
+            "text": "The administrator's policy fails least privilege.",
+            "look_for": [
+              "2 of 6 decisions as intended"
+            ]
+          },
+          {
+            "text": "The analyst policy allows only what's needed.",
+            "look_for": [
+              "6 of 6 decisions as intended"
+            ]
+          },
+          {
+            "text": "The Deny version shows an explicit deny winning over an allow.",
+            "look_for": [
+              "DENY (explicit)"
+            ]
+          },
+          {
+            "text": "The answer maps access to Azure and Google Cloud.",
+            "look_for": [
+              "Storage Blob Data Reader",
+              "role"
+            ]
+          }
+        ],
+        "submit": "Paste your plan_network.py change and its output, both policies with the output of access_check.py for each, and your answers.",
+        "files": [
+          {
+            "path": "plan_network.py",
+            "content": "\"\"\"Plan a virtual network: one public and one private subnet in each of three zones, carved from one block.\n\nRun:  python plan_network.py\n\"\"\"\nimport ipaddress\n\nNETWORK = ipaddress.ip_network(\"10.20.0.0/16\")\nZONES = [\"a\", \"b\", \"c\"]\nRESERVED = {\"AWS\": 5, \"Azure\": 5, \"Google Cloud\": 4}   # addresses each provider keeps in every subnet\n\n\ndef plan():\n    small = list(NETWORK.subnets(new_prefix=24))     # 256 blocks of 256 addresses\n    large = list(NETWORK.subnets(new_prefix=20))     # 16 blocks of 4,096 addresses\n    subnets = {}\n    for i, zone in enumerate(ZONES):\n        subnets[f\"public-{zone}\"] = small[i]          # 10.20.0.0/24, 10.20.1.0/24, 10.20.2.0/24\n        # TODO: give each zone a private /20 from large, skipping large[0], which holds the public /24s.\n    return subnets\n\n\ndef main():\n    subnets = plan()\n    for name, net in subnets.items():\n        usable = \", \".join(f\"{p} {net.num_addresses - n}\" for p, n in RESERVED.items())\n        print(f\"{name:<10} {str(net):<15} {net.num_addresses:>5} addresses; usable: {usable}\")\n    nets = list(subnets.values())\n    overlaps = [(a, b) for i, a in enumerate(nets) for b in nets[i + 1:] if a.overlaps(b)]\n    print(f\"{len(nets)} subnets, overlaps: {overlaps or 'none'}\")\n    used = sum(n.num_addresses for n in nets)\n    print(f\"Addresses allocated: {used} of {NETWORK.num_addresses}, leaving room to grow\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "access_check.py",
+            "content": "\"\"\"A simplified model of how AWS evaluates identity-based policies, to test a policy before you use it.\n\nRules: everything is denied unless a statement allows it; an explicit Deny always wins over an Allow.\nActions and resources may use * wildcards. Real AWS adds conditions, resource policies, permission\nboundaries and more; Azure RBAC and Google Cloud IAM grant roles at a scope instead, but least privilege\nand default deny work the same way.\nUsage:  python access_check.py analyst_policy.json\n\"\"\"\nimport json\nimport sys\nfrom fnmatch import fnmatchcase\n\nREQUESTS = [  # (action, resource, what a least-privilege analyst policy should decide)\n    (\"s3:ListBucket\", \"arn:aws:s3:::coop-harvest-reports\", \"ALLOW\"),\n    (\"s3:GetObject\", \"arn:aws:s3:::coop-harvest-reports/2025/03/summary.csv\", \"ALLOW\"),\n    (\"s3:PutObject\", \"arn:aws:s3:::coop-harvest-reports/2025/03/summary.csv\", \"DENY\"),\n    (\"s3:DeleteObject\", \"arn:aws:s3:::coop-harvest-reports/2025/03/summary.csv\", \"DENY\"),\n    (\"s3:GetObject\", \"arn:aws:s3:::coop-payroll/2025/03/salaries.csv\", \"DENY\"),\n    (\"ec2:TerminateInstances\", \"arn:aws:ec2:eu-west-1:111122223333:instance/i-0abc\", \"DENY\"),\n]\n\n\ndef as_list(value):\n    return value if isinstance(value, list) else [value]\n\n\ndef decide(policy, action, resource):\n    allowed = False\n    for st in policy[\"Statement\"]:\n        if any(fnmatchcase(action, a) for a in as_list(st[\"Action\"])) and \\\n                any(fnmatchcase(resource, r) for r in as_list(st[\"Resource\"])):\n            if st[\"Effect\"] == \"Deny\":\n                return \"DENY (explicit)\"\n            allowed = True\n    return \"ALLOW\" if allowed else \"DENY (no statement allows it)\"\n\n\ndef main():\n    policy = json.load(open(sys.argv[1], encoding=\"utf-8\"))\n    passed = 0\n    for action, resource, expected in REQUESTS:\n        got = decide(policy, action, resource)\n        ok = got.startswith(expected)\n        passed += ok\n        print(f\"{'ok  ' if ok else 'FAIL'} {got:<30} {action} on {resource}\")\n    print(f\"{passed} of {len(REQUESTS)} decisions as intended\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "admin_policy.json",
+            "content": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\"Effect\": \"Allow\", \"Action\": \"*\", \"Resource\": \"*\"}\n  ]\n}\n"
+          }
+        ],
+        "hints": [
+          "NETWORK.subnets(new_prefix=20) lists the /20 blocks; the first one, 10.20.0.0/20, contains the public /24s.",
+          "ListBucket applies to the bucket itself, GetObject to the objects, which is why they need different resources.",
+          "In Azure, look at the Storage Blob Data Reader role; in Google Cloud, the Storage Object Viewer role."
+        ]
+      }
+    },
+    {
+      "title": "Cost, budgets and operating well",
+      "summary": "How cloud pricing works and what drives a bill, how budgets, alerts and tags keep spending under control, and the well-architected frameworks that bring cost, security and reliability together.",
+      "instructor": "carlos-ramirez",
+      "lessons": [
+        {
+          "title": "How cloud pricing works",
+          "minutes": 12,
+          "objectives": [
+            "Identify the main drivers of a cloud bill",
+            "Compare on-demand, committed and spot pricing"
+          ],
+          "key_points": [
+            "Most services are pay as you go, and the main drivers are compute time, storage per gigabyte per month, the number of requests, and data transfer: data coming in is usually free, while data going out to the internet, and often between zones or regions, is charged.",
+            "On-demand pricing needs no commitment; committing to a level of usage for one or three years earns a discount: AWS Savings Plans and Reserved Instances, Azure reservations and savings plans, and Google Cloud committed use discounts.",
+            "Spot capacity, spare capacity sold at a large discount, can be taken back at short notice: AWS Spot Instances, Azure Spot Virtual Machines and Google Cloud Spot VMs suit work that can be interrupted and restarted.",
+            "All three providers offer free tiers, some services free up to monthly limits and trial credits for new accounts for a limited time; the terms change, so read the current free tier page, and set a budget before you start.",
+            "Each provider has a pricing calculator for estimating a design before you build it; prices differ by region and change over time, so estimate with current figures, never remembered ones."
+          ]
+        },
+        {
+          "title": "Budgets, tags and keeping costs under control",
+          "minutes": 12,
+          "objectives": [
+            "Set budgets and alerts on actual and forecast spend",
+            "Use tags and clean-up to find and cut waste"
+          ],
+          "key_points": [
+            "Budgets alert you when actual or forecast spend passes thresholds, such as 50%, 80% and 100%: AWS Budgets, budgets in Azure Cost Management and Google Cloud Billing budgets; alerts don't stop spending on their own, though they can trigger automation.",
+            "Tags in AWS and Azure, and labels in Google Cloud, are key-value pairs such as team=analytics; applied consistently, they show who spends what, and untagged spending is a sign of resources nobody owns.",
+            "Common waste includes idle virtual machines, disks left unattached after their server was deleted, old snapshots, oversized instances and test environments left running at night and at weekends.",
+            "Rightsizing matches instance size to measured use, scheduling stops non-production resources out of hours, and lifecycle rules move old data to colder storage.",
+            "FinOps is the practice of shared financial accountability for cloud spending; the FinOps Foundation's framework describes it as a cycle of three phases: inform, optimise and operate."
+          ]
+        },
+        {
+          "title": "Operating well: the well-architected frameworks",
+          "minutes": 11,
+          "objectives": [
+            "Describe the pillars of the well-architected frameworks",
+            "Use monitoring and infrastructure as code to run cloud workloads well"
+          ],
+          "key_points": [
+            "The AWS Well-Architected Framework has six pillars: operational excellence, security, reliability, performance efficiency, cost optimisation and sustainability.",
+            "The Azure Well-Architected Framework has five: reliability, security, cost optimisation, operational excellence and performance efficiency; Google Cloud publishes a similar framework of its own.",
+            "The frameworks ask questions rather than prescribe one answer, and review a design against them regularly, because each pillar trades against the others, such as extra zones for reliability costing more.",
+            "Monitoring collects metrics, logs and alerts, in Amazon CloudWatch, Azure Monitor and Google Cloud Monitoring, so you see problems, and spending, before your users or the bill do.",
+            "Infrastructure as code describes resources in files kept under version control, so environments can be reviewed, repeated and torn down cleanly, as the Infrastructure as Code with Terraform course shows."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Analyse a month of usage against a budget",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Read a month-to-date usage export, break spending down by service and team, find untagged, idle and unattached resources, raise budget alerts on actual and forecast spend, and work out what removing the waste would save.",
+        "setup": [
+          "Your course virtual environment, with pandas: pip install pandas",
+          "The starter files make_usage.py and cost_report.py",
+          "Optional: a free-tier account, to set up a real budget alert in the last step"
+        ],
+        "steps": [
+          {
+            "do": "Create the usage export: eight resources over 1 to 20 March, costed in credits, a made-up unit for this course.",
+            "code": "python make_usage.py",
+            "lang": "bash",
+            "see": "usage.csv: 160 rows, 2025-03-01 to 2025-03-20"
+          },
+          {
+            "do": "Run the report as it is.",
+            "code": "python cost_report.py",
+            "lang": "bash",
+            "see": "Spending by service and by team, 66.00 credits untagged (10.7%), two idle VMs and one unattached disk."
+          },
+          {
+            "do": "TODO: write budget_status(): actual spend and the forecast as shares of the 900-credit budget, an ALERT line for each threshold actual spend has passed, and one if the forecast is over budget."
+          },
+          {
+            "do": "Run it again.",
+            "code": "python cost_report.py",
+            "lang": "bash",
+            "see": "Spent so far: 618.84 of 900 credits (69%); forecast for the month: 959.21 (107%), with two alerts, and 817.31 credits (91%) if the waste is removed today."
+          },
+          {
+            "do": "The forecast uses the last seven days' average. Explain in two sentences when that would mislead you, for example in a month with a big one-off job."
+          },
+          {
+            "do": "Write a short plan: who should be asked about each untagged or idle resource, which tags you would make compulsory, and which thresholds you would alert on."
+          },
+          {
+            "do": "Optional, with a free-tier account: create a budget with an alert at 80% of a small amount, in AWS Billing and Cost Management (Budgets), Azure Cost Management (Budgets) or Google Cloud Billing (Budgets and alerts)."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Spending is broken down by service and team, including untagged spend.",
+            "look_for": [
+              "'compute': 432.0",
+              "Untagged: 66.00 credits (10.7% of spend)"
+            ]
+          },
+          {
+            "text": "Idle and unattached resources are found.",
+            "look_for": [
+              "['vm-batch', 'vm-test-7']",
+              "['disk-old-01']"
+            ]
+          },
+          {
+            "text": "Actual and forecast spend are compared with the budget.",
+            "look_for": [
+              "618.84 of 900 credits (69%)",
+              "959.21 (107%)"
+            ]
+          },
+          {
+            "text": "Alerts fire for the right thresholds, and only those.",
+            "look_for": [
+              "passed 50% of the budget",
+              "forecast is over the budget"
+            ]
+          },
+          {
+            "text": "The saving from removing waste is worked out, with a plan to act on it.",
+            "look_for": [
+              "817.31 credits (91%"
+            ]
+          }
+        ],
+        "submit": "Paste your budget_status() function, the full output of cost_report.py, your two sentences about the forecast, and your plan.",
+        "files": [
+          {
+            "path": "make_usage.py",
+            "content": "\"\"\"Write a month-to-date usage export for a small cloud account, 1 to 20 March 2025, to usage.csv.\n\nCosts are in credits, a made-up unit for this course: real prices vary by provider, region and date.\nOnly random.Random(8).random() is used, so the file is the same on every computer.\nRun:  python make_usage.py\n\"\"\"\nimport csv\nimport random\nfrom datetime import date, timedelta\n\nrng = random.Random(8)\nRESOURCES = [  # resource, service, team, environment, daily cost, average CPU % (None if not a VM), attached\n    (\"vm-web-1\", \"compute\", \"web\", \"prod\", 4.8, 45, True),\n    (\"vm-web-2\", \"compute\", \"web\", \"prod\", 4.8, 40, True),\n    (\"vm-batch\", \"compute\", \"data\", \"dev\", 9.6, 3, True),\n    (\"vm-test-7\", \"compute\", \"\", \"\", 2.4, 1, True),\n    (\"db-main\", \"database\", \"web\", \"prod\", 6.0, None, True),\n    (\"disk-old-01\", \"storage\", \"\", \"\", 0.9, None, False),\n    (\"bucket-photos\", \"storage\", \"data\", \"prod\", 0.5, None, True),\n    (\"egress\", \"network\", \"web\", \"prod\", 2.0, None, True),\n]\n\n\ndef main():\n    rows = []\n    for n in range(20):\n        day = date(2025, 3, 1) + timedelta(days=n)\n        for name, service, team, env, cost, cpu, attached in RESOURCES:\n            if name == \"bucket-photos\":\n                cost = round(0.5 + 0.015 * n, 3)          # storage grows as photos are added\n            if name == \"egress\":\n                cost = round(1.0 + rng.random() * 2, 2)   # data sent out to the internet varies by day\n            load = \"\" if cpu is None else round(cpu + rng.random() * 4 - 2, 1)\n            rows.append([day.isoformat(), name, service, team, env, cost, load, attached])\n    with open(\"usage.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        w = csv.writer(f)\n        w.writerow([\"date\", \"resource\", \"service\", \"team\", \"env\", \"cost_credits\", \"cpu_avg_pct\", \"attached\"])\n        w.writerows(rows)\n    print(f\"usage.csv: {len(rows)} rows, 2025-03-01 to 2025-03-20\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "cost_report.py",
+            "content": "\"\"\"Month-to-date cost report: where the credits go, what's untagged or idle, and the budget forecast.\n\nRun:  python cost_report.py\n\"\"\"\nimport pandas as pd\n\nBUDGET = 900.0                  # credits for March\nTODAY = pd.Timestamp(\"2025-03-20\")\nDAYS_IN_MONTH = 31\nALERTS = (0.5, 0.8, 1.0)        # alert when actual spend passes these shares of the budget\n\n\ndef load():\n    usage = pd.read_csv(\"usage.csv\", parse_dates=[\"date\"], keep_default_na=False, na_values={\"cpu_avg_pct\": [\"\"]})\n    usage[\"team\"] = usage[\"team\"].replace(\"\", \"(untagged)\")\n    return usage\n\n\ndef breakdown(usage):\n    print(\"By service:\", usage.groupby(\"service\")[\"cost_credits\"].sum().round(2).to_dict())\n    print(\"By team:\", usage.groupby(\"team\")[\"cost_credits\"].sum().round(2).to_dict())\n    untagged = usage.loc[usage[\"team\"] == \"(untagged)\", \"cost_credits\"].sum()\n    print(f\"Untagged: {untagged:.2f} credits ({untagged / usage['cost_credits'].sum():.1%} of spend)\")\n\n\ndef waste(usage):\n    vms = usage[usage[\"service\"] == \"compute\"].groupby(\"resource\")[\"cpu_avg_pct\"].mean()\n    idle = sorted(vms[vms < 5].index)\n    unattached = sorted(usage.loc[~usage[\"attached\"], \"resource\"].unique())\n    print(f\"Idle VMs (average CPU under 5%): {idle}\")\n    print(f\"Unattached disks: {unattached}\")\n    return idle + unattached\n\n\ndef forecast(usage, removed=()):\n    \"\"\"Month-to-date spend, plus the last seven days' average daily cost for each day left in the month.\"\"\"\n    actual = usage[\"cost_credits\"].sum()\n    recent = usage[(usage[\"date\"] > TODAY - pd.Timedelta(days=7)) & ~usage[\"resource\"].isin(removed)]\n    daily = recent.groupby(\"date\")[\"cost_credits\"].sum().mean()\n    days_left = DAYS_IN_MONTH - TODAY.day\n    return actual, actual + daily * days_left\n\n\ndef budget_status(actual, projected):\n    # TODO: print the actual spend and the forecast as shares of BUDGET, then one line for each threshold in\n    # ALERTS that actual spend has passed (\"ALERT: actual spend passed 50% of the budget\"), and a line if the\n    # forecast is over 100% (\"ALERT: forecast is over the budget\").\n    pass\n\n\ndef main():\n    usage = load()\n    breakdown(usage)\n    savings = waste(usage)\n    actual, projected = forecast(usage)\n    budget_status(actual, projected)\n    _, after = forecast(usage, removed=savings)\n    print(f\"Forecast if the idle and unattached resources are removed today: {after:.2f} credits \"\n          f\"({after / BUDGET:.0%} of the budget)\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "actual >= share * BUDGET tells you whether a threshold has been passed.",
+          "f\"{share:.0%}\" prints 0.5 as 50%.",
+          "Actual spend hasn't reached 80%, so only the 50% alert and the forecast alert should appear."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn what cloud computing is, the service models and shared responsibility, and make your first API calls on an emulator.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Study regions, zones and compute options, run a serverless function locally and do the availability maths.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Compare storage and database services, and share a private blob with a time-limited link.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Plan a virtual network and write a least-privilege access policy.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Learn how pricing, budgets and tags work, and analyse a month of usage against a budget.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Design and submit the capstone deployment, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Design a small cloud deployment, side by side",
+    "minutes": 480,
+    "brief": "A farming co-operative wants a simple web service where members upload photos of their fields and get back a short report, used across one country with a few hundred members. Design it for the cloud and map every part to AWS, Azure and Google Cloud side by side: the service model and compute option for each component, the region and zones, the network with its subnets and firewall rules, the storage and database choices and how data is protected, the identities and least-privilege permissions, and a cost model with a budget and alerts. Then prove the core flow works on your own computer: a function that accepts an upload request, stores the file in object storage on an emulator and returns a time-limited link to it, all without a cloud account.",
+    "deliverables": [
+      "An architecture description or diagram, with a table mapping each component to an AWS, an Azure and a Google Cloud service",
+      "A region and zone plan, with the reasons for the region and how the design survives the loss of one zone",
+      "A network plan with address ranges, public and private subnets and the firewall rules between them",
+      "An access plan: each person or program that needs access, what it may do, and a least-privilege policy or role for at least two of them",
+      "A shared responsibility table for every component",
+      "A cost model in usage terms (instance hours, gigabytes stored, requests, data out) with a budget, alert thresholds and the tags you would require",
+      "A working local prototype using the Functions Framework with Azurite or moto, with its code and a run's output"
+    ],
+    "rubric": [
+      {
+        "name": "Architecture and service choices",
+        "points": 20,
+        "description": "Each component uses a sensible service model and compute option, justified, and the mapping across the three providers is accurate."
+      },
+      {
+        "name": "Availability and regions",
+        "points": 15,
+        "description": "The region choice is justified; the design survives a zone failure; single points of failure are identified."
+      },
+      {
+        "name": "Network and security",
+        "points": 20,
+        "description": "Subnets and firewall rules expose as little as possible; permissions follow least privilege; the shared responsibility table is correct."
+      },
+      {
+        "name": "Data protection",
+        "points": 10,
+        "description": "Storage classes, redundancy, backups or versioning, encryption and private sharing are chosen deliberately."
+      },
+      {
+        "name": "Cost and budgets",
+        "points": 15,
+        "description": "The cost drivers are identified in usage terms; the budget, alerts and tags are realistic; ways to cut waste are named."
+      },
+      {
+        "name": "Working prototype",
+        "points": 20,
+        "description": "The local prototype stores the upload and returns a working time-limited link, with clear instructions to run it."
+      }
+    ],
+    "submit": "Paste your design document (or a link to it), the prototype's code, and the output of a run that uploads a file and fetches it with the link."
+  }
+}
