@@ -2466,7 +2466,9 @@ async function staffInsights(body) {
   const share = (n) => (l.total ? `${Math.round((100 * n) / l.total)}% of learners` : "");
   const sum = (rows, key) => rows.reduce((t, r) => t + (r[key] || 0), 0);
   const away = ai.turned_away, lim = ai.limits, fallbacks = sum(ai.kinds, "fallbacks");
-  const limits = (lim.allowance > 0
+  const limits = (lim.plans
+    ? `Each learner's plan sets how many AI requests they can make in any 24 hours: ${Object.entries(lim.plans).map(([name, n]) => `${name} ${n ? fmt(n) : "no limit"}`).join(", ")}; admins have no limit.`
+    : lim.allowance > 0
     ? `Each learner can make ${fmt(lim.allowance)} AI requests in any 24 hours${lim.unconfirmed != null && lim.unconfirmed < lim.allowance ? ` (${fmt(lim.unconfirmed)} until they confirm their email address)` : ""}; admins have no limit.`
     : "Learners have no daily limit on AI requests.")
     + (lim.site > 0 ? ` Everyone together can use ${fmt(lim.site)} in any 24 hours.` : " There's no ceiling for everyone together.");
@@ -2511,7 +2513,7 @@ async function staffInsights(body) {
         <tbody>${ai.kinds.map((k) => `<tr><td>${esc(KIND_LABEL[k.kind] || k.kind)}</td>${["requests", "failed", "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"].map((f) => `<td>${(k[f] || 0).toLocaleString()}</td>`).join("")}<td>${money(k.cost)}</td></tr>`).join("")}</tbody>
       </table></div>` : `<div class="empty">Nothing yet.</div>`}
       <p class="muted small" style="margin:0">Costs are estimates from the token counts at list prices in US dollars, with cache writes at 1.25 times input; the bill can differ. Change the prices with AIET_PRICES.${ai.unpriced_models.length ? ` No price is set for ${esc(ai.unpriced_models.join(", "))}, so its tokens aren't in the estimate.` : ""}</p>
-      <p class="small" style="margin:0">${limits} <span class="muted">Set on the server with AIET_AI_ALLOWANCE, AIET_AI_ALLOWANCE_UNCONFIRMED and AIET_AI_SITE_LIMIT.</span></p>
+      <p class="small" style="margin:0">${limits} <span class="muted">Set on the server with ${lim.plans ? "AIET_PLAN_ALLOWANCES" : "AIET_AI_ALLOWANCE"}, AIET_AI_ALLOWANCE_UNCONFIRMED and AIET_AI_SITE_LIMIT.</span></p>
     </div>
     <div class="two-col">
       <div class="card stack">
