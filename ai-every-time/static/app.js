@@ -551,8 +551,8 @@ async function viewWelcome(m) {
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
           <button type="button" class="linkbtn" id="forgotBtn" data-only="login" hidden>Forgot your password?</button>
           <p class="muted small" data-only="login" hidden style="margin:0">Had an account on the old AI Every Time site? It's here, with your plan:
-            sign in with the same email and password. If you signed in with Google, Apple or Microsoft there, choose
-            <i>Forgot your password?</i> to set one.</p>
+            sign in with the same email and password. If that doesn't work, or you signed in with Google, Apple or Microsoft
+            there, choose <i>Forgot your password?</i> to set one.</p>
         </form>
       </div>
     </section>`;
@@ -3680,7 +3680,7 @@ const PRICING_FAQ = (d) => [
   ["Can I switch plans?", "Any time, from your Billing page. Moving up starts straight away and you pay the difference for the rest of the billing period; moving down leaves the unused part as credit on your next bill."],
   ["What counts as an AI request?", "Each chat reply, quiz, flashcard deck, summary and study plan, and each lesson the first time it's taught. Mock exams, learning paths designed for you and project reviews count as two. The allowance covers any 24 hours, so requests free up again through the day."],
   ["What can I do for free?", `Chat with AI Learning Companions, follow learning paths, make quizzes, flashcards and study plans, read ${d.free_guides} education guides a month in full, and take the first module of every course.`],
-  ["I had a plan on the old AI Every Time site. Do I keep it?", "Yes, your plan came with you. Sign in with the same email address and password. If you signed in with Google, Apple or Microsoft there, choose Forgot your password on the sign-in page to set one."],
+  ["I had a plan on the old AI Every Time site. Do I keep it?", "Yes, your plan came with you. Sign in with the same email address and password. If that doesn't work, or you signed in with Google, Apple or Microsoft there, choose Forgot your password on the sign-in page to set one."],
   ["How does Teams work?", `Teams gives every member everything in Insider, on one invoice, at ${dollars(d.plans.find((p) => p.slug === "teams").monthly)} per member a month. Email ${d.teams_email} and we'll set it up for you.`],
   ["Is my payment information safe?", "Payments are handled by Stripe, and AI Every Time never sees or stores your card number."],
 ];
@@ -3824,6 +3824,8 @@ async function viewBilling(m) {
     ${subCard}
     ${grant ? `<div class="card stack"><div class="muted small">Given to you</div><h3 style="margin:0">${esc(grant.name)}${grant.until ? ` until ${esc(longDate(grant.until))}` : ""}</h3>
       ${grant.note ? `<div class="muted small">${esc(grant.note)}</div>` : ""}</div>` : ""}
+    ${plan.reward ? `<div class="card stack"><div class="muted small">🎁 Earned by inviting friends</div>
+      <h3 style="margin:0">${esc(plan.reward.name)} until ${esc(longDate(plan.reward.until))}</h3></div>` : ""}
     ${plan.intended && plan.payments ? `<div class="card row spread"><div>You chose <b>${esc(plan.intended.name)}</b> but didn't finish checking out.</div>
       <button class="btn primary" data-finish>Finish upgrading</button></div>` : ""}
     <a class="card row spread invite-card" href="#/referral"><div><b>🎁 Invite three friends, get a month of Plus free</b>
@@ -3870,7 +3872,7 @@ async function viewReferral() {
       </div>
       <div class="card stack"><h2 style="margin:0">Friends you've invited</h2>
         ${r.invites.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Friend</th><th>Joined</th><th>Status</th></tr></thead><tbody>
-          ${r.invites.map((i) => `<tr><td>${esc(i.name)} <span class="muted small">${esc(i.email)}</span></td><td class="small">${esc(longDate(i.joined_at))}</td>
+          ${r.invites.map((i) => `<tr><td>${esc(i.name)}</td><td class="small">${esc(longDate(i.joined_at))}</td>
             <td>${{ subscribed: "✅ Subscribed", joined: "✅ Joined", unconfirmed: "⏳ Waiting for them to confirm their email" }[i.status]}</td></tr>`).join("")}
         </tbody></table></div>` : `<div class="empty">No one yet. Share your link to get started.</div>`}
       </div>`;
@@ -4137,12 +4139,15 @@ async function staffSetup(body) {
         return staffSetup(body);
       }
       const dry = b.dataset.act === "check";
-      const r = await api("/api/staff/stripe/reconcile", { method: "POST", body: { dry_run: dry } });
+      if (b.dataset.act === "endgone" && !confirm("End the plans of subscriptions this Stripe account doesn't have? Do this only once you've checked them.")) { b.disabled = false; return; }
+      const r = await api("/api/staff/stripe/reconcile", { method: "POST", body: { dry_run: dry, end_gone: b.dataset.act === "endgone" } });
       const changes = Object.entries(r.changes || {});
       stripeOut.innerHTML = `<div class="card stack" style="background:var(--surface-2)"><b>${dry ? "What Stripe says" : "Brought up to date"}</b>
         <div class="small">${plural(r.checked, "subscription")} checked${r.gone ? `; ⚠️ ${fmt(r.gone)} not found in this Stripe account (left as they are)` : ""}${r.failed ? `; ${fmt(r.failed)} couldn't be checked` : ""}.</div>
         ${changes.length ? `<ul class="small">${changes.map(([k, n]) => `<li>${esc(k.replace(/(\w+)\//g, (_, t) => `${tierName(t)} `))}: ${fmt(n)}</li>`).join("")}</ul>` : `<div class="small muted">No plan or status differs from Stripe.</div>`}
-        ${dry && r.checked ? `<div><button class="btn primary" data-act="apply">Bring them up to date</button></div>` : ""}</div>`;
+        ${dry && r.checked ? `<div class="row"><button class="btn primary" data-act="apply">Bring them up to date</button>
+          ${r.gone ? `<button class="btn danger" data-act="endgone">Also end the plans Stripe doesn't have</button>` : ""}</div>` : ""}
+        ${r.ended ? `<div class="small">${plural(r.ended, "plan")} Stripe didn't have ended.</div>` : ""}</div>`;
     } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
     b.disabled = false;
   });

@@ -1,10 +1,11 @@
 """Referrals: learners invite friends with a link, and every three friends who join earn them a free month of Plus.
 
 Each learner's link carries a code of their own (/r/<code>), made when they first open the Invite page. A friend who
-signs up through it is their invite. It counts once the friend confirms their email address (straight away where
-email isn't set up), so made-up addresses earn nothing, and shows as subscribed if the friend goes on to pay for a
-plan. Every three that count earn a reward, claimed when the learner likes: a month of Plus, or for a learner who
-already pays for Plus or more, a month of Plus off their next bill. Rewards are capped at twelve a year.
+signs up through it is their invite. It counts once the friend confirms their email address, so made-up addresses earn
+nothing (and without email set up, nothing counts); an address that's another invitee's or the learner's own with a
++tag (or, for Gmail, dots) added doesn't count again. Every three that count earn a reward, claimed when the learner
+likes: a month of Plus, kept apart from any plan an admin gave them, or for a learner who already pays for Plus or
+more, a month of Plus off their next bill. Rewards are capped at twelve a year.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import secrets
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import stripe
@@ -26,7 +28,7 @@ router = APIRouter(prefix="/api")
 links = APIRouter()  # the short invite links, outside /api
 User = Depends(auth.current_user)
 PER_REWARD = 3
-REWARD_TIER = "plus"
+REWARD_TIER = billing.REWARD_TIER
 REWARD_DAYS = 30
 MAX_REWARDS_A_YEAR = 12
 COOKIE = "aiet_ref"
@@ -35,13 +37,15 @@ CODE = re.compile(r"^[A-Z2-9]{6,12}$")
 
 
 def code_for(conn, user_id: int) -> str:
-    found = conn.execute("SELECT referral_code FROM users WHERE id = ?", (user_id,)).fetchone()[0]
-    while not found:
+    while True:
+        found = conn.execute("SELECT referral_code FROM users WHERE id = ?", (user_id,)).fetchone()[0]
+        if found:
+            return found
         candidate = "".join(secrets.choice(CODE_ALPHABET) for _ in range(8))
-        if conn.execute("SELECT 1 FROM users WHERE referral_code = ?", (candidate,)).fetchone() is None:
-            conn.execute("UPDATE users SET referral_code = ? WHERE id = ?", (candidate, user_id))
-            found = candidate
-    return found
+        try:  # only where there's none yet, so two pages opened at once end up with the same code
+            conn.execute("UPDATE users SET referral_code = ? WHERE id = ? AND referral_code IS NULL", (candidate, user_id))
+        except sqlite3.IntegrityError:  # someone else's already: try another
+            continue
 
 
 def link(code: str) -> str:
@@ -64,10 +68,6 @@ def attribute(conn, invitee_id: int, code: str | None) -> bool:
     conn.execute("INSERT OR IGNORE INTO referral_invites (invitee_id, referrer_id, created_at) VALUES (?, ?, ?)",
                  (invitee_id, referrer["id"], db.now()))
     conn.execute("UPDATE users SET signup_source = 'referral' WHERE id = ?", (invitee_id,))
-    from app import digest  # imported here: digest calls back into this module
-
-    if not digest.email_available():
-        qualify(conn, invitee_id)
     return True
 
 
@@ -77,11 +77,18 @@ def _first_name(name: str) -> str:
 
 def qualify(conn, invitee_id: int) -> None:
     """The invited friend confirmed their address, so the invite counts. Every third earns the inviter a reward."""
-    invite = conn.execute("SELECT r.referrer_id, u.display_name FROM referral_invites r JOIN users u ON u.id = r.invitee_id "
+    invite = conn.execute("SELECT r.referrer_id, u.display_name, u.email FROM referral_invites r JOIN users u ON u.id = r.invitee_id "
                           "WHERE r.invitee_id = ? AND r.qualified_at IS NULL", (invitee_id,)).fetchone()
     if invite is None:
         return
     referrer = invite["referrer_id"]
+    # One mailbox counts once: not the inviter's own, nor one another invite of theirs already counted.
+    mailbox = billing.address_key(invite["email"])
+    others = conn.execute("SELECT u.email FROM users u WHERE u.id = ? UNION ALL SELECT u.email FROM referral_invites r "
+                          "JOIN users u ON u.id = r.invitee_id WHERE r.referrer_id = ? AND r.qualified_at IS NOT NULL",
+                          (referrer, referrer)).fetchall()
+    if any(billing.address_key(o[0]) == mailbox for o in others):
+        return
     conn.execute("UPDATE referral_invites SET qualified_at = ? WHERE invitee_id = ?", (db.now(), invitee_id))
     counted = conn.execute("SELECT COUNT(*) FROM referral_invites WHERE referrer_id = ? AND qualified_at IS NOT NULL",
                            (referrer,)).fetchone()[0]
@@ -108,17 +115,12 @@ def subscribed(conn, user_id: int) -> None:
                  (db.now(), user_id))
 
 
-def _masked(email: str) -> str:
-    name, _, domain = email.partition("@")
-    return f"{name[:1]}{'•' * 3}@{domain}"
-
-
 @router.get("/referrals")
 def mine(user: dict = User):
     with db.connect() as conn:
         code = code_for(conn, user["id"])
         invites = conn.execute(
-            "SELECT u.display_name, u.email, r.created_at, r.qualified_at, r.subscribed_at FROM referral_invites r "
+            "SELECT u.display_name, r.created_at, r.qualified_at, r.subscribed_at FROM referral_invites r "
             "JOIN users u ON u.id = r.invitee_id WHERE r.referrer_id = ? ORDER BY r.created_at DESC LIMIT 100",
             (user["id"],)).fetchall()
         counted = conn.execute("SELECT COUNT(*) FROM referral_invites WHERE referrer_id = ? AND qualified_at IS NOT NULL",
@@ -128,7 +130,7 @@ def mine(user: dict = User):
     return {
         "code": code, "link": link(code), "per_reward": PER_REWARD, "reward": f"A free month of {plans.plan(REWARD_TIER).name}",
         "counted": counted, "toward_next": counted % PER_REWARD, "earned": rewards["earned"], "to_claim": rewards["waiting"],
-        "invites": [{"name": _first_name(r["display_name"]), "email": _masked(r["email"]), "joined_at": r["created_at"],
+        "invites": [{"name": _first_name(r["display_name"]), "joined_at": r["created_at"],
                      "status": "subscribed" if r["subscribed_at"] else "joined" if r["qualified_at"] else "unconfirmed"}
                     for r in invites],
     }
@@ -140,8 +142,9 @@ def _plus_price() -> int:
 
 @router.post("/referrals/claim")
 def claim(user: dict = User):
-    """Use a reward: a month of Plus (added to any given plan's time), or for a learner who already pays for Plus or
-    more, a month of Plus off their next bill."""
+    """Use a reward: a month of Plus (after any reward months still to run), or for a learner who already pays for
+    Plus or more, a month of Plus off their next bill. A plan an admin gave is left as it is either way."""
+    billing.throttle(user)
     with db.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         reward = conn.execute("SELECT id FROM referral_rewards WHERE user_id = ? AND claimed_at IS NULL ORDER BY id LIMIT 1",
@@ -152,14 +155,12 @@ def claim(user: dict = User):
         credit = (plans.rank(billing.paid_tier(sub)) >= plans.rank(REWARD_TIER) and sub["stripe_customer_id"]
                   and billing.payments())
         if not credit:
-            current = billing.granted_tier(sub)
-            start = max(datetime.now(timezone.utc), datetime.fromisoformat(sub["grant_until"])
-                        if current != "free" and sub["grant_until"] else datetime.now(timezone.utc))
-            if current != "free" and sub["grant_until"] is None and plans.rank(current) >= plans.rank(REWARD_TIER):
-                raise HTTPException(409, "Your plan already includes everything in Plus, for good. Your reward will keep.")
-            until = (start + timedelta(days=REWARD_DAYS)).isoformat(timespec="seconds")
-            billing.grant(conn, user["id"], plans.best(current, REWARD_TIER), until,
-                          "Referral reward" if current == "free" else sub["grant_note"], "referral")
+            now = datetime.now(timezone.utc)
+            start = max(now, datetime.fromisoformat(sub["reward_until"])) if sub["reward_until"] else now
+            before = billing.effective_tier(sub)
+            conn.execute("UPDATE subscriptions SET reward_until = ?, updated_at = ? WHERE user_id = ?",
+                         ((start + timedelta(days=REWARD_DAYS)).isoformat(timespec="seconds"), db.now(), user["id"]))
+            billing._record_change(conn, user["id"], before, billing.effective_tier(billing.row(conn, user["id"])), "referral")
         conn.execute("UPDATE referral_rewards SET claimed_at = ?, applied_as = ? WHERE id = ?",
                      (db.now(), "credit" if credit else "plan", reward["id"]))
     if credit:

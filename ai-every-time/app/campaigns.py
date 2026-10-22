@@ -188,7 +188,13 @@ def _news(conn, user: dict, kind: str, key: str, subject: str, paragraphs: list[
     log_id = _claim(conn, user["id"], kind, key)
     if log_id is None:
         return False
-    msg = compose(user, subject, paragraphs, button, _news_token(conn, user["id"]))
+    try:
+        msg = compose(user, subject, paragraphs, button, _news_token(conn, user["id"]))
+    except ValueError:  # an address or header an email can't carry: noted as failed, and the rest go on
+        log.warning("couldn't make a %s email for user %s", kind, user["id"])
+        conn.execute("UPDATE email_log SET failed = 1 WHERE id = ?", (log_id,))
+        conn.commit()
+        return False
     conn.commit()  # noted before it goes, so a crash mid-send doesn't send it twice
     return _send(msg, log_id, user["id"])
 
@@ -252,7 +258,7 @@ def nudges(now: datetime | None = None) -> int:
 def _audience_sql(audience: str) -> str:
     return AGREED if audience == "everyone" else (
         f"{AGREED} AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.user_id = u.id AND "
-        "((s.tier != 'free' AND s.status IN ('active', 'trialing', 'past_due')) OR "
+        "((s.tier != 'free' AND s.status IN ('active', 'trialing', 'past_due')) OR s.reward_until > :now OR "
         "(s.grant_tier IS NOT NULL AND (s.grant_until IS NULL OR s.grant_until > :now))))")
 
 
@@ -298,7 +304,7 @@ async def loop() -> None:
 
 
 class CampaignIn(BaseModel):
-    subject: str = Field(min_length=3, max_length=150)
+    subject: str = Field(min_length=3, max_length=150, pattern=r"^[^\r\n]+$")  # one line: it's an email header
     body: str = Field(min_length=10, max_length=5000)  # paragraphs separated by blank lines
     audience: Literal["free", "everyone"] = "free"
     test: bool = False  # send it to yourself only, to see it first

@@ -13,10 +13,11 @@ def client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "database_path", str(tmp_path / "test.db"))
     monkeypatch.setattr(settings, "offline", True)
-    from app import content, llm, photos
+    from app import billing, content, llm, photos
 
     # Remembered by the process, so not from another test.
     monkeypatch.setattr(llm, "account_problem", None)
+    monkeypatch.setattr(billing, "_calls", {})  # each test's learners start at id 1 again
     monkeypatch.setattr(content, "_first_post_tries", {})
     monkeypatch.setattr(photos, "_tried", {})
     monkeypatch.setattr(photos, "_fetching", set())

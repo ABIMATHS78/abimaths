@@ -121,3 +121,9 @@ def test_analytics_for_admins_without_what_anyone_wrote(client, paywall, admin_e
     assert {t["tier"]: t["users"] for t in a["subscriptions"]["tiers"]}["pro"] == 1
     assert a["conversations"]["messages_in_period"] == 1 and len(a["growth"]) == 7
     assert client.get("/api/staff/analytics?days=3").status_code == 422
+
+
+def test_a_subject_is_one_line(client, paywall, mailbox, admin_email):
+    news_reader(client, mailbox, admin_email, "Boss", yes=False)
+    r = client.post("/api/staff/campaigns", json={"subject": "Hello\r\nBcc: everyone@example.com", "body": "Hello there, all."})
+    assert r.status_code == 422

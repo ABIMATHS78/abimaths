@@ -536,11 +536,13 @@ def companion_posts(companion_id: int, user: dict = User, before: Before = None)
 
 
 @app.get("/api/posts/{post_id}")
-def get_post(post_id: int, user: dict = User):
+def get_post(post_id: int, request: Request, user: dict = User):
     _visible_post(post_id, user["id"])
     post = content.post_view(user["id"], post_id)
     if post.get("kind"):  # a guide: free learners read a few in full each month, and the start of the rest
-        access = billing.guide_access(user, post)
+        # Only the app itself uses up a free guide: a link on another site could otherwise spend them for the learner.
+        ours = request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
+        access = billing.guide_access(user, post, record=ours)
         if not access["full"]:
             post |= {"body": billing.preview(post["body"]), "locked": True, "plan_needed": plans.lowest_with("guides").slug}
         post["guides"] = access

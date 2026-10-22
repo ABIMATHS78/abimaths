@@ -399,8 +399,14 @@ CREATE TABLE IF NOT EXISTS stripe_cancellations (
     attempts INTEGER NOT NULL DEFAULT 0,
     last_error TEXT NOT NULL DEFAULT ''
 );
--- Referrals (app/referrals.py): who invited whom. An invite counts once the friend has confirmed their email address
--- (straight away where email isn't set up); every three that count earn the inviter a free month of Plus.
+-- Addresses that have had a free trial, as hashes of the address as its mailbox sees it (app/billing.py), so a trial
+-- isn't had again by deleting the account and making it again.
+CREATE TABLE IF NOT EXISTS trials (
+    address_hash TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL
+);
+-- Referrals (app/referrals.py): who invited whom. An invite counts once the friend has confirmed their email address;
+-- every three that count earn the inviter a free month of Plus.
 CREATE TABLE IF NOT EXISTS referral_invites (
     invitee_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     referrer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -552,6 +558,8 @@ MIGRATIONS = [
     ("users", "marketing_emails", "INTEGER NOT NULL DEFAULT 0"),
     # Where they came from when they signed up: the utm_source of the link, or "referral".
     ("users", "signup_source", "TEXT NOT NULL DEFAULT ''"),
+    # Months of Plus earned with referrals run until here, apart from any plan an admin gave (app/referrals.py).
+    ("subscriptions", "reward_until", "TEXT"),
 ]
 
 # Indexes on columns added above, so made after them.

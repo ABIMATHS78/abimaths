@@ -63,7 +63,7 @@ def analytics(days: int = Query(30, ge=7, le=90), user: dict = Depends(auth.requ
                 else:
                     paying += 1
                     mrr += _monthly(s) if s["stripe_subscription_id"] else 0
-            elif billing.granted_tier(s) != "free":
+            elif billing.granted_tier(s) != "free" or billing.reward_tier(s) != "free":
                 given += 1
         open_intents = sum(1 for s in subs if s["intended_tier"]
                            and plans.rank(billing.effective_tier(s)) < plans.rank(s["intended_tier"]))
@@ -71,16 +71,18 @@ def analytics(days: int = Query(30, ge=7, le=90), user: dict = Depends(auth.requ
         revenue_days = {r["day"]: (r["payments"], r["refunds"]) for r in conn.execute(
             "SELECT substr(created_at, 1, 10) AS day, SUM(CASE WHEN kind = 'payment' THEN amount_cents ELSE 0 END) AS payments, "
             "SUM(CASE WHEN kind = 'refund' THEN amount_cents ELSE 0 END) AS refunds FROM revenue_events "
-            "WHERE created_at >= ? GROUP BY day", (since,))}
+            "WHERE created_at >= ? AND currency = 'usd' GROUP BY day", (since,))}
         by_tier = [dict(r) for r in conn.execute(
             "SELECT COALESCE(tier, 'unknown') AS tier, SUM(amount_cents) AS amount, SUM(kind = 'payment') AS payments "
-            "FROM revenue_events WHERE created_at >= ? GROUP BY 1 ORDER BY amount DESC", (since,))]
+            "FROM revenue_events WHERE created_at >= ? AND currency = 'usd' GROUP BY 1 ORDER BY amount DESC", (since,))]
         recent = [{"when": r["created_at"], "name": r["display_name"] or "Deleted account",
                    "email": _masked(r["email"]) if r["email"] else "", "kind": r["kind"], "amount": r["amount_cents"],
                    "currency": r["currency"], "tier": r["tier"], "interval": r["billing_interval"]}
                   for r in conn.execute("SELECT e.*, u.display_name, u.email FROM revenue_events e "
                                         "LEFT JOIN users u ON u.id = e.user_id ORDER BY e.created_at DESC, e.id DESC LIMIT 20")]
-        revenue_period = one("SELECT COALESCE(SUM(amount_cents), 0) FROM revenue_events WHERE created_at >= ?", since)
+        revenue_period = one("SELECT COALESCE(SUM(amount_cents), 0) FROM revenue_events WHERE created_at >= ? AND currency = 'usd'",
+                             since)
+        other_currencies = one("SELECT COUNT(*) FROM revenue_events WHERE created_at >= ? AND currency != 'usd'", since)
 
         flows = [dict(r) for r in conn.execute(
             "SELECT from_tier, to_tier, event_type, COUNT(*) AS count FROM subscription_events WHERE created_at >= ? "
@@ -139,7 +141,9 @@ def analytics(days: int = Query(30, ge=7, le=90), user: dict = Depends(auth.requ
             "users": users_total, "new_users": sum(joined.values()),
             "active_learners": one("SELECT COUNT(DISTINCT user_id) FROM activity WHERE day >= ?", day_list[0]),
             "paying": paying, "trialing": trialing, "given_plans": given, "mrr": round(mrr),
-            "revenue": revenue_period, "revenue_all_time": one("SELECT COALESCE(SUM(amount_cents), 0) FROM revenue_events"),
+            "revenue": revenue_period,
+            "revenue_all_time": one("SELECT COALESCE(SUM(amount_cents), 0) FROM revenue_events WHERE currency = 'usd'"),
+            "payments_in_other_currencies": other_currencies,
             "checkouts_unfinished": open_intents, "guides": one("SELECT COUNT(*) FROM posts WHERE kind IS NOT NULL"),
             "courses": len(catalog.data().courses), "enrolments": one("SELECT COUNT(*) FROM course_enrollments"),
             "certificates": one("SELECT COUNT(*) FROM certificates"),

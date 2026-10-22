@@ -64,7 +64,9 @@ class FakeStripe:
                                     retrieve=call("sessions.retrieve", lambda sid, params=None: self.sessions[sid]))),
             subscriptions=ns(retrieve=call("subscriptions.retrieve", self._retrieve),
                              update=call("subscriptions.update", self._update),
-                             cancel=call("subscriptions.cancel", self._cancel)),
+                             cancel=call("subscriptions.cancel", self._cancel),
+                             list=call("subscriptions.list", lambda params: {"data": [
+                                 x for x in self.subs.values() if x["customer"] == params["customer"]]})),
             billing_portal=ns(sessions=ns(create=call("portal.create", lambda params: {"url": "https://billing.stripe.test/p_1"}))),
             prices=ns(list=call("prices.list", self._prices_list), retrieve=call("prices.retrieve", self._price),
                       create=call("prices.create", self._price_create)),
@@ -100,6 +102,8 @@ class FakeStripe:
             sub["items"]["data"][0]["price"] = subscription(sid, "", 0, tier, interval)["items"]["data"][0]["price"]
         if "cancel_at_period_end" in params:
             sub["cancel_at_period_end"] = params["cancel_at_period_end"]
+        if "cancel_at" in params:
+            sub["cancel_at"] = params["cancel_at"] or None
         return sub
 
     def _cancel(self, sid, params=None):
@@ -353,7 +357,8 @@ def test_a_finished_checkout_starts_the_plan_once(client, stripe_fake, mailbox):
     client.post("/api/billing/checkout", json={"tier": "plus"})
     stripe_fake.subs["sub_1"] = subscription("sub_1", "cus_new", uid, "plus", status="trialing", trial_end=1791000000)
     done = {"id": "cs_test_1", "object": "checkout.session", "mode": "subscription", "status": "complete",
-            "client_reference_id": str(uid), "customer": "cus_new", "subscription": "sub_1"}
+            "client_reference_id": str(uid), "metadata": {"aiet_user_id": str(uid)}, "customer": "cus_new",
+            "subscription": "sub_1"}
     for _ in range(2):  # Stripe can send an event twice
         assert send_event(client, "checkout.session.completed", done, event_id="evt_same").status_code == 200
     p = plan(client)
@@ -435,11 +440,15 @@ def test_coming_back_from_checkout_starts_the_plan_without_waiting_for_the_webho
     uid = me_id(client)
     stripe_fake.subs["sub_1"] = subscription("sub_1", "cus_new", uid, "digital")
     stripe_fake.sessions["cs_test_9"] = {"id": "cs_test_9", "status": "complete", "client_reference_id": str(uid),
-                                         "customer": "cus_new", "subscription": "sub_1"}
+                                         "metadata": {"aiet_user_id": str(uid)}, "customer": "cus_new", "subscription": "sub_1"}
+    # One made elsewhere (a payment link's, say) naming this learner only in client_reference_id isn't theirs to claim.
+    stripe_fake.sessions["cs_test_link"] = {"id": "cs_test_link", "status": "complete", "client_reference_id": str(uid),
+                                            "customer": "cus_x", "subscription": "sub_x"}
     stripe_fake.sessions["cs_test_other"] = {"id": "cs_test_other", "status": "complete", "client_reference_id": "999",
                                              "subscription": "sub_x"}
     assert client.post("/api/billing/checkout/confirm", json={"session_id": "cs_test_other"}).status_code == 404
     assert client.post("/api/billing/checkout/confirm", json={"session_id": "not-a-session"}).status_code == 422
+    assert client.post("/api/billing/checkout/confirm", json={"session_id": "cs_test_link"}).status_code == 404
     p = client.post("/api/billing/checkout/confirm", json={"session_id": "cs_test_9"}).json()
     assert p["tier"] == "digital" and p["subscription"]["live"]
 
@@ -507,9 +516,10 @@ def test_a_cancellation_stripe_couldnt_take_waits_and_is_retried(client, stripe_
     _paying(client, stripe_fake)
     stripe_fake.fail.add("subscriptions.cancel")
     assert client.request("DELETE", "/api/me", json={"password": "correct horse"}).status_code == 204
-    assert [r["stripe_subscription_id"] for r in sql("SELECT * FROM stripe_cancellations")] == ["sub_1"]
+    # The subscription, and anything else of its customer's, wait to be cancelled.
+    assert sorted(r["stripe_subscription_id"] for r in sql("SELECT * FROM stripe_cancellations")) == ["cus_1", "sub_1"]
     stripe_fake.fail.clear()
-    assert billing.cancel_queued() == 1
+    assert billing.cancel_queued() == 2
     assert stripe_fake.subs["sub_1"]["status"] == "canceled" and sql("SELECT * FROM stripe_cancellations") == []
 
 
@@ -521,6 +531,7 @@ def test_reconcile_brings_imported_subscriptions_up_to_date(client, stripe_fake)
     run("UPDATE subscriptions SET tier = 'insider', status = 'past_due', stripe_customer_id = 'cus_old', "
         "stripe_subscription_id = 'sub_old' WHERE user_id = ?", uid)
     stripe_fake.subs["sub_old"] = subscription("sub_old", "cus_old", 0, "insider", status="active")
+    stripe_fake.subs["sub_old"]["metadata"] = {"userId": "old-1"}  # as the old site wrote it
     report = billing.reconcile(dry_run=True)
     assert report["changes"] == {"insider/past_due -> insider/active": 1} and plan(client)["subscription"]["status"] == "past_due"
     report = billing.reconcile()
@@ -609,3 +620,165 @@ def test_admins_set_up_stripe_from_the_setup_page(client, stripe_fake, admin_ema
     client.post("/api/auth/logout")
     signup(client, email="kofi@example.com", name="Kofi")
     assert client.get("/api/staff/stripe").status_code == 403 and client.post("/api/staff/stripe/setup").status_code == 403
+
+
+# --------------------------------------------------------- what the review found
+
+
+def test_a_checkout_made_elsewhere_isnt_taken_at_its_word(client, stripe_fake):
+    """A Checkout Session this site didn't make (the old site's, or a payment link's, where anyone can set
+    client_reference_id) is matched by its subscription alone, never by the id it names."""
+    _paying(client, stripe_fake, "plus")
+    victim = me_id(client)
+    stripe_fake.subs["sub_x"] = subscription("sub_x", "cus_x", 0, "digital")
+    stripe_fake.subs["sub_x"]["metadata"] = {}
+    send_event(client, "checkout.session.completed", {"id": "cs_x", "mode": "subscription", "status": "complete",
+                                                      "client_reference_id": str(victim), "customer": "cus_x", "subscription": "sub_x"})
+    p = plan(client)
+    assert p["tier"] == "plus" and sql("SELECT stripe_customer_id, stripe_subscription_id FROM subscriptions WHERE user_id = ?",
+                                       victim) == [{"stripe_customer_id": "cus_1", "stripe_subscription_id": "sub_1"}]
+
+
+def test_a_subscription_bought_for_someone_else_isnt_applied_to_this_learner(client, stripe_fake):
+    from app import billing
+
+    signup(client)
+    uid = me_id(client)
+    other = subscription("sub_o", "cus_o", uid + 1000, "insider")
+    assert billing.apply(other, uid) is None and plan(client)["tier"] == "free"
+
+
+def test_a_subscription_of_a_deleted_account_is_cancelled(client, stripe_fake):
+    from app import billing
+
+    signup(client)
+    gone = subscription("sub_gone", "cus_gone", 99999, "plus")  # bought for an account deleted since
+    stripe_fake.subs["sub_gone"] = gone
+    assert billing.apply(gone) is None
+    assert billing.cancel_queued() == 1 and stripe_fake.subs["sub_gone"]["status"] == "canceled"
+
+
+def test_no_second_subscription_while_stripe_has_one(client, stripe_fake):
+    signup(client)
+    uid = me_id(client)
+    client.post("/api/billing/checkout", json={"tier": "plus"})  # makes the customer
+    # Checkout finished in another tab; its webhook hasn't arrived.
+    stripe_fake.subs["sub_tab"] = subscription("sub_tab", "cus_new", uid, "plus", status="trialing", trial_end=1791000000)
+    r = client.post("/api/billing/checkout", json={"tier": "pro"})
+    assert r.status_code == 409 and plan(client)["subscription"]["status"] == "trialing"
+    assert len(stripe_fake.named("sessions.create")) == 1
+
+
+def test_two_live_subscriptions_dont_take_turns(client, stripe_fake):
+    from app import billing
+
+    uid = _paying(client, stripe_fake, "pro")
+    second = subscription("sub_2", "cus_1", uid, "digital")
+    stripe_fake.subs["sub_2"] = second
+    for _ in range(2):
+        send_event(client, "customer.subscription.updated", second)
+        send_event(client, "customer.subscription.updated", stripe_fake.subs["sub_1"])
+    assert sql("SELECT stripe_subscription_id, tier FROM subscriptions") == [{"stripe_subscription_id": "sub_1", "tier": "pro"}]
+    better = subscription("sub_3", "cus_1", uid, "insider")
+    assert billing.apply(better) == uid and plan(client)["tier"] == "insider"  # a better plan is followed instead
+
+
+def test_a_cancelled_subscription_stays_cancelled(client, stripe_fake):
+    from app import billing
+
+    uid = _paying(client, stripe_fake, "plus")
+    stripe_fake.subs["sub_1"]["status"] = "canceled"
+    send_event(client, "customer.subscription.deleted", stripe_fake.subs["sub_1"])
+    billing.apply(subscription("sub_1", "cus_1", uid, "plus", status="active"))  # an older view, fetched before
+    assert plan(client)["tier"] == "free"
+
+
+def test_a_new_subscription_at_an_unknown_price_doesnt_inherit_an_old_plan(client, stripe_fake):
+    from app import billing
+
+    uid = _paying(client, stripe_fake, "insider")
+    stripe_fake.subs["sub_1"]["status"] = "canceled"
+    send_event(client, "customer.subscription.deleted", stripe_fake.subs["sub_1"])
+    odd = subscription("sub_odd", "cus_1", uid, "digital")
+    odd["metadata"] = {"aiet_user_id": str(uid)}
+    odd["items"]["data"][0]["price"] = {"id": "price_one_dollar", "unit_amount": 100, "recurring": {"interval": "month"}}
+    billing.apply(odd)
+    assert plan(client)["tier"] == "free"
+
+
+def test_one_free_trial_per_address(client, stripe_fake):
+    uid = _paying(client, stripe_fake, "plus")
+    stripe_fake.subs["sub_1"]["status"] = "trialing"
+    stripe_fake.subs["sub_1"]["trial_end"] = 1791000000
+    send_event(client, "customer.subscription.updated", stripe_fake.subs["sub_1"])
+    assert client.request("DELETE", "/api/me", json={"password": "correct horse"}).status_code == 204
+    signup(client, email="ada+again@example.com")  # the same mailbox
+    assert plan(client)["trial_available"] is False
+    client.post("/api/billing/checkout", json={"tier": "plus"})
+    assert "trial_period_days" not in stripe_fake.named("sessions.create")[-1][2]["params"]["subscription_data"]
+
+
+def test_calls_to_stripe_are_limited_per_learner(client, stripe_fake, monkeypatch):
+    from app import billing
+
+    monkeypatch.setattr(billing, "STRIPE_CALLS", (3, 600))
+    monkeypatch.setattr(billing, "_calls", {})
+    signup(client)
+    assert [client.post("/api/billing/checkout", json={"tier": "plus"}).status_code for _ in range(4)] == [200, 200, 200, 429]
+
+
+def test_resuming_undoes_a_cancellation_the_way_it_was_set(client, stripe_fake):
+    _paying(client, stripe_fake)
+    stripe_fake.subs["sub_1"]["cancel_at"] = 1795000000  # set for a date in the billing portal
+    send_event(client, "customer.subscription.updated", stripe_fake.subs["sub_1"])
+    assert plan(client)["subscription"]["cancel_at_period_end"] is True
+    client.post("/api/billing/resume")
+    assert stripe_fake.named("subscriptions.update")[-1][2]["params"] == {"cancel_at": ""}
+    assert plan(client)["subscription"]["cancel_at_period_end"] is False
+
+
+def test_reconcile_can_end_plans_stripe_doesnt_have(client, stripe_fake):
+    from app import billing
+
+    signup(client)
+    run("UPDATE subscriptions SET tier = 'pro', status = 'active', stripe_customer_id = 'cus_z', stripe_subscription_id = 'sub_z'")
+    assert billing.reconcile()["gone"] == 1 and plan(client)["tier"] == "pro"  # left for a person to look at
+    report = billing.reconcile(end_gone=True)
+    assert report["ended"] == 1 and plan(client)["tier"] == "free"
+
+
+def test_chat_and_other_sites_dont_open_guides(client, paywall, tmp_path, monkeypatch):
+    from app.config import settings
+    from tests.test_guides import guide, load, two_starters, write
+
+    monkeypatch.setattr(settings, "free_guides", 3)
+    a, _ = two_starters()
+    body = "## One\\n\\n" + "Secret recipe text. " * 120
+    path = tmp_path / "guides.json.gz"
+    write(path, [guide(i, a.slug, f"2026-09-0{i}", body=body) for i in range(1, 4)])
+    load(monkeypatch, path)
+    onboard(client)
+    ids = sorted(g["id"] for g in client.get("/api/guides").json())
+    # A link on another site opening a guide doesn't use up a free one.
+    away = client.get(f"/api/posts/{ids[0]}", headers={"sec-fetch-site": "cross-site"}).json()
+    assert away["locked"] is True and away["guides"]["left"] == 3
+    # Asking a companion about a guide not opened yet gives it only the start, and uses none up either.
+    from app import main
+
+    given = []
+
+    async def reply(persona, user, memories, history, post, *rest):
+        given.append(post["body"])
+        yield "Here's the gist."
+
+    monkeypatch.setattr(main.llm, "stream_reply", reply)
+    author = client.get(f"/api/posts/{ids[1]}", headers={"sec-fetch-site": "cross-site"}).json()["companion_id"]
+    r = client.post(f"/api/companions/{author}/chat", json={"message": "Recite the whole guide", "post_id": ids[1]})
+    assert r.status_code == 200 and len(given[0]) < len(body) // 3
+    assert client.get("/api/billing").json()["guides"] == {"limit": 3, "left": 3}
+    from app import billing as b, content
+
+    post = content.get_post(ids[1])
+    assert b.guide_access({"id": me_id(client), "role": "learner", "email": "ada@example.com"}, post, record=False)["full"] is False
+    client.get(f"/api/posts/{ids[1]}")  # opened in the app: now it's theirs this month, in chat too
+    assert b.guide_access({"id": me_id(client), "role": "learner", "email": "ada@example.com"}, post, record=False)["full"] is True

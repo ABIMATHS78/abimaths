@@ -18,7 +18,8 @@ waiting.
 
     python -m app.billing setup       makes the plans' products and prices in Stripe (once, for each Stripe account)
     python -m app.billing check       shows which Stripe price each plan uses, and any whose amount isn't the plan's
-    python -m app.billing reconcile   brings every subscription up to date from Stripe (after an import, say)
+    python -m app.billing reconcile   brings every subscription up to date from Stripe (after an import, say);
+                                      --dry-run shows what would change; --end-gone ends plans Stripe doesn't have
 """
 
 from __future__ import annotations
@@ -48,6 +49,8 @@ Admin = Depends(auth.require("admin"))
 LIVE = ("active", "trialing", "past_due")
 STATUSES = ("active", "trialing", "past_due", "canceled", "incomplete", "unpaid", "paused")
 FREE_MODULES = 1  # the modules of every course anyone can take
+REWARD_TIER = "plus"  # what a referral reward gives
+STRIPE_CALLS = (20, 600)
 PRICE_CACHE_SECONDS = 3600
 NO_PAYMENTS = "Payments aren't set up on this server yet."
 # What reaching for something locked says, by feature.
@@ -120,8 +123,41 @@ def granted_tier(sub: dict | None) -> str:
     return "free"
 
 
+def reward_tier(sub: dict | None) -> str:
+    """Referral rewards are months of Plus of their own, so they neither shorten nor stretch a plan an admin gave."""
+    return REWARD_TIER if sub and sub.get("reward_until") and sub["reward_until"] > db.now() else "free"
+
+
 def effective_tier(sub: dict | None) -> str:
-    return plans.best(paid_tier(sub), granted_tier(sub))
+    return plans.best(paid_tier(sub), granted_tier(sub), reward_tier(sub))
+
+
+def address_key(email: str) -> str:
+    """A hash of an address as its mailbox sees it: in lower case, without +tags, and for Gmail without dots, so
+    ada+1@gmail.com and a.da@gmail.com are ada@gmail.com. Kept instead of the address where it must outlive an account."""
+    local, _, domain = email.strip().lower().partition("@")
+    local = local.split("+", 1)[0]
+    if domain in ("gmail.com", "googlemail.com"):
+        local, domain = local.replace(".", ""), "gmail.com"
+    return auth.hash_token(f"{local}@{domain}")
+
+
+def had_trial(conn, email: str) -> bool:
+    return conn.execute("SELECT 1 FROM trials WHERE address_hash = ?", (address_key(email),)).fetchone() is not None
+
+
+_calls: dict[int, list[float]] = {}
+
+
+def throttle(user: dict) -> None:
+    """At most STRIPE_CALLS[0] requests that reach Stripe per learner in STRIPE_CALLS[1] seconds, so no one can use up
+    the site's allowance at Stripe."""
+    now, (most, window) = time.time(), STRIPE_CALLS
+    recent = [t for t in _calls.get(user["id"], ()) if t > now - window]
+    if len(recent) >= most:
+        raise HTTPException(429, "That's a lot of tries in a few minutes. Please wait a little and try again.",
+                            headers={"Retry-After": str(window // 2)})
+    _calls[user["id"]] = recent + [now]
 
 
 def tier(user: dict) -> str:
@@ -161,8 +197,8 @@ def require_course_item(user: dict, item_id: str) -> None:
 
 def guide_access(user: dict, post: dict, record: bool = True) -> dict:
     """Whether the learner can read a guide in full, and how many of this month's free guides they have left (None
-    for no limit). A guide opened once is theirs for the rest of the month; opening one more uses one up, if
-    `record`. Posts that aren't guides are always open."""
+    for no limit). A guide opened once is theirs for the rest of the month; opening one more uses one up. Without
+    `record` (in chat, say) only guides already opened this month are open. Posts that aren't guides always are."""
     if not post.get("kind") or unlocked(user, "guides"):
         return {"full": True, "left": None, "limit": None}
     month, limit = db.now()[:7], max(0, settings.free_guides)
@@ -172,8 +208,8 @@ def guide_access(user: dict, post: dict, record: bool = True) -> dict:
         seen = conn.execute("SELECT 1 FROM guide_reads WHERE user_id = ? AND month = ? AND post_id = ?",
                             (user["id"], month, post["id"])).fetchone() is not None
         used = conn.execute("SELECT COUNT(*) FROM guide_reads WHERE user_id = ? AND month = ?", (user["id"], month)).fetchone()[0]
-        full = seen or used < limit
-        if full and not seen and record:
+        full = seen or (record and used < limit)
+        if full and not seen:
             conn.execute("INSERT INTO guide_reads (user_id, month, post_id) VALUES (?, ?, ?)", (user["id"], month, post["id"]))
             used += 1
     return {"full": full, "left": max(0, limit - used), "limit": limit}
@@ -241,8 +277,8 @@ def price_id(tier_slug: str, interval: str) -> str:
 
 
 def price_plan(price: dict | None, metadata: dict | None = None) -> tuple[str, str] | None:
-    """The plan and billing period a Stripe price is for: by its lookup key, AIET_STRIPE_PRICES, the price's (or the
-    subscription's) metadata, or failing those its amount, matched against the plans' prices. None if none fits."""
+    """The plan and billing period a Stripe price is for: by its lookup key, AIET_STRIPE_PRICES, the price's metadata,
+    its amount (matched against the plans' prices), or failing those the subscription's metadata. None if none fits."""
     price = price if isinstance(price, dict) else {"id": price}
     recurring = price.get("recurring") or {}
     interval = "yearly" if recurring.get("interval") == "year" else "monthly"
@@ -253,17 +289,22 @@ def price_plan(price: dict | None, metadata: dict | None = None) -> tuple[str, s
         name, _, period = key.rpartition("_")
         if pid == price.get("id") and name in plans.TIERS and period in plans.INTERVALS:
             return name, period
-    for meta in (price.get("metadata") or {}, metadata or {}):
-        named = (meta.get("aiet_tier") or meta.get("tier") or "").lower()
-        if named in plans.TIERS and named != "free":
+    def named(meta: dict) -> tuple[str, str] | None:
+        tier_slug = (meta.get("aiet_tier") or meta.get("tier") or "").lower()
+        if tier_slug in plans.TIERS and tier_slug != "free":
             period = meta.get("aiet_interval") or meta.get("billingInterval") or meta.get("interval")
-            return named, period if period in plans.INTERVALS else (interval if recurring else "monthly")
+            return tier_slug, period if period in plans.INTERVALS else (interval if recurring else "monthly")
+        return None
+
+    if found := named(price.get("metadata") or {}):
+        return found
     amount = price.get("unit_amount")
     if recurring and amount:
         for p in plans.PLANS.values():
             if p.paid and p.price(interval) == amount:
                 return p.slug, interval
-    return None
+    # Last, what the subscription was bought as: it stays the same when the plan changes later.
+    return named(metadata or {})
 
 
 # ------------------------------------------------------------ keeping up with Stripe
@@ -299,34 +340,60 @@ def apply(sub, user_id: int | None = None) -> int | None:
     sub = _plain(sub)
     status = sub.get("status")
     status = status if status in STATUSES else "canceled"  # incomplete_expired: checkout was never finished
+    named = str((sub.get("metadata") or {}).get("aiet_user_id") or "")
     became_paid = False
     with db.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if user_id is not None and named.isdigit() and int(named) != user_id:
+            log.warning("Stripe subscription %s was bought for another learner, so it isn't applied", sub.get("id"))
+            return None
         uid = user_id or _owner(conn, sub)
         if uid is None:
-            log.warning("Stripe subscription %s matches no learner", sub.get("id"))
+            if named.isdigit() and status in LIVE and not conn.execute("SELECT 1 FROM users WHERE id = ?", (int(named),)).fetchone():
+                # Bought for an account since deleted (ids are never reused): it mustn't go on charging anyone.
+                conn.execute("INSERT OR IGNORE INTO stripe_cancellations (stripe_subscription_id, requested_at) VALUES (?, ?)",
+                             (sub["id"], db.now()))
+                log.warning("Stripe subscription %s belongs to a deleted account: queued for cancelling", sub.get("id"))
+            else:
+                log.warning("Stripe subscription %s matches no learner", sub.get("id"))
             return None
         current = row(conn, uid)
-        if (current["stripe_subscription_id"] not in (None, sub["id"]) and current["status"] in LIVE
-                and status not in LIVE):
-            return uid  # an old subscription of theirs ending changes nothing: the one in use is another
+        same = current["stripe_subscription_id"] == sub["id"]
+        if same and current["status"] == "canceled" and status != "canceled":
+            return uid  # cancelled is for good at Stripe: this is an older view of it, arriving late
         before = effective_tier(current)
         item = ((sub.get("items") or {}).get("data") or [{}])[0]
         price = item.get("price") or {}
         mapped = price_plan(price, sub.get("metadata"))
+        if not same and current["stripe_subscription_id"] and current["status"] in LIVE:
+            # Another subscription of theirs is in use. This one ending, or being no better a plan, changes nothing.
+            if status not in LIVE or plans.rank(mapped[0] if mapped else "free") <= plans.rank(current["tier"]):
+                if status in LIVE:
+                    log.warning("learner %s has two subscriptions in use at Stripe, %s and %s: check them", uid,
+                                current["stripe_subscription_id"], sub["id"])
+                return uid
+            log.warning("learner %s has two subscriptions in use at Stripe: following %s, the better plan, rather than %s",
+                        uid, sub["id"], current["stripe_subscription_id"])
         if mapped is None:
             log.warning("Stripe price %s of subscription %s isn't one of the plans' prices", _id(price), sub.get("id"))
-        tier_slug, interval = mapped or (current["tier"], current["billing_interval"])
+        # A price that isn't a plan's keeps the plan known for this same subscription; a new one gets none.
+        tier_slug, interval = mapped or ((current["tier"], current["billing_interval"]) if same else ("free", "monthly"))
+        customer = _id(sub.get("customer"))
+        if current["stripe_customer_id"] and customer and customer != current["stripe_customer_id"]:
+            log.warning("subscription %s is another Stripe customer's than learner %s's: theirs is kept", sub["id"], uid)
         seats = item.get("quantity") or 1
         amount = price.get("unit_amount") * seats if isinstance(price, dict) and price.get("unit_amount") is not None else None
         trial_end = sub.get("trial_end")
+        if trial_end:  # one free trial per address, even across accounts deleted and made again
+            email = conn.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()[0]
+            conn.execute("INSERT OR IGNORE INTO trials (address_hash, created_at) VALUES (?, ?)", (address_key(email), db.now()))
         conn.execute(
-            "UPDATE subscriptions SET tier = ?, billing_interval = ?, status = ?, stripe_customer_id = ?, "
+            "UPDATE subscriptions SET tier = ?, billing_interval = ?, status = ?, stripe_customer_id = COALESCE(stripe_customer_id, ?), "
             "stripe_subscription_id = ?, stripe_price_id = ?, seats = ?, amount_cents = COALESCE(?, amount_cents), "
             "current_period_start = ?, current_period_end = ?, trial_end = ?, cancel_at_period_end = ?, canceled_at = ?, "
             "trial_used = MAX(trial_used, ?), intended_tier = CASE WHEN ? THEN NULL ELSE intended_tier END, "
             "intended_interval = CASE WHEN ? THEN NULL ELSE intended_interval END, updated_at = ? WHERE user_id = ?",
-            (tier_slug, interval, status, _id(sub.get("customer")) or current["stripe_customer_id"], sub["id"],
+            (tier_slug, interval, status, customer, sub["id"],
              _id(price) if price else current["stripe_price_id"], seats, amount,
              # Since Stripe's 2025 API the billing period is on each item; it was on the subscription before.
              _iso(item.get("current_period_start") or sub.get("current_period_start")),
@@ -348,7 +415,7 @@ def apply(sub, user_id: int | None = None) -> int | None:
 def sync(sub_id: str, user_id: int | None = None) -> int | None:
     """Fetch a subscription from Stripe and apply it."""
     with _stripe("look up the subscription"):
-        sub = _client().v1.subscriptions.retrieve(sub_id, params={"expand": ["items.data.price"]})
+        sub = _client().v1.subscriptions.retrieve(sub_id)
     return apply(sub, user_id)
 
 
@@ -365,6 +432,14 @@ def _customer_user(conn, customer: str | None) -> int | None:
     return found[0] if found else None
 
 
+def _price_by_id(pid: str) -> dict | None:
+    """A price named only by its id (as invoice lines name it since Stripe's 2025 API), from Stripe."""
+    try:
+        return _plain(_client().v1.prices.retrieve(pid))
+    except stripe.StripeError:
+        return None
+
+
 def record_payment(invoice: dict) -> None:
     """A paid invoice, as revenue, once."""
     amount = invoice.get("amount_paid") or 0
@@ -372,6 +447,8 @@ def record_payment(invoice: dict) -> None:
         return
     line = (((invoice.get("lines") or {}).get("data")) or [{}])[0]
     price = line.get("price") or ((line.get("pricing") or {}).get("price_details") or {}).get("price")
+    if isinstance(price, str):
+        price = _price_by_id(price)
     with db.connect() as conn:
         uid = _customer_user(conn, _id(invoice.get("customer")))
         current = row(conn, uid) if uid else None
@@ -399,6 +476,15 @@ def record_refund(charge: dict) -> None:
                           current["billing_interval"] if current else None, f"{charge['id']}:{total}", db.now()))
 
 
+def _our_session(session: dict) -> int | None:
+    """The learner a Checkout Session is for, if this site made it: its checkout puts the learner's id both in
+    client_reference_id and in the metadata. Sessions made elsewhere on the same Stripe account (the old site's, or a
+    payment link's, whose client_reference_id anyone can set) aren't taken at their word."""
+    ref = str(session.get("client_reference_id") or "")
+    named = str((session.get("metadata") or {}).get("aiet_user_id") or "")
+    return int(ref) if ref.isdigit() and ref == named else None
+
+
 def handle(event: dict) -> None:
     """One Stripe event, which may already have been handled: everything here can safely happen twice."""
     with db.connect() as conn:
@@ -408,13 +494,14 @@ def handle(event: dict) -> None:
     from app import campaigns
 
     if kind == "checkout.session.completed" and obj.get("mode") == "subscription" and obj.get("subscription"):
-        ref = obj.get("client_reference_id") or ""
-        with db.connect() as conn:
-            uid = int(ref) if ref.isdigit() and conn.execute("SELECT 1 FROM users WHERE id = ?", (int(ref),)).fetchone() else None
-            if uid and obj.get("customer"):
-                row(conn, uid)
-                conn.execute("UPDATE subscriptions SET stripe_customer_id = COALESCE(stripe_customer_id, ?) WHERE user_id = ?",
-                             (_id(obj["customer"]), uid))
+        uid = None
+        if ours := _our_session(obj):  # anything else is matched by its subscription alone
+            with db.connect() as conn:
+                if conn.execute("SELECT 1 FROM users WHERE id = ?", (ours,)).fetchone():
+                    uid = ours
+                    row(conn, uid)
+                    conn.execute("UPDATE subscriptions SET stripe_customer_id = COALESCE(stripe_customer_id, ?) WHERE user_id = ?",
+                                 (_id(obj.get("customer")), uid))
         uid = sync(_id(obj["subscription"]), uid)
         if uid:
             campaigns.billing_email(uid, "started", _id(obj["subscription"]))
@@ -477,18 +564,21 @@ def view(user: dict) -> dict:
         intended = {"tier": sub["intended_tier"], "name": plans.plan(sub["intended_tier"]).name,
                     "interval": sub["intended_interval"] or "monthly", "at": sub["intended_at"]}
     guides = None
-    if paywall() and "guides" not in unlocks:
-        with db.connect() as conn:
+    with db.connect() as conn:
+        trial_before = had_trial(conn, user["email"])
+        if paywall() and "guides" not in unlocks:
             used = conn.execute("SELECT COUNT(*) FROM guide_reads WHERE user_id = ? AND month = ?",
                                 (user["id"], db.now()[:7])).fetchone()[0]
-        guides = {"limit": settings.free_guides, "left": max(0, settings.free_guides - used)}
+            guides = {"limit": settings.free_guides, "left": max(0, settings.free_guides - used)}
+    rewarded = reward_tier(sub) != "free"
     return {
         "tier": current, "name": p.name, "paywall": paywall(), "payments": payments(), "unlocks": sorted(unlocks),
         "subscription": paid,
         "grant": {"tier": given, "name": plans.plan(given).name, "until": sub["grant_until"], "note": sub["grant_note"]}
         if given != "free" else None,
+        "reward": {"tier": REWARD_TIER, "name": plans.plan(REWARD_TIER).name, "until": sub["reward_until"]} if rewarded else None,
         "intended": intended, "event_discount": p.event_discount, "guides": guides,
-        "trial_available": not sub["trial_used"] and not sub["stripe_subscription_id"],
+        "trial_available": trial_available(sub, trial_before),
         "has_customer": bool(sub["stripe_customer_id"]),
     }
 
@@ -509,6 +599,11 @@ def billing(user: dict = User):
 class PlanChoice(BaseModel):
     tier: Literal["digital", "plus", "pro", "insider"]
     interval: Literal["monthly", "yearly"] = "monthly"
+
+
+def trial_available(sub: dict, trial_before: bool) -> bool:
+    """A free trial is for a first paid plan: not after one here, nor for an address that's had one before."""
+    return settings.trial_days > 0 and not sub["trial_used"] and not sub["stripe_subscription_id"] and not trial_before
 
 
 def _need_payments() -> None:
@@ -536,17 +631,31 @@ def checkout(body: PlanChoice, user: dict = User):
     """Start paying for a plan: the address of Stripe's checkout page for it. The plan chosen is remembered, so a
     learner who doesn't finish can be reminded. A first paid plan starts with a free trial."""
     _need_payments()
+    throttle(user)
+    already = HTTPException(409, "You already have a plan, or a payment for one is waiting. See your Billing page.")
     with db.connect() as conn:
         sub = row(conn, user["id"])
         if sub["stripe_subscription_id"] and sub["status"] in LIVE:
-            raise HTTPException(409, "You already have a plan. Change it on your Billing page.")
+            raise already
+        trial_before = had_trial(conn, user["email"])
+    # Stripe may know of a subscription this server doesn't yet (a checkout finished in another tab, its webhook on
+    # the way): one is enough.
+    history = []
+    if sub["stripe_customer_id"]:
+        with _stripe("start checkout"):
+            history = _plain(_client().v1.subscriptions.list(params={"customer": sub["stripe_customer_id"], "status": "all",
+                                                                     "limit": 20})).get("data") or []
+        if going := [x for x in history if x.get("status") in (*LIVE, "incomplete", "unpaid", "paused")]:
+            apply(going[0], user["id"])
+            raise already
+    with db.connect() as conn:
         conn.execute("UPDATE subscriptions SET intended_tier = ?, intended_interval = ?, intended_at = ?, updated_at = ? "
                      "WHERE user_id = ?", (body.tier, body.interval, db.now(), db.now(), user["id"]))
     price = price_id(body.tier, body.interval)
     customer = _customer(user, sub)
     meta = {"aiet_user_id": str(user["id"]), "aiet_tier": body.tier, "aiet_interval": body.interval}
     subscription_data: dict = {"metadata": meta}
-    if not sub["trial_used"] and not sub["stripe_subscription_id"] and settings.trial_days > 0:
+    if trial_available(sub, trial_before) and not history:
         subscription_data["trial_period_days"] = settings.trial_days
     base = settings.public_url
     with _stripe("start checkout"):
@@ -568,9 +677,10 @@ class Returned(BaseModel):
 def checkout_returned(body: Returned, user: dict = User):
     """Back from checkout: bring the plan up to date now rather than wait for Stripe's webhook."""
     _need_payments()
+    throttle(user)
     with _stripe("check your payment"):
         session = _plain(_client().v1.checkout.sessions.retrieve(body.session_id))
-    if session.get("client_reference_id") != str(user["id"]):
+    if _our_session(session) != user["id"]:
         raise HTTPException(404, "Checkout not found")
     if session.get("status") == "complete" and session.get("subscription"):
         with db.connect() as conn:
@@ -597,6 +707,7 @@ def change_plan(body: PlanChoice, user: dict = User):
     sub = _live_subscription(user)
     if (sub["tier"], sub["billing_interval"]) == (body.tier, body.interval):
         return view(user)
+    throttle(user)
     price = price_id(body.tier, body.interval)
     up = (plans.rank(body.tier), body.interval == "yearly") > (plans.rank(sub["tier"]), sub["billing_interval"] == "yearly")
     client = _client()
@@ -617,11 +728,14 @@ def change_plan(body: PlanChoice, user: dict = User):
 
 def _set_cancel(user: dict, cancel: bool) -> dict:
     sub = _live_subscription(user)
-    params: dict = {"cancel_at_period_end": cancel}
+    throttle(user)
     with _stripe("update your plan"):
         client = _client()
-        if not cancel and _plain(client.v1.subscriptions.retrieve(sub["stripe_subscription_id"])).get("cancel_at"):
-            params["cancel_at"] = ""  # a cancellation set for a date, from the billing portal
+        params: dict = {"cancel_at_period_end": True}
+        if not cancel:
+            now = _plain(client.v1.subscriptions.retrieve(sub["stripe_subscription_id"]))
+            # Undone the way it was set: at the end of the period, or (from the billing portal) for a date.
+            params = {"cancel_at": ""} if now.get("cancel_at") and not now.get("cancel_at_period_end") else {"cancel_at_period_end": False}
         updated = client.v1.subscriptions.update(sub["stripe_subscription_id"], params=params)
     apply(updated, user["id"])
     return view(user)
@@ -643,6 +757,7 @@ def resume(user: dict = User):
 def portal(user: dict = User):
     """Stripe's billing portal, for cards, invoices and receipts."""
     _need_payments()
+    throttle(user)
     with db.connect() as conn:
         sub = row(conn, user["id"])
     if not sub["stripe_customer_id"]:
@@ -657,26 +772,36 @@ def portal(user: dict = User):
 
 
 def cancel_for_deleted(sub: dict | None) -> None:
-    """A deleted account's subscription stops at once. If Stripe can't be reached (or isn't set up yet), it's queued
-    and cancelled as soon as it can be: no one goes on paying for an account they deleted."""
-    if not sub or not sub["stripe_subscription_id"] or sub["status"] not in LIVE:
+    """A deleted account's subscriptions stop at once: the one known here, and any other its Stripe customer has. If
+    Stripe can't be reached (or isn't set up yet), they're queued and cancelled as soon as they can be: no one goes on
+    paying for an account they deleted."""
+    refs = [ref for ref in ((sub or {}).get("stripe_subscription_id") if (sub or {}).get("status") in LIVE else None,
+                            (sub or {}).get("stripe_customer_id")) if ref]
+    if not refs:
         return
     with db.connect() as conn:
-        conn.execute("INSERT OR IGNORE INTO stripe_cancellations (stripe_subscription_id, requested_at) VALUES (?, ?)",
-                     (sub["stripe_subscription_id"], db.now()))
+        conn.executemany("INSERT OR IGNORE INTO stripe_cancellations (stripe_subscription_id, requested_at) VALUES (?, ?)",
+                         [(ref, db.now()) for ref in refs])
     cancel_queued()
 
 
 def cancel_queued() -> int:
-    """Cancel the subscriptions of deleted accounts still waiting. Returns how many were cancelled."""
+    """Cancel the subscriptions of deleted accounts still waiting (a subscription, or every one of a customer's).
+    Returns how many waiting were dealt with."""
     if not payments():
         return 0
     with db.connect() as conn:
         waiting = [r[0] for r in conn.execute("SELECT stripe_subscription_id FROM stripe_cancellations ORDER BY requested_at")]
-    done = 0
+    done, client = 0, _client()
     for sub_id in waiting:
         try:
-            _client().v1.subscriptions.cancel(sub_id, params={"prorate": False})
+            if sub_id.startswith("cus_"):
+                listed = _plain(client.v1.subscriptions.list(params={"customer": sub_id, "status": "all", "limit": 100}))
+                for x in listed.get("data") or []:
+                    if x.get("status") in (*LIVE, "incomplete", "unpaid", "paused"):
+                        client.v1.subscriptions.cancel(x["id"], params={"prorate": False})
+            else:
+                client.v1.subscriptions.cancel(sub_id, params={"prorate": False})
         except stripe.InvalidRequestError as e:  # already cancelled, or gone
             log.info("subscription %s of a deleted account: %s", sub_id, type(e).__name__)
         except stripe.StripeError as e:
@@ -819,6 +944,7 @@ def stripe_setup(user: dict = Admin):
 
 class ReconcileIn(BaseModel):
     dry_run: bool = True
+    end_gone: bool = False  # end the plans of subscriptions Stripe doesn't have
 
 
 @router.post("/staff/stripe/reconcile")
@@ -826,7 +952,7 @@ def stripe_reconcile(body: ReconcileIn, user: dict = Admin):
     """For admins: bring every subscription up to date from Stripe (what `python -m app.billing reconcile` does)."""
     _need_payments()
     with _stripe("check the subscriptions"):
-        report = reconcile(body.dry_run)
+        report = reconcile(body.dry_run, body.end_gone)
     if not body.dry_run:
         from app import staff
 
@@ -835,20 +961,27 @@ def stripe_reconcile(body: ReconcileIn, user: dict = Admin):
     return report
 
 
-def reconcile(dry_run: bool = False) -> dict:
+def reconcile(dry_run: bool = False, end_gone: bool = False) -> dict:
     """Bring every subscription with a Stripe subscription up to date from Stripe, and cancel any queued for
-    deleted accounts. Reports counts only."""
-    report = {"checked": 0, "updated": 0, "gone": 0, "failed": 0, "changes": {}}
+    deleted accounts. A subscription Stripe doesn't have is left as it is unless `end_gone`, which ends the plan (for
+    once a person has looked into them). Reports counts only."""
+    report = {"checked": 0, "updated": 0, "gone": 0, "ended": 0, "failed": 0, "changes": {}}
     with db.connect() as conn:
         subs = [dict(r) for r in conn.execute("SELECT * FROM subscriptions WHERE stripe_subscription_id IS NOT NULL")]
     client = _client()
     for sub in subs:
         report["checked"] += 1
         try:
-            found = _plain(client.v1.subscriptions.retrieve(sub["stripe_subscription_id"],
-                                                            params={"expand": ["items.data.price"]}))
+            found = _plain(client.v1.subscriptions.retrieve(sub["stripe_subscription_id"]))
         except stripe.InvalidRequestError:
-            report["gone"] += 1  # not in this Stripe account: left as it is, for a person to look at
+            report["gone"] += 1  # not in this Stripe account
+            if end_gone and not dry_run and sub["status"] in LIVE:
+                with db.connect() as conn:
+                    before = effective_tier(row(conn, sub["user_id"]))
+                    conn.execute("UPDATE subscriptions SET status = 'canceled', updated_at = ? WHERE user_id = ?",
+                                 (db.now(), sub["user_id"]))
+                    _record_change(conn, sub["user_id"], before, effective_tier(row(conn, sub["user_id"])), "admin")
+                report["ended"] += 1
             continue
         except stripe.StripeError:
             report["failed"] += 1
@@ -883,7 +1016,7 @@ def main(argv: list[str]) -> int:
     if command == "check":
         return 1 if check() else 0
     if command == "reconcile":
-        print(json.dumps(reconcile(dry_run="--dry-run" in argv), indent=2))
+        print(json.dumps(reconcile(dry_run="--dry-run" in argv, end_gone="--end-gone" in argv), indent=2))
         return 0
     print(__doc__.split("\n\n")[-1], file=sys.stderr)
     return 2

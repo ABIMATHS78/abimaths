@@ -80,16 +80,21 @@ def test_a_dry_run_reports_and_changes_nothing(client, exports):
 def test_accounts_keep_their_plans_passwords_and_roles(client, exports):
     report = run_import(exports)
     assert report["accounts"] == {"created": 5} and report["roles"] == {"learner": 4, "admin": 1}
-    assert report["passwords"] == {"bcrypt kept": 4, "none: reset link needed": 1}
-    # The duplicate address became one account: the one with the paid plan, and its password.
+    assert report["passwords"] == {"bcrypt kept": 3, "none: reset link needed": 1,
+                                   "reset link needed: the address had more than one account": 1}
+    # The duplicate address became one account, the one with the paid plan. Not knowing which of the two was the
+    # address's owner, neither password works: a reset link sent to the address decides.
     ada = sql("SELECT * FROM users WHERE email = 'ada@example.com'")[0]
     assert ada["legacy_id"] == "1002" and ada["display_name"] == "Ada Lovelace" and ada["created_at"] == "2025-03-04T05:06:07+00:00"
+    assert ada["password_hash"] == "" and ada["email_confirmed_at"] is None
     assert sql("SELECT legacy_id, user_id FROM legacy_accounts") == [{"legacy_id": "1001", "user_id": ada["id"]}]
-    assert client.post("/api/auth/login", json={"email": "ada@example.com", "password": "free pass"}).status_code == 401
-    me = client.post("/api/auth/login", json={"email": "ada@example.com", "password": "plus pass"}).json()
-    assert me["plan"]["tier"] == "plus" and me["plan"]["subscription"]["status"] == "active"
-    assert me["plan"]["trial_available"] is False and me["marketing_emails"] is False
-    assert sql("SELECT stripe_subscription_id FROM subscriptions WHERE user_id = ?", ada["id"])[0]["stripe_subscription_id"] == "sub_ada"
+    for password in ("free pass", "plus pass"):
+        assert client.post("/api/auth/login", json={"email": "ada@example.com", "password": password}).status_code == 401
+    ada_plan = sql("SELECT * FROM subscriptions WHERE user_id = ?", ada["id"])[0]
+    assert (ada_plan["tier"], ada_plan["status"], ada_plan["stripe_subscription_id"], ada_plan["trial_used"]) == ("plus", "active", "sub_ada", 1)
+    me = client.post("/api/auth/login", json={"email": "zara@example.com", "password": "zara pass"}).json()
+    assert me["plan"]["tier"] == "digital" and me["marketing_emails"] is False
+    client.post("/api/auth/logout")
     # Google sign-in: no password, so a reset link; the address is taken as confirmed.
     kofi = sql("SELECT * FROM users WHERE email = 'kofi@example.com'")[0]
     assert kofi["password_hash"] == "" and kofi["email_confirmed_at"] and kofi["login_method"] == "google"
@@ -119,7 +124,7 @@ def test_running_it_again_changes_nothing_unless_asked(client, exports, tmp_path
     newer = (exports[0], write(tmp_path / "newer.csv", SUBS, rows))
     assert run_import(newer)["accounts"] == {"already_imported": 5}
     assert sql("SELECT s.status FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE u.email = 'kofi@example.com'")[0]["status"] == "past_due"
-    assert run_import(newer, refresh=True)["accounts"]["subscriptions_refreshed"] == 5
+    assert run_import(newer, refresh=True)["accounts"]["subscriptions_refreshed"] == 4  # the admin has no subscription
     assert sql("SELECT s.status FROM subscriptions s JOIN users u ON u.id = s.user_id WHERE u.email = 'kofi@example.com'")[0]["status"] == "active"
 
 
@@ -131,6 +136,13 @@ def test_an_address_already_used_here_is_reported_or_linked(client, exports):
     assert report["accounts"]["address_taken_here"] == 1
     assert any("already has its address" in p["issue"] for p in report["problems"])
     assert sql("SELECT legacy_id FROM users WHERE email = 'zara@example.com'")[0]["legacy_id"] is None
+    # Anyone could have signed up with the address: until it's confirmed, the old site's plan isn't handed over.
+    unconfirmed = run_import(exports, link_existing=True)
+    assert unconfirmed["accounts"]["address_taken_here"] == 1 and "linked_to_existing" not in unconfirmed["accounts"]
+    assert any("hasn't confirmed" in p["issue"] for p in unconfirmed["problems"])
+    from tests.test_billing import run as sql_run
+
+    sql_run("UPDATE users SET email_confirmed_at = created_at WHERE email = 'zara@example.com'")
     linked = run_import(exports, link_existing=True)
     assert linked["accounts"]["linked_to_existing"] == 1
     zara = sql("SELECT u.legacy_id, u.display_name, s.tier FROM users u JOIN subscriptions s ON s.user_id = u.id "
@@ -171,3 +183,56 @@ def test_admins_import_from_the_setup_page(client, exports, monkeypatch):
     assert any(r["action"] == "import" for r in client.get("/api/staff/log").json())
     bad = client.post("/api/staff/import", json={"users": "id,name\n1,Ada\n", "subscriptions": subs})
     assert bad.status_code == 422 and "missing the columns" in bad.json()["detail"]
+
+
+def test_a_plan_changed_here_isnt_overwritten_by_a_newer_export(client, exports):
+    run_import(exports)
+    from tests.test_billing import run as sql_run
+
+    # Zara started a Pro plan here after coming over.
+    sql_run("UPDATE subscriptions SET tier = 'pro', status = 'trialing', stripe_subscription_id = 'sub_here' "
+            "WHERE user_id = (SELECT id FROM users WHERE email = 'zara@example.com')")
+    report = run_import(exports, refresh=True)
+    assert any("changed here" in p["issue"] for p in report["problems"])
+    assert sql("SELECT s.tier, s.stripe_subscription_id FROM subscriptions s JOIN users u ON u.id = s.user_id "
+               "WHERE u.email = 'zara@example.com'") == [{"tier": "pro", "stripe_subscription_id": "sub_here"}]
+
+
+def test_paid_plans_stripe_doesnt_hold_end_when_their_period_does(client, tmp_path):
+    users = [user("3001", "kemi@example.com", "Kemi", password="kemi pass"), user("3002", "tolu@example.com", "Tolu", password="t pass"),
+             user("3003", "bola@example.com", "Bola", password="b pass")]
+    subs = [sub("1", "3001", "insider"), sub("2", "3002", "pro"), sub("3", "3003", "plus")]
+    subs[0]["currentPeriodEnd"] = "2099-01-31 00:00:00"  # paid to a day still to come
+    subs[1]["currentPeriodEnd"] = "2024-01-31 00:00:00"  # and to one that's passed
+    report = run_import((write(tmp_path / "u.csv", USERS, users), write(tmp_path / "s.csv", SUBS, subs)))
+    assert report["plans_in_use"] == {"insider": 1, "free": 1, "plus": 1}
+    given = {r["email"]: (r["grant_tier"], r["grant_until"]) for r in sql(
+        "SELECT u.email, s.grant_tier, s.grant_until FROM subscriptions s JOIN users u ON u.id = s.user_id")}
+    assert given["kemi@example.com"] == ("insider", "2099-01-31T00:00:00+00:00")
+    assert given["tolu@example.com"] == (None, None)
+    assert given["bola@example.com"] == ("plus", None)  # no end known: kept, and flagged for a person to check
+    assert any("for good: check it" in p["issue"] for p in report["problems"])
+
+
+def test_the_report_never_repeats_what_isnt_an_id(client, tmp_path):
+    odd = user("4001", "ok@example.com", "Ok", password="ok pass")
+    odd["loginMethod"] = "someone@example.com"
+    bad_id = user("ada@example.com", "fine@example.com", "Bad id", password="x pass")
+    report = run_import((write(tmp_path / "u.csv", USERS, [odd, bad_id]), write(tmp_path / "s.csv", SUBS, [])))
+    text = json.dumps(report)
+    assert "@example.com" not in text and report["sign_in_methods"] == {"other": 1} and report["invalid_email"] == 1
+
+
+def test_a_newer_duplicate_is_kept_with_the_account_brought_over_before(client, exports, tmp_path):
+    run_import(exports)
+    # A newer export has another account with Ama's address, on a better plan than hers.
+    rows = list(csv.DictReader(open(exports[0], encoding="utf-8")))
+    rows.append(user("1009", "AMA@example.com", "Ama Again", password="again"))
+    subs = list(csv.DictReader(open(exports[1], encoding="utf-8"))) + [sub("7", "1009", "pro", stripe="ama2")]
+    report = run_import((write(tmp_path / "users2.csv", USERS, rows), write(tmp_path / "subs2.csv", SUBS, subs)))
+    assert report["accounts"] == {"already_imported": 4, "folded_into_earlier_import": 1}
+    assert any("brought over before" in p["issue"] for p in report["problems"])
+    ama = sql("SELECT id FROM users WHERE email = 'ama@example.com'")[0]["id"]
+    assert sql("SELECT legacy_id, user_id, tier FROM legacy_accounts WHERE legacy_id = '1009'") == [
+        {"legacy_id": "1009", "user_id": ama, "tier": "pro"}]  # kept with her account, for a person to check
+    assert sql("SELECT tier FROM subscriptions WHERE user_id = ?", ama) == [{"tier": "free"}]
