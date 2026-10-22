@@ -1,0 +1,962 @@
+{
+ "slug": "efficient-llm-inference",
+ "title": "Efficient Inference: Quantisation, Distillation and Batching",
+ "subtitle": "Make language models faster, smaller and cheaper to serve: find where time and memory go, batch continuously, quantise weights and activations with the maths behind it, and distil, prune and speculate.",
+ "category": "AI Engineering",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "wei-cheng-liu",
+  "mouhamadouu-ba"
+ ],
+ "skills": [
+  "LLM inference optimisation",
+  "KV-cache management",
+  "Continuous batching",
+  "Quantisation",
+  "Knowledge distillation",
+  "Pruning and sparsity",
+  "Speculative decoding",
+  "Performance measurement",
+  "PyTorch"
+ ],
+ "tools": [
+  "Python 3",
+  "PyTorch",
+  "Hugging Face Transformers",
+  "vLLM",
+  "llama.cpp",
+  "ONNX Runtime"
+ ],
+ "outcomes": [
+  "Explain where inference time and memory go, from prefill and decode to the KV cache, and estimate both from a model's configuration",
+  "Compare static, dynamic and continuous batching, and size a paged KV cache for a workload",
+  "Quantise weights to int8 and 4-bit with scales and zero points, and measure size, error and perplexity",
+  "Handle activation outliers in W8A8 quantisation with SmoothQuant, mixed precision or FP8",
+  "Apply distillation, pruning and speculative decoding, and choose a serving engine for the hardware and workload"
+ ],
+ "prerequisites": "Transformers and Large Language Models and Deep Learning with PyTorch, or the same skills. Engineering with Foundation Models introduces the KV cache and quantisation that this course takes much further. Install Python 3.10 or later with PyTorch 2 and transformers (tested with PyTorch 2.14 and transformers 5.20). Every lab runs on a laptop CPU, and two download small Hugging Face checkpoints, about 50 MB in all.",
+ "description": "A language model that answers well is only useful if you can afford to serve it. This course is about making inference fast, small and cheap, and about the measurements that tell you whether it worked. It starts with where the time and memory go: prefill against decode, why decode is limited by memory bandwidth rather than arithmetic, and the KV cache that grows with every token. You'll add a KV cache to a small GPT and time it, then simulate static, dynamic and continuous batching and paged KV-cache allocation on the same workload to see where the throughput comes from.\n\nThe middle of the course is quantisation with its maths: number formats from bf16 to FP8, int8 and 4-bit, scales and zero points, granularity and outliers, GPTQ, AWQ and GGUF, and W8A8 with SmoothQuant and mixed precision. You'll quantise a real open model and measure its size, perplexity and next-token agreement, then tame activation outliers in a W8A8 layer. The last module makes the model itself cheaper with distillation, pruning and speculative decoding, and compares vLLM, llama.cpp and ONNX Runtime. Every lab runs on a laptop CPU with exact expected output, and the capstone takes a model of your choice from baseline to a measured, recommended configuration. Operationalising LLMs on Kubernetes and Fine-Tuning Open Language Models with LoRA pair well with it.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Where inference time and memory go",
+   "summary": "Split generation into prefill and decode, see why decode is limited by memory bandwidth rather than arithmetic, and budget the KV cache that grows with every token.",
+   "instructor": "wei-cheng-liu",
+   "lessons": [
+    {
+     "title": "Prefill and decode",
+     "minutes": 12,
+     "objectives": [
+      "Describe the prefill and decode phases of generation",
+      "Relate time to first token and time per output token to each phase"
+     ],
+     "key_points": [
+      "Generation has two phases: prefill runs the whole prompt through the model in one parallel pass and produces the first output token; decode then produces one token per forward pass, each depending on the one before.",
+      "Prefill multiplies the weight matrices by many token vectors at once, which keeps the arithmetic units busy; decode multiplies them by one vector per sequence, so it spends most of its time reading weights from memory.",
+      "Time to first token (TTFT) is queueing plus prefill and grows with prompt length; time per output token (TPOT), or inter-token latency, is the decode step time, and total latency is about TTFT + TPOT × (output tokens − 1).",
+      "Without a cache, every decode step would recompute the keys and values of the whole sequence; caching them makes each step process only the new token, and in the lab the cached and uncached loops produce identical tokens.",
+      "Prompt and output tokens therefore cost differently: long prompts raise TTFT and cache memory, long outputs raise total latency, which is why serving metrics, and usage-based pricing, usually count them separately."
+     ]
+    },
+    {
+     "title": "Arithmetic intensity and the roofline",
+     "minutes": 12,
+     "objectives": [
+      "Estimate a forward pass's FLOPs and the bytes it moves",
+      "Use the roofline model to tell compute-bound from memory-bound work",
+      "Bound decode speed from memory bandwidth"
+     ],
+     "key_points": [
+      "A forward pass costs about 2 FLOPs per parameter per token, a multiply and an add for each weight, so an 8-billion-parameter model needs about 16 GFLOPs per generated token, plus attention work that grows with the context length.",
+      "Arithmetic intensity is FLOPs per byte moved from memory. The roofline model says attainable speed is the lower of peak compute and bandwidth × intensity; the ridge point, peak FLOP/s ÷ bandwidth, is the intensity needed to keep the arithmetic units busy.",
+      "At batch size 1, decode reads each weight (2 bytes in bf16) to do 2 FLOPs with it, about 1 FLOP per byte, far below accelerators' ridge points of hundreds, so it is memory-bound: tokens per second can't exceed bandwidth ÷ bytes of weights.",
+      "For an 8-billion-parameter model in bf16, about 16 GB, 1 TB/s of bandwidth allows at most about 62 tokens per second for one sequence; 4-bit weights raise that bound about fourfold, which is why weight-only quantisation speeds up decode.",
+      "Batching B sequences reuses each weight read for B tokens, raising intensity about B-fold, so throughput grows almost for free until decode becomes compute-bound or the KV cache, which each sequence reads separately, fills memory and bandwidth."
+     ]
+    },
+    {
+     "title": "The KV cache as a memory budget",
+     "minutes": 12,
+     "objectives": [
+      "Calculate KV-cache memory per token, per sequence and per batch",
+      "Explain how grouped-query attention, quantisation and paging change the budget"
+     ],
+     "key_points": [
+      "Each layer caches a key and a value vector per KV head per token: bytes per token = 2 × layers × KV heads × head dimension × bytes per value. An 8B Llama-style model with 32 layers and 8 KV heads of 128 dimensions needs 131,072 bytes (128 KiB) per token in bf16.",
+      "So one 8,192-token sequence holds 1 GiB of cache, and 16 such sequences need 16 GiB on top of 16 GB of weights; with 32 KV heads, one per query head, it would be four times as much, which is why grouped-query attention matters for serving.",
+      "The memory left after the weights and activations decides how many tokens can be in flight at once, and so the batch size, the throughput and the longest context a server can accept.",
+      "Reserving each request's cache for its maximum possible length wastes memory on tokens that are never generated; paged allocation hands out small fixed-size blocks as a sequence grows, so far more sequences fit in the same memory.",
+      "The cache can also shrink: 8-bit KV caches halve it, sliding-window attention keeps only recent tokens in some layers, and prefix caching lets requests that share a prompt prefix share its blocks."
+     ],
+     "walkthrough": {
+      "tool": "Python 3 and Hugging Face Transformers",
+      "title": "Look inside a Hugging Face KV cache",
+      "steps": [
+       {
+        "do": "Load a tiny test model with Qwen2's layout (about 20 MB, downloaded once) and read the configuration values the cache depends on.",
+        "code": "import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nname = \"trl-internal-testing/tiny-Qwen2ForCausalLM-2.5\"     # a tiny test model with Qwen2's layout\nrev = \"ce8d0bf270b28c8fab026ced69fe8aa14b0f0eda\"\ntok = AutoTokenizer.from_pretrained(name, revision=rev)\nmodel = AutoModelForCausalLM.from_pretrained(name, revision=rev, dtype=torch.float32).eval()\nc = model.config\nprint(c.num_hidden_layers, c.num_attention_heads, c.num_key_value_heads, c.hidden_size // c.num_attention_heads)",
+        "lang": "python",
+        "see": "2 4 2 2: two layers, four query heads but only two KV heads (grouped-query attention), and a head dimension of 2."
+       },
+       {
+        "do": "Run a prompt with use_cache=True and look at the cache that comes back.",
+        "code": "inputs = tok(\"The cache grows by one token per step\", return_tensors=\"pt\")\nwith torch.no_grad():\n    out = model(**inputs, use_cache=True)\ncache = out.past_key_values\nprint(type(cache).__name__, cache.get_seq_length(), inputs[\"input_ids\"].shape[1])",
+        "lang": "python",
+        "see": "DynamicCache 8 8: the cache holds one entry per prompt token."
+       },
+       {
+        "do": "Look at one layer's keys.",
+        "code": "print(cache.layers[0].keys.shape)  # transformers 5: (batch, KV heads, tokens, head dimension)",
+        "lang": "python",
+        "see": "torch.Size([1, 2, 8, 2]): batch 1, 2 KV heads (not 4), 8 tokens, head dimension 2. Earlier transformers versions stored the same tensors in lists named key_cache and value_cache."
+       },
+       {
+        "do": "Decode one token: pass only the new token and the cache.",
+        "code": "next_id = out.logits[:, -1:].argmax(-1)\nwith torch.no_grad():\n    out = model(input_ids=next_id, past_key_values=cache, use_cache=True)\nprint(out.past_key_values.get_seq_length())",
+        "lang": "python",
+        "see": "9: the cache grew by exactly one token, and the step only computed that token's projections."
+       },
+       {
+        "do": "Work out the bytes per token from the configuration.",
+        "code": "head_dim = c.hidden_size // c.num_attention_heads\nprint(2 * c.num_hidden_layers * c.num_key_value_heads * head_dim * 4, \"bytes per token in fp32\")",
+        "lang": "python",
+        "see": "64 bytes per token in fp32: 2 × 2 layers × 2 KV heads × 2 dimensions × 4 bytes; the same formula gives 128 KiB per token for an 8B Llama-style model in bf16."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Measure prefill, decode and the KV cache",
+    "tool": "Python 3 and PyTorch",
+    "minutes": 45,
+    "goal": "Add a KV cache to a small GPT, prove it produces the same tokens as recomputing everything, measure prefill against decode, and work out cache sizes and a decode speed limit for an 8-billion-parameter model.",
+    "setup": [
+     "Python 3.10 or later with PyTorch 2 (the CPU build is fine): pip install torch",
+     "The starter file kvcache.py; the model has random weights, which is all timing and memory need"
+    ],
+    "steps": [
+     {
+      "do": "Read the model: Attention.forward takes the new tokens and an optional cache of earlier keys and values, and returns its output and the updated cache. GPT.forward takes start, the position of the first new token."
+     },
+     {
+      "do": "Complete TODO 1 (put the cached keys and values in front of the new ones) and TODO 2 (prefill once, then feed one token at a time with the caches)."
+     },
+     {
+      "do": "Complete TODO 3: the KV-cache bytes per token."
+     },
+     {
+      "do": "Run it.",
+      "code": "python kvcache.py",
+      "lang": "bash",
+      "see": "Model: 4,445,184 parameters, about 8.9 MFLOPs per token, and Same tokens with and without the cache: True."
+     },
+     {
+      "do": "Read the timings, which depend on your CPU.",
+      "see": "Prefill handles tokens tens of times faster per token than decode, and 64 tokens take several times longer without the cache than with it."
+     },
+     {
+      "do": "Read the cache sizes and the speed limit.",
+      "see": "keys (1, 8, 256, 32): batch, heads, tokens, head dimension. 8,192 bytes per token for this model; 131,072 bytes per token for the 8B model with 8 KV heads (524,288 with 32), 1,073,741,824 bytes (1 GiB) for one 8,192-token sequence, and at 1 TB/s at most 62 tokens/s at batch 1."
+     },
+     {
+      "do": "Write two or three sentences starting Budget: on how many 8,192-token conversations fit on an 80 GB accelerator beside the 16 GB of bf16 weights (ignore activations), and two ways to fit more."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The cached loop produces exactly the same tokens.",
+      "look_for": [
+       "Same tokens with and without the cache: True"
+      ]
+     },
+     {
+      "text": "The cache has one entry per token per head.",
+      "look_for": [
+       "keys (1, 8, 256, 32)"
+      ]
+     },
+     {
+      "text": "KV-cache bytes are computed correctly.",
+      "look_for": [
+       "8,192 bytes per token",
+       "131,072 bytes per token",
+       "1,073,741,824 bytes"
+      ]
+     },
+     {
+      "text": "The batch-1 decode speed limit is worked out.",
+      "look_for": [
+       "at most 62 tokens/s"
+      ]
+     },
+     {
+      "text": "The memory budget is reasoned through.",
+      "look_for": [
+       "Budget:"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed pieces of code, everything kvcache.py printed, and your Budget: answer.",
+    "files": [
+     {
+      "path": "kvcache.py",
+      "content": "\"\"\"Prefill, decode and the KV cache, measured on a small GPT with random weights.\n\nRandom weights are enough here: the time and memory a forward pass takes don't depend on what the weights are.\n\"\"\"\n\nimport time\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\nVOCAB, D, HEADS, LAYERS = 2000, 256, 8, 4\n\n\nclass Attention(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.qkv = nn.Linear(D, 3 * D)\n        self.out = nn.Linear(D, D)\n\n    def forward(self, x, cache=None):\n        \"\"\"x: (batch, new tokens, D). cache: (keys, values) of earlier tokens, or None. Returns output, new cache.\"\"\"\n        b, t, _ = x.shape\n        q, k, v = self.qkv(x).split(D, dim=-1)\n        q, k, v = (y.view(b, t, HEADS, D // HEADS).transpose(1, 2) for y in (q, k, v))\n        if cache is not None:\n            # TODO 1: put the cached keys and values in front of the new ones (concatenate on the token axis)\n            pass\n        # With a cache, the new queries sit at the end: each may attend to every earlier token.\n        mask = torch.ones(t, k.shape[2], dtype=torch.bool).tril(diagonal=k.shape[2] - t)\n        y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)\n        return self.out(y.transpose(1, 2).reshape(b, t, D)), (k, v)\n\n\nclass Block(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.n1, self.attn, self.n2 = nn.LayerNorm(D), Attention(), nn.LayerNorm(D)\n        self.mlp = nn.Sequential(nn.Linear(D, 4 * D), nn.GELU(), nn.Linear(4 * D, D))\n\n    def forward(self, x, cache=None):\n        a, cache = self.attn(self.n1(x), cache)\n        x = x + a\n        return x + self.mlp(self.n2(x)), cache\n\n\nclass GPT(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.tok, self.pos = nn.Embedding(VOCAB, D), nn.Embedding(1024, D)\n        self.blocks = nn.ModuleList(Block() for _ in range(LAYERS))\n        self.head = nn.Linear(D, VOCAB, bias=False)\n\n    def forward(self, ids, caches=None, start=0):\n        x = self.tok(ids) + self.pos(torch.arange(start, start + ids.shape[1]))\n        new = []\n        for i, block in enumerate(self.blocks):\n            x, c = block(x, None if caches is None else caches[i])\n            new.append(c)\n        return self.head(x), new\n\n\n@torch.no_grad()\ndef generate_without_cache(model, prompt, n):\n    ids = prompt\n    for _ in range(n):\n        logits, _ = model(ids)  # the whole sequence, every step\n        ids = torch.cat([ids, logits[:, -1:].argmax(-1)], dim=1)\n    return ids\n\n\n@torch.no_grad()\ndef generate_with_cache(model, prompt, n):\n    # TODO 2: run the prompt once (prefill) to get the caches, then for each new token feed only that token\n    #          with the caches and start=its position, appending the argmax each time\n    return generate_without_cache(model, prompt, n)\n\n\ndef kv_bytes_per_token(layers, kv_heads, head_dim, bytes_per_value):\n    # TODO 3: a key and a value vector per KV head per layer\n    return 0\n\n\ndef timed(fn, repeat=3):\n    best = float(\"inf\")\n    for _ in range(repeat):\n        start = time.perf_counter()\n        fn()\n        best = min(best, time.perf_counter() - start)\n    return best\n\n\ndef main():\n    torch.manual_seed(0)\n    model = GPT().eval()\n    params = sum(p.numel() for p in model.parameters())\n    prompt = torch.randint(VOCAB, (1, 256))\n    print(f\"Model: {params:,} parameters, about {2 * params / 1e6:.1f} MFLOPs per token\")\n\n    a = generate_without_cache(model, prompt, 32)\n    b = generate_with_cache(model, prompt, 32)\n    print(\"Same tokens with and without the cache:\", torch.equal(a, b))\n\n    with torch.no_grad():\n        prefill = timed(lambda: model(prompt))\n        _, caches = model(prompt)\n        step = timed(lambda: model(prompt[:, -1:], caches, start=256))\n    print(f\"Prefill: 256 tokens in one pass, {256 / prefill:,.0f} tokens/s\")\n    print(f\"Decode:  1 token per pass, {1 / step:,.0f} tokens/s \"\n          f\"(prefill is {256 / prefill * step:.0f}x faster per token)\")\n    print(f\"Generate 64 tokens: {timed(lambda: generate_without_cache(model, prompt, 64), 1):.2f} s without the \"\n          f\"cache, {timed(lambda: generate_with_cache(model, prompt, 64), 1):.2f} s with it\")\n    k, v = caches[0]\n    print(f\"Cache for layer 0 after the prompt: keys {tuple(k.shape)} and values {tuple(v.shape)}\")\n\n    per_token = kv_bytes_per_token(layers=LAYERS, kv_heads=HEADS, head_dim=D // HEADS, bytes_per_value=4)\n    print(f\"This model's cache: {per_token:,} bytes per token in fp32\")\n    # An 8-billion-parameter Llama-style configuration in bf16: 32 layers, 8 KV heads of 128 dimensions (GQA).\n    gqa = kv_bytes_per_token(layers=32, kv_heads=8, head_dim=128, bytes_per_value=2)\n    mha = kv_bytes_per_token(layers=32, kv_heads=32, head_dim=128, bytes_per_value=2)\n    print(f\"8B model, bf16: {gqa:,} bytes per token with 8 KV heads, {mha:,} with 32; \"\n          f\"one 8,192-token sequence: {gqa * 8192:,} bytes ({gqa * 8192 / 2**30:.0f} GiB)\")\n    weights = 8.03e9 * 2\n    for bandwidth in (1e12, 3e12):\n        print(f\"At {bandwidth / 1e12:.0f} TB/s, batch-1 decode reads all {weights / 1e9:.1f} GB of weights per \"\n              f\"token: at most {bandwidth / weights:.0f} tokens/s\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "With one new token the mask lets its query see every cached key, which is what tril with diagonal = cached length does.",
+     "Pass start as the position of the token you feed, so it gets the same position embedding it would get without the cache.",
+     "Timings vary between runs; compare ratios rather than absolute numbers, and close other heavy programs."
+    ]
+   }
+  },
+  {
+   "title": "Batching and scheduling",
+   "summary": "Compare static, dynamic and continuous batching on a simulated workload, and see how paged KV-cache allocation and preemption let a server run more sequences at once.",
+   "instructor": "mouhamadouu-ba",
+   "lessons": [
+    {
+     "title": "Static and dynamic batching, and why they waste",
+     "minutes": 10,
+     "objectives": [
+      "Explain how request-level batching works for generation",
+      "Identify padding and idle slots as the costs of static batching"
+     ],
+     "key_points": [
+      "Static batching groups requests into a fixed batch, pads their prompts to the longest one and runs the batch until its longest output is finished: finished sequences sit idle in their slots, and new requests wait for the whole batch.",
+      "Dynamic batching, which suits single-pass models (Deploying and Serving Machine Learning Models covers it), starts a batch when it is full or a maximum wait has passed; for generation it still runs every batch to its longest output, so it helps little.",
+      "Output lengths vary from a few tokens to hundreds, so request-level batches spend many of their slots on sequences that have already finished: in the lab, static batching left 7,545 decode slots idle across 60 requests.",
+      "Request-level batching still suits offline jobs whose inputs are all available at once: sort them by length to limit padding, because no one is waiting on any single request."
+     ]
+    },
+    {
+     "title": "Continuous batching",
+     "minutes": 12,
+     "objectives": [
+      "Describe iteration-level scheduling",
+      "Explain how prefill and decode interfere in one batch, and how chunked prefill helps"
+     ],
+     "key_points": [
+      "Continuous batching, the iteration-level scheduling introduced by the Orca serving system in 2022, decides at every decode step: finished sequences leave the batch at once and waiting requests join as soon as there is room.",
+      "It removes idle slots and the wait for a full batch: under the lab's heavy load it roughly doubled throughput and cut mean latency by about three-quarters compared with static batching.",
+      "A joining request must be prefilled, and a long prefill in the same step delays every running sequence's next token; chunked prefill splits long prompts into pieces processed alongside the decodes, which bounds that stall.",
+      "Some deployments run prefill and decode on separate pools of accelerators (disaggregated serving), so each phase can be sized and batched for its own bottleneck: compute for prefill, memory bandwidth for decode.",
+      "Throughput and latency trade off: a bigger batch raises tokens per second but lengthens each step, so engines limit the running sequences and the tokens per step, tuned against TTFT and inter-token latency targets."
+     ]
+    },
+    {
+     "title": "Paged KV cache, admission and preemption",
+     "minutes": 12,
+     "objectives": [
+      "Explain paged KV-cache allocation",
+      "Describe admission control and preemption when memory runs out"
+     ],
+     "key_points": [
+      "PagedAttention (Kwon and colleagues, 2023, the basis of vLLM) stores each sequence's KV cache in fixed-size blocks, such as 16 tokens, mapped through a block table like virtual memory: memory is allocated as a sequence grows, and only its last block can be partly empty.",
+      "Blocks can be shared: requests with the same prompt prefix, or several samples from one prompt, point at the same blocks until their contents diverge, when the block is copied (copy-on-write).",
+      "Admission control starts a request only when its blocks fit; if growing sequences later run out of blocks, the scheduler preempts some of them, freeing their blocks, and later recomputes or swaps back their cache.",
+      "In the lab, reserving each request's maximum length let at most 9 sequences run in a 4,096-token cache, while paged allocation ran up to 13 and finished the workload sooner despite 4 preemptions.",
+      "An engine's memory settings, such as the share of accelerator memory it may use and the block size, decide how many tokens fit; tune them while measuring TTFT, inter-token latency and throughput at realistic concurrency."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Simulate static, dynamic and continuous batching",
+    "tool": "Python 3",
+    "minutes": 45,
+    "goal": "Complete a small scheduler simulator, compare static, dynamic and continuous batching under light and heavy load, then compare reserving each request's maximum KV cache with paged allocation.",
+    "setup": [
+     "Python 3.10 or later; batching.py uses only the standard library, so every number it prints is exactly reproducible"
+    ],
+    "steps": [
+     {
+      "do": "Read the cost model at the top of batching.py: a decode step costs 1 unit whatever the batch size, and prefill adds 1 unit per 512 prompt tokens. request_level() pads prompts and runs each batch to its longest output."
+     },
+     {
+      "do": "Complete TODO 1 in request_level(): when a static or a dynamic batch starts."
+     },
+     {
+      "do": "Complete TODO 2 in continuous(): admit waiting requests, oldest first, while there is room in the batch and, when it is limited, in the KV cache."
+     },
+     {
+      "do": "Run it.",
+      "code": "python batching.py",
+      "lang": "bash",
+      "see": "With a request every 10 units, static batching manages 3.13 tokens/unit with a mean latency of 653.3, and continuous batching 6.59 tokens/unit with a mean latency of 162.2 and a mean time to first token of 62.5."
+     },
+     {
+      "do": "Compare the light-load run (a request every 40 units).",
+      "see": "Throughput is similar, because the server keeps up, but continuous batching still cuts mean latency from 232.4 to 99.7 and time to first token from 136.1 to 2.0. Dynamic batching barely helps at either load, because every batch still runs to its longest output."
+     },
+     {
+      "do": "Read the KV-cache comparison.",
+      "see": "reserve: at most 9 running, 0 preempted, finished at 956.6; paged: at most 13 running, 4 preempted, finished at 738.9 with 7.90 tokens/unit."
+     },
+     {
+      "do": "Set MAX_BATCH to 16, run again and note what happens to continuous batching under heavy load; then set it back to 8."
+     },
+     {
+      "do": "Write two or three sentences starting Schedule: on which scheduler and KV policy you would choose for a chat service with many short answers and a few long ones, and which metric you'd watch."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Static batching is simulated, with its padding and idle slots.",
+      "look_for": [
+       "3.13 tokens/unit",
+       "padded prompt tokens 11,444, idle decode slots 7,545"
+      ]
+     },
+     {
+      "text": "Continuous batching is simulated at both loads.",
+      "look_for": [
+       "6.59 tokens/unit",
+       "836 steps, at most 8 running",
+       "2,286 steps, at most 7 running"
+      ]
+     },
+     {
+      "text": "Reserved and paged KV allocation are compared.",
+      "look_for": [
+       "at most 9 running, 0 preempted",
+       "at most 13 running, 4 preempted"
+      ]
+     },
+     {
+      "text": "The choice of scheduler is justified.",
+      "look_for": [
+       "Schedule:"
+      ]
+     }
+    ],
+    "submit": "Paste your two completed pieces of code, everything batching.py printed, your note on MAX_BATCH = 16 and your Schedule: answer.",
+    "files": [
+     {
+      "path": "batching.py",
+      "content": "\"\"\"Simulate an LLM server's scheduler: static, dynamic and continuous batching, then KV-cache allocation.\n\nTime is in engine steps. A decode step costs 1 unit whatever the batch size, because decoding is memory-bound and\nthe sequences in a batch share one read of the weights; prompt tokens prefilled in a step add 1 unit per\nPREFILL_RATE tokens. Everything is deterministic, so your numbers should match the expected output exactly.\n\"\"\"\n\nimport math\nimport random\nimport statistics\nfrom dataclasses import dataclass\n\nMAX_BATCH = 8\nPREFILL_RATE = 512  # prompt tokens per time unit\n\n\n@dataclass\nclass Request:\n    rid: int\n    arrival: float\n    prompt: int\n    output: int\n    first: float = 0.0\n    done: float = 0.0\n    made: int = 0\n\n\ndef workload(gap, n=60, seed=0):\n    \"\"\"Requests arriving every `gap` units on average: prompts of 16 to 512 tokens, outputs short (4 to 32 tokens)\n    or long (64 to 256).\"\"\"\n    rng = random.Random(seed)\n    t, out = 0.0, []\n    for i in range(n):\n        t += rng.expovariate(1 / gap)\n        out_len = rng.randint(4, 32) if rng.random() < 0.5 else rng.randint(64, 256)\n        out.append(Request(i, round(t, 2), rng.randint(16, 512), out_len))\n    return out\n\n\ndef request_level(reqs, max_wait=None):\n    \"\"\"Static (max_wait=None: wait for a full batch) or dynamic batching (start when full or after max_wait).\n\n    A batch is padded to its longest prompt and runs until its longest output is finished.\n    \"\"\"\n    t, i, padding, idle_slots = 0.0, 0, 0, 0\n    while i < len(reqs):\n        full_at = reqs[min(i + MAX_BATCH, len(reqs)) - 1].arrival  # when the batch could be full\n        # TODO 1: the batch starts once the engine is free (t) and the batch is full (full_at), or, for dynamic\n        #          batching, once the oldest waiting request (reqs[i]) has waited max_wait, if that comes first\n        start = max(t, full_at)\n        batch = [r for r in reqs[i: i + MAX_BATCH] if r.arrival <= start]\n        i += len(batch)\n        longest_prompt, longest_out = max(r.prompt for r in batch), max(r.output for r in batch)\n        prefill = 1 + len(batch) * longest_prompt / PREFILL_RATE\n        for r in batch:\n            r.first = start + prefill\n            r.done = start + prefill + r.output - 1\n            padding += longest_prompt - r.prompt\n            idle_slots += longest_out - r.output\n        t = start + prefill + longest_out - 1\n    return t, padding, idle_slots\n\n\ndef continuous(reqs, kv_tokens=None, policy=\"paged\", block=16, max_new=256, max_batch=MAX_BATCH):\n    \"\"\"Iteration-level scheduling: finished sequences leave and waiting ones join at every step.\n\n    With kv_tokens set, the KV cache is limited: 'reserve' sets aside prompt + max_new slots per request when it\n    is admitted; 'paged' allocates blocks of `block` tokens as a sequence grows and, if blocks run out,\n    preempts the newest running request, which restarts later (recomputation).\n    \"\"\"\n    t, queue, running, i = 0.0, [], [], 0\n    steps, preempted, peak = 0, 0, 0\n    used = lambda: sum(need(r) for r in running)\n\n    def need(r):\n        if policy == \"reserve\":\n            return r.prompt + max_new\n        return math.ceil((r.prompt + r.made + 1) / block) * block\n\n    while i < len(reqs) or queue or running:\n        while i < len(reqs) and reqs[i].arrival <= t:\n            queue.append(reqs[i])\n            i += 1\n        if not queue and not running:\n            t = reqs[i].arrival\n            continue\n        admitted = []\n        # TODO 2: admit queued requests (oldest first) while fewer than max_batch are running and, when\n        #          kv_tokens is set, while the KV cache has room for the new request: used() + need(r) <= kv_tokens\n        raise NotImplementedError(\"TODO 2: admit waiting requests\")\n        if policy == \"paged\" and kv_tokens is not None:\n            while used() > kv_tokens and len(running) > 1:  # growing sequences ran out of blocks\n                victim = running.pop()\n                victim.made = 0\n                queue.insert(0, victim)\n                preempted += 1\n                if victim in admitted:\n                    admitted.remove(victim)\n        cost = 1 + sum(r.prompt + r.made for r in admitted) / PREFILL_RATE\n        t += cost\n        steps += 1\n        peak = max(peak, len(running))\n        for r in running:\n            r.made += 1\n            if r.made == 1:\n                r.first = t\n        for r in [r for r in running if r.made == r.output]:\n            r.done = t\n            running.remove(r)\n    return t, steps, preempted, peak\n\n\ndef report(name, reqs, end, extra=\"\"):\n    tokens = sum(r.output for r in reqs)\n    lat = sorted(r.done - r.arrival for r in reqs)\n    ttft = [r.first - r.arrival for r in reqs]\n    p95 = lat[math.ceil(0.95 * len(lat)) - 1]\n    print(f\"{name:24s} finished at {end:7.1f}; {tokens / end:5.2f} tokens/unit; latency mean {statistics.mean(lat):6.1f}, \"\n          f\"p95 {p95:6.1f}; time to first token mean {statistics.mean(ttft):6.1f}{extra}\")\n\n\ndef compare(gap):\n    reqs = workload(gap)\n    print(f\"Requests every {gap} units on average: {len(reqs)} requests, {sum(r.output for r in reqs):,} output \"\n          f\"tokens, last arrival at {reqs[-1].arrival:.1f}\")\n    for name, wait in ((\"Static (full batches)\", None), (\"Dynamic (max wait 20)\", 20)):\n        reqs = workload(gap)\n        end, padding, idle = request_level(reqs, max_wait=wait)\n        report(name, reqs, end, f\"; padded prompt tokens {padding:,}, idle decode slots {idle:,}\")\n    reqs = workload(gap)\n    end, steps, _, peak = continuous(reqs)\n    report(\"Continuous\", reqs, end, f\"; {steps:,} steps, at most {peak} running\")\n\n\ndef main():\n    compare(gap=40)\n    compare(gap=10)\n    print(\"Requests every 10 units, KV cache limited to 4,096 tokens, batch limit 32:\")\n    for policy in (\"reserve\", \"paged\"):\n        reqs = workload(10)\n        end, steps, preempted, peak = continuous(reqs, kv_tokens=4096, policy=policy, max_batch=32)\n        report(f\"  {policy}\", reqs, end, f\"; at most {peak} running, {preempted} preempted\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "Static: start = max(t, full_at). Dynamic: the earlier of full_at and the oldest request's arrival plus max_wait, but never before t, when the engine becomes free.",
+     "Check the KV limit with used() + need(queue[0]) before popping the request from the queue.",
+     "If your numbers differ, print one request's first and done times and work its timeline out by hand."
+    ]
+   }
+  },
+  {
+   "title": "Quantisation: the numbers",
+   "summary": "Learn the number formats inference uses, the maths of scales and zero points, and why granularity and outliers decide how much accuracy low-bit weights lose.",
+   "instructor": "wei-cheng-liu",
+   "lessons": [
+    {
+     "title": "Number formats for inference",
+     "minutes": 12,
+     "objectives": [
+      "Compare floating-point and integer formats by range and precision",
+      "Choose storage formats for weights, activations and the KV cache"
+     ],
+     "key_points": [
+      "Floating-point formats split their bits between exponent (range) and mantissa (precision): fp16 has 5 exponent and 10 mantissa bits and tops out at 65,504; bf16 has fp32's 8 exponent bits but only 7 mantissa bits, so it has fp32's range with coarser steps.",
+      "FP8 comes in two common variants: E4M3, with more precision and a maximum of 448, usually for weights and activations, and E5M2, with more range (up to 57,344), often for gradients; recent accelerators multiply FP8 natively.",
+      "Integer formats are evenly spaced: int8 holds −128 to 127 and int4 −8 to 7 (or 0 to 15 unsigned), so a real number is stored as an integer times a scale, and the result depends on choosing that scale well.",
+      "Floats keep roughly the same relative error for small and large values, while an integer grid gives every value the same absolute step, which is why outliers hurt integer formats most.",
+      "NF4, the 4-bit format QLoRA introduced, spaces its 16 levels by the quantiles of a normal distribution, putting more levels near zero, where most weights are."
+     ],
+     "walkthrough": {
+      "tool": "Python 3 and PyTorch",
+      "title": "Compare number formats in PyTorch",
+      "steps": [
+       {
+        "do": "Print the size, largest value and machine epsilon (the step just above 1) of each floating-point format.",
+        "code": "import torch\n\nfor dt in (torch.float32, torch.float16, torch.bfloat16, torch.float8_e4m3fn, torch.float8_e5m2):\n    f = torch.finfo(dt)\n    print(f\"{str(dt):20s} {f.bits:2d} bits  max {f.max:<12g} eps {f.eps:g}\")",
+        "lang": "python",
+        "see": "float16 tops out at 65504, bfloat16 at about 3.4e38 like float32 but with an epsilon of 0.0078125, float8_e4m3fn at 448 with an epsilon of 0.125, and float8_e5m2 at 57344."
+       },
+       {
+        "do": "Round-trip a few values through the 16-bit and FP8 formats.",
+        "code": "x = torch.tensor([0.1, 300.0, 1000.0])\nfor dt in (torch.float16, torch.bfloat16, torch.float8_e4m3fn):\n    print(str(dt), x.to(dt).float().tolist())",
+        "lang": "python",
+        "see": "0.1 becomes 0.0999755859375 in float16, 0.10009765625 in bfloat16 and 0.1015625 in E4M3; 300 becomes 288 in E4M3, whose steps are 32 apart at that size; and 1000, beyond E4M3's range, comes back as 448 here. Scale values into range rather than relying on what overflow does."
+       },
+       {
+        "do": "Check the integer ranges.",
+        "code": "print(torch.iinfo(torch.int8), torch.iinfo(torch.uint8))",
+        "lang": "python",
+        "see": "int8 holds -128 to 127 and uint8 0 to 255: evenly spaced, so they need a scale."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Scales and zero points",
+     "minutes": 12,
+     "objectives": [
+      "Quantise and dequantise values with a scale and a zero point",
+      "Choose between symmetric and asymmetric quantisation",
+      "Bound the rounding and clipping error"
+     ],
+     "key_points": [
+      "Affine (asymmetric) quantisation maps a real x to an integer q = clamp(round(x / s) + z, qmin, qmax) and back to x̂ = s × (q − z); the scale s is the real step between levels and the zero point z is the integer that stands for 0.",
+      "For a range [min, max] and integers qmin to qmax, s = (max − min) / (qmax − qmin) and z = qmin − round(min / s); for [−1, 2] in uint8 that gives s = 3/255 ≈ 0.0118 and z = 85.",
+      "Because z is an integer, 0.0 is stored exactly, which matters for padding and the many exact zeros after ReLU; rounding z shifts the grid slightly, so the smallest value can come back a little beyond the original minimum.",
+      "Symmetric quantisation fixes z = 0 and s = max|x| / qmax (127 for int8, often 7 for int4), which simplifies integer matrix multiplication but wastes part of the range when values are skewed, such as activations after a GELU.",
+      "Inside the range, rounding error is at most s/2 per value; values beyond it are clipped, so choosing the range trades rounding error against clipping error, and calibration picks ranges from representative data."
+     ],
+     "walkthrough": {
+      "tool": "Python 3 and PyTorch",
+      "title": "Quantise and dequantise a tensor by hand",
+      "steps": [
+       {
+        "do": "Work out an unsigned 8-bit scale and zero point for values from -1 to 2.",
+        "code": "import torch\n\nx = torch.tensor([-1.0, -0.2, 0.0, 0.3, 2.0])\nqmin, qmax = 0, 255                                   # unsigned 8-bit\nscale = (x.max() - x.min()) / (qmax - qmin)\nzero = int(torch.round(qmin - x.min() / scale))\nprint(f\"scale {scale.item():.6f}, zero point {zero}\")",
+        "lang": "python",
+        "see": "scale 0.011765 (3/255), zero point 85."
+       },
+       {
+        "do": "Quantise: divide by the scale, round, add the zero point and clamp.",
+        "code": "q = torch.clamp(torch.round(x / scale) + zero, qmin, qmax)\nprint(q.int().tolist())",
+        "lang": "python",
+        "see": "[0, 68, 85, 111, 255]: -1 maps to 0, 2 to 255 and 0.0 to exactly the zero point."
+       },
+       {
+        "do": "Dequantise and check every error is within half a step.",
+        "code": "restored = scale * (q - zero)\nprint([round(v, 4) for v in restored.tolist()], (restored - x).abs().max().item() <= scale.item() / 2)",
+        "lang": "python",
+        "see": "[-1.0, -0.2, 0.0, 0.3059, 2.0] True: 0.3 sat exactly halfway between two levels and moved by half a step; zero came back exactly."
+       },
+       {
+        "do": "Compare symmetric int8, with the zero point fixed at 0.",
+        "code": "s = x.abs().max() / 127                               # symmetric int8: zero point 0\nq_sym = torch.clamp(torch.round(x / s), -127, 127)\nprint(q_sym.int().tolist(), [round(v, 4) for v in (q_sym * s).tolist()])",
+        "lang": "python",
+        "see": "[-64, -13, 0, 19, 127]: the scale is set by the largest magnitude (2), so the negative half of the grid down to -127 is mostly unused and the step is coarser than the asymmetric one."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Granularity, outliers and 4-bit groups",
+     "minutes": 12,
+     "objectives": [
+      "Compare per-tensor, per-channel and per-group quantisation",
+      "Work out the real bits per weight, including scales",
+      "Pack 4-bit values into bytes"
+     ],
+     "key_points": [
+      "One scale per tensor is cheapest but lets a single outlier stretch the grid for everything; one scale per output channel (row), or per group of 32 to 128 consecutive weights, stops outliers spoiling their neighbours.",
+      "In the lab, int8 with one scale per tensor raised pythia-14m's perplexity on the test passage from 77 to about 107, while one scale per row kept it near 78: granularity mattered more than the bit count.",
+      "Scales cost storage: an fp16 scale per group of g weights adds 16/g bits per weight and an 8-bit zero point another 8/g, so 4-bit weights in groups of 32 take 4.75 bits per weight, and in groups of 128 about 4.19.",
+      "4-bit integers are stored two to a byte, one in each nibble, and unpacked with a mask and a shift; real kernels unpack and dequantise inside the matrix multiplication rather than in memory.",
+      "Small models suffer more than large ones: pythia-14m lost far more at 4 bits than larger models usually do, so measure your own model on your own tasks instead of borrowing someone else's results."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Quantise a small model's weights: size, error and perplexity",
+    "tool": "Python 3, PyTorch and Hugging Face Transformers",
+    "minutes": 60,
+    "goal": "Write symmetric and asymmetric quantisation with per-row and per-group scales, pack 4-bit values two to a byte, and apply them to every linear layer of pythia-14m, measuring its size, the weight error, perplexity and how often the top next-token prediction survives.",
+    "setup": [
+     "Python 3.10 or later with PyTorch and transformers: pip install torch transformers (tested with PyTorch 2.14 and transformers 5.20)",
+     "The first run downloads EleutherAI/pythia-14m (Apache 2.0, about 30 MB); the code pins its revision",
+     "quantise.py and eval_text.txt, a short passage the perplexity is measured on, in one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read quantise(): it reshapes a weight into rows or groups so that each row or group gets one scale and one zero point. The quantisation is simulated: integers are dequantised straight back to float, so the error is exactly what a low-bit kernel would see."
+     },
+     {
+      "do": "Complete TODO 1 (symmetric) and TODO 2 (asymmetric)."
+     },
+     {
+      "do": "Complete TODO 3: pack_int4()."
+     },
+     {
+      "do": "Run it.",
+      "code": "python quantise.py",
+      "lang": "bash",
+      "see": "253 tokens; 25 linear layers with 7,618,560 weights (30.5 MB in fp32), an fp32 perplexity of about 77, and the worked example: Integers: [11, 12, 15, 10, 15, 0, 6, 12] scale 0.00334, zero point 9."
+     },
+     {
+      "do": "Read the worked example's restored values.",
+      "see": "Each is within half a step (0.00167) of the original. The most negative weight, -0.0288, comes back as -0.0301, because the zero point was rounded to 9."
+     },
+     {
+      "do": "Read the table.",
+      "see": "int8 with one scale for each tensor: 7.62 MB and a perplexity of about 107; one per row: 7.73 MB and about 78. 4-bit per row: about 3.9 MB and 157 to 187; groups of 64 and 32 bring it down to about 134 and 123 at 4.375 and 4.750 bits per weight."
+     },
+     {
+      "do": "Add groups of 16 to the schemes list and run again; note the size and the perplexity."
+     },
+     {
+      "do": "Write two or three sentences starting Quantise: on which scheme you'd ship for a phone with little memory and why, and what you would measure before trusting it."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Quantisation and packing are correct on the worked example.",
+      "look_for": [
+       "Integers: [11, 12, 15, 10, 15, 0, 6, 12]",
+       "unpacked equal: True"
+      ]
+     },
+     {
+      "text": "Sizes count the scales and zero points.",
+      "look_for": [
+       "8.120",
+       "4.375",
+       "4.750"
+      ]
+     },
+     {
+      "text": "Every scheme is evaluated and the original weights restored.",
+      "look_for": [
+       "int4 asymmetric, groups of 32",
+       "Restored fp32 weights: perplexity"
+      ]
+     },
+     {
+      "text": "The choice of scheme is justified.",
+      "look_for": [
+       "Quantise:"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed functions, everything quantise.py printed (with your groups of 16 row), and your Quantise: answer.",
+    "files": [
+     {
+      "path": "quantise.py",
+      "content": "\"\"\"Quantise every linear layer of a small open model to int8 and 4-bit, and measure size and error.\n\nThe model is EleutherAI/pythia-14m (Apache 2.0, about 30 MB). Quantisation here is simulated: weights are\nquantised to integers and immediately dequantised, so the model runs in float32 and the error is exactly the\nrounding error a real low-bit kernel would see. Sizes count the integers plus their scales and zero points.\n\"\"\"\n\nimport math\n\nimport torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nCHECKPOINT = \"EleutherAI/pythia-14m\"\nREVISION = \"cf967c0a9a04383db6f7b1108d86b2962634b4ac\"\n\n\ndef quantise(w, bits, symmetric, group=None):\n    \"\"\"Quantise a 2-D weight (out_features x in_features) row by row, or in groups of `group` inputs.\n\n    Returns the integers q, the scales s and the zero points z, each with one value per row or per group,\n    such that s * (q - z) approximates w.\n    \"\"\"\n    rows, cols = w.shape\n    g = w.reshape(rows, cols // group, group) if group else w.reshape(rows, 1, cols)\n    if symmetric:\n        # TODO 1: symmetric: qmax = 2**(bits-1) - 1, scale = max |w| / qmax per row or group,\n        #          q = round(w / scale) clamped to [-qmax, qmax], zero point 0\n        s = z = q = None\n    else:\n        # TODO 2: asymmetric: integers 0 .. 2**bits - 1, scale = (max - min) / (2**bits - 1),\n        #          zero point = round(-min / scale) clamped to the integer range, q = round(w / scale) + zero\n        #          point, clamped to the range\n        s = z = q = None\n    return q, s, z\n\n\ndef dequantise(q, s, z, shape):\n    return (s * (q - z)).reshape(shape)\n\n\ndef pack_int4(q):\n    \"\"\"Two 4-bit values (0..15) per byte: the first in the low nibble, the second in the high nibble.\"\"\"\n    flat = q.flatten().to(torch.uint8)\n    # TODO 3: combine the even-indexed values (low nibble) with the odd-indexed values shifted left by 4\n    return flat\n\n\ndef unpack_int4(packed):\n    return torch.stack([packed & 0x0F, packed >> 4], dim=-1).flatten()\n\n\ndef nbytes(q, s, z, bits, symmetric):\n    \"\"\"Storage: the integers, an fp16 scale per row or group and, if asymmetric, a uint8 zero point too.\"\"\"\n    return math.ceil(q.numel() * bits / 8) + s.numel() * 2 + (0 if symmetric else z.numel())\n\n\n@torch.no_grad()\ndef score(model, ids, reference=None):\n    logits = model(ids).logits[0, :-1]\n    nll = torch.nn.functional.cross_entropy(logits, ids[0, 1:])\n    if reference is None:\n        return math.exp(nll.item()), logits\n    log_p, log_q = reference.log_softmax(-1), logits.log_softmax(-1)\n    kl = (log_p.exp() * (log_p - log_q)).sum(-1).mean().item()\n    agree = (reference.argmax(-1) == logits.argmax(-1)).float().mean().item()\n    return math.exp(nll.item()), kl, agree\n\n\n@torch.no_grad()\ndef main():\n    torch.manual_seed(0)\n    tok = AutoTokenizer.from_pretrained(CHECKPOINT, revision=REVISION)\n    ids = tok(open(\"eval_text.txt\", encoding=\"utf-8\").read(), return_tensors=\"pt\")[\"input_ids\"]\n    model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32).eval()\n    linears = {n: m for n, m in model.named_modules() if isinstance(m, torch.nn.Linear)}\n    original = {n: m.weight.detach().clone() for n, m in linears.items()}\n    count = sum(w.numel() for w in original.values())\n    ppl, ref_logits = score(model, ids)\n    print(f\"{len(ids[0])} tokens; {len(linears)} linear layers with {count:,} weights \"\n          f\"({count * 4 / 1e6:.1f} MB in fp32)\")\n    print(f\"fp32 baseline: perplexity {ppl:.2f}\")\n\n    # One worked example: the 4-bit asymmetric version of a few weights.\n    w = original[\"gpt_neox.layers.0.attention.dense\"][:1, :8]\n    q, s, z = quantise(w, 4, symmetric=False)\n    print(\"Weights :\", [round(v, 4) for v in w[0].tolist()])\n    print(\"Integers:\", [int(v) for v in q.flatten().tolist()], f\"scale {s.item():.5f}, zero point {int(z.item())}\")\n    print(\"Restored:\", [round(v, 4) for v in dequantise(q, s, z, w.shape)[0].tolist()])\n    packed = pack_int4(q)\n    print(f\"Packed {q.numel()} values into {packed.numel()} bytes; unpacked equal: \"\n          f\"{torch.equal(unpack_int4(packed), q.flatten().to(torch.uint8))}\")\n\n    print(f\"{'scheme':34s} {'MB':>6s} {'bits/weight':>11s} {'rel. error':>10s} {'perplexity':>10s} \"\n          f\"{'KL':>7s} {'top-1 same':>10s}\")\n    schemes = [(\"int8 symmetric, per tensor\", 8, True, \"tensor\"), (\"int8 symmetric, per row\", 8, True, None),\n               (\"int4 symmetric, per row\", 4, True, None), (\"int4 asymmetric, per row\", 4, False, None),\n               (\"int4 asymmetric, groups of 64\", 4, False, 64), (\"int4 asymmetric, groups of 32\", 4, False, 32)]\n    for label, bits, symmetric, group in schemes:\n        size, err2, norm2 = 0, 0.0, 0.0\n        for n, m in linears.items():\n            w = original[n]\n            if group == \"tensor\":\n                q, s, z = quantise(w.reshape(1, -1), bits, symmetric)\n            else:\n                q, s, z = quantise(w, bits, symmetric, group)\n            restored = dequantise(q, s, z, w.shape)\n            m.weight.copy_(restored)\n            size += nbytes(q, s, z, bits, symmetric)\n            err2 += (restored - w).pow(2).sum().item()\n            norm2 += w.pow(2).sum().item()\n        p, kl, agree = score(model, ids, ref_logits)\n        print(f\"{label:34s} {size / 1e6:6.2f} {size * 8 / count:11.3f} {math.sqrt(err2 / norm2):10.4f} \"\n              f\"{p:10.2f} {kl:7.4f} {agree:10.1%}\")\n    for n, m in linears.items():\n        m.weight.copy_(original[n])\n    print(f\"Restored fp32 weights: perplexity {score(model, ids)[0]:.2f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "eval_text.txt",
+      "content": "Every morning the bakery on the corner opens its doors a little before six. The first customers are usually people on their way to work, and most of them buy the same thing every day: a loaf of bread, a coffee, and sometimes a pastry if the weather is cold. The baker starts much earlier. She mixes the dough the night before, lets it rise slowly in a cool room, and shapes the loaves while the oven heats up.\n\nMaking good bread is mostly a matter of patience. Flour, water, salt and yeast are cheap, but time is not. A dough that rises too quickly has little flavour, and a loaf that is taken out of the oven too early is pale and soft. Over the years the baker has learned to judge the dough by touch and by smell rather than by the clock.\n\nOn Saturdays the shop is busier, and her two children help behind the counter. They are learning to count change, to wrap loaves in paper, and to remember which regular customers like their bread sliced. When the shelves are empty, usually by early afternoon, the family cleans the kitchen, writes the list of what to buy for the next week, and goes home to rest.\n"
+     }
+    ],
+    "hints": [
+     "Keep the scale away from zero with clamp(min=1e-12): a row of zeros would otherwise divide by zero.",
+     "In pack_int4, flat[0::2] go in the low nibbles and flat[1::2], shifted left by 4, in the high nibbles.",
+     "Perplexity is exp of the mean cross-entropy; a difference in the second decimal place between machines is normal."
+    ]
+   }
+  },
+  {
+   "title": "Quantisation in practice: weights, activations and the KV cache",
+   "summary": "Go beyond rounding: error-compensating weight quantisation, activation outliers and SmoothQuant, FP8, quantised KV caches and the formats engines load, judged by an evaluation you can trust.",
+   "instructor": "wei-cheng-liu",
+   "lessons": [
+    {
+     "title": "Weight-only quantisation: GPTQ, AWQ and GGUF",
+     "minutes": 12,
+     "objectives": [
+      "Explain weight-only quantisation and when it speeds up inference",
+      "Compare round-to-nearest, GPTQ and AWQ",
+      "Read llama.cpp's GGUF quantisation types"
+     ],
+     "key_points": [
+      "Weight-only quantisation (W4A16, W8A16) stores weights in low bits and dequantises them to 16 bits inside the matrix multiplication, so it cuts memory and speeds up memory-bound decode, but not compute-bound prefill.",
+      "Round-to-nearest (RTN) quantises each weight on its own; GPTQ (Frantar and colleagues, 2022) quantises a layer column by column and adjusts the remaining weights to cancel each rounding error, using second-order statistics from a small calibration set.",
+      "AWQ (Lin and colleagues, 2023) finds the small share of weight channels that meet large activations, and scales them up before quantising (and their activations down), so their relative rounding error shrinks without mixed precision.",
+      "llama.cpp's GGUF files bundle weights, tokeniser and metadata; its types range from Q8_0 to 2-bit k-quants, and a name such as Q4_K_M means 4-bit k-quant blocks with their own scales, M a medium mix that keeps some tensors at higher precision.",
+      "Calibration data should look like real inputs, because GPTQ and AWQ fit their corrections to it; check a quantised model on the inputs your calibration set left out, such as other languages or code."
+     ]
+    },
+    {
+     "title": "Quantising activations: outliers, SmoothQuant and FP8",
+     "minutes": 12,
+     "objectives": [
+      "Explain why activations are harder to quantise than weights",
+      "Apply SmoothQuant and mixed-precision decomposition",
+      "Compare int8 and FP8 for activations"
+     ],
+     "key_points": [
+      "Integer matrix multiplication needs both operands in integers: int8 weights times int8 activations, summed in 32-bit integers and rescaled once per output (W8A8), which speeds up compute-bound work such as prefill and large batches.",
+      "Large transformers develop activation outliers: a few hidden channels hold values far larger than the rest in almost every token, so one scale for the tensor, or even one per token, leaves the ordinary channels only a few levels.",
+      "Activation scales are static, fixed in advance from calibration data, or dynamic, computed for each token at run time; dynamic scales follow each input at a small runtime cost.",
+      "LLM.int8() (Dettmers and colleagues, 2022) keeps outlier channels in 16-bit; SmoothQuant (Xiao and colleagues, 2023) divides each activation channel by s_j = max|X_j|^α / max|W_j|^(1−α) and multiplies the matching weight column by it, an exact rewrite.",
+      "In the lab, per-tensor W8A8 had about 11 times the error of weight-only int8, per-token scales halved it, SmoothQuant with α = 0.5 cut it to about a fifth, and keeping the three outlier channels in float did best of all.",
+      "FP8 (E4M3) has a floating-point grid, so outliers hurt it less than int8: in the lab, FP8 with one scale per tensor beat int8 with a scale per token, and recent accelerators run FP8 matrix multiplication natively."
+     ]
+    },
+    {
+     "title": "Quantised KV caches, and judging quality",
+     "minutes": 12,
+     "objectives": [
+      "Explain how KV-cache quantisation saves memory",
+      "Evaluate a quantised model properly before deploying it"
+     ],
+     "key_points": [
+      "Quantising the KV cache to 8 bits (int8 or FP8) halves its memory against 16 bits; keys tend to have outlier channels and values don't, so low-bit schemes such as KIVI quantise keys per channel and values per token.",
+      "Measure quality three ways: perplexity on held-out text close to your domain, how far the quantised model's next-token distributions drift from the original's (KL divergence and top-token agreement), and task metrics on your evaluation set.",
+      "A single average hides damage: in the lab, int4 in groups of 32 kept the top token the same only about 59% of the time, so also test the inputs your users send, such as long documents, other languages, code or arithmetic.",
+      "Compare like with like: the same prompts, decoding settings and evaluation set for the baseline and every variant, and keep a variant only if its quality loss is worth the memory and speed it saves.",
+      "Engines load pre-quantised checkpoints in specific formats, for example GPTQ, AWQ or FP8 checkpoints in vLLM and GGUF files in llama.cpp, so quantise once offline, record the method and settings, and evaluate the exact files you deploy."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Activation outliers, SmoothQuant and FP8 in a W8A8 layer",
+    "tool": "Python 3 and PyTorch",
+    "minutes": 45,
+    "goal": "Simulate W8A8 inference on a layer whose activations have outlier channels, then reduce the error with per-token scales, SmoothQuant, LLM.int8()-style mixed precision and FP8, and tune SmoothQuant's α.",
+    "setup": [
+     "Python 3.10 or later with PyTorch 2.1 or later (for the float8 types): pip install torch",
+     "The starter file activations.py"
+    ],
+    "steps": [
+     {
+      "do": "Read make_data() and w8a8(): weights get one scale per output channel, activations one per tensor or per token, and the integer products are summed in int32 and rescaled once per output, as int8 hardware does."
+     },
+     {
+      "do": "Complete TODO 1 (smooth) and TODO 2 (mixed)."
+     },
+     {
+      "do": "Run it.",
+      "code": "python activations.py",
+      "lang": "bash",
+      "see": "Channel maxima: median 3.02, largest 114.25 (channels [7, 129, 300]); weights only: relative error 0.0075; W8A8 with one activation scale: 0.0817; with a scale per token: 0.0414."
+     },
+     {
+      "do": "Read the fixes.",
+      "see": "Smoothing alone changes nothing: True, and the channel maxima now run from 0.35 to 2.86. SmoothQuant + W8A8: 0.0168 per tensor and 0.0101 per token; mixed precision: 0.0033, keeping channels [7, 129, 300] in float; FP8 E4M3 with one scale per tensor: 0.0375."
+     },
+     {
+      "do": "Read the α sweep.",
+      "see": "α = 0.25 leaves too much of the outliers in the activations (0.0363); 0.5 (0.0168) and 0.75 (0.0175) balance the difficulty between activations and weights."
+     },
+     {
+      "do": "Write two or three sentences starting Activations: on which approach you would use on an accelerator with fast int8 but no FP8, and on one with FP8, and why."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The outliers break per-tensor W8A8.",
+      "look_for": [
+       "largest 114.25",
+       "relative error 0.0817"
+      ]
+     },
+     {
+      "text": "Smoothing is an exact rewrite before quantisation.",
+      "look_for": [
+       "Smoothing alone changes nothing: True"
+      ]
+     },
+     {
+      "text": "SmoothQuant and mixed precision cut the error.",
+      "look_for": [
+       "relative error 0.0168",
+       "float channels [7, 129, 300]"
+      ]
+     },
+     {
+      "text": "The α sweep is run.",
+      "look_for": [
+       "alpha 0.25",
+       "alpha 0.75"
+      ]
+     },
+     {
+      "text": "The choice is justified for two kinds of hardware.",
+      "look_for": [
+       "Activations:"
+      ]
+     }
+    ],
+    "submit": "Paste your smooth() and mixed() functions, everything activations.py printed, and your Activations: answer.",
+    "files": [
+     {
+      "path": "activations.py",
+      "content": "\"\"\"Quantise activations as well as weights (W8A8): outlier channels, SmoothQuant, mixed precision and FP8.\n\nThe activations are synthetic but shaped like a large transformer's: most channels are small, and a few channels\nare large in every token, the pattern described by LLM.int8() and SmoothQuant. Weights are quantised per output\nchannel throughout; what changes is how the activations are handled.\n\"\"\"\n\nimport torch\n\nOUTLIERS = [7, 129, 300]\n\n\ndef make_data(tokens=256, d_in=512, d_out=512):\n    g = torch.Generator().manual_seed(0)\n    x = torch.randn(tokens, d_in, generator=g)\n    x[:, OUTLIERS] *= 40  # a few channels are large in every token\n    w = torch.randn(d_out, d_in, generator=g) * 0.02\n    return x, w\n\n\ndef quantise(t, scale, qmax=127):\n    return torch.clamp(torch.round(t / scale), -qmax, qmax)\n\n\ndef w8a8(x, w, act=\"tensor\"):\n    \"\"\"int8 activations (one scale per tensor or per token) times int8 weights (one scale per output channel).\"\"\"\n    sx = x.abs().max() / 127 if act == \"tensor\" else x.abs().amax(dim=1, keepdim=True) / 127\n    sw = w.abs().amax(dim=1, keepdim=True) / 127\n    qx, qw = quantise(x, sx), quantise(w, sw)\n    acc = qx.to(torch.int32) @ qw.to(torch.int32).T  # integer products summed in 32-bit integers, as hardware does\n    return acc.to(torch.float32) * sx * sw.T          # one rescale per output element\n\n\ndef smooth(x, w, alpha=0.5):\n    \"\"\"SmoothQuant: divide each input channel of x by s and multiply the matching column of w by s.\"\"\"\n    # TODO 1: s_j = max|x_j| ** alpha / max|w_j| ** (1 - alpha), where x_j is input channel j of x (a column)\n    #          and w_j the matching column of w; return x / s and w * s\n    return x, w\n\n\ndef mixed(x, w, threshold=6.0):\n    \"\"\"LLM.int8()-style decomposition: channels with any |x| above the threshold stay in float, the rest int8.\"\"\"\n    # TODO 2: find the outlier channels (columns of x whose largest |value| exceeds threshold); compute their\n    #          part of the product in float32 and add w8a8 (per token) of the remaining channels\n    return w8a8(x, w, act=\"token\"), []\n\n\ndef fp8(x, w):\n    \"\"\"FP8 E4M3 for both: scale so the largest value maps to 448, the format's maximum, then cast.\"\"\"\n    sx, sw = x.abs().max() / 448, w.abs().amax(dim=1, keepdim=True) / 448\n    xq = (x / sx).to(torch.float8_e4m3fn).to(torch.float32) * sx\n    wq = (w / sw).to(torch.float8_e4m3fn).to(torch.float32) * sw\n    return xq @ wq.T\n\n\ndef rel(y, ref):\n    return ((y - ref).norm() / ref.norm()).item()\n\n\ndef main():\n    x, w = make_data()\n    ref = x @ w.T\n    print(f\"Activation channel maxima: median {x.abs().amax(dim=0).median():.2f}, largest \"\n          f\"{x.abs().amax(dim=0).max():.2f} (channels {OUTLIERS})\")\n    sw = w.abs().amax(dim=1, keepdim=True) / 127\n    print(f\"Weights only (W8A16):            relative error {rel(x @ (quantise(w, sw) * sw).T, ref):.4f}\")\n    print(f\"W8A8, one activation scale:      relative error {rel(w8a8(x, w, 'tensor'), ref):.4f}\")\n    print(f\"W8A8, a scale per token:         relative error {rel(w8a8(x, w, 'token'), ref):.4f}\")\n    xs, ws = smooth(x, w)\n    print(f\"Smoothing alone changes nothing: {torch.allclose(xs @ ws.T, ref, rtol=1e-4, atol=1e-3)}; \"\n          f\"channel maxima now {xs.abs().amax(dim=0).min():.2f} to {xs.abs().amax(dim=0).max():.2f}\")\n    print(f\"SmoothQuant + W8A8, per tensor:  relative error {rel(w8a8(xs, ws, 'tensor'), ref):.4f}\")\n    print(f\"SmoothQuant + W8A8, per token:   relative error {rel(w8a8(xs, ws, 'token'), ref):.4f}\")\n    y, kept = mixed(x, w)\n    print(f\"Mixed precision (LLM.int8()):    relative error {rel(y, ref):.4f}; float channels {kept}\")\n    print(f\"FP8 E4M3, one scale per tensor:  relative error {rel(fp8(x, w), ref):.4f}\")\n    for alpha in (0.25, 0.5, 0.75):\n        a, b = smooth(x, w, alpha)\n        print(f\"  alpha {alpha}: SmoothQuant per-tensor error {rel(w8a8(a, b, 'tensor'), ref):.4f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "x.abs().amax(dim=0) gives each input channel's largest |x| (a column of x); for w the input channels are its columns too, so use w.abs().amax(dim=0).",
+     "Dividing x by s and multiplying w by s leaves x @ w.T unchanged, since each product x_j × w_j is multiplied by s_j / s_j.",
+     "Boolean masks select columns: x[:, big] and w[:, big] for the float part, x[:, ~big] and w[:, ~big] for the int8 part."
+    ]
+   }
+  },
+  {
+   "title": "Distillation, pruning, speculative decoding and serving engines",
+   "summary": "Make the model itself smaller or faster: distil a student, prune into patterns hardware can use, draft tokens with speculative decoding, and choose an engine that brings it all together.",
+   "instructor": "mouhamadouu-ba",
+   "lessons": [
+    {
+     "title": "Knowledge distillation",
+     "minutes": 12,
+     "objectives": [
+      "Write the distillation loss with a temperature",
+      "Compare token-level and sequence-level distillation for language models"
+     ],
+     "key_points": [
+      "Knowledge distillation (Hinton and colleagues, 2015) trains a small student to match a large teacher's output distribution rather than only the correct answers: the probabilities the teacher gives other tokens carry information hard labels don't.",
+      "The loss compares temperature-softened distributions, KL(softmax(teacher / T) ‖ softmax(student / T)) × T², often mixed with the ordinary cross-entropy; the T² factor keeps gradient sizes comparable as T changes.",
+      "In the lab, a student trained on 200 sequences of text overfitted badly, while the same student distilled from the teacher's probabilities on the same 200 sequences came within a few hundredths of a nat of the teacher.",
+      "Token-level distillation needs the teacher's logits and a shared vocabulary; sequence-level distillation (Kim and Rush, 2016) trains the student on text the teacher generates, which works across tokenisers.",
+      "On-policy distillation lets the student generate and the teacher score or correct those outputs, which reduces the mismatch between training and use; check the licence and terms of any model whose outputs you train on."
+     ]
+    },
+    {
+     "title": "Pruning and sparsity",
+     "minutes": 12,
+     "objectives": [
+      "Compare unstructured, semi-structured and structured pruning",
+      "Explain when sparsity actually speeds up inference"
+     ],
+     "key_points": [
+      "Magnitude pruning zeroes the smallest weights. In the lab, removing 50% of the teacher's weights barely changed its loss while 75% and 90% damaged it badly: the usual pattern of a safe zone, then a cliff.",
+      "Unstructured zeros rarely speed anything up by themselves: dense matrix kernels multiply zeros like any other number, so a gain needs very high sparsity with sparse kernels, or a pattern the hardware understands.",
+      "2:4 semi-structured sparsity keeps 2 non-zero weights in every group of 4; NVIDIA GPUs since the Ampere generation have sparse tensor cores that skip the zeros for up to twice the matrix throughput, and a short recovery fine-tune restores most quality.",
+      "Structured pruning removes whole attention heads, MLP channels or layers, giving a smaller dense model that is faster everywhere, at a larger quality cost that usually needs distillation or fine-tuning to recover.",
+      "One-shot methods prune large language models without retraining: SparseGPT (Frantar and Alistarh, 2023) reconstructs each layer from calibration data, and Wanda (Sun and colleagues, 2023) ranks weights by magnitude times the size of their input activations."
+     ]
+    },
+    {
+     "title": "Speculative decoding",
+     "minutes": 12,
+     "objectives": [
+      "Explain how a draft model and one verification pass speed up decoding",
+      "Show why the output distribution is unchanged",
+      "Estimate the speed-up from the acceptance rate"
+     ],
+     "key_points": [
+      "Speculative decoding (Leviathan and colleagues, 2023; Chen and colleagues, 2023) lets a small draft model propose k tokens, then runs the large target model once over all of them; because decode is memory-bound, checking k tokens costs about as much as generating one.",
+      "With greedy decoding the target keeps drafted tokens up to the first one it wouldn't have chosen and adds its own token there, so every pass yields at least one token and the output is identical to the target's own greedy output.",
+      "With sampling, a drafted token x is kept with probability min(1, p(x) / q(x)), p being the target's distribution and q the draft's; after a rejection the token is resampled from max(0, p − q), normalised, which makes the output distribution exactly the target's.",
+      "If each drafted token is accepted with probability α, a pass yields (1 − α^(k+1)) / (1 − α) tokens on average, 3.05 for α = 0.75 and k = 4; in the lab, 74% acceptance gave 3.19 tokens per target pass and about a 2x speed-up after paying for the draft.",
+      "Drafts needn't be separate models: prompt lookup copies n-grams from the prompt, and Medusa-style heads and EAGLE-style drafters predict ahead from the target's own features; in transformers, generate() takes assistant_model or prompt_lookup_num_tokens."
+     ],
+     "walkthrough": {
+      "tool": "Python 3 and Hugging Face Transformers",
+      "title": "Speculative decoding with generate()",
+      "steps": [
+       {
+        "do": "Load the tiny test model and generate 12 tokens greedily as the reference.",
+        "code": "import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nname = \"trl-internal-testing/tiny-Qwen2ForCausalLM-2.5\"     # a tiny test model with Qwen2's layout\nrev = \"ce8d0bf270b28c8fab026ced69fe8aa14b0f0eda\"\ntok = AutoTokenizer.from_pretrained(name, revision=rev)\nmodel = AutoModelForCausalLM.from_pretrained(name, revision=rev, dtype=torch.float32).eval()\ninputs = tok(\"Speculative decoding keeps the output\", return_tensors=\"pt\")\nplain = model.generate(**inputs, max_new_tokens=12, do_sample=False)\nprint(plain.shape)",
+        "lang": "python",
+        "see": "torch.Size([1, 18]): the prompt's 6 tokens and 12 new ones."
+       },
+       {
+        "do": "Use prompt lookup decoding, which drafts by copying n-grams from the prompt.",
+        "code": "lookup = model.generate(**inputs, max_new_tokens=12, do_sample=False, prompt_lookup_num_tokens=3)\nprint(torch.equal(plain, lookup))",
+        "lang": "python",
+        "see": "True: the same tokens as plain greedy decoding."
+       },
+       {
+        "do": "Use assisted generation with an assistant model. Here the model drafts for itself, just to show the call; in practice the assistant is a much smaller model that shares the tokeniser.",
+        "code": "assisted = model.generate(**inputs, max_new_tokens=12, do_sample=False, assistant_model=model)\nprint(torch.equal(plain, assisted))",
+        "lang": "python",
+        "see": "True: verification keeps greedy output unchanged whatever the draft proposes."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Serving engines, and choosing a stack",
+     "minutes": 12,
+     "objectives": [
+      "Match a serving engine to the hardware and the workload",
+      "Plan a fair benchmark of inference engines"
+     ],
+     "key_points": [
+      "vLLM is a widely used open-source engine for GPU servers: continuous batching, a paged KV cache, prefix caching, many quantised formats, speculative decoding and multiple LoRA adapters behind an OpenAI-compatible API; Operationalising LLMs on Kubernetes deploys it.",
+      "llama.cpp is a C/C++ engine for GGUF models that runs on CPUs, Apple silicon and consumer GPUs with many quantisation types; its llama-server offers an OpenAI-compatible API, and tools such as Ollama build on it, which suits laptops, phones and edge devices.",
+      "ONNX Runtime runs exported ONNX graphs on CPUs, GPUs and NPUs through execution providers, with graph optimisations and int8 quantisation tools; its GenAI extension adds the token loop and KV-cache handling that language models need.",
+      "Choose by hardware, concurrency and latency targets first, then by the model formats and quantisation each engine supports; the engine that is fastest for one user is not always fastest under heavy load.",
+      "Benchmark with your own prompts and output lengths at realistic concurrency, report TTFT, inter-token latency and throughput with tail percentiles, and check quality against the reference model before comparing speed."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Distil, prune and speculate on a CPU",
+    "tool": "Python 3 and PyTorch",
+    "minutes": 75,
+    "goal": "Train a teacher on a language whose true probabilities are known, distil it into a student seven times smaller, prune it into unstructured and 2:4 patterns, then let the student draft for the teacher in speculative decoding and check that the output doesn't change.",
+    "setup": [
+     "Python 3.10 or later with PyTorch 2: pip install torch",
+     "lm.py, distil.py, prune.py and speculative.py in one folder (prune.py and speculative.py use the models distil.py saves)"
+    ],
+    "steps": [
+     {
+      "do": "Read lm.py: the language (each pair of tokens has three possible successors with known probabilities), the tiny GPT, and fit(), which trains on the next tokens or, given a teacher's logits, distils. Excess loss is the model's loss minus the best possible."
+     },
+     {
+      "do": "Complete TODO 1 in lm.py: the distillation loss, KL between temperature-softened distributions, times the temperature squared."
+     },
+     {
+      "do": "Run the distillation (about a minute).",
+      "code": "python distil.py",
+      "lang": "bash",
+      "see": "Best possible loss on the test text: 1.030 nats per token; Teacher: 103,680 parameters, excess loss about 0.03. Students of 14,560 parameters: trained on the text, about 1.06 after 300 steps and much worse (about 3.9) after 1000 as they memorise; distilled, about 0.04 (T=1) and 0.03 (T=2)."
+     },
+     {
+      "do": "Complete TODO 1 in prune.py (the 2:4 mask) and run it.",
+      "code": "python prune.py",
+      "lang": "bash",
+      "see": "Unstructured 50%: excess loss about 0.07; 75%: about 0.8; 90%: about 1.8. The 2:4 pattern: about 0.2, and about 0.035 after 200 recovery steps; Every group of 4 has at most 2 non-zeros: True."
+     },
+     {
+      "do": "Complete TODO 1 in speculative.py (keep the agreed prefix, then the target's own token) and run it.",
+      "code": "python speculative.py",
+      "lang": "bash",
+      "see": "Greedy decoding: 1,200 tokens, 1,200 target passes; speculative decoding: about 376 target passes (about 3.2 tokens each) with about 74% of drafted tokens accepted, Identical to plain greedy decoding: True, and an estimated speed-up of about 2x."
+     },
+     {
+      "do": "Read the sampling check.",
+      "see": "Accept/reject: output distribution ['1/2', '1/4', '1/8', '1/8'] equals the target's: True, with acceptance probability 3/4 and 3.05 expected tokens per target pass at k = 4."
+     },
+     {
+      "do": "Change k to 2 and then 8 in speculative() and compare target passes and the estimated speed-up."
+     },
+     {
+      "do": "Write two or three sentences starting Smaller: on which of distillation, pruning and speculative decoding you'd use to serve a model on phones, and which on a GPU server, and why."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The teacher is trained and students are compared.",
+      "look_for": [
+       "Teacher: 103,680 parameters",
+       "Student distilled, T=2"
+      ]
+     },
+     {
+      "text": "Pruning patterns are applied and checked.",
+      "look_for": [
+       "2:4 pattern: sparsity 50.0%",
+       "Every group of 4 has at most 2 non-zeros: True"
+      ]
+     },
+     {
+      "text": "Speculative decoding leaves the greedy output unchanged.",
+      "look_for": [
+       "1,200 target passes",
+       "Identical to plain greedy decoding: True"
+      ]
+     },
+     {
+      "text": "The accept/reject rule preserves the target's distribution.",
+      "look_for": [
+       "equals the target's: True",
+       "acceptance probability 3/4"
+      ]
+     },
+     {
+      "text": "The choice of techniques is justified.",
+      "look_for": [
+       "Smaller:"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed pieces of code, everything the three scripts printed, your k = 2 and k = 8 results, and your Smaller: answer.",
+    "files": [
+     {
+      "path": "lm.py",
+      "content": "\"\"\"A synthetic language whose true next-token probabilities are known, a tiny GPT, and training helpers.\n\nThe language is a second-order Markov chain over 12 tokens: the next token depends on the previous two, and each\npair of tokens has three possible successors. Because the true probabilities are known, the best possible loss on\nany text is known too, so 'excess loss' measures exactly how far a model is from the truth.\n\"\"\"\n\nimport math\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\nV, CTX = 12, 32\n\n\ndef language(seed=0):\n    \"\"\"P[a, b] is the distribution of the token after the pair (a, b).\"\"\"\n    g = torch.Generator().manual_seed(seed)\n    probs = torch.zeros(V, V, V)\n    for a in range(V):\n        for b in range(V):\n            nxt = torch.randperm(V, generator=g)[:3]\n            w = torch.rand(3, generator=g) + 0.2\n            probs[a, b, nxt] = w / w.sum()\n    return probs\n\n\ndef sample(probs, n, seed):\n    \"\"\"n sequences of CTX + 1 tokens.\"\"\"\n    g = torch.Generator().manual_seed(seed)\n    seqs = torch.zeros(n, CTX + 1, dtype=torch.long)\n    seqs[:, :2] = torch.randint(V, (n, 2), generator=g)\n    for t in range(2, CTX + 1):\n        p = probs[seqs[:, t - 2], seqs[:, t - 1]]\n        seqs[:, t] = torch.multinomial(p, 1, generator=g).squeeze(1)\n    return seqs\n\n\ndef true_loss(probs, seqs):\n    \"\"\"The best achievable cross-entropy on these sequences (positions 2 onwards, where the pair is known).\"\"\"\n    p = probs[seqs[:, :-2], seqs[:, 1:-1], seqs[:, 2:]]\n    return -p.log().mean().item()\n\n\nclass Block(nn.Module):\n    def __init__(self, d, heads):\n        super().__init__()\n        self.heads = heads\n        self.n1, self.n2 = nn.LayerNorm(d), nn.LayerNorm(d)\n        self.q_proj, self.k_proj, self.v_proj, self.o_proj = (nn.Linear(d, d) for _ in range(4))\n        self.up_proj, self.down_proj = nn.Linear(d, 4 * d), nn.Linear(4 * d, d)\n\n    def forward(self, x):\n        b, t, d = x.shape\n        h = self.n1(x)\n        split = lambda y: y.view(b, t, self.heads, d // self.heads).transpose(1, 2)\n        a = F.scaled_dot_product_attention(split(self.q_proj(h)), split(self.k_proj(h)), split(self.v_proj(h)),\n                                           is_causal=True)\n        x = x + self.o_proj(a.transpose(1, 2).reshape(b, t, d))\n        return x + self.down_proj(F.gelu(self.up_proj(self.n2(x))))\n\n\nclass TinyGPT(nn.Module):\n    def __init__(self, d=64, heads=4, layers=2):\n        super().__init__()\n        self.tok, self.pos = nn.Embedding(V, d), nn.Embedding(CTX, d)\n        self.blocks = nn.ModuleList(Block(d, heads) for _ in range(layers))\n        self.norm, self.head = nn.LayerNorm(d), nn.Linear(d, V, bias=False)\n\n    def forward(self, ids):\n        x = self.tok(ids) + self.pos(torch.arange(ids.shape[1]))\n        for block in self.blocks:\n            x = block(x)\n        return self.head(self.norm(x))\n\n\ndef loss_on(model, seqs):\n    \"\"\"Cross-entropy from position 2 onwards, to compare with true_loss().\"\"\"\n    model.eval()\n    with torch.no_grad():\n        logits = model(seqs[:, :-1])[:, 1:]\n        loss = F.cross_entropy(logits.reshape(-1, V), seqs[:, 2:].reshape(-1)).item()\n    model.train()\n    return loss\n\n\ndef fit(model, seqs, steps, lr, targets=None, temperature=1.0, batch=64, seed=0):\n    \"\"\"Train on next tokens or, if targets (teacher logits for the same sequences) are given, distil.\"\"\"\n    opt = torch.optim.AdamW(model.parameters(), lr=lr)\n    g = torch.Generator().manual_seed(seed)\n    model.train()\n    for _ in range(steps):\n        idx = torch.randint(len(seqs), (batch,), generator=g)\n        logits = model(seqs[idx, :-1])\n        if targets is None:\n            loss = F.cross_entropy(logits.reshape(-1, V), seqs[idx, 1:].reshape(-1))\n        else:\n            # TODO 1: the distillation loss: KL(teacher || student) on temperature-softened distributions,\n            #          multiplied by temperature ** 2 so its gradients keep their size as the temperature changes\n            loss = F.cross_entropy(logits.reshape(-1, V), seqs[idx, 1:].reshape(-1))\n        opt.zero_grad()\n        loss.backward()\n        opt.step()\n    return model\n\n\ndef params(model):\n    return sum(p.numel() for p in model.parameters())\n\n\ndef bits(x):\n    return x / math.log(2)\n"
+     },
+     {
+      "path": "distil.py",
+      "content": "\"\"\"Train a teacher, then small students on the same 200 sequences: on the text itself, or on the teacher's\nprobabilities (knowledge distillation). Saves teacher.pt and student.pt for prune.py and speculative.py.\"\"\"\n\nimport torch\n\nfrom lm import TinyGPT, fit, language, loss_on, params, sample, true_loss\n\nif __name__ == \"__main__\":\n    probs = language()\n    test = sample(probs, 500, seed=1)\n    best = true_loss(probs, test)\n    print(f\"Best possible loss on the test text: {best:.3f} nats per token\")\n\n    torch.manual_seed(0)\n    teacher = fit(TinyGPT(d=64, heads=4, layers=2), sample(probs, 20000, seed=2), steps=1500, lr=3e-3)\n    print(f\"Teacher: {params(teacher):,} parameters, excess loss {loss_on(teacher, test) - best:.3f}\")\n    torch.save(teacher.state_dict(), \"teacher.pt\")\n\n    small = sample(probs, 200, seed=3)  # the students only ever see these 200 sequences\n    with torch.no_grad():\n        soft = teacher.eval()(small[:, :-1])  # the teacher's logits at every position\n    runs = [(\"on the text, 300 steps\", 300, {}), (\"on the text, 1000 steps\", 1000, {}),\n            (\"distilled, T=1\", 1000, {\"targets\": soft, \"temperature\": 1.0}),\n            (\"distilled, T=2\", 1000, {\"targets\": soft, \"temperature\": 2.0})]\n    for name, steps, kwargs in runs:\n        torch.manual_seed(0)\n        student = fit(TinyGPT(d=32, heads=2, layers=1), small, steps=steps, lr=3e-3, **kwargs)\n        print(f\"Student {name:24s}: {params(student):,} parameters, excess loss {loss_on(student, test) - best:.3f}\")\n    torch.save(student.state_dict(), \"student.pt\")  # the T=2 student drafts for speculative.py\n"
+     },
+     {
+      "path": "prune.py",
+      "content": "\"\"\"Prune the teacher's linear layers: unstructured magnitude pruning and the 2:4 pattern, then recover.\"\"\"\n\nimport torch\nimport torch.nn.utils.prune as prune\n\nfrom lm import TinyGPT, fit, language, loss_on, sample, true_loss\n\n\ndef linears(model):\n    return [m for m in model.modules() if isinstance(m, torch.nn.Linear) and m is not model.head]\n\n\ndef two_four_mask(w):\n    \"\"\"Keep the 2 largest |w| in every group of 4 consecutive inputs (the 2:4 semi-structured pattern).\"\"\"\n    # TODO 1: view |w| as groups of 4 along the input dimension, find the top 2 in each group, and return a\n    #          0/1 mask of w's shape with ones at those positions\n    return torch.ones_like(w)\n\n\ndef sparsity(model):\n    weights = [m.weight for m in linears(model)]\n    return sum((w == 0).sum().item() for w in weights) / sum(w.numel() for w in weights)\n\n\ndef load():\n    model = TinyGPT(d=64, heads=4, layers=2)\n    model.load_state_dict(torch.load(\"teacher.pt\"))\n    return model\n\n\nif __name__ == \"__main__\":\n    probs = language()\n    test = sample(probs, 500, seed=1)\n    best = true_loss(probs, test)\n    print(f\"Dense teacher: excess loss {loss_on(load(), test) - best:.3f}\")\n    for amount in (0.5, 0.75, 0.9):\n        model = load()\n        for m in linears(model):\n            prune.l1_unstructured(m, \"weight\", amount=amount)  # zero the smallest |w| in each layer\n        print(f\"Unstructured {amount:.0%}: sparsity {sparsity(model):.1%}, excess loss {loss_on(model, test) - best:.3f}\")\n\n    model = load()\n    for m in linears(model):\n        prune.custom_from_mask(m, \"weight\", mask=two_four_mask(m.weight.detach()))\n    print(f\"2:4 pattern: sparsity {sparsity(model):.1%}, excess loss {loss_on(model, test) - best:.3f}\")\n    fit(model, sample(probs, 2000, seed=4), steps=200, lr=1e-3)  # the masks stay applied while training\n    print(f\"2:4 after 200 recovery steps: sparsity {sparsity(model):.1%}, excess loss {loss_on(model, test) - best:.3f}\")\n    for m in linears(model):\n        prune.remove(m, \"weight\")  # make the zeros permanent: a plain dense tensor that happens to hold zeros\n    w = linears(model)[0].weight\n    print(f\"Every group of 4 has at most 2 non-zeros: {bool(((w.reshape(w.shape[0], -1, 4) != 0).sum(-1) <= 2).all())}\")\n"
+     },
+     {
+      "path": "speculative.py",
+      "content": "\"\"\"Speculative decoding: the small student drafts, the teacher verifies; the output is unchanged.\"\"\"\n\nfrom fractions import Fraction\n\nimport torch\n\nfrom lm import CTX, TinyGPT, language, sample\n\n\ndef load(path, **size):\n    model = TinyGPT(**size)\n    model.load_state_dict(torch.load(path))\n    return model.eval()\n\n\n@torch.no_grad()\ndef greedy(model, ids, n):\n    calls = 0\n    for _ in range(n):\n        nxt = model(ids[:, -CTX:])[:, -1].argmax(-1, keepdim=True)\n        ids, calls = torch.cat([ids, nxt], dim=1), calls + 1\n    return ids, calls\n\n\n@torch.no_grad()\ndef speculative(target, draft, ids, n, k=4):\n    \"\"\"Greedy speculative decoding: draft k tokens, verify them all with one target pass, keep the agreed prefix.\"\"\"\n    target_calls, accepted, proposed = 0, 0, 0\n    goal = ids.shape[1] + n\n    while ids.shape[1] < goal:\n        k_now = min(k, goal - ids.shape[1])\n        proposal, _ = greedy(draft, ids, k_now)  # the draft model's k tokens, one cheap pass each\n        logits = target(proposal[:, -CTX:])        # one target pass scores every drafted position at once\n        target_calls += 1\n        start = proposal.shape[1] - k_now          # index of the first drafted token\n        offset = logits.shape[1] - proposal.shape[1]\n        choices = logits[0, start - 1 + offset: proposal.shape[1] - 1 + offset].argmax(-1)\n        # TODO 1: count how many drafted tokens match the target's choices, from the first one, stopping at the\n        #          first mismatch (m); keep those m tokens, then append the target's own choice at position m if\n        #          there was a mismatch\n        m, keep = 0, choices[:1]\n        ids = torch.cat([ids, keep.view(1, -1)], dim=1)\n        accepted, proposed = accepted + m, proposed + k_now\n    return ids[:, :goal], target_calls, accepted, proposed\n\n\ndef accept_reject(p, q):\n    \"\"\"The sampling rule: a draft token x ~ q is kept with probability min(1, p(x) / q(x)); otherwise the token is\n    resampled from max(0, p - q), normalised. Returns the exact distribution of the token that comes out.\"\"\"\n    keep = [min(pi, qi) for pi, qi in zip(p, q)]          # q(x) * min(1, p(x)/q(x))\n    rejected = 1 - sum(keep)\n    residual = [max(Fraction(0), pi - qi) for pi, qi in zip(p, q)]\n    total = sum(residual)\n    return [k + rejected * r / total for k, r in zip(keep, residual)], sum(keep)\n\n\nif __name__ == \"__main__\":\n    target = load(\"teacher.pt\", d=64, heads=4, layers=2)\n    draft = load(\"student.pt\", d=32, heads=2, layers=1)\n    prompts = sample(language(), 40, seed=5)[:, :2]  # 40 two-token prompts, each continued to CTX tokens\n    n = CTX - 2\n    plain_calls = spec_calls = accepted = proposed = 0\n    identical = True\n    for prompt in prompts:\n        plain, calls = greedy(target, prompt.view(1, -1), n)\n        fast, calls_spec, a, p = speculative(target, draft, prompt.view(1, -1), n)\n        plain_calls, spec_calls = plain_calls + calls, spec_calls + calls_spec\n        accepted, proposed = accepted + a, proposed + p\n        identical = identical and torch.equal(plain, fast)\n    tokens = len(prompts) * n\n    print(f\"Greedy decoding: {tokens:,} tokens, {plain_calls:,} target passes\")\n    print(f\"Speculative (k=4): {spec_calls:,} target passes ({tokens / spec_calls:.2f} tokens each) and \"\n          f\"{proposed:,} draft passes; {accepted / proposed:.0%} of drafted tokens accepted\")\n    print(f\"Identical to plain greedy decoding: {identical}\")\n    ratio = sum(x.numel() for x in draft.parameters()) / sum(x.numel() for x in target.parameters())\n    print(f\"If a pass costs in proportion to parameters (draft/target = {ratio:.2f}), the speed-up is about \"\n          f\"{plain_calls / (spec_calls + proposed * ratio):.1f}x\")\n\n    p = [Fraction(1, 2), Fraction(1, 4), Fraction(1, 8), Fraction(1, 8)]\n    q = [Fraction(1, 4), Fraction(1, 2), Fraction(1, 8), Fraction(1, 8)]\n    out, acceptance = accept_reject(p, q)\n    print(f\"Accept/reject: output distribution {[str(x) for x in out]} equals the target's: {out == p}; \"\n          f\"acceptance probability {acceptance}\")\n    a, k = float(acceptance), 4\n    print(f\"Expected tokens per target pass at acceptance {a:.2f} and k={k}: {(1 - a ** (k + 1)) / (1 - a):.2f}\")\n"
+     }
+    ],
+    "hints": [
+     "F.kl_div(student_log_probs, teacher_log_probs, log_target=True) computes KL(teacher || student); reduction='batchmean' divides by the batch size, so divide by the sequence length too for a per-token value.",
+     "topk(2, dim=-1) on the groups gives the positions to keep; scatter_ writes ones there.",
+     "The verification pass must end with the drafted tokens: the target's choice for drafted token i comes from the logits one position earlier."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Learn where inference time and memory go, then add a KV cache to a small GPT and measure prefill and decode.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Compare static, dynamic and continuous batching and paged KV-cache allocation in the scheduler simulator.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Work through number formats, scales and zero points, then quantise pythia-14m and measure size and perplexity.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Study GPTQ, AWQ, GGUF and quantised KV caches, and tame activation outliers with SmoothQuant and FP8.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Distil, prune and speculate on a CPU, compare serving engines, and measure the capstone's baseline.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Finish the capstone's optimisations and recommendation, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Make a model cheaper to serve, and prove it's still good",
+  "minutes": 600,
+  "brief": "Take a small open model you can run, such as pythia-70m or pythia-160m on a laptop CPU or a model of one to three billion parameters on a GPU, and a realistic workload of your choice: prompt and output lengths and a target number of concurrent users. Measure the baseline first: memory, time to first token, time per output token and throughput at one and at several concurrent requests, and quality as perplexity on held-out text plus a task metric. Then apply and measure at least three optimisations from the course: weight quantisation at two granularities (your own code from module 3 or an engine's format such as GGUF); a KV-cache budget and batching plan for your target concurrency, using the module 2 simulator or an engine's metrics; and speculative decoding with a smaller model of the same family (the Pythia models share a tokeniser, so pythia-14m can draft for pythia-160m through generate's assistant_model). Distillation or pruning are optional extras. Finish with the configuration you'd deploy, on which engine and hardware, with its measured costs and quality.",
+  "deliverables": [
+   "A baseline report: model, hardware, workload, memory, TTFT, time per output token, throughput and quality",
+   "Weight quantisation results for at least two schemes: size, bits per weight, perplexity, next-token divergence and a task metric",
+   "A KV-cache and batching plan for the target concurrency, with the arithmetic and a simulation or measurement",
+   "Speculative decoding measurements: acceptance rate, tokens per target pass, the speed-up, and a check that greedy output is unchanged",
+   "A recommendation of one configuration and engine, with its costs, quality loss and risks"
+  ],
+  "rubric": [
+   {
+    "name": "Baseline measurement",
+    "points": 20,
+    "description": "Latency, throughput, memory and quality are measured on a stated workload, with warm-up, repeats and tail percentiles."
+   },
+   {
+    "name": "Quantisation",
+    "points": 25,
+    "description": "At least two schemes are compared on size, bits per weight and several quality measures, and the results are explained by granularity and outliers."
+   },
+   {
+    "name": "Memory and batching plan",
+    "points": 15,
+    "description": "The KV-cache arithmetic is correct and the batching plan meets the concurrency target with evidence from a simulation or measurement."
+   },
+   {
+    "name": "Speculative decoding",
+    "points": 20,
+    "description": "Acceptance rate, tokens per pass and speed-up are measured, and unchanged greedy output is demonstrated."
+   },
+   {
+    "name": "Recommendation",
+    "points": 20,
+    "description": "The chosen configuration follows from the measurements, its quality loss and risks are stated honestly, and the engine fits the hardware and workload."
+   }
+  ],
+  "submit": "Paste your baseline report, the quantisation table, the memory and batching plan, the speculative decoding measurements and your recommendation, with the code or commands that produced each number."
+ }
+}
