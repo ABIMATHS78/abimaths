@@ -148,3 +148,26 @@ def test_the_command_line_writes_a_report_without_personal_details(client, expor
     assert "Dry run: nothing was saved." in printed and "@example.com" not in printed
     report = json.loads(out.read_text())
     assert report["dry_run"] is True and "@example.com" not in out.read_text()
+
+
+def test_admins_import_from_the_setup_page(client, exports, monkeypatch):
+    from app.config import settings
+    from tests.test_app import signup
+
+    monkeypatch.setattr(settings, "admin_emails", frozenset({"admin@example.com"}))  # not one of the old site's
+
+    signup(client, email="kofi.here@example.com", name="Kofi")
+    users, subs = (open(path, encoding="utf-8").read() for path in exports)
+    assert client.post("/api/staff/import", json={"users": users, "subscriptions": subs}).status_code == 403
+    client.post("/api/auth/logout")
+    signup(client, email="admin@example.com", name="Admin")
+    checked = client.post("/api/staff/import", json={"users": users, "subscriptions": subs})
+    assert checked.status_code == 200 and checked.json()["dry_run"] is True and checked.json()["accounts"] == {"created": 5}
+    assert "@example.com" not in checked.text and "$2b$" not in checked.text
+    assert sql("SELECT COUNT(*) AS n FROM users WHERE legacy_id IS NOT NULL")[0]["n"] == 0
+    done = client.post("/api/staff/import", json={"users": users, "subscriptions": subs, "dry_run": False}).json()
+    assert done["accounts"] == {"created": 5}
+    assert sql("SELECT COUNT(*) AS n FROM users WHERE legacy_id IS NOT NULL")[0]["n"] == 5
+    assert any(r["action"] == "import" for r in client.get("/api/staff/log").json())
+    bad = client.post("/api/staff/import", json={"users": "id,name\n1,Ada\n", "subscriptions": subs})
+    assert bad.status_code == 422 and "missing the columns" in bad.json()["detail"]

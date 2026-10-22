@@ -66,8 +66,27 @@ class FakeStripe:
                              update=call("subscriptions.update", self._update),
                              cancel=call("subscriptions.cancel", self._cancel)),
             billing_portal=ns(sessions=ns(create=call("portal.create", lambda params: {"url": "https://billing.stripe.test/p_1"}))),
-            prices=ns(list=call("prices.list", lambda params: {"data": [{"id": "price_" + params["lookup_keys"][0]}]})),
+            prices=ns(list=call("prices.list", self._prices_list), retrieve=call("prices.retrieve", self._price),
+                      create=call("prices.create", self._price_create)),
+            products=ns(create=call("products.create", lambda params: {"id": f"prod_{params['metadata']['aiet_tier']}"})),
         )
+        from app import plans
+
+        # The prices in this Stripe account, by lookup key: to begin with, one for every plan and period.
+        self.prices = {f"aiet_{p.slug}_{i}": {"id": f"price_aiet_{p.slug}_{i}", "lookup_key": f"aiet_{p.slug}_{i}",
+                                              "unit_amount": p.price(i)} for p in plans.PLANS.values() if p.paid
+                       for i in plans.INTERVALS}
+
+    def _prices_list(self, params):
+        return {"data": [self.prices[k] for k in params["lookup_keys"] if k in self.prices][:params.get("limit", 10)]}
+
+    def _price(self, pid, params=None):
+        return next(p for p in self.prices.values() if p["id"] == pid)
+
+    def _price_create(self, params):
+        self.prices[params["lookup_key"]] = {"id": f"price_{params['lookup_key']}", "lookup_key": params["lookup_key"],
+                                             "unit_amount": params["unit_amount"]}
+        return self.prices[params["lookup_key"]]
 
     def _retrieve(self, sid, params=None):
         if sid not in self.subs:
@@ -569,3 +588,24 @@ def test_insights_show_each_plans_allowance_while_the_paywall_is_on(client, payw
     signup(client, email=admin_email, name="Boss")
     limits = client.get("/api/staff/insights").json()["ai"]["limits"]
     assert limits["plans"] == {"Free": 15, "Digital": 40, "Plus": 80, "Pro": 150, "Insider": 300, "Teams": 300}
+
+
+def test_admins_set_up_stripe_from_the_setup_page(client, stripe_fake, admin_email):
+    signup(client, email=admin_email, name="Boss")
+    stripe_fake.prices.clear()  # a new Stripe account
+    status = client.get("/api/staff/stripe").json()
+    assert status["payments"] and status["webhook_secret"] and status["linked"] == 0
+    assert status["webhook_url"] == "https://aieverytime.example/api/billing/webhook" and "invoice.paid" in status["events"]
+    assert len(status["prices"]) == 10 and not any(r["ok"] for r in status["prices"])
+    made = client.post("/api/staff/stripe/setup").json()
+    assert len(made["made"]) == 10 and all(r["ok"] for r in made["prices"]) and len(stripe_fake.named("products.create")) == 5
+    created = {c[2]["params"]["lookup_key"]: c[2]["params"] for c in stripe_fake.named("prices.create")}
+    assert created["aiet_plus_yearly"]["unit_amount"] == 2999 and created["aiet_plus_yearly"]["recurring"] == {"interval": "year"}
+    assert client.post("/api/staff/stripe/setup").json()["made"] == []  # again: nothing new
+    stripe_fake.prices["aiet_pro_monthly"]["unit_amount"] = 799  # changed in Stripe's dashboard
+    wrong = [r for r in client.get("/api/staff/stripe").json()["prices"] if not r["ok"]]
+    assert [(r["tier"], r["interval"], r["amount"], r["expected"]) for r in wrong] == [("pro", "monthly", 799, 699)]
+    assert client.post("/api/staff/stripe/reconcile", json={"dry_run": True}).json()["checked"] == 0
+    client.post("/api/auth/logout")
+    signup(client, email="kofi@example.com", name="Kofi")
+    assert client.get("/api/staff/stripe").status_code == 403 and client.post("/api/staff/stripe/setup").status_code == 403

@@ -414,7 +414,7 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(insights|analytics|reports|appeals|paths|roles|campaigns|log))?$/, viewStaff],
+  [/^#\/staff(?:\/(insights|analytics|reports|appeals|paths|roles|campaigns|setup|log))?$/, viewStaff],
 ];
 
 async function router() {
@@ -2429,7 +2429,7 @@ function planForm(paths, minutes) {
 /* -------------------------------------------------------------------- staff */
 
 const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"],
-  admin: ["analytics", "insights", "reports", "appeals", "paths", "roles", "campaigns", "log"] };
+  admin: ["analytics", "insights", "reports", "appeals", "paths", "roles", "campaigns", "setup", "log"] };
 const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
 const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -2438,14 +2438,14 @@ async function viewStaff(m) {
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
   const names = { analytics: "Analytics", insights: "AI usage", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "People",
-    campaigns: "Emails", log: "Decision log" };
+    campaigns: "Emails", setup: "Setup", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
   await { analytics: staffAnalytics, insights: staffInsights, reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles,
-    campaigns: staffCampaigns, log: staffLog }[tab](body, m);
+    campaigns: staffCampaigns, setup: staffSetup, log: staffLog }[tab](body, m);
 }
 
 /* Insights (admins): learners, how they learn, and the AI the site uses against its allowances. */
@@ -4077,5 +4077,111 @@ async function staffCampaigns(body) {
   $("[data-test]", form).addEventListener("click", (e) => { e.preventDefault(); send(true, e.target); });
 }
 
+
+/* --------------------------------------------------------------- setup (admins) */
+
+/* Payments and bringing the old site's members over, from the browser: what `python -m app.billing` and
+   scripts/import_legacy.py do on the server's command line. */
+async function staffSetup(body) {
+  const s = await api("/api/staff/stripe");
+  const ok = (v) => (v ? "✅" : "⚠️");
+  const tierName = (t) => PLAN_NAMES[t] || t;
+  body.innerHTML = `
+    <div class="card stack">
+      <div><h2 style="margin:0">Payments</h2><div class="muted small">Through Stripe. The keys are set on the server, in your host's secrets, never here.</div></div>
+      <ul class="setup-list">
+        <li>${ok(s.payments)} ${s.payments ? "Stripe's secret key is set." : "STRIPE_SECRET_KEY isn't set on the server, so no one can pay yet."}</li>
+        <li>${ok(s.webhook_secret)} ${s.webhook_secret ? "The webhook's signing secret is set." : "STRIPE_WEBHOOK_SECRET isn't set, so Stripe's updates are refused."}</li>
+        <li>${ok(s.paywall)} The paywall is ${s.paywall ? "on: plans decide what learners can use" : "off: everyone can use everything"}.</li>
+        <li>${s.last_event ? `✅ Stripe's last update arrived ${esc(timeAgo(s.last_event))}.` : "No update from Stripe has arrived yet."}
+          ${s.linked ? ` ${plural(s.linked, "account")} ${s.linked === 1 ? "is" : "are"} linked to a Stripe subscription.` : ""}
+          ${s.queued_cancellations ? ` ⚠️ ${plural(s.queued_cancellations, "deleted account")} still to be cancelled at Stripe.` : ""}</li>
+      </ul>
+      <details><summary>The webhook to add in Stripe</summary>
+        <p class="small">In Stripe's dashboard, add an endpoint at this address, for these events, and put its signing secret in STRIPE_WEBHOOK_SECRET:</p>
+        <div class="row link-row"><input type="text" readonly value="${esc(s.webhook_url)}" aria-label="Webhook address"><button class="btn" data-copy="${esc(s.webhook_url)}">Copy</button></div>
+        <p class="small mono">${s.events.map(esc).join("<br>")}</p></details>
+      ${s.prices_error ? `<div class="alert">${esc(s.prices_error)}</div>` : ""}
+      ${s.prices.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Plan</th><th>Period</th><th>Stripe price</th><th class="num">Amount</th></tr></thead><tbody>
+        ${s.prices.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.interval)}</td><td class="small">${r.price ? esc(r.price) : "⚠️ none yet"}</td>
+          <td class="num">${r.amount != null ? `${esc(dollars(r.amount))}${r.ok ? "" : ` ⚠️ the plan says ${esc(dollars(r.expected))}`}` : "–"}</td></tr>`).join("")}
+      </tbody></table></div>` : ""}
+      <div class="row">
+        ${s.payments ? `<button class="btn ${s.prices.some((r) => !r.price) ? "primary" : ""}" data-act="setup">Make the plans in Stripe</button>
+          <button class="btn" data-act="check">Check subscriptions against Stripe</button>` : ""}
+      </div>
+      <div id="stripeOut"></div>
+    </div>
+    <form class="card stack" id="importForm">
+      <div><h2 style="margin:0">Members from the old site</h2>
+        <div class="muted small">Choose the old site's two exports (its users and subscriptions tables, as CSV). They go to the server only to be read, and aren't kept. Check first: it does everything and undoes it, and shows what would happen. The report has counts and the old site's ids, never anyone's details.</div></div>
+      <label>Users export <input type="file" name="users" accept=".csv,text/csv" required></label>
+      <label>Subscriptions export <input type="file" name="subscriptions" accept=".csv,text/csv" required></label>
+      <label class="check"><input type="checkbox" name="link_existing"> Link to accounts already made here with the same email address</label>
+      <label class="check"><input type="checkbox" name="refresh_subscriptions"> Update the plans of members already brought over (a newer export)</label>
+      <div class="row"><button class="btn" data-run="check">Check</button><button class="btn primary" data-run="import" disabled>Import</button></div>
+      <div id="importOut"></div>
+    </form>`;
+  $$("[data-copy]", body).forEach((b) => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); } catch { toast(b.dataset.copy); }
+  }));
+  const stripeOut = $("#stripeOut", body);
+  body.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    b.disabled = true;
+    try {
+      if (b.dataset.act === "setup") {
+        const r = await api("/api/staff/stripe/setup", { method: "POST" });
+        toast(r.made.length ? `Made ${plural(r.made.length, "price")} in Stripe` : "Stripe already has a price for every plan");
+        return staffSetup(body);
+      }
+      const dry = b.dataset.act === "check";
+      const r = await api("/api/staff/stripe/reconcile", { method: "POST", body: { dry_run: dry } });
+      const changes = Object.entries(r.changes || {});
+      stripeOut.innerHTML = `<div class="card stack" style="background:var(--surface-2)"><b>${dry ? "What Stripe says" : "Brought up to date"}</b>
+        <div class="small">${plural(r.checked, "subscription")} checked${r.gone ? `; ⚠️ ${fmt(r.gone)} not found in this Stripe account (left as they are)` : ""}${r.failed ? `; ${fmt(r.failed)} couldn't be checked` : ""}.</div>
+        ${changes.length ? `<ul class="small">${changes.map(([k, n]) => `<li>${esc(k.replace(/(\w+)\//g, (_, t) => `${tierName(t)} `))}: ${fmt(n)}</li>`).join("")}</ul>` : `<div class="small muted">No plan or status differs from Stripe.</div>`}
+        ${dry && r.checked ? `<div><button class="btn primary" data-act="apply">Bring them up to date</button></div>` : ""}</div>`;
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+    b.disabled = false;
+  });
+  const form = $("#importForm", body), out = $("#importOut", body);
+  form.addEventListener("change", (e) => { if (e.target.type === "file") $("[data-run=import]", form).disabled = true; });
+  form.addEventListener("submit", (e) => e.preventDefault());
+  $$("[data-run]", form).forEach((b) => b.addEventListener("click", async (e) => {
+    e.preventDefault();
+    if (!form.reportValidity()) return;
+    const dry = b.dataset.run === "check";
+    if (!dry && !confirm("Bring the old site's members over now?")) return;
+    b.disabled = true;
+    out.innerHTML = `<div class="muted small">${dry ? "Checking…" : "Importing…"}</div>`;
+    try {
+      const [users, subscriptions] = await Promise.all([form.users.files[0].text(), form.subscriptions.files[0].text()]);
+      const r = await api("/api/staff/import", { method: "POST", body: { users, subscriptions, dry_run: dry,
+        link_existing: form.link_existing.checked, refresh_subscriptions: form.refresh_subscriptions.checked } });
+      const counts = (o) => Object.entries(o || {}).map(([k, n]) => `${esc(label(k.replace(/_/g, " ")))}: <b>${fmt(n)}</b>`).join(" · ") || "none";
+      out.innerHTML = `<div class="card stack" style="background:var(--surface-2)">
+        <b>${dry ? "What importing would do (nothing has been saved)" : "Imported"}</b>
+        <div class="small">In the exports: ${fmt(r.source.accounts)} accounts, ${fmt(r.source.subscriptions)} subscriptions.</div>
+        <div class="small">Accounts: ${counts(r.accounts)}</div>
+        <div class="small">Passwords: ${counts(r.passwords)}</div>
+        <div class="small">Plans in use: ${Object.entries(r.plans_in_use).map(([t, n]) => `${esc(tierName(t))} <b>${fmt(n)}</b>`).join(" · ")}</div>
+        <div class="small">Paid plans by status: ${counts(r.paid_plans_by_status)}</div>
+        <div class="small">${plural(r.duplicate_addresses, "address", "addresses")} had more than one account (${plural(r.folded_duplicates, "other account")} kept as old accounts of the one brought over);
+          ${plural(r.invalid_email, "account")} without a valid address not brought over; ${plural(r.stripe_subscriptions_to_reconcile, "Stripe subscription")} to check against Stripe.</div>
+        ${r.paid_conflicts.length ? `<div class="alert small">${plural(r.paid_conflicts.length, "address", "addresses")} had two paid plans: check them in Stripe (old site ids ${r.paid_conflicts.map((c) => esc([c.kept, ...c.also_paying].join(" and "))).join("; ")}).</div>` : ""}
+        ${r.problems.length ? `<details><summary class="small">${plural(r.problems.length, "note")}, by the old site's id</summary><ul class="small">${r.problems.map((p) =>
+          `<li>${esc(p.account || `subscription ${p.subscription}`)}: ${esc(p.issue)}</li>`).join("")}</ul></details>` : ""}
+        ${dry ? `<div class="muted small">If that looks right, choose Import.</div>` : `<div class="muted small">Next: check subscriptions against Stripe, above, once Stripe is set up.</div>`}</div>`;
+      $("[data-run=import]", form).disabled = !dry;
+      if (!dry) toast(`Brought ${plural(r.accounts.created || 0, "account")} over`);
+    } catch (err) {
+      if (err instanceof StaleView) return;
+      out.innerHTML = `<div class="alert small">${esc(err.message)}</div>`;
+    }
+    b.disabled = b.dataset.run === "import" && !dry ? true : false;
+  }));
+}
 
 router();

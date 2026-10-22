@@ -733,10 +733,16 @@ def give_plan(user_id: int, body: PlanGrant, user: dict = Admin):
 # --------------------------------------------------------------------- command line
 
 
-def setup() -> None:
+# The events the webhook endpoint in Stripe needs to send.
+WEBHOOK_EVENTS = ("checkout.session.completed", "customer.subscription.created", "customer.subscription.updated",
+                  "customer.subscription.deleted", "customer.subscription.trial_will_end", "invoice.paid",
+                  "invoice.payment_failed", "charge.refunded")
+
+
+def setup() -> list[str]:
     """Make a product for each paid plan and a price for each billing period, with lookup keys this app finds them by.
-    Prices that exist already are left alone, so it can run again."""
-    client = _client()
+    Prices that exist already are left alone, so it can run again. Returns the lookup keys of the prices it made."""
+    client, made = _client(), []
     keys = [lookup_key(p.slug, i) for p in plans.PLANS.values() if p.paid for i in plans.INTERVALS]
     existing = {pr["lookup_key"] for pr in _plain(client.v1.prices.list(params={"lookup_keys": keys, "limit": 100}))["data"]}
     for p in plans.PLANS.values():
@@ -752,27 +758,81 @@ def setup() -> None:
                 "recurring": {"interval": "year" if interval == "yearly" else "month"},
                 "lookup_key": lookup_key(p.slug, interval), "nickname": f"{p.name} {interval}",
                 "metadata": {"aiet_tier": p.slug, "aiet_interval": interval}})
-            print(f"made {lookup_key(p.slug, interval)}: {plans.money(p.price(interval))}")
-    print("Stripe has a price for every plan.")
+            made.append(lookup_key(p.slug, interval))
+    _price_ids.clear()
+    return made
 
 
-def check() -> int:
-    """List the Stripe price behind each plan; return how many are missing or don't cost what the plan says."""
-    problems = 0
+def price_rows() -> list[dict]:
+    """The Stripe price behind each paid plan and period, and whether it costs what the plan says."""
+    rows = []
     for p in plans.PLANS.values():
         for interval in plans.INTERVALS if p.paid else ():
+            row = {"tier": p.slug, "name": p.name, "interval": interval, "expected": p.price(interval)}
             try:
                 pid = price_id(p.slug, interval)
                 price = _plain(_client().v1.prices.retrieve(pid))
-            except (HTTPException, stripe.StripeError) as e:
-                print(f"{p.slug} {interval}: no price ({getattr(e, 'detail', type(e).__name__)})")
-                problems += 1
+            except HTTPException as e:
+                if e.status_code != 503:  # Stripe couldn't be reached, or refused the key: not a missing price
+                    raise
+                rows.append(row | {"price": None, "amount": None, "ok": False})
                 continue
-            ok = price.get("unit_amount") == p.price(interval)
-            problems += not ok
-            print(f"{p.slug} {interval}: {pid} {plans.money(price.get('unit_amount') or 0)}"
-                  + ("" if ok else f" (the plan says {plans.money(p.price(interval))})"))
-    return problems
+            rows.append(row | {"price": pid, "amount": price.get("unit_amount"), "ok": price.get("unit_amount") == p.price(interval)})
+    return rows
+
+
+def check() -> int:
+    """Print the Stripe price behind each plan; return how many are missing or don't cost what the plan says."""
+    rows = price_rows()
+    for r in rows:
+        print(f"{r['tier']} {r['interval']}: " + ("no price" if r["price"] is None else
+              f"{r['price']} {plans.money(r['amount'] or 0)}" + ("" if r["ok"] else f" (the plan says {plans.money(r['expected'])})")))
+    return sum(not r["ok"] for r in rows)
+
+
+@router.get("/staff/stripe")
+def stripe_status(user: dict = Admin):
+    """For admins: whether payments are set up, the webhook Stripe needs, and the price behind each plan."""
+    with db.connect() as conn:
+        one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
+        out = {"payments": payments(), "webhook_secret": bool(settings.stripe_webhook_secret), "paywall": paywall(),
+               "webhook_url": f"{settings.public_url}/api/billing/webhook", "events": WEBHOOK_EVENTS,
+               "linked": one("SELECT COUNT(*) FROM subscriptions WHERE stripe_subscription_id IS NOT NULL"),
+               "queued_cancellations": one("SELECT COUNT(*) FROM stripe_cancellations"),
+               "last_event": one("SELECT MAX(received_at) FROM stripe_events"), "prices": [], "prices_error": None}
+    if payments():
+        try:
+            out["prices"] = price_rows()
+        except (HTTPException, stripe.StripeError):
+            out["prices_error"] = "Stripe couldn't be reached with the secret key set on the server. Check STRIPE_SECRET_KEY."
+    return out
+
+
+@router.post("/staff/stripe/setup")
+def stripe_setup(user: dict = Admin):
+    """For admins: make the plans' products and prices in Stripe (what `python -m app.billing setup` does)."""
+    _need_payments()
+    with _stripe("make the plans"):
+        made = setup()
+        return {"made": made, "prices": price_rows()}
+
+
+class ReconcileIn(BaseModel):
+    dry_run: bool = True
+
+
+@router.post("/staff/stripe/reconcile")
+def stripe_reconcile(body: ReconcileIn, user: dict = Admin):
+    """For admins: bring every subscription up to date from Stripe (what `python -m app.billing reconcile` does)."""
+    _need_payments()
+    with _stripe("check the subscriptions"):
+        report = reconcile(body.dry_run)
+    if not body.dry_run:
+        from app import staff
+
+        with db.connect() as conn:
+            staff.log(conn, user["id"], "user", user["id"], "reconcile", f"{report['updated']} subscriptions brought up to date")
+    return report
 
 
 def reconcile(dry_run: bool = False) -> dict:
@@ -816,7 +876,9 @@ def main(argv: list[str]) -> int:
     db.init_db()
     command = argv[0] if argv else ""
     if command == "setup":
-        setup()
+        for key in setup():
+            print(f"made {key}")
+        print("Stripe has a price for every plan.")
         return 0
     if command == "check":
         return 1 if check() else 0

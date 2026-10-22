@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
 from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, courses, db, digest, guides,
-                 insights, learning, llm, photos, push, reactions, referrals, reminders, staff, usage)
+                 insights, learning, legacy, llm, photos, push, reactions, referrals, reminders, staff, usage)
 from app import plans
 from app.avatar import render_initials, render_svg
 from app.config import settings
@@ -76,6 +76,7 @@ app.include_router(referrals.router)
 app.include_router(referrals.links)
 app.include_router(campaigns.router)
 app.include_router(analytics.router)
+app.include_router(legacy.router)
 User = Depends(auth.current_user)
 
 
