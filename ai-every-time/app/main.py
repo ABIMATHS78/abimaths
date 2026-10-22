@@ -17,8 +17,9 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import (account, auth, catalog, companions, content, courses, db, digest, guides, insights, learning, llm,
-                 photos, push, reactions, reminders, staff, usage)
+from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, courses, db, digest, guides,
+                 insights, learning, legacy, llm, photos, push, reactions, referrals, reminders, staff, usage)
+from app import plans
 from app.avatar import render_initials, render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -50,6 +51,8 @@ async def lifespan(_: FastAPI):
         _spawn(digest.digest_loop())
     if push.available():
         _spawn(push.push_loop())
+    if digest.email_available() or billing.payments():
+        _spawn(campaigns.loop())
     if settings.offline:
         log.warning("No Anthropic credentials found: running in offline demo mode.")
     else:
@@ -68,6 +71,12 @@ app.include_router(insights.router)
 app.include_router(digest.router)
 app.include_router(push.router)
 app.include_router(account.router)
+app.include_router(billing.router)
+app.include_router(referrals.router)
+app.include_router(referrals.links)
+app.include_router(campaigns.router)
+app.include_router(analytics.router)
+app.include_router(legacy.router)
 User = Depends(auth.current_user)
 
 
@@ -105,6 +114,12 @@ class Signup(BaseModel):
     interests: str = Field("", max_length=300)
     # Reported by the browser. One the server doesn't know is ignored rather than blocking sign-up.
     timezone: Annotated[str, AfterValidator(_zone_or_unknown)] = ""
+    # Emails with news and offers: only if they tick the box.
+    marketing_emails: bool = False
+    # The code from a friend's invite link, if they came through one (the link also leaves it in a cookie).
+    referral_code: str | None = Field(None, max_length=40)
+    # The utm_source of the link that brought them, if any.
+    source: str = Field("", max_length=60)
 
 
 class Login(BaseModel):
@@ -118,20 +133,23 @@ class ProfileUpdate(BaseModel):
     goals: str | None = Field(None, max_length=500)
     interests: str | None = Field(None, max_length=300)
     email_reminders: bool | None = None
+    marketing_emails: bool | None = None
     timezone: TimeZone | None = None
     # The hour of their own day for the daily reminder, by email and notification.
     reminder_hour: int | None = Field(None, ge=0, le=23)
 
 
 @app.post("/api/auth/signup", status_code=201)
-def signup(body: Signup, response: Response, background: BackgroundTasks):
+def signup(body: Signup, response: Response, background: BackgroundTasks, aiet_ref: str | None = Cookie(default=None)):
+    source = "".join(ch for ch in body.source.lower() if ch.isalnum() or ch in "-_.")[:60]
     try:
         with db.connect() as conn:
             cur = conn.execute(
-                "INSERT INTO users (email, display_name, password_hash, level, goals, interests, timezone, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO users (email, display_name, password_hash, level, goals, interests, timezone, marketing_emails, "
+                "signup_source, last_signed_in, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (body.email.lower(), body.display_name.strip(), auth.hash_password(body.password), body.level,
-                 body.goals.strip(), body.interests.strip(), body.timezone, db.now()),
+                 body.goals.strip(), body.interests.strip(), body.timezone, int(body.marketing_emails), source, db.now(),
+                 db.now()),
             )
             # Start every learner following the featured starter companions, one from each region, so their
             # feed isn't empty.
@@ -140,8 +158,12 @@ def signup(body: Signup, response: Response, background: BackgroundTasks):
                          (cur.lastrowid, db.now()))
             # Posts published before sign-up are part of the welcome feed, not "new".
             reminders.mark_feed_seen(conn, cur.lastrowid)
+            billing.row(conn, cur.lastrowid)  # everyone starts on the free plan
+            referrals.attribute(conn, cur.lastrowid, body.referral_code or aiet_ref)
     except sqlite3.IntegrityError:
         raise HTTPException(409, "An account with that email already exists")
+    if aiet_ref:
+        response.delete_cookie(referrals.COOKIE)
     auth.set_cookie(response, auth.create_session(cur.lastrowid))
     user = _load_user(cur.lastrowid)
     digest.request_confirmation(user, background, per_hour=1)
@@ -158,8 +180,13 @@ def login(body: Login, response: Response):
         account.wrong_password(email)
         raise HTTPException(401, "Wrong email or password")
     account.right_password(email)
+    with db.connect() as conn:
+        # A password from the old site (bcrypt) is stored the way this site stores them, now it's known to be right.
+        if auth.needs_rehash(row["password_hash"]):
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (auth.hash_password(body.password), row["id"]))
+        conn.execute("UPDATE users SET last_signed_in = ? WHERE id = ?", (db.now(), row["id"]))
     auth.set_cookie(response, auth.create_session(row["id"]))
-    return me(dict(row))
+    return me(_load_user(row["id"]))
 
 
 @app.post("/api/auth/logout", status_code=204)
@@ -180,7 +207,7 @@ def me(user: dict = User):
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
         "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
-        "ai_problem": _ai_problem(user),
+        "ai_problem": _ai_problem(user), "marketing_emails": bool(user.get("marketing_emails")), "plan": billing.view(user),
     }
 
 
@@ -202,6 +229,10 @@ def update_me(body: ProfileUpdate, background: BackgroundTasks, user: dict = Use
             changes[k] = changes[k].strip()
     if changes.get("email_reminders") and not digest.email_available():
         raise HTTPException(409, "Email reminders aren't set up on this server yet")
+    if "marketing_emails" in changes:
+        changes["marketing_emails"] = int(changes["marketing_emails"])
+        with db.connect() as conn:
+            digest.ensure_token(conn, user["id"])  # for the unsubscribe link in each one
     if "email_reminders" in changes:
         changes["email_reminders"] = int(changes["email_reminders"])
         with db.connect() as conn:
@@ -505,9 +536,17 @@ def companion_posts(companion_id: int, user: dict = User, before: Before = None)
 
 
 @app.get("/api/posts/{post_id}")
-def get_post(post_id: int, user: dict = User):
+def get_post(post_id: int, request: Request, user: dict = User):
     _visible_post(post_id, user["id"])
-    return content.post_view(user["id"], post_id)
+    post = content.post_view(user["id"], post_id)
+    if post.get("kind"):  # a guide: free learners read a few in full each month, and the start of the rest
+        # Only the app itself uses up a free guide: a link on another site could otherwise spend them for the learner.
+        ours = request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
+        access = billing.guide_access(user, post, record=ours)
+        if not access["full"]:
+            post |= {"body": billing.preview(post["body"]), "locked": True, "plan_needed": plans.lowest_with("guides").slug}
+        post["guides"] = access
+    return post
 
 
 @app.get("/api/guides")
@@ -634,6 +673,10 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
     c = companions.get_visible(companion_id, user["id"])
     persona = companions.persona_for(c, user["id"])
     post = _visible_post(body.post_id, user["id"]) if body.post_id else None
+    if post and post.get("kind") and not billing.guide_access(user, post, record=False)["full"]:
+        post = post | {"body": billing.preview(post["body"])}  # a locked guide: the companion knows as much as the learner
+    if body.lesson_id and not post:
+        billing.require_course_item(user, body.lesson_id)
     lesson = learning.lesson_context(user["id"], companion_id, body.lesson_id) if body.lesson_id and not post else None
     # Before anything is saved, so a message turned away by the allowance leaves no trace.
     row = usage.reserve(user, "chat")

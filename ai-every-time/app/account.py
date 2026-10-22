@@ -13,7 +13,7 @@ from email.message import EmailMessage
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from app import auth, db, digest, learning
+from app import auth, billing, db, digest, learning
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -206,8 +206,10 @@ def export(user: dict = User):
         data = {
             "exported_at": db.now(),
             "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "interests", "timezone", "reminder_hour",
-                                             "email_confirmed_at", "ai_allowance", "created_at")}
-                       | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"])},
+                                             "email_confirmed_at", "ai_allowance", "login_method", "last_signed_in",
+                                             "signup_source", "created_at")}
+                       | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"]),
+                          "news_and_offers_emails": bool(user["marketing_emails"])},
             "companions_you_designed": designed,
             "companions_you_follow": rows(
                 "SELECT f.companion_id, json_extract(c.persona, '$.name') AS name, f.created_at FROM follows f "
@@ -245,6 +247,21 @@ def export(user: dict = User):
             "ai_requests": rows("SELECT kind, units, failed, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
                                 "model, created_at FROM ai_usage WHERE user_id = ? ORDER BY id"),
             "ai_requests_turned_away": rows("SELECT hour, reason, count FROM ai_refusals WHERE user_id = ? ORDER BY hour"),
+            "plan": rows("SELECT tier, billing_interval, status, seats, amount_cents, current_period_start, current_period_end, "
+                         "trial_end, cancel_at_period_end, canceled_at, grant_tier, grant_until, grant_note, intended_tier, "
+                         "intended_interval, intended_at, created_at FROM subscriptions WHERE user_id = ?"),
+            "plan_changes": rows("SELECT from_tier, to_tier, event_type, source, created_at FROM subscription_events "
+                                 "WHERE user_id = ? ORDER BY id"),
+            "payments": rows("SELECT kind, amount_cents, currency, tier, billing_interval, created_at FROM revenue_events "
+                             "WHERE user_id = ? ORDER BY id"),
+            "guides_read_on_the_free_plan": rows("SELECT month, post_id FROM guide_reads WHERE user_id = ? ORDER BY month"),
+            "referrals": {
+                "your_code": user.get("referral_code"),
+                "friends_invited": rows("SELECT created_at, qualified_at, subscribed_at FROM referral_invites "
+                                        "WHERE referrer_id = ? ORDER BY created_at"),
+                "rewards": rows("SELECT created_at, claimed_at, applied_as FROM referral_rewards WHERE user_id = ? ORDER BY id"),
+            },
+            "emails_about_plans_and_offers": rows("SELECT kind, sent_at FROM email_log WHERE user_id = ? ORDER BY id"),
         }
     return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type="application/json",
                     headers={"Content-Disposition": 'attachment; filename="ai-every-time-data.json"'})
@@ -257,9 +274,12 @@ class DeleteAccount(BaseModel):
 @router.delete("/me", status_code=204)
 def delete_account(body: DeleteAccount, response: Response, user: dict = User):
     """Delete the account and everything in it: the companions they designed and their posts, chats,
-    memories, progress and devices. Staff decisions they made stay in the log, and their AI requests
-    in the usage totals, without their name."""
+    memories, progress and devices. A plan they pay for is cancelled at Stripe. Staff decisions they made
+    stay in the log, and their AI requests, payments and plan changes in the totals, without their name."""
     _confirm_password(user, body.password)
+    with db.connect() as conn:
+        sub = conn.execute("SELECT * FROM subscriptions WHERE user_id = ?", (user["id"],)).fetchone()
+    billing.cancel_for_deleted(dict(sub) if sub else None)  # no one goes on paying for an account they deleted
     with db.connect() as conn:
         # Lessons companions wrote for the learner's own paths aren't covered by the cascade.
         for r in conn.execute("SELECT id FROM custom_paths WHERE user_id = ?", (user["id"],)).fetchall():

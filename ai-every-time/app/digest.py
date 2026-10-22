@@ -157,9 +157,13 @@ def request_confirmation(user: dict, background: BackgroundTasks, per_hour: int 
 
 
 def mark_confirmed(conn, user_id: int) -> None:
-    """The learner has shown they read mail at their address (a confirmation or password-reset link)."""
+    """The learner has shown they read mail at their address (a confirmation or password-reset link). If a friend
+    invited them, the invite now counts."""
+    from app import referrals  # imported here: referrals uses this module
+
     conn.execute("UPDATE users SET email_confirmed_at = COALESCE(email_confirmed_at, ?) WHERE id = ?", (db.now(), user_id))
     conn.execute("UPDATE email_confirmations SET used_at = ? WHERE user_id = ? AND used_at IS NULL", (db.now(), user_id))
+    referrals.qualify(conn, user_id)
 
 
 def confirm(token: str) -> bool:
@@ -226,11 +230,15 @@ async def digest_loop() -> None:
         await asyncio.sleep(CHECK_EVERY_SECONDS)
 
 
-def _unsubscribe(token: str) -> bool:
+# The emails a learner can stop with the link in them: reminders (this module's), and news and offers (app/campaigns.py).
+LISTS = {"reminders": ("email_reminders", "reminder emails"), "news": ("marketing_emails", "emails with news and offers")}
+
+
+def _unsubscribe(token: str, which: str) -> bool:
     if not token:
         return False
     with db.connect() as conn:
-        cur = conn.execute("UPDATE users SET email_reminders = 0 WHERE unsubscribe_token = ?", (token,))
+        cur = conn.execute(f"UPDATE users SET {LISTS[which][0]} = 0 WHERE unsubscribe_token = ?", (token,))
     return cur.rowcount > 0
 
 
@@ -263,20 +271,28 @@ async def confirm_submit(request: Request):
                  "in your profile.</p>", "Link not recognised", 400)
 
 
+def _list(name: str) -> str:
+    return name if name in LISTS else "reminders"
+
+
 @router.get("/unsubscribe", response_class=HTMLResponse)
-def unsubscribe_page(token: str = ""):
+def unsubscribe_page(token: str = "", list: str = "reminders"):
     # A button rather than unsubscribing on GET, so link scanners in mail systems can't do it by accident.
-    return _page(f"""<h1>Stop reminder emails?</h1>
+    which = _list(list)
+    return _page(f"""<h1>Stop {LISTS[which][1]}?</h1>
 <form method="post" action="/api/email/unsubscribe"><input type="hidden" name="token" value="{html.escape(token)}">
+<input type="hidden" name="list" value="{which}">
 <button style="font:inherit;padding:8px 16px">Stop emails</button></form>
 <p>You can turn them back on any time in your profile.</p>""")
 
 
 @router.post("/unsubscribe", response_class=HTMLResponse)
-async def unsubscribe(request: Request, token: str = ""):
+async def unsubscribe(request: Request, token: str = "", list: str = ""):
     """Handles both the confirmation form (token in the body) and mail clients' one-click POST (token in the URL)."""
     body = parse_qs((await request.body())[:4096].decode("utf-8", "replace"))
     token = token or (body.get("token") or [""])[0]
-    if _unsubscribe(token):
-        return _page("<h1>Done</h1><p>You won't get reminder emails any more.</p><p><a href='/'>Back to AI Every Time</a></p>")
+    which = _list(list or (body.get("list") or [""])[0])
+    if _unsubscribe(token, which):
+        return _page(f"<h1>Done</h1><p>You won't get {LISTS[which][1]} any more.</p>"
+                     "<p><a href='/'>Back to AI Every Time</a></p>")
     return _page("<h1>Link not recognised</h1><p>Turn emails off in your profile instead.</p>", status=400)

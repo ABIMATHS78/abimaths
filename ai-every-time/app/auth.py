@@ -20,12 +20,28 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, stored: str) -> bool:
+    """Whether the password is the one stored: this site's scrypt hashes, or bcrypt ones ($2a$, $2b$, $2y$) from
+    accounts brought over from the old site. An account brought over without a password (it signed in with
+    Google, say) has an empty one, which nothing matches: they choose a password with a reset link."""
+    if stored.startswith(("$2a$", "$2b$", "$2y$")):
+        import bcrypt
+
+        try:
+            # bcrypt only ever reads the first 72 bytes, as the old site did.
+            return bcrypt.checkpw(password.encode()[:72], stored.encode())
+        except ValueError:  # not a bcrypt hash after all
+            return False
     try:
         _, salt_hex, digest_hex = stored.split("$")
+        digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex), n=2**14, r=8, p=1)
     except ValueError:
         return False
-    digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex), n=2**14, r=8, p=1)
     return hmac.compare_digest(digest.hex(), digest_hex)
+
+
+def needs_rehash(stored: str) -> bool:
+    """A hash from the old site, to store this site's way the next time the password is known to be right."""
+    return not stored.startswith("scrypt$")
 
 
 def hash_token(token: str) -> str:

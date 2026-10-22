@@ -55,7 +55,7 @@ def test_insights_count_learners_learning_and_ai_use(client, monkeypatch):
     # Ada's third message and Zara's first post were both turned away.
     assert ai["turned_away"] == {"allowance": {"requests": 2, "learners": 1}, "site": {"requests": 0, "learners": 0}}
     assert ai["units_last_24h"] == 4
-    assert ai["limits"] == {"allowance": 2, "unconfirmed": None, "site": 0}
+    assert ai["limits"] == {"allowance": 2, "unconfirmed": None, "site": 0, "plans": None}  # no plans without the paywall
 
 
 def test_insights_count_tokens_failures_and_old_requests_apart(client, monkeypatch):

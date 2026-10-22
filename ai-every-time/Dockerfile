@@ -14,11 +14,15 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY app ./app
 COPY static ./static
+# For bringing the old site's members over from the command line (the Staff page's Setup tab does it too).
+COPY scripts/import_legacy.py ./scripts/import_legacy.py
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # The app runs as an ordinary user that owns only the data folder. The entrypoint starts as root just
-# long enough to hand it a disk the host attached as root's.
+# long enough to hand it a disk the host attached as root's. The .ssh folders let hosts that offer SSH
+# into a container (Render, for one) connect.
 RUN useradd --create-home --uid 10001 aiet && mkdir -p /data && chown aiet:aiet /data \
+    && mkdir -p /root/.ssh /home/aiet/.ssh && chmod 0700 /root/.ssh /home/aiet/.ssh && chown aiet:aiet /home/aiet/.ssh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8000
 

@@ -19,7 +19,7 @@ import zipfile
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from app import auth, catalog, companions, db, learning, tutor, usage
+from app import auth, billing, catalog, companions, db, learning, tutor, usage
 from app.catalog import Course, Track
 
 router = APIRouter(prefix="/api")
@@ -257,7 +257,8 @@ def list_courses(user: dict = User):
     summaries = {c.slug: _summary(c, st, people, counts, ratings) for c in cat.courses}
     categories = [{"name": name, "count": sum(c.category == name for c in cat.courses)} for name in catalog.CATEGORIES]
     return {"courses": list(summaries.values()), "categories": [c for c in categories if c["count"]],
-            "tracks": [_track_view(t, summaries, st) for t in cat.tracks]}
+            "tracks": [_track_view(t, summaries, st) for t in cat.tracks],
+            "full_access": billing.unlocked(user, "courses"), "free_modules": billing.FREE_MODULES}
 
 
 @router.get("/courses/{slug}")
@@ -273,7 +274,12 @@ def get_course(slug: str, user: dict = User):
         mine = conn.execute("SELECT stars FROM course_ratings WHERE user_id = ? AND course_slug = ?",
                             (user["id"], slug)).fetchone()
     cert = st.certificate("course", slug)
+    full = billing.unlocked(user, "courses")
+    for m in modules:
+        m["locked"] = not full and m["index"] > billing.FREE_MODULES
     return _summary(c, st, people, counts, ratings) | {
+        "access": {"full": full, "free_modules": billing.FREE_MODULES,
+                   "plan": None if full else billing.plans.lowest_with("courses").name},
         "description": c.description, "outcomes": c.outcomes, "prerequisites": c.prerequisites,
         "notices": c.notices(), "syllabus": modules, "project": project, "requirements": requirements, "next": next_key,
         "study_plan": c.plan(), "mock_exam": {"questions": learning.COURSE_EXAM_QUESTIONS, "minutes": learning.COURSE_EXAM_MINUTES},
@@ -345,6 +351,7 @@ def _steps(steps) -> list[dict]:
 def get_lab(slug: str, m: int, user: dict = User):
     c = _course_or_404(slug)
     lab = _lab_or_404(c, m)
+    billing.require_course_item(user, catalog.lab_id(slug, m))
     people = _instructors({c.instructor_of(m)})
     return {
         "course": {"slug": c.slug, "title": c.title}, "module": m, "module_title": c.modules[m - 1].title,
@@ -374,6 +381,7 @@ async def submit_lab(slug: str, m: int, body: WorkIn, user: dict = User):
     """The learner's lab work, reviewed by the module's instructor against the lab's checks."""
     c = _course_or_404(slug)
     _lab_or_404(c, m)
+    billing.require_course_item(user, catalog.lab_id(slug, m))
     _require_enrolled(user, slug)
     if not body.content.strip():
         raise HTTPException(422, "Paste in your work first.")
@@ -390,6 +398,7 @@ def get_project(slug: str, user: dict = User):
     c = _course_or_404(slug)
     if c.project is None:
         raise HTTPException(404, "This course has no project")
+    billing.require_course_item(user, catalog.project_id(slug))
     p = c.project
     people = _instructors({c.instructors[0]})
     return {
@@ -408,6 +417,7 @@ async def submit_project(slug: str, body: WorkIn, user: dict = User):
     c = _course_or_404(slug)
     if c.project is None:
         raise HTTPException(404, "This course has no project")
+    billing.require_course_item(user, catalog.project_id(slug))
     _require_enrolled(user, slug)
     if not body.content.strip():
         raise HTTPException(422, "Paste in your project first.")
@@ -431,6 +441,7 @@ def _zip(name: str, files) -> Response:
 @router.get("/courses/{slug}/labs/{m}/files")
 def lab_files(slug: str, m: int, user: dict = User):
     lab = _lab_or_404(_course_or_404(slug), m)
+    billing.require_course_item(user, catalog.lab_id(slug, m))
     if not lab.files:
         raise HTTPException(404, "This lab has no starter files")
     return _zip(f"{slug}-lab-{m}", lab.files)
@@ -441,6 +452,7 @@ def project_files(slug: str, user: dict = User):
     c = _course_or_404(slug)
     if c.project is None or not c.project.files:
         raise HTTPException(404, "This project has no starter files")
+    billing.require_course_item(user, catalog.project_id(slug))
     return _zip(f"{slug}-project", c.project.files)
 
 
@@ -476,6 +488,7 @@ def _issue(user: dict, kind: str, ref: str, name: str) -> dict:
 @router.post("/courses/{slug}/certificate")
 def course_certificate(slug: str, body: CertificateIn, user: dict = User):
     c = _course_or_404(slug)
+    billing.require(user, "courses")
     _, _, req, _ = _outline(c, State(user["id"]))
     if not req["complete"]:
         raise HTTPException(409, "Finish every lesson and pass every quiz, lab and the project first.")
@@ -485,6 +498,7 @@ def course_certificate(slug: str, body: CertificateIn, user: dict = User):
 @router.post("/tracks/{slug}/certificate")
 def track_certificate(slug: str, body: CertificateIn, user: dict = User):
     t = _track_or_404(slug)
+    billing.require(user, "courses")
     st = State(user["id"])
     if any(st.certificate("course", s) is None for s in t.courses):
         raise HTTPException(409, f"Earn the certificate for every course in the {t.kind} first.")
