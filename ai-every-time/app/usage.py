@@ -58,34 +58,49 @@ def _ceiling_message(user: dict) -> str | None:
     return None if user.get("email_confirmed_at") else BUSY_UNCONFIRMED
 
 
-def unconfirmed_allowance() -> int | None:
+def unconfirmed_allowance(full: int | None = None) -> int | None:
     """The smaller allowance for learners who haven't confirmed their email address, if there is one:
     only while email is set up, and only when it's below the full allowance (0 turns it off)."""
     from app import digest  # imported here: digest is further up the chain of modules than this one
 
-    lower = settings.ai_allowance_unconfirmed
-    return lower if digest.email_available() and 0 < lower < settings.ai_allowance else None
+    lower, full = settings.ai_allowance_unconfirmed, settings.ai_allowance if full is None else full
+    return lower if digest.email_available() and 0 < lower < full else None
+
+
+def _full(user: dict) -> tuple[int, bool]:
+    """The learner's allowance as their email address being confirmed or not doesn't change it: their plan's while
+    the paywall is on, else the site's (0 for no limit). And whether confirming matters: learners who pay don't
+    need to confirm to have their plan's."""
+    if settings.paywall:
+        from app import billing, plans  # imported here: billing is further up the chain of modules too
+
+        tier = billing.tier(user)
+        return plans.plan(tier).daily_allowance(), tier == "free"
+    return settings.ai_allowance, True
 
 
 def allowance(user: dict) -> int | None:
     """Units the learner may use in any 24 hours; None means no limit. An admin can give a learner an
-    allowance of their own (0 for no limit), which takes the place of the site's."""
+    allowance of their own (0 for no limit), which takes the place of their plan's or the site's."""
     if auth.role_of(user) == "admin":
         return None
     if user.get("ai_allowance") is not None:
         return user["ai_allowance"] or None
-    if settings.ai_allowance <= 0:
+    full, confirming_matters = _full(user)
+    if full <= 0:
         return None
-    lower = unconfirmed_allowance()
-    return lower if lower is not None and not user.get("email_confirmed_at") else settings.ai_allowance
+    lower = unconfirmed_allowance(full) if confirming_matters else None
+    return lower if lower is not None and not user.get("email_confirmed_at") else full
 
 
 def confirm_would_raise(user: dict) -> int | None:
     """The allowance the learner would have after confirming their email address, if that's more."""
-    if (auth.role_of(user) == "admin" or user.get("ai_allowance") is not None or user.get("email_confirmed_at")
-            or settings.ai_allowance <= 0 or unconfirmed_allowance() is None):
+    if auth.role_of(user) == "admin" or user.get("ai_allowance") is not None or user.get("email_confirmed_at"):
         return None
-    return settings.ai_allowance
+    full, confirming_matters = _full(user)
+    if full <= 0 or not confirming_matters or unconfirmed_allowance(full) is None:
+        return None
+    return full
 
 
 def _spent(conn, user_id: int) -> list:
@@ -160,9 +175,24 @@ def reserve(user: dict, kind: str) -> int:
             row = conn.execute("INSERT INTO ai_usage (user_id, kind, units, created_at) VALUES (?, ?, ?, ?)",
                                (user["id"], kind, cost, db.now())).lastrowid
     if refusal:  # raised once the refusal is counted
-        _, text, wait = refusal
-        raise HTTPException(429, text, headers={"Retry-After": str(max(60, math.ceil(wait.total_seconds())))})
+        reason, text, wait = refusal
+        headers = {"Retry-After": str(max(60, math.ceil(wait.total_seconds())))}
+        if reason == "allowance" and (more := more_with(user)):
+            text += f" {more.name} gives you {more.daily_allowance()} a day."
+            headers["X-Plan-Needed"] = more.slug
+        raise HTTPException(429, text, headers=headers)
     return row
+
+
+def more_with(user: dict):
+    """While the paywall is on, the next plan up that would give the learner more AI requests, if there is one."""
+    if not settings.paywall or user.get("ai_allowance") is not None:
+        return None
+    from app import billing, plans
+
+    mine = plans.plan(billing.tier(user))
+    return next((p for p in plans.PLANS.values() if p.slug in plans.SELF_SERVE and p.rank > mine.rank
+                 and (p.daily_allowance() == 0 or p.daily_allowance() > mine.daily_allowance() > 0)), None)
 
 
 def try_reserve(user: dict, kind: str) -> int | None:

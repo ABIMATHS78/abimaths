@@ -328,6 +328,137 @@ CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Plans (app/billing.py): one row per learner. The plan they pay for through Stripe (or paid for on the old site), with
+-- the state of its subscription; a plan given to them, by an admin or as a referral reward, until a date or for good;
+-- and the plan they last chose on the pricing page without finishing paying for it. What they can use is the higher
+-- of the paid plan (while it's active, on trial or being retried) and the given one. Card details are only ever at Stripe.
+CREATE TABLE IF NOT EXISTS subscriptions (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    tier TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'digital', 'plus', 'pro', 'insider', 'teams')),
+    billing_interval TEXT NOT NULL DEFAULT 'monthly' CHECK (billing_interval IN ('monthly', 'yearly')),
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'trialing', 'past_due', 'canceled', 'incomplete', 'unpaid', 'paused')),
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT UNIQUE,
+    stripe_price_id TEXT,
+    seats INTEGER NOT NULL DEFAULT 1,
+    amount_cents INTEGER,  -- what each billing period costs, when known
+    current_period_start TEXT,
+    current_period_end TEXT,
+    trial_end TEXT,
+    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+    canceled_at TEXT,
+    trial_used INTEGER NOT NULL DEFAULT 0,
+    grant_tier TEXT CHECK (grant_tier IN ('digital', 'plus', 'pro', 'insider', 'teams')),
+    grant_until TEXT,
+    grant_note TEXT NOT NULL DEFAULT '',
+    intended_tier TEXT CHECK (intended_tier IN ('digital', 'plus', 'pro', 'insider', 'teams')),
+    intended_interval TEXT CHECK (intended_interval IN ('monthly', 'yearly')),
+    intended_at TEXT,
+    legacy_id TEXT,  -- the subscription's id on the old site
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_subscriptions_customer ON subscriptions(stripe_customer_id);
+-- Every change to the plan a learner can use: new (a first paid plan), upgrade, downgrade, cancel (back to free) and
+-- reactivate (a paid plan again). Kept, without the learner, when an account is deleted, like the revenue.
+CREATE TABLE IF NOT EXISTS subscription_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    from_tier TEXT NOT NULL,
+    to_tier TEXT NOT NULL,
+    event_type TEXT NOT NULL CHECK (event_type IN ('new', 'upgrade', 'downgrade', 'cancel', 'reactivate')),
+    source TEXT NOT NULL,  -- stripe, admin, referral or import
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_events_time ON subscription_events(created_at);
+-- Money in (paid invoices) and out (refunds, as negative amounts), from Stripe, each once.
+CREATE TABLE IF NOT EXISTS revenue_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('payment', 'refund')),
+    amount_cents INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    tier TEXT,
+    billing_interval TEXT,
+    stripe_ref TEXT NOT NULL UNIQUE,  -- the invoice or refund
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_revenue_events_time ON revenue_events(created_at);
+-- Stripe events already handled: Stripe can send one more than once.
+CREATE TABLE IF NOT EXISTS stripe_events (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    received_at TEXT NOT NULL
+);
+-- Subscriptions of deleted accounts still to be cancelled at Stripe, when it couldn't be reached at the time.
+CREATE TABLE IF NOT EXISTS stripe_cancellations (
+    stripe_subscription_id TEXT PRIMARY KEY,
+    requested_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT NOT NULL DEFAULT ''
+);
+-- Referrals (app/referrals.py): who invited whom. An invite counts once the friend has confirmed their email address
+-- (straight away where email isn't set up); every three that count earn the inviter a free month of Plus.
+CREATE TABLE IF NOT EXISTS referral_invites (
+    invitee_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    referrer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    qualified_at TEXT,
+    subscribed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_referral_invites_referrer ON referral_invites(referrer_id);
+CREATE TABLE IF NOT EXISTS referral_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    claimed_at TEXT,
+    applied_as TEXT CHECK (applied_as IN ('plan', 'credit'))  -- a month of Plus, or a month of Plus off their bill
+);
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_user ON referral_rewards(user_id);
+-- Emails about billing and from campaigns (app/campaigns.py), each sent at most once: `key` tells them apart.
+CREATE TABLE IF NOT EXISTS email_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    failed INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (user_id, kind, key)
+);
+CREATE INDEX IF NOT EXISTS idx_email_log_kind ON email_log(kind, sent_at);
+-- Emails an admin wrote to send to everyone on a plan who agreed to news and offers.
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    audience TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    finished_at TEXT
+);
+-- The guides a learner on a plan without unlimited guides read in full, by month, for their free guides each month.
+CREATE TABLE IF NOT EXISTS guide_reads (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,
+    post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, month, post_id)
+);
+-- Accounts from the old site that share an email address with another one, which became the account here (the one
+-- with the best plan). Kept so nothing about them is lost and they can be looked into; see scripts/import_legacy.py.
+CREATE TABLE IF NOT EXISTS legacy_accounts (
+    legacy_id TEXT PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    login_method TEXT NOT NULL DEFAULT '',
+    tier TEXT,
+    status TEXT,
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    created_at TEXT,
+    last_signed_in TEXT,
+    imported_at TEXT NOT NULL
+);
 """
 
 
@@ -410,6 +541,17 @@ MIGRATIONS = [
     # What the learner is into (hobbies, work, anything they love), in their words: companions start
     # conversations from it and draw examples from it.
     ("users", "interests", "TEXT NOT NULL DEFAULT ''"),
+    # Accounts brought over from the old site (scripts/import_legacy.py): its id for them there, how they signed in
+    # there (email, google, apple, microsoft), and when they last did, here or there.
+    ("users", "legacy_id", "TEXT"),
+    ("users", "login_method", "TEXT NOT NULL DEFAULT 'email'"),
+    ("users", "last_signed_in", "TEXT"),
+    # The code in the learner's invite link (app/referrals.py), made when they first ask for it.
+    ("users", "referral_code", "TEXT"),
+    # Whether the learner agreed to emails with news and offers (app/campaigns.py). Off until they say yes.
+    ("users", "marketing_emails", "INTEGER NOT NULL DEFAULT 0"),
+    # Where they came from when they signed up: the utm_source of the link, or "referral".
+    ("users", "signup_source", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 # Indexes on columns added above, so made after them.
@@ -417,6 +559,9 @@ INDEXES = """
 CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_source ON posts(source) WHERE source IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_posts_companion_created ON posts(companion_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_kind_created ON posts(kind, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy ON users(legacy_id) WHERE legacy_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code) WHERE referral_code IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at);
 """
 
 

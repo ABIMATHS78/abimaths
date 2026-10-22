@@ -273,9 +273,17 @@ def find_users(q: str = "", user: dict = Admin):
         rows = [dict(r) for r in conn.execute(
             "SELECT * FROM users WHERE lower(email) LIKE ? OR lower(display_name) LIKE ? "
             "ORDER BY (role != 'learner') DESC, id LIMIT 50", (like, like))]
-    return [{"id": r["id"], "email": r["email"], "display_name": r["display_name"], "role": auth.role_of(r),
-             "fixed": r["email"].lower() in settings.admin_emails, "ai_allowance": r["ai_allowance"],
-             "ai": usage.status(r)} for r in rows]
+    from app import billing, plans  # imported here: billing uses this module
+
+    out = []
+    for r in rows:
+        plan = billing.view(r)
+        out.append({"id": r["id"], "email": r["email"], "display_name": r["display_name"], "role": auth.role_of(r),
+                    "fixed": r["email"].lower() in settings.admin_emails, "ai_allowance": r["ai_allowance"],
+                    "ai": usage.status(r), "plan": {"tier": plan["tier"], "name": plans.plan(plan["tier"]).name,
+                                                    "subscription": plan["subscription"], "grant": plan["grant"]},
+                    "imported": bool(r["legacy_id"]), "login_method": r["login_method"]})
+    return out
 
 
 class RoleChange(BaseModel):

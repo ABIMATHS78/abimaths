@@ -44,6 +44,18 @@ def _prices() -> dict:
     return out
 
 
+def _json_object(name: str) -> dict:
+    """An environment variable holding a JSON object, or {} (with a warning) if it holds anything else."""
+    try:
+        raw = json.loads(os.environ.get(name) or "{}")
+    except ValueError:
+        raw = None
+    if not isinstance(raw, dict):
+        log.warning("%s isn't a JSON object, so it's ignored", name)
+        return {}
+    return raw
+
+
 @dataclass
 class Settings:
     database_path: str = field(default_factory=lambda: os.environ.get("AIET_DATABASE", "ai_every_time.db"))
@@ -93,6 +105,26 @@ class Settings:
     # The education guides loaded at start-up (see app/guides.py): a file made by scripts/import_guides.py, by
     # default app/guides.json.gz. 0 loads none.
     guides: str = field(default_factory=lambda: os.environ.get("AIET_GUIDES", "").strip())
+    # Paying for plans, through Stripe (see app/billing.py). The secret key (sk_live_... or sk_test_..., or a restricted
+    # rk_ key) and the signing secret of the webhook endpoint Stripe sends events to, /api/billing/webhook (whsec_...).
+    stripe_secret_key: str = field(default_factory=lambda: os.environ.get("STRIPE_SECRET_KEY", "").strip())
+    stripe_webhook_secret: str = field(default_factory=lambda: os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip())
+    # The Stripe price for each plan and billing period, where it isn't the one with the lookup key aiet_<plan>_<period>
+    # (which `python -m app.billing setup` makes): {"plus_monthly": "price_...", ...}
+    stripe_prices: dict = field(default_factory=lambda: _json_object("AIET_STRIPE_PRICES"))
+    # Whether plans decide what learners can use: 1 on, 0 off. Unset, it's on once Stripe is set up.
+    paywall_mode: str = field(default_factory=lambda: os.environ.get("AIET_PAYWALL", "").strip())
+    # Daily AI requests on each plan while the paywall is on, where not the ones in app/plans.py: {"free": 15, ...}
+    plan_allowances: dict = field(default_factory=lambda: _json_object("AIET_PLAN_ALLOWANCES"))
+    # Guides a learner on the free plan can read in full each month.
+    free_guides: int = field(default_factory=lambda: _int("AIET_FREE_GUIDES", 5))
+    trial_days: int = field(default_factory=lambda: _int("AIET_TRIAL_DAYS", 7))
+    # Where the Teams plan's "Contact us" goes.
+    teams_email: str = field(default_factory=lambda: os.environ.get("AIET_TEAMS_EMAIL", "teams@aieverytime.org").strip())
+
+    @property
+    def paywall(self) -> bool:
+        return self.paywall_mode == "1" or (self.paywall_mode != "0" and bool(self.stripe_secret_key))
 
 
 settings = Settings()

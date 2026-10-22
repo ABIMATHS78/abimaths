@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import auth, catalog, companions, content, db, tutor, usage
+from app import auth, billing, catalog, companions, content, db, tutor, usage
 from app.curriculum import PATHS, PATHS_BY_ID, LearningPath, Lesson, find_lesson, lesson_brief, path_from_dict
 
 router = APIRouter(prefix="/api")
@@ -157,7 +157,10 @@ def lesson_context(user_id: int, companion_id: int, lesson_id: str) -> dict:
 
 
 def _material(user: dict, teacher: dict, source_type: str, source_ref: str) -> tuple[str, str, list[Lesson]]:
-    """Return (title, material text, lessons covered) for a study source the learner can see."""
+    """Return (title, material text, lessons covered) for a study source the learner can see, and open: a locked
+    part of a course, or a guide past the free ones, is a 402."""
+    if source_type in ("lesson", "path", "course"):
+        billing.require_course_item(user, source_ref)
     if source_type == "lesson":
         path, lesson = _lesson_or_404(user["id"], source_ref)
         text = brief(lesson)
@@ -181,6 +184,8 @@ def _material(user: dict, teacher: dict, source_type: str, source_ref: str) -> t
         if not post:
             raise HTTPException(404, "Post not found")
         companions.get_visible(post["companion_id"], user["id"])
+        if not billing.guide_access(user, post)["full"]:
+            raise billing.locked("guides")
         return post["title"], f"{post['title']}\n\n{post['body']}", []
     if source_type == "conversation":
         cid = int(source_ref) if source_ref.isdigit() else 0
@@ -249,6 +254,7 @@ MAX_CUSTOM_PATHS = 20
 
 @router.post("/custom-paths", status_code=201)
 async def create_custom_path(body: NewCustomPath, user: dict = User):
+    billing.require(user, "custom_paths")
     with db.connect() as conn:
         if conn.execute("SELECT COUNT(*) FROM custom_paths WHERE user_id = ?", (user["id"],)).fetchone()[0] >= MAX_CUSTOM_PATHS:
             raise HTTPException(409, f"You can have up to {MAX_CUSTOM_PATHS} custom paths. Delete one to make another.")
@@ -315,6 +321,7 @@ def delete_custom_path(path_id: str, user: dict = User):
 @router.get("/lessons/{lesson_id}")
 async def get_lesson(request: Request, lesson_id: str, companion_id: int | None = None, user: dict = User):
     path, lesson = _lesson_or_404(user["id"], lesson_id)
+    billing.require_course_item(user, lesson_id)
     teacher = teacher_for(user, companion_id, lesson_id)
     body = _cached_lesson(teacher["id"], lesson_id)
     # Writing a lesson spends an AI request on a GET, which a page on another site could make the
@@ -356,6 +363,7 @@ async def get_lesson(request: Request, lesson_id: str, companion_id: int | None 
 @router.post("/lessons/{lesson_id}/complete", status_code=204)
 def complete_lesson(lesson_id: str, user: dict = User):
     _lesson_or_404(user["id"], lesson_id)
+    billing.require_course_item(user, lesson_id)
     with db.connect() as conn:
         conn.execute("INSERT INTO lesson_progress (user_id, lesson_id, status, updated_at) VALUES (?, ?, 'completed', ?) "
                      "ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'completed', updated_at = excluded.updated_at",
@@ -408,6 +416,8 @@ def _assessment_row(user_id: int, assessment_id: int) -> dict:
 async def create_assessment(body: NewAssessment, user: dict = User):
     if body.kind == "exam" and body.source_type not in ("path", "course"):
         raise HTTPException(422, "Mock exams cover a whole learning path or course")
+    if body.kind == "exam":
+        billing.require(user, "exams")
     teacher = teacher_for(user, body.companion_id, body.source_ref if body.source_type in ("lesson", "path", "course") else None)
     title, material, lessons = _material(user, teacher, body.source_type, body.source_ref)
     exam = body.kind == "exam"
