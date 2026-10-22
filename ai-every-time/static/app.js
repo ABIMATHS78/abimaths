@@ -32,7 +32,11 @@ async function api(path, { method = "GET", body } = {}) {
       if (typeof data.detail === "string") msg = data.detail;
       else if (Array.isArray(data.detail)) msg = data.detail.map((d) => `${d.loc.slice(-1)[0]}: ${d.msg}`).join("; ");
     } catch {}
-    throw new Error(msg);
+    // Locked by the learner's plan (402), or out of AI requests where a bigger plan has more (429): the plan that
+    // would do. Something they clicked gets the offer at once; a page that wouldn't open shows its own.
+    const plan = res.headers.get("X-Plan-Needed");
+    if (plan && method !== "GET") offerPlan(msg, plan);
+    throw plan ? Object.assign(new Error(msg), { plan, status: res.status }) : new Error(msg);
   }
   const data = res.status === 204 ? null : await (res.headers.get("content-type")?.includes("json") ? res.json() : res.text());
   if (nav !== state.nav && method === "GET") throw new StaleView();
@@ -40,6 +44,7 @@ async function api(path, { method = "GET", body } = {}) {
 }
 
 function toast(msg) {
+  if (msg === toast.quiet) return;  // a dialog is saying it already
   const t = $("#toast");
   t.textContent = msg;
   t.classList.add("show");
@@ -188,7 +193,12 @@ async function streamChat(companionId, body, onText) {
     method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin",
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Couldn't send message");
+  if (!res.ok) {
+    const detail = (await res.json().catch(() => ({}))).detail || "Couldn't send message";
+    const plan = res.headers.get("X-Plan-Needed");
+    if (plan) offerPlan(detail, plan);
+    throw new Error(detail);
+  }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let acc = "";
@@ -378,8 +388,11 @@ async function disablePush() {
 /* ------------------------------------------------------------------- router */
 
 const routes = [
-  [/^#\/welcome$/, viewWelcome, false],
+  [/^#\/welcome(?:\?(.*))?$/, viewWelcome, false],
   [/^#\/reset\/([\w-]+)$/, viewReset, null],
+  [/^#\/pricing(?:\?(.*))?$/, viewPricing, null],
+  [/^#\/billing(?:\?(.*))?$/, viewBilling],
+  [/^#\/referral$/, viewReferral],
   [/^#\/onboarding$/, viewOnboarding],
   [/^#\/feed$/, viewFeed],
   [/^#\/guides(?:\?(.*))?$/, viewGuides],
@@ -401,7 +414,7 @@ const routes = [
   [/^#\/practice$/, viewPractice],
   [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
   [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(insights|reports|appeals|paths|roles|log))?$/, viewStaff],
+  [/^#\/staff(?:\/(insights|analytics|reports|appeals|paths|roles|campaigns|log))?$/, viewStaff],
 ];
 
 async function router() {
@@ -433,7 +446,8 @@ async function router() {
     if (!m) continue;
     if (needsAuth === true && !state.me) { location.hash = "#/welcome"; return; }
     if (needsAuth === false && state.me) { location.hash = "#/feed"; return; }
-    if (needsAuth === true && !state.me.onboarded && !/^#\/(onboarding|studio)/.test(hash)) { location.hash = "#/onboarding"; return; }
+    // Back from checkout (or on the way to it) before finishing setting up is fine; the rest waits for onboarding.
+    if (needsAuth === true && !state.me.onboarded && !/^#\/(onboarding|studio|billing|referral)/.test(hash)) { location.hash = "#/onboarding"; return; }
     try { await view(m); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
     window.scrollTo(0, 0);
     return;
@@ -444,7 +458,7 @@ window.addEventListener("hashchange", router);
 
 function shell(active, inner) {
   const nav = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["courses", "🎓", "Courses"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
-    ["companions", "🌍", "Companions"], ["profile", "👤", "Profile"]];
+    ["companions", "🌍", "Companions"], ["referral", "🎁", "Invite friends"], ["profile", "👤", "Profile"]];
   if (state.me?.role && state.me.role !== "learner") nav.push(["staff", "🛡️", "Staff"]);
   const primary = state.me?.primary_companion_id;
   app.innerHTML = `
@@ -458,7 +472,7 @@ function shell(active, inner) {
           <button type="button" class="install" id="installBtn" ${installPrompt ? "" : "hidden"}>📲 Install the app</button>
         </nav>
         <a href="#/feed" class="bell" id="bell" title="Reminders" hidden>🔔 <span></span></a>
-        <div class="me"><div><b>${esc(state.me.display_name)}</b><div class="muted small">${esc(state.me.level)}</div></div></div>
+        <div class="me"><div><b>${esc(state.me.display_name)}</b><div class="muted small">${esc(state.me.level)}</div>${planPill()}</div></div>
       </aside>
       <main class="main">${inner}</main>
     </div>`;
@@ -470,6 +484,7 @@ function shell(active, inner) {
     $("#installBtn")?.setAttribute("hidden", "");
   });
   refreshBell();
+  upgradeBanner($(".main"));
   return $(".main");
 }
 
@@ -487,7 +502,21 @@ async function refreshBell() {
 
 /* ------------------------------------------------------------------ welcome */
 
-async function viewWelcome() {
+/* The friend's code from an invite link, kept for a month in case they sign up later. */
+const REF_KEY = "aiet-ref";
+function inviteCode(fromLink) {
+  try {
+    if (fromLink) localStorage.setItem(REF_KEY, JSON.stringify({ code: fromLink, until: Date.now() + 30 * 86400000 }));
+    const kept = JSON.parse(localStorage.getItem(REF_KEY) || "null");
+    return kept && kept.until > Date.now() ? kept.code : null;
+  } catch { return fromLink || null; }
+}
+
+async function viewWelcome(m) {
+  const q = new URLSearchParams(m?.[1] || "");
+  const ref = inviteCode(/^[A-Za-z0-9]{6,12}$/.test(q.get("ref") || "") ? q.get("ref") : null);
+  // Where they came from (?utm_source=... before the #), for the analytics.
+  const source = new URLSearchParams(location.search).get("utm_source") || "";
   app.innerHTML = `
     <section class="landing">
       <div>
@@ -496,6 +525,7 @@ async function viewWelcome() {
         <p class="muted" style="font-size:18px">Follow, chat with and learn from always-available AI Learning Companions from around the world, each with their own face, voice and expertise. Or design your own companion, exactly the way you want it.</p>
         <div class="faces" id="faces"></div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
+        <p><a class="btn ghost" href="#/pricing">See plans and pricing</a></p>
       </div>
       <div class="card">
         <div class="tabs">
@@ -515,9 +545,14 @@ async function viewWelcome() {
           <label data-only="signup">What are you into? <span class="hint">Optional: hobbies, work, anything you love. Companions start your chats from it</span>
             <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
           </label>
+          <label class="check" data-only="signup"><input type="checkbox" name="marketing_emails"> Email me news and offers from AI Every Time. You can stop them any time.</label>
+          ${ref ? `<div class="small muted" data-only="signup">🎁 A friend invited you. Welcome!</div>` : ""}
           <div class="error" id="authErr"></div>
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
           <button type="button" class="linkbtn" id="forgotBtn" data-only="login" hidden>Forgot your password?</button>
+          <p class="muted small" data-only="login" hidden style="margin:0">Had an account on the old AI Every Time site? It's here, with your plan:
+            sign in with the same email and password. If you signed in with Google, Apple or Microsoft there, choose
+            <i>Forgot your password?</i> to set one.</p>
         </form>
       </div>
     </section>`;
@@ -538,12 +573,17 @@ async function viewWelcome() {
   $("#authForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
-    const body = tab === "signup" ? { ...f, timezone: deviceZone } : { email: f.email, password: f.password };
+    const body = tab === "signup"
+      ? { ...f, marketing_emails: !!f.marketing_emails, timezone: deviceZone, referral_code: ref, source }
+      : { email: f.email, password: f.password };
     $("#authErr").textContent = "";
     $("#authBtn").disabled = true;
     try {
       state.me = await api(`/api/auth/${tab}`, { method: "POST", body });
+      if (tab === "signup") try { localStorage.removeItem(REF_KEY); } catch {}
       if (tab === "signup" && state.me.email_available) toast("Welcome! We've emailed you a link to confirm your address.");
+      const pending = takeCheckout();  // a plan chosen on the pricing page before signing in
+      if (pending && tierRank(pending.tier) > tierRank(state.me.plan?.tier) && await choosePlan(pending.tier, pending.interval)) return;
       location.hash = state.me.onboarded ? "#/feed" : "#/onboarding";
     } catch (err) {
       $("#authErr").textContent = err.message;
@@ -938,8 +978,12 @@ async function viewPost(m) {
         <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${name} about this</a>
         ${engageButtons(post)}
       </div>
-      <div class="prose guide-body">${md(post.body)}</div>
-      <div class="card study" data-post="${post.id}">
+      <div class="prose guide-body${post.locked ? " faded" : ""}">${md(post.body)}</div>
+      ${post.locked ? `<div class="card stack paywall-card"><h3 style="margin:0">Keep reading with Digital</h3>
+        <p style="margin:0">You've read your ${post.guides.limit} free guides this month. Read every guide in full, and more, from ${esc(dollars(199))} a month.</p>
+        <div class="row"><a class="btn primary" href="#/pricing">See the plans</a><span class="muted small">Your free guides start again next month.</span></div></div>`
+      : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`} <a href="#/pricing">Read them all with Digital</a>.</p>` : ""}
+      <div class="card study" data-post="${post.id}"${post.locked ? " hidden" : ""}>
         <h3 style="margin:0">Study this ${post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post"}</h3>
         <div class="row">
           <button class="btn" data-study="quiz">📝 Quiz me</button>
@@ -1691,6 +1735,7 @@ async function viewProfile() {
         <div class="error" id="profErr"></div>
         <div class="row"><button class="btn primary">Save</button><button type="button" class="btn danger" id="logout">Sign out</button></div>
       </form>
+      <div class="card row spread" id="planCard"></div>
       <div class="card stack" id="aiCard"></div>
       <form class="card stack" id="remForm">
         <div><h2 style="margin:0">Reminders</h2>
@@ -1700,6 +1745,8 @@ async function viewProfile() {
         <div class="muted small" id="zoneLine" style="margin-top:-8px"></div>
         <label class="check"><input type="checkbox" name="email_reminders" ${me.email_available ? "" : "disabled"} ${me.email_reminders ? "checked" : ""}> Email me the daily reminder</label>
         <div class="muted small" id="emailLine" style="margin-top:-8px"></div>
+        <label class="check"><input type="checkbox" name="marketing_emails" ${me.marketing_emails ? "checked" : ""}> Email me news and offers from AI Every Time</label>
+        <div class="muted small" style="margin-top:-8px">New courses and features, and offers on plans and events, now and then. Only to an address you've confirmed; every email has a link to stop them.</div>
         <div class="error" id="remErr"></div>
         <div><button class="btn primary">Save reminders</button></div>
         <div class="push-box stack" id="pushBox"></div>
@@ -1754,6 +1801,11 @@ async function viewProfile() {
         + `<button type="button" class="textbtn" data-confirm>send a confirmation link</button>.</div>` : "");
   };
   renderAllowance();
+  const plan = me.plan;
+  $("#planCard").innerHTML = `<div><h2 style="margin:0">Your plan: ${esc(plan.name)}</h2>
+      <div class="muted small">${plan.subscription?.live ? `${esc(STATUS_TEXT[plan.subscription.status])}${plan.subscription.period_end ? ` · ${plan.subscription.cancel_at_period_end ? "ends" : "renews"} ${esc(longDate(plan.subscription.period_end))}` : ""}`
+        : plan.grant ? `Given to you${plan.grant.until ? ` until ${esc(longDate(plan.grant.until))}` : ""}` : plan.paywall ? "Upgrade for every guide, full courses and more AI requests." : "Everything is open while plans are being set up."}</div></div>
+    <a class="btn" href="#/billing">Plan and billing</a>`;
   main.addEventListener("click", async (e) => {  // both "send a confirmation link" buttons
     const b = e.target.closest("[data-confirm]");
     if (!b) return;
@@ -1781,7 +1833,7 @@ async function viewProfile() {
   renderEmail();
   $("#remForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const body = { reminder_hour: +e.target.reminder_hour.value };
+    const body = { reminder_hour: +e.target.reminder_hour.value, marketing_emails: e.target.marketing_emails.checked };
     if (state.me.email_available) body.email_reminders = e.target.email_reminders.checked;
     const wasOn = state.me.email_reminders;
     try {
@@ -2376,7 +2428,8 @@ function planForm(paths, minutes) {
 
 /* -------------------------------------------------------------------- staff */
 
-const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"], admin: ["insights", "reports", "appeals", "paths", "roles", "log"] };
+const ROLE_CAN = { moderator: ["reports", "appeals", "log"], reviewer: ["paths", "log"],
+  admin: ["analytics", "insights", "reports", "appeals", "paths", "roles", "campaigns", "log"] };
 const REASON_LABEL = { impersonation: "Impersonation", harmful: "Harmful", misleading: "Misleading", spam: "Spam", other: "Other" };
 const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -2384,13 +2437,15 @@ async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
   if (!tabs.length) { location.hash = "#/feed"; return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
-  const names = { insights: "Insights", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "People", log: "Decision log" };
+  const names = { analytics: "Analytics", insights: "AI usage", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "People",
+    campaigns: "Emails", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
     <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
-  await { insights: staffInsights, reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles, log: staffLog }[tab](body, m);
+  await { analytics: staffAnalytics, insights: staffInsights, reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles,
+    campaigns: staffCampaigns, log: staffLog }[tab](body, m);
 }
 
 /* Insights (admins): learners, how they learn, and the AI the site uses against its allowances. */
@@ -2649,16 +2704,17 @@ async function staffPaths(body, m) {
 async function staffRoles(body, m) {
   body.innerHTML = `
     <form class="card row" id="userSearch"><input type="text" name="q" placeholder="Search by name or email" aria-label="Search people" style="flex:1"><button class="btn">Search</button></form>
-    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Daily AI requests</th></tr></thead><tbody id="userRows"></tbody></table></div>
+    <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Plan</th><th>Daily AI requests</th></tr></thead><tbody id="userRows"></tbody></table></div>
     <p class="muted small">Moderators review reported companions. Reviewers check learner-made paths before they're shared. Admins can do both and assign roles.</p>
-    <p class="muted small">Give a learner an AI allowance of their own, for a class or a paid plan: the number of AI requests they can make in any 24 hours, or no limit. Leave the number empty for the usual allowance, then save.</p></div>`;
+    <p class="muted small">Give a learner a plan, such as Teams for each member of a team, until a day or for good. A plan they pay for carries on either way: they get the better of the two.</p>
+    <p class="muted small">Give a learner an AI allowance of their own, for a class: the number of AI requests they can make in any 24 hours, or no limit. Leave the number empty for their plan's allowance, then save.</p></div>`;
   const used = (ai) => `${ai.used.toLocaleString()} used${ai.limit === null ? "" : ` of ${ai.limit.toLocaleString()}`}`;
   const load = async (q = "") => {
     const users = await api(`/api/staff/users?q=${encodeURIComponent(q)}`);
     $("#userRows", body).innerHTML = users.map((u) => `<tr data-id="${u.id}"><td>${esc(u.display_name)}</td><td>${esc(u.email)}</td><td>
       ${u.fixed || u.id === state.me.id ? `${label(u.role)} <span class="muted small">(${u.fixed ? "set in server config" : "you"})</span>`
         : `<select data-role aria-label="Role for ${esc(u.display_name)}">${["learner", "reviewer", "moderator", "admin"].map((r) => `<option value="${r}" ${r === u.role ? "selected" : ""}>${label(r)}</option>`).join("")}</select>`}
-    </td><td>${u.role === "admin" ? `<span class="muted small">No limit (admin)</span>` : `
+    </td><td>${planCell(u)}</td><td>${u.role === "admin" ? `<span class="muted small">No limit (admin)</span>` : `
       <form class="row" data-allowance style="gap:8px;flex-wrap:nowrap">
         <input type="number" name="n" min="1" max="100000" step="1" inputmode="numeric" style="width:96px" placeholder="Usual"
           value="${u.ai_allowance || ""}" ${u.ai_allowance === 0 ? "disabled" : ""} aria-label="Daily AI requests for ${esc(u.display_name)}">
@@ -2669,6 +2725,10 @@ async function staffRoles(body, m) {
     </td></tr>`).join("");
   };
   $("#userSearch", body).addEventListener("submit", (e) => { e.preventDefault(); load(e.target.q.value); });
+  $("#userRows", body).addEventListener("click", (e) => {
+    const b = e.target.closest("[data-give]");
+    if (b) givePlan(b.closest("tr").dataset.id, b.dataset.name, () => load($("#userSearch", body).q.value));
+  });
   $("#userRows", body).addEventListener("change", async (e) => {
     if (e.target.name === "unlimited") { e.target.form.n.disabled = e.target.checked; return; }
     if (!e.target.matches("[data-role]")) return;  // allowances are saved with their button, not on every change
@@ -2678,6 +2738,7 @@ async function staffRoles(body, m) {
   });
   $("#userRows", body).addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!e.target.matches("[data-allowance]")) return;
     const f = e.target, n = f.n;
     // A typo leaves the box's value empty, which would otherwise mean "the usual allowance".
     if (!f.unlimited.checked && (n.validity.badInput || !n.checkValidity())) {
@@ -2695,6 +2756,36 @@ async function staffRoles(body, m) {
     f.querySelector("button").disabled = false;
   });
   await load();
+}
+
+/* A person's plan in the People list: what they pay for, what they were given, and a way to give one. */
+function planCell(u) {
+  const sub = u.plan.subscription, given = u.plan.grant;
+  const paid = sub && sub.live ? `${esc(sub.name)} <span class="muted small">${esc(STATUS_TEXT[sub.status] || sub.status)}${sub.manageable ? "" : u.imported ? ", from the old site" : ""}</span>` : "";
+  return `<div class="small">${esc(u.plan.name)}${u.imported ? ` <span class="chip" title="Brought over from the old site">old site</span>` : ""}</div>
+    ${paid && sub.name !== u.plan.name ? `<div class="small">Pays for ${paid}</div>` : paid ? `<div class="small muted">Paid · ${esc(STATUS_TEXT[sub.status] || sub.status)}</div>` : ""}
+    ${given ? `<div class="small muted">Given: ${esc(given.name)}${given.until ? ` until ${esc(longDate(given.until))}` : ""}</div>` : ""}
+    <button type="button" class="textbtn small" data-give data-name="${esc(u.display_name)}">${given ? "Change given plan" : "Give a plan"}</button>`;
+}
+
+function givePlan(id, name, done) {
+  showDialog(`<h2>Give ${esc(name)} a plan</h2>
+    <form id="giveForm" class="stack">
+      <label>Plan <select name="tier"><option value="">None (take back a given plan)</option>${["digital", "plus", "pro", "insider", "teams"].map((t) => `<option value="${t}">${PLAN_NAMES[t]}</option>`).join("")}</select></label>
+      <label>Until <span class="hint">The last day it lasts. Leave it empty for good.</span><input type="date" name="until"></label>
+      <label>Note <span class="hint">Shown to them, and in the decision log. For a team, its name.</span><input type="text" name="note" maxlength="200"></label>
+      <button class="btn primary">Save</button>
+    </form>`);
+  $("#giveForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    try {
+      await api(`/api/staff/users/${id}/plan`, { method: "POST", body: { tier: f.tier.value || null, until: f.until.value || null, note: f.note.value } });
+      $("#dialog").close();
+      toast(f.tier.value ? `${name} now has ${PLAN_NAMES[f.tier.value]}` : `${name}'s given plan was taken back`);
+      done();
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+  });
 }
 
 async function staffLog(body) {
@@ -2808,6 +2899,7 @@ async function viewCourses(m) {
         <input type="search" name="q" value="${esc(params.get("q") || "")}" placeholder="What do you want to learn? Try PyCharm, subnetting or RAG" aria-label="Search courses">
         <button class="btn primary">Search</button>
       </form>
+      ${cat.full_access ? "" : `<p class="small" style="margin:12px 0 0">The first module of every course is free. <a href="#/pricing">Plus</a> opens every module, lab and project, and the certificates.</p>`}
     </div>
     ${!filtering && going.length ? `<h2 class="section">Continue learning</h2><div class="course-grid">${going.map(courseCard).join("")}</div>` : ""}
     ${!filtering && cat.tracks.length ? `<h2 class="section">Professional Certificates and Specializations</h2>
@@ -2842,7 +2934,8 @@ function moduleBlock(c, mod, open) {
   const included = [plural2(n("lesson"), "lesson"), n("lab") && plural2(n("lab"), "lab"), plural2(n("quiz"), "quiz", "quizzes")].filter(Boolean).join(" · ");
   return `<details class="module"${open ? " open" : ""}>
     <summary>
-      <div><div class="muted small">Module ${mod.index} · ${duration(mod.minutes)} to complete</div><h3>${esc(mod.title)}</h3>
+      <div><div class="muted small">Module ${mod.index} · ${duration(mod.minutes)} to complete${mod.locked ? ` · <span class="lock">🔒 ${esc(c.access.plan)}</span>`
+        : c.access && !c.access.full ? ` · <span class="free-tag">Free</span>` : ""}</div><h3>${esc(mod.title)}</h3>
         <div class="small muted">${esc(mod.summary)}</div></div>
       <span class="muted small included">${included}</span>
     </summary>
@@ -2984,6 +3077,9 @@ async function viewCourse(m) {
     ${c.kind === "course" ? planBlock(c, kind) : ""}
     <section class="stack" id="modules">
       <h2 class="section">There ${c.syllabus.length === 1 ? "is 1 module" : `are ${c.syllabus.length} modules`} in this ${kind}</h2>
+      ${c.access && !c.access.full ? `<div class="card row spread access-note"><div><b>The first module is free.</b>
+        <div class="small muted">Every module, lab and project, and the certificate, come with ${esc(c.access.plan)} and the plans above it.</div></div>
+        <a class="btn primary" href="#/pricing">See the plans</a></div>` : ""}
       ${c.syllabus.map((mod, i) => moduleBlock(c, mod, i === 0)).join("")}
       ${c.project ? `<div class="card stack project-block"><div class="muted small">Capstone project · ${duration(c.project.minutes)}</div>
         <h3 style="margin:0">🏗️ ${esc(c.project.title)}</h3><div class="small muted">Put the whole ${kind} to work on a project of your own, scored by your instructor against a rubric.</div>
@@ -3162,7 +3258,8 @@ async function viewCoursePlayer(m) {
   if (idx < 0 && key !== "grades") { location.replace(`#/course/${slug}`); return; }
   const item = items[idx], prev = idx > 0 ? items[idx - 1] : null, next = idx >= 0 ? items[idx + 1] : null;
   const wide = matchMedia("(min-width: 981px)").matches;
-  const link = (i) => `<a href="#/course/${slug}/learn/${i.key}" class="${i.key === key ? "active" : ""}"><span class="st" title="${STATUS_WORDS[i.status]}">${ITEM_STATUS[i.status]}</span>
+  const shut = (i) => i.module?.locked || (i.type === "project" && c.access && !c.access.full);
+  const link = (i) => `<a href="#/course/${slug}/learn/${i.key}" class="${i.key === key ? "active" : ""}"><span class="st" title="${shut(i) ? "Locked" : STATUS_WORDS[i.status]}">${shut(i) ? "🔒" : ITEM_STATUS[i.status]}</span>
     <span><span class="t">${esc(i.title)}</span><span class="type">${{ lesson: "Lesson", lab: "Lab", quiz: "Quiz", project: "Project" }[i.type]} · ${duration(i.minutes)}</span></span></a>`;
   const main = shell("courses", `
     <div class="player-top">
@@ -3184,6 +3281,14 @@ async function viewCoursePlayer(m) {
     ${next ? `<a class="btn ghost" href="${go(next)}">${esc(short(next.title))} →</a>` : `<a class="btn ghost" href="#/course/${slug}/learn/grades">Grades →</a>`}</div>`;
   const ctx = { c, slug, item, next, nav, box, go };
   if (key === "grades") return playerGrades(ctx);
+  if (item.module?.locked || (item.type === "project" && c.access && !c.access.full)) {
+    box.innerHTML = `<div class="card stack paywall-card"><div class="muted small">🔒 ${esc(c.access.plan)} and up</div>
+      <h2 style="margin:0">${esc(item.title)}</h2>
+      <p style="margin:0">The first module of every course is free. This ${item.type === "project" ? "capstone project" : "part of the course"}, and every
+        module, lab and project after it, and the certificate, come with ${esc(c.access.plan)} and the plans above it.</p>
+      <div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div>${nav}</div>`;
+    return;
+  }
   await { lesson: playerLesson, lab: playerLab, quiz: playerQuiz, project: playerProject }[item.type](ctx);
 }
 
@@ -3468,5 +3573,507 @@ async function viewCertificate(m) {
     try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { prompt("Copy this link:", url); }
   });
 }
+
+/* -------------------------------------------------------- plans and billing */
+
+const TIER_ORDER = ["free", "digital", "plus", "pro", "insider", "teams"];
+const PLAN_NAMES = { free: "Free", digital: "Digital", plus: "Plus", pro: "Pro", insider: "Insider", teams: "Teams" };
+const tierRank = (t) => TIER_ORDER.indexOf(t || "free");
+const dollars = (cents) => `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const STATUS_TEXT = { active: "Active", trialing: "Free trial", past_due: "Payment failed: retrying", canceled: "Ended",
+  incomplete: "Waiting for payment", unpaid: "Unpaid", paused: "Paused" };
+const longDate = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+
+/* Something the learner reached for needs a plan they don't have: say so, with the way to it. */
+function offerPlan(message, plan) {
+  toast.quiet = message;  // the dialog says it; a toast saying it again is noise
+  setTimeout(() => { toast.quiet = null; }, 1500);
+  showDialog(`<h2>${plan in PLAN_NAMES ? `Unlock it with ${PLAN_NAMES[plan]}` : "Unlock more with a plan"}</h2><p>${esc(message)}</p>
+    <p><a class="btn primary" href="#/pricing" data-close>See the plans</a></p>`);
+}
+
+/* A plan chosen before signing in, to carry on to checkout with afterwards. */
+const CHECKOUT_KEY = "aiet-checkout";
+const rememberCheckout = (tier, interval) => { try { sessionStorage.setItem(CHECKOUT_KEY, JSON.stringify({ tier, interval })); } catch {} };
+function takeCheckout() {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(CHECKOUT_KEY) || "null");
+    sessionStorage.removeItem(CHECKOUT_KEY);
+    return v && v.tier in PLAN_NAMES ? v : null;
+  } catch { return null; }
+}
+
+/* Start paying for a plan, or switch to it from the one paid for. True once the page is on its way to checkout. */
+async function choosePlan(tier, interval, button) {
+  if (!state.me) {
+    rememberCheckout(tier, interval);
+    toast(`Create your account or sign in, then we'll take you to checkout for ${PLAN_NAMES[tier]}.`);
+    location.hash = "#/welcome";
+    return false;
+  }
+  const plan = state.me.plan;
+  if (!plan?.payments) { toast("Plans can't be bought just yet. Please check back soon."); return false; }
+  if (plan.subscription?.live && plan.subscription.manageable) { confirmChange(tier, interval); return false; }
+  if (button) button.disabled = true;
+  try {
+    const { url } = await api("/api/billing/checkout", { method: "POST", body: { tier, interval } });
+    location.href = url;  // Stripe's own checkout page
+    return true;
+  } catch (err) {
+    if (!(err instanceof StaleView)) toast(err.message);
+    if (button) button.disabled = false;
+    return false;
+  }
+}
+
+function confirmChange(tier, interval) {
+  const sub = state.me.plan.subscription;
+  if (sub.tier === tier && sub.interval === interval) { location.hash = "#/billing"; return; }
+  const up = tierRank(tier) > tierRank(sub.tier) || (tierRank(tier) === tierRank(sub.tier) && interval === "yearly");
+  showDialog(`<h2>Switch to ${PLAN_NAMES[tier]}, ${interval}?</h2>
+    <p>${up ? "It starts straight away, and you pay the difference for the rest of this billing period now."
+      : "It starts straight away, and the unused part of your current plan becomes credit on your next bill."}</p>
+    <p><button class="btn primary" id="confirmChange">Switch to ${PLAN_NAMES[tier]}</button></p>`);
+  $("#confirmChange").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      const plan = await api("/api/billing/change", { method: "POST", body: { tier, interval } });
+      state.me.plan = plan;
+      $("#dialog").close();
+      toast(plan.message || `You're on ${plan.name} now.`);
+      if (location.hash.startsWith("#/billing")) router(); else location.hash = "#/billing";
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); e.target.disabled = false; }
+  });
+}
+
+/* The plan pill in the sidebar, and the reminder to finish an upgrade that was started but not paid for. */
+function planPill() {
+  const p = state.me?.plan;
+  if (!p?.paywall || state.me.role === "admin") return "";  // admins can use everything
+  return `<a class="plan-pill" href="${p.tier === "free" ? "#/pricing" : "#/billing"}">${esc(p.name)} plan${p.tier === "free" ? " · Upgrade" : ""}</a>`;
+}
+
+const INTENT_HIDDEN = "aiet-upgrade-hidden";
+function upgradeBanner(main) {
+  const p = state.me?.plan, intent = p?.intended;
+  if (!intent || !p.payments || /^#\/(pricing|billing)/.test(location.hash)) return;
+  try { if (+localStorage.getItem(INTENT_HIDDEN) > Date.now()) return; } catch {}
+  const el = document.createElement("div");
+  el.className = "card upgrade-banner";
+  el.innerHTML = `<div><b>You chose ${esc(intent.name)}</b><div class="small muted">Finish checking out to unlock it${p.trial_available ? `, starting with a free trial` : ""}.</div></div>
+    <div class="row"><button class="btn primary" data-go>Finish upgrading</button><button class="btn ghost" data-hide aria-label="Hide for a day">Not now</button></div>`;
+  $("[data-go]", el).addEventListener("click", (e) => choosePlan(intent.tier, intent.interval, e.target));
+  $("[data-hide]", el).addEventListener("click", () => {
+    try { localStorage.setItem(INTENT_HIDDEN, String(Date.now() + 86400000)); } catch {}
+    el.remove();
+  });
+  main.prepend(el);
+}
+
+/* ------------------------------------------------------------------ pricing */
+
+const PRICING_FAQ = (d) => [
+  ["Can I cancel any time?", "Yes. Cancel from your Billing page and your plan carries on until the end of the period you've paid for, with no further charges. Your progress, certificates and companions stay with you."],
+  ["How does the free trial work?", `Your first paid plan starts with ${d.trial_days} days free. You add a card at checkout and are only charged when the trial ends; cancel before then and you pay nothing. There's one trial per account.`],
+  ["Can I switch plans?", "Any time, from your Billing page. Moving up starts straight away and you pay the difference for the rest of the billing period; moving down leaves the unused part as credit on your next bill."],
+  ["What counts as an AI request?", "Each chat reply, quiz, flashcard deck, summary and study plan, and each lesson the first time it's taught. Mock exams, learning paths designed for you and project reviews count as two. The allowance covers any 24 hours, so requests free up again through the day."],
+  ["What can I do for free?", `Chat with AI Learning Companions, follow learning paths, make quizzes, flashcards and study plans, read ${d.free_guides} education guides a month in full, and take the first module of every course.`],
+  ["I had a plan on the old AI Every Time site. Do I keep it?", "Yes, your plan came with you. Sign in with the same email address and password. If you signed in with Google, Apple or Microsoft there, choose Forgot your password on the sign-in page to set one."],
+  ["How does Teams work?", `Teams gives every member everything in Insider, on one invoice, at ${dollars(d.plans.find((p) => p.slug === "teams").monthly)} per member a month. Email ${d.teams_email} and we'll set it up for you.`],
+  ["Is my payment information safe?", "Payments are handled by Stripe, and AI Every Time never sees or stores your card number."],
+];
+
+async function viewPricing(m) {
+  const q = new URLSearchParams(m[1] || "");
+  if (q.get("checkout") === "cancelled") toast("Checkout cancelled. Nothing has changed.");
+  const d = await api("/api/plans");
+  let interval = q.get("interval") === "yearly" ? "yearly" : "monthly";
+  const me = state.me, current = me?.plan?.tier || null;
+  const best = Math.max(...d.plans.map((p) => p.yearly_saving));
+  const has = (p, f) => p.unlocks.includes(f);
+  const rows = [
+    ["AI requests a day", (p) => (p.ai_allowance === 0 ? "No limit" : fmt(p.ai_allowance))],
+    ["AI Learning Companions", () => true],
+    ["Learning paths, quizzes, flashcards and study plans", () => true],
+    ["Education guides", (p) => (has(p, "guides") ? "Every guide" : `${d.free_guides} a month`)],
+    ["Courses", (p) => (has(p, "courses") ? "Every module" : `First module`)],
+    ["Labs, projects and certificates", (p) => has(p, "courses")],
+    ["Mock exams", (p) => has(p, "exams")],
+    ["Learning paths designed for you", (p) => has(p, "custom_paths")],
+    ["Off AI Every Time events", (p) => (p.event_discount ? `${p.event_discount}%` : false)],
+    ["Complimentary GDAI 2026 pass", (p) => has(p, "event_pass")],
+    ["Free trial", (p) => (p.trial_days ? `${p.trial_days} days` : false)],
+  ];
+  const cell = (v) => (v === true ? `<span class="yes" aria-label="Included">✓</span>` : v === false ? `<span class="no" aria-label="Not included">–</span>` : esc(v));
+  const price = (p) => {
+    if (!p.monthly) return `<div class="price"><b>$0</b><span>forever</span></div>`;
+    const per = p.per_seat ? " per member" : "";
+    return interval === "yearly"
+      ? `<div class="price"><b>${dollars(p.yearly)}</b><span>a year${per}</span></div><div class="small muted">${dollars(p.yearly / 12)} a month, billed yearly · save ${p.yearly_saving}%</div>`
+      : `<div class="price"><b>${dollars(p.monthly)}</b><span>a month${per}</span></div><div class="small muted">or ${dollars(p.yearly)} a year, save ${p.yearly_saving}%</div>`;
+  };
+  const action = (p) => {
+    if (p.slug === "teams") return `<a class="btn" href="mailto:${esc(d.teams_email)}?subject=${encodeURIComponent("AI Every Time Teams")}">Contact us</a>`;
+    if (p.slug === current) return `<button class="btn" disabled>Your plan</button>`;
+    if (p.slug === "free") return me ? `<a class="btn" href="#/feed">Keep learning free</a>` : `<a class="btn" href="#/welcome">Start free</a>`;
+    if (!d.payments) return `<button class="btn" disabled>Coming soon</button>`;
+    const trial = p.trial_days && (!me || me.plan?.trial_available);
+    const live = me?.plan?.subscription?.live;
+    return `<button class="btn ${p.badge ? "primary" : ""}" data-plan="${p.slug}">${live ? `Switch to ${esc(p.name)}` : trial ? `Try ${p.trial_days} days free` : `Choose ${esc(p.name)}`}</button>`;
+  };
+  const render = () => `
+    <section class="pricing-hero">
+      <h1>Learn AI your way</h1>
+      <p>Start free with AI Learning Companions from around the world. Upgrade for every guide, full courses with certificates, and more time with your companions.</p>
+      <div class="interval" role="group" aria-label="Billing period">
+        <button type="button" class="${interval === "monthly" ? "on" : ""}" data-interval="monthly" aria-pressed="${interval === "monthly"}">Monthly</button>
+        <button type="button" class="${interval === "yearly" ? "on" : ""}" data-interval="yearly" aria-pressed="${interval === "yearly"}">Yearly <span class="save">save up to ${best}%</span></button>
+      </div>
+      ${d.paywall ? "" : `<p class="small">While plans are being set up, everything on AI Every Time is free.</p>`}
+    </section>
+    <section class="plan-grid">${d.plans.map((p) => `
+      <article class="card tier-card ${p.badge ? `badged ${p.slug}` : ""} ${p.slug === current ? "current" : ""}">
+        ${p.badge ? `<span class="plan-badge">${esc(p.badge)}</span>` : ""}
+        <h2>${esc(p.name)}</h2><p class="muted small tagline">${esc(p.tagline)}</p>
+        ${price(p)}
+        <div>${action(p)}</div>
+        <ul class="perks">${p.highlights.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>
+      </article>`).join("")}
+    </section>
+    <section class="card stack">
+      <h2 style="margin:0">Compare the plans</h2>
+      <div class="table-wrap"><table class="table compare"><thead><tr><th></th>${d.plans.map((p) => `<th>${esc(p.name)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(([name, f]) => `<tr><td>${esc(name)}</td>${d.plans.map((p) => `<td>${cell(f(p))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+      <p class="muted small" style="margin:0">Prices are in US dollars. Teams is priced per member.</p>
+    </section>
+    <section class="stack faq"><h2 class="section">Questions</h2>
+      ${PRICING_FAQ(d).map(([qn, a]) => `<details class="card"><summary>${esc(qn)}</summary><p>${esc(a)}</p></details>`).join("")}
+    </section>
+    <section class="pricing-hero final">
+      <h2>Start learning today</h2>
+      <p>Free to start, with no card needed. Upgrade whenever you're ready.</p>
+      ${me ? `<a class="btn primary" href="#/feed">Back to learning</a>` : `<a class="btn primary" href="#/welcome">Create your free account</a>`}
+    </section>`;
+  const page = me ? shell("pricing", `<div class="pricing" id="pricing"></div>`) : (app.innerHTML = `<div class="public-top">${logo(34)}
+      <div class="row"><a class="btn ghost" href="#/welcome">Sign in</a><a class="btn primary" href="#/welcome">Start free</a></div></div>
+      <main class="pricing public" id="pricing"></main>`, app);
+  const box = $("#pricing", page);
+  const draw = () => { box.innerHTML = render(); };
+  draw();
+  box.addEventListener("click", (e) => {
+    const iv = e.target.closest("[data-interval]");
+    if (iv) { interval = iv.dataset.interval; draw(); return; }
+    const b = e.target.closest("[data-plan]");
+    if (b) choosePlan(b.dataset.plan, interval, b);
+  });
+  document.title = "Plans and pricing · AI Every Time";
+}
+
+/* ------------------------------------------------------------------ billing */
+
+async function viewBilling(m) {
+  const q = new URLSearchParams(m[1] || "");
+  const session = q.get("checkout");
+  const main = shell("billing", `<h1>Plan and billing</h1><div class="stack" id="billing" style="max-width:720px"><div class="card empty">Loading…</div></div>`);
+  const box = $("#billing", main);
+  let plan;
+  if (session && /^cs_[A-Za-z0-9_]+$/.test(session)) {
+    box.innerHTML = `<div class="card empty">Checking your payment…</div>`;
+    try { plan = await api("/api/billing/checkout/confirm", { method: "POST", body: { session_id: session } }); }
+    catch (err) { if (err instanceof StaleView) throw err; toast(err.message); }
+    history.replaceState(null, "", "#/billing");  // the session's id isn't needed again
+    if (plan?.subscription?.live) toast(plan.subscription.status === "trialing" ? `Your ${plan.name} trial has started. Enjoy!` : `Welcome to ${plan.name}!`);
+  }
+  plan = plan || await api("/api/billing");
+  state.me.plan = plan;
+  const me = await api("/api/me").catch((err) => { if (err instanceof StaleView) throw err; return state.me; });
+  state.me = me;
+  const sub = plan.subscription, grant = plan.grant;
+  const features = { guides: "Every education guide", courses: "Every course in full, with labs, projects and certificates", exams: "Mock exams",
+    custom_paths: "Learning paths designed for you", event_pass: "A complimentary GDAI 2026 pass" };
+  const allowance = me.ai_allowance;
+  const subCard = sub ? `<div class="card stack">
+      <div class="row spread"><div><div class="muted small">Your paid plan</div><h2 style="margin:0">${esc(sub.name)} · ${sub.interval === "yearly" ? "yearly" : "monthly"}</h2></div>
+        <span class="chip status-${esc(sub.status)}">${esc(STATUS_TEXT[sub.status] || sub.status)}</span></div>
+      <div>${sub.amount != null ? `${dollars(sub.amount)} a ${sub.interval === "yearly" ? "year" : "month"}${sub.seats > 1 ? ` for ${sub.seats} members` : ""}` : ""}
+        ${sub.trial_end ? ` · free until ${esc(longDate(sub.trial_end))}` : ""}
+        ${sub.period_end && sub.live ? ` · ${sub.cancel_at_period_end ? "ends" : "renews"} on ${esc(longDate(sub.period_end))}` : ""}</div>
+      ${sub.status === "past_due" ? `<div class="alert">Your last payment didn't go through. Update your card so your plan carries on.</div>` : ""}
+      ${sub.cancel_at_period_end && sub.live ? `<div class="muted small">It's set to stop at the end of this period. You can keep it if you change your mind.</div>` : ""}
+      ${sub.manageable ? `<div class="row">
+          ${sub.live ? `<a class="btn" href="#/pricing">Change plan</a>` : `<a class="btn primary" href="#/pricing">Choose a plan</a>`}
+          <button class="btn" data-portal>Payment method and invoices</button>
+          ${sub.live ? (sub.cancel_at_period_end ? `<button class="btn primary" data-resume>Keep my plan</button>` : `<button class="btn ghost" data-cancel>Cancel plan</button>`) : ""}
+        </div>` : sub.live ? `<div class="muted small">This plan came over from the old AI Every Time site${plan.payments ? " and is being linked to your payment details" : ""}. It carries on as before.</div>` : ""}
+    </div>` : "";
+  box.innerHTML = `
+    <div class="card stack plan-now">
+      <div class="row spread"><div><div class="muted small">You're on</div><h2 style="margin:0">${esc(plan.name)}</h2></div>
+        ${plan.tier === "free" || plan.tier === "digital" ? `<a class="btn primary" href="#/pricing">See the plans</a>` : ""}</div>
+      ${plan.paywall ? `<ul class="perks"><li>AI Learning Companions, learning paths, quizzes, flashcards and study plans</li>
+        ${["guides", "courses", "exams", "custom_paths", "event_pass"].filter((f) => plan.unlocks.includes(f)).map((f) => `<li>${features[f]}</li>`).join("")}
+        ${plan.unlocks.includes("courses") ? "" : `<li>The first module of every course</li>`}
+        <li>${allowance.limit === null ? "No daily limit on AI requests" : `${fmt(allowance.limit)} AI requests a day`}</li>
+        ${plan.event_discount ? `<li>${plan.event_discount}% off AI Every Time events</li>` : ""}</ul>`
+        : `<p class="muted" style="margin:0">Everything on AI Every Time is open to you while plans are being set up.</p>`}
+      ${plan.guides ? `<div><div class="small">${plan.guides.left} of ${plan.guides.limit} free guides left this month</div>${bar(plan.guides.left, plan.guides.limit)}</div>` : ""}
+      ${me.onboarded ? "" : `<div><a class="btn primary" href="#/onboarding">Carry on setting up your account</a></div>`}
+    </div>
+    ${subCard}
+    ${grant ? `<div class="card stack"><div class="muted small">Given to you</div><h3 style="margin:0">${esc(grant.name)}${grant.until ? ` until ${esc(longDate(grant.until))}` : ""}</h3>
+      ${grant.note ? `<div class="muted small">${esc(grant.note)}</div>` : ""}</div>` : ""}
+    ${plan.intended && plan.payments ? `<div class="card row spread"><div>You chose <b>${esc(plan.intended.name)}</b> but didn't finish checking out.</div>
+      <button class="btn primary" data-finish>Finish upgrading</button></div>` : ""}
+    <a class="card row spread invite-card" href="#/referral"><div><b>🎁 Invite three friends, get a month of Plus free</b>
+      <div class="small muted">Share your link from the Invite friends page.</div></div><span aria-hidden="true">→</span></a>
+    <p class="muted small">Payments are handled by Stripe; AI Every Time never sees your card number.${plan.payments ? "" : " Plans can't be bought on this server just yet."}</p>`;
+  box.addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.matches("[data-finish]")) { choosePlan(plan.intended.tier, plan.intended.interval, b); return; }
+    if (b.matches("[data-cancel]")) {
+      showDialog(`<h2>Cancel ${esc(sub.name)}?</h2><p>It stays until ${esc(longDate(sub.period_end || sub.trial_end || new Date().toISOString()))}, then you're on the free plan. You won't be charged again. Your progress, certificates and companions stay.</p>
+        <p><button class="btn danger" id="confirmCancel">Cancel at the end of the period</button></p>`);
+      $("#confirmCancel").addEventListener("click", async (ev) => {
+        ev.target.disabled = true;
+        try { state.me.plan = await api("/api/billing/cancel", { method: "POST" }); $("#dialog").close(); toast("Your plan will stop at the end of this period."); router(); }
+        catch (err) { if (!(err instanceof StaleView)) toast(err.message); ev.target.disabled = false; }
+      });
+      return;
+    }
+    b.disabled = true;
+    try {
+      if (b.matches("[data-resume]")) { state.me.plan = await api("/api/billing/resume", { method: "POST" }); toast("Your plan will carry on."); router(); }
+      if (b.matches("[data-portal]")) { const { url } = await api("/api/billing/portal", { method: "POST" }); location.href = url; }
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); b.disabled = false; }
+  });
+}
+
+/* ----------------------------------------------------------------- referral */
+
+async function viewReferral() {
+  const r = await api("/api/referrals");
+  const main = shell("referral", `<h1>Invite friends</h1><div class="stack" id="ref" style="max-width:720px"></div>`);
+  const box = $("#ref", main);
+  const draw = (r) => {
+    box.innerHTML = `
+      <div class="card stack">
+        <p style="margin:0">For every <b>${r.per_reward} friends</b> who join with your link and confirm their email address, you get <b>${esc(r.reward.charAt(0).toLowerCase() + r.reward.slice(1))}</b>.</p>
+        <div class="row link-row"><input type="text" readonly value="${esc(r.link)}" aria-label="Your invite link" id="refLink">
+          <button class="btn primary" id="copyRef">Copy link</button>${navigator.share ? `<button class="btn" id="shareRef">Share</button>` : ""}</div>
+        <div><div class="small">${r.toward_next} of ${r.per_reward} friends toward your next free month</div>${bar(r.toward_next, r.per_reward)}</div>
+        ${r.to_claim ? `<div class="alert good row spread"><span>🎉 You've earned ${r.to_claim === 1 ? "a free month" : `${r.to_claim} free months`} of Plus.</span>
+          <button class="btn primary" id="claim">Claim it</button></div>` : ""}
+        ${r.earned ? `<div class="muted small">${plural(r.earned, "reward")} earned so far.</div>` : ""}
+      </div>
+      <div class="card stack"><h2 style="margin:0">Friends you've invited</h2>
+        ${r.invites.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Friend</th><th>Joined</th><th>Status</th></tr></thead><tbody>
+          ${r.invites.map((i) => `<tr><td>${esc(i.name)} <span class="muted small">${esc(i.email)}</span></td><td class="small">${esc(longDate(i.joined_at))}</td>
+            <td>${{ subscribed: "✅ Subscribed", joined: "✅ Joined", unconfirmed: "⏳ Waiting for them to confirm their email" }[i.status]}</td></tr>`).join("")}
+        </tbody></table></div>` : `<div class="empty">No one yet. Share your link to get started.</div>`}
+      </div>`;
+    $("#copyRef", box).addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(r.link); toast("Link copied"); } catch { $("#refLink", box).select(); }
+    });
+    $("#shareRef", box)?.addEventListener("click", () => navigator.share({ title: "AI Every Time",
+      text: "Learn AI with companions from around the world. Join me on AI Every Time:", url: r.link }).catch(() => {}));
+    $("#claim", box)?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        const next = await api("/api/referrals/claim", { method: "POST" });
+        toast(next.message);
+        state.me = await api("/api/me");
+        draw(next);
+      } catch (err) { if (!(err instanceof StaleView)) toast(err.message); e.target.disabled = false; }
+    });
+  };
+  draw(r);
+}
+
+/* ------------------------------------------------------- analytics (admins) */
+
+/* One series by day as thin columns from one baseline, the peak labelled, with a tooltip on each day. Long
+   periods label every week on the axis rather than every day. */
+function seriesChart(points, value, { format = fmt, describe }) {
+  const values = points.map(value), max = Math.max(...values), step = niceStep(max || 1), top = Math.ceil((max || 1) / step) * step;
+  const peak = values.indexOf(max), every = points.length > 31 ? 14 : points.length > 16 ? 7 : 1;
+  return `<div class="colchart">
+    <div class="plot">
+      ${Array.from({ length: top / step + 1 }, (_, i) => `<div class="gridline${i ? "" : " base"}" style="bottom:${(100 * i * step) / top}%"><span>${format(i * step)}</span></div>`).join("")}
+      <div class="cols">${points.map((p, i) => `<button type="button" class="col" data-i="${i}" aria-label="${esc(describe(p).join(": "))}">
+        <span class="colbar" style="height:${(100 * values[i]) / top}%">${i === peak && max > 0 ? `<span class="collabel">${format(max)}</span>` : ""}</span></button>`).join("")}</div>
+    </div>
+    <div class="xaxis" aria-hidden="true">${points.map((p, i) => `<span>${(points.length - 1 - i) % every ? "" : esc(utcDate(p.day, { day: "numeric", month: every > 1 ? "short" : undefined }))}</span>`).join("")}</div>
+    <div class="charttip" hidden></div>
+  </div>`;
+}
+
+function wireSeries(chart, points, describe) {
+  const tip = $(".charttip", chart);
+  const show = (col) => {
+    const [main, sub] = describe(points[+col.dataset.i]), b = document.createElement("b"), when = document.createElement("div");
+    b.textContent = main;
+    when.className = "muted";
+    when.textContent = sub;
+    tip.replaceChildren(b, when);
+    tip.hidden = false;
+    const box = chart.getBoundingClientRect(), r = col.getBoundingClientRect(), barTop = col.firstElementChild.getBoundingClientRect().top;
+    const half = tip.offsetWidth / 2;
+    tip.style.left = `${Math.min(Math.max(r.left + r.width / 2 - box.left, half), box.width - half)}px`;
+    tip.style.top = `${Math.min(barTop, r.bottom - 6) - box.top - 8}px`;
+  };
+  chart.addEventListener("pointerover", (e) => { const col = e.target.closest(".col"); if (col) show(col); });
+  chart.addEventListener("focusin", (e) => { const col = e.target.closest(".col"); if (col) show(col); });
+  chart.addEventListener("pointerleave", () => { if (!chart.contains(document.activeElement)) tip.hidden = true; });
+  chart.addEventListener("focusout", () => { tip.hidden = true; });
+}
+
+const EVENT_NAMES = { new: "New paid plans", upgrade: "Upgrades", downgrade: "Downgrades", cancel: "Cancellations", reactivate: "Came back" };
+
+async function staffAnalytics(body, m) {
+  const days = [7, 30, 90].includes(state.analyticsDays) ? state.analyticsDays : 30;
+  const a = await api(`/api/staff/analytics?days=${days}`);
+  const o = a.overview, s = a.subscriptions, conv = a.conversations, ref = a.referrals;
+  const tile = (value, label, sub = "") => `<div class="card tile"><div class="big">${value}</div><div class="small">${label}</div>${sub ? `<div class="muted small">${sub}</div>` : ""}</div>`;
+  const usd = (c) => money(c / 100);
+  const charts = [];
+  const chart = (id, title, note, points, value, opts) => {
+    charts.push([id, points, opts.describe]);
+    const total = points.reduce((t, p) => t + value(p), 0);
+    return `<div class="card stack" id="${id}"><div><h3 style="margin:0">${title}</h3><div class="muted small">${note}</div></div>
+      ${total ? seriesChart(points, value, opts) : `<div class="empty">Nothing in this period.</div>`}
+      <details><summary>Show as a table</summary><div class="table-wrap"><table class="table num"><thead><tr><th>Day</th><th>${title}</th></tr></thead>
+        <tbody>${points.map((p) => `<tr><td>${esc(longDay(p.day))}</td><td>${(opts.format || fmt)(value(p))}</td></tr>`).join("")}</tbody></table></div></details></div>`;
+  };
+  const paidTiers = s.tiers.filter((t) => t.tier !== "free");
+  const free = s.tiers.find((t) => t.tier === "free");
+  const eventDays = s.days.map((d) => ({ day: d.day, n: Object.keys(EVENT_NAMES).reduce((t, k) => t + d[k], 0), ...d }));
+  body.innerHTML = `
+    <div class="row spread"><div class="tabs" role="group" aria-label="Period" style="margin:0">${[7, 30, 90].map((n) =>
+      `<button class="btn ${n === days ? "on" : ""}" data-days="${n}">Last ${n} days</button>`).join("")}</div>
+      <span class="muted small">Updated ${esc(timeAgo(a.generated_at))}${a.paywall ? "" : " · The paywall is off, so plans don't limit anyone yet"}</span></div>
+    <div class="tiles">
+      ${tile(fmt(o.users), "learners", `${fmt(o.new_users)} new in this period`)}
+      ${tile(fmt(o.paying), "paying members", `${fmt(o.trialing)} on a free trial · ${fmt(o.given_plans)} with a given plan`)}
+      ${tile(usd(o.mrr), "monthly recurring revenue", "yearly plans counted as a twelfth")}
+      ${tile(usd(o.revenue), "revenue in this period", `${usd(o.revenue_all_time)} since payments started here`)}
+      ${tile(fmt(o.checkouts_unfinished), "checkouts not finished", "chose a plan but didn't pay")}
+      ${tile(fmt(o.active_learners), "learners who studied", `in the last ${days} days`)}
+    </div>
+    <div class="two-col">
+      ${chart("chUsers", "New learners", "Accounts made each day (UTC days).", a.growth, (p) => p.new,
+        { describe: (p) => [plural(p.new, "new learner"), `${longDay(p.day)} · ${fmt(p.total)} in all`] })}
+      ${chart("chRevenue", "Revenue", "Paid invoices each day, less refunds, in US dollars.", a.revenue.days, (p) => (p.payments + p.refunds) / 100,
+        { format: (v) => money(v), describe: (p) => [money((p.payments + p.refunds) / 100), `${longDay(p.day)}${p.refunds ? ` · ${money(-p.refunds / 100)} refunded` : ""}`] })}
+    </div>
+    <h2 class="section">Plans</h2>
+    <div class="two-col">
+      <div class="card stack"><div><h3 style="margin:0">Members on each paid plan</h3>
+        <div class="muted small">The plan each learner can use now, paid for or given. ${fmt(free.users)} ${free.users === 1 ? "learner is" : "learners are"} on the free plan.</div></div>
+        ${paidTiers.some((t) => t.users) ? rankBars(paidTiers.map((t) => ({ label: t.name, value: t.users }))) : `<div class="empty">No one is on a paid plan yet.</div>`}
+        <div class="row small">${Object.entries(s.statuses).map(([k, n]) => `<span class="chip">${esc(STATUS_TEXT[k] || k)}: ${fmt(n)}</span>`).join("")}
+          <span class="chip">Monthly: ${fmt(s.intervals.monthly)}</span><span class="chip">Yearly: ${fmt(s.intervals.yearly)}</span></div>
+      </div>
+      <div class="card stack"><div><h3 style="margin:0">Revenue by plan</h3><div class="muted small">In this period, in US dollars.</div></div>
+        ${a.revenue.by_tier.length ? rankBars(a.revenue.by_tier.map((r) => ({ label: PLAN_NAMES[r.tier] || "Unknown", value: Math.round(r.amount) / 100 })))
+          : `<div class="empty">No payments in this period.</div>`}
+      </div>
+    </div>
+    <div class="tiles">${Object.entries(EVENT_NAMES).map(([k, name]) => tile(fmt(s.period[k]), name.toLowerCase(), `in the last ${days} days`)).join("")}</div>
+    ${chart("chEvents", "Plan changes", "New plans, upgrades, downgrades, cancellations and returns, each day.", eventDays, (p) => p.n,
+      { describe: (p) => [plural(p.n, "plan change"), `${longDay(p.day)} · ${Object.entries(EVENT_NAMES).filter(([k]) => p[k]).map(([k, n]) => `${n.toLowerCase()}: ${p[k]}`).join(", ") || "none"}`] })}
+    <div class="two-col">
+      <div class="card stack"><h3 style="margin:0">Moves between plans</h3>
+        ${s.flows.length ? `<div class="table-wrap"><table class="table num"><thead><tr><th>From</th><th>To</th><th>Change</th><th>Learners</th></tr></thead><tbody>
+          ${s.flows.map((f) => `<tr><td>${esc(PLAN_NAMES[f.from_tier])}</td><td>${esc(PLAN_NAMES[f.to_tier])}</td><td>${esc(EVENT_NAMES[f.event_type])}</td><td>${fmt(f.count)}</td></tr>`).join("")}
+        </tbody></table></div>` : `<div class="empty">No changes in this period.</div>`}</div>
+      <div class="card stack"><h3 style="margin:0">Latest plan changes</h3>
+        ${s.recent.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Learner</th><th>Change</th></tr></thead><tbody>
+          ${s.recent.map((e) => `<tr><td class="muted small">${esc(timeAgo(e.when))}</td><td>${esc(e.name)}</td><td class="small">${esc(PLAN_NAMES[e.from])} → ${esc(PLAN_NAMES[e.to])}
+            <span class="muted">(${esc({ import: "old site", stripe: "Stripe", admin: "given by an admin", referral: "referral reward" }[e.source] || e.source)})</span></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">None yet.</div>`}</div>
+    </div>
+    <div class="card stack"><h3 style="margin:0">Latest payments</h3>
+      ${a.revenue.recent.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>When</th><th>Learner</th><th>Plan</th><th class="num">Amount</th></tr></thead><tbody>
+        ${a.revenue.recent.map((r) => `<tr><td class="muted small">${esc(timeAgo(r.when))}</td><td>${esc(r.name)} <span class="muted small">${esc(r.email)}</span></td>
+          <td>${esc(PLAN_NAMES[r.tier] || "–")}${r.interval ? ` <span class="muted small">${esc(r.interval)}</span>` : ""}</td>
+          <td class="num">${r.kind === "refund" ? "Refund " : ""}${esc(dollars(r.amount))} ${esc((r.currency || "").toUpperCase())}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">No payments yet. They appear here as Stripe reports them.</div>`}</div>
+    <h2 class="section">Conversations</h2>
+    <div class="tiles">
+      ${tile(fmt(conv.threads), "conversations", "a learner and a companion")}
+      ${tile(fmt(conv.messages), "messages in all", "learners' and companions'")}
+      ${tile(fmt(conv.messages_in_period), "questions asked", `in the last ${days} days`)}
+      ${tile(fmt(conv.learners_in_period), "learners chatting", `in the last ${days} days`)}
+    </div>
+    <div class="two-col">
+      ${chart("chMessages", "Questions asked", "Learners' messages to companions each day. What they wrote isn't shown here.", conv.days, (p) => p.messages,
+        { describe: (p) => [plural(p.messages, "question"), longDay(p.day)] })}
+      <div class="card stack"><div><h3 style="margin:0">Companions asked the most</h3><div class="muted small">In this period.</div></div>
+        ${conv.top_companions.length ? rankBars(conv.top_companions.map((c) => ({ label: `${c.name} ${c.flag || ""}`, value: c.messages }))) : `<div class="empty">No conversations in this period.</div>`}</div>
+    </div>
+    <h2 class="section">Referrals, email and the move from the old site</h2>
+    <div class="tiles">
+      ${tile(fmt(ref.invites), "friends invited", `${fmt(ref.counted)} confirmed · ${fmt(ref.subscribed)} subscribed`)}
+      ${tile(fmt(ref.rewards_earned), "free months earned", `${fmt(ref.rewards_claimed)} claimed`)}
+      ${tile(fmt(a.email.agreed_to_news), "agreed to news and offers", Object.entries(a.email.sent).map(([k, n]) => `${fmt(n)} ${k.replace("_", " ")}`).join(" · ") || "no emails sent in this period")}
+      ${tile(fmt(a.imported.accounts), "accounts from the old site", `${fmt(a.imported.signed_in_here)} have signed in here · ${fmt(a.imported.without_password)} need to set a password`)}
+    </div>
+    ${ref.top.length ? `<div class="card stack"><h3 style="margin:0">Top inviters</h3>${rankBars(ref.top.map((t) => ({ label: t.name, value: t.counted })))}</div>` : ""}
+    <div class="card stack"><h3 style="margin:0">Where new learners came from</h3>
+      ${Object.keys(a.email.signups_by_source).length ? rankBars(Object.entries(a.email.signups_by_source).map(([k, n]) => ({ label: k === "old-site" ? "old site" : k, value: n })))
+        : `<div class="empty">No sign-ups in this period.</div>`}</div>`;
+  for (const [id, points, describe] of charts) {
+    const el = $(`#${id} .colchart`, body);
+    if (el) wireSeries(el, points, describe);
+  }
+  $$("[data-days]", body).forEach((b) => b.addEventListener("click", () => {
+    state.analyticsDays = +b.dataset.days;
+    body.style.opacity = ".6";  // the old numbers stay while the new ones load
+    staffAnalytics(body, m).finally(() => { body.style.opacity = ""; });
+  }));
+}
+
+/* --------------------------------------------------------- campaigns (admins) */
+
+async function staffCampaigns(body) {
+  const c = await api("/api/staff/campaigns");
+  body.innerHTML = `
+    <form class="card stack" id="campForm">
+      <div><h2 style="margin:0">Email learners</h2><div class="muted small">Only learners who said yes to news and offers, and confirmed their address, get it.
+        Each email can be stopped in one click. It goes out a batch every quarter of an hour.</div></div>
+      ${c.email_available ? "" : `<div class="alert">Email isn't set up on this server, so nothing can be sent.</div>`}
+      <label>Who to send it to <select name="audience">
+        <option value="free">Learners on the free plan (${fmt(c.audiences.free)})</option>
+        <option value="everyone">Every learner (${fmt(c.audiences.everyone)})</option></select></label>
+      <label>Subject <input type="text" name="subject" maxlength="150" required minlength="3"></label>
+      <label>Message <span class="hint">Paragraphs separated by a blank line. A button to open AI Every Time is added at the end.</span>
+        <textarea name="body" rows="8" maxlength="5000" required minlength="10"></textarea></label>
+      <div class="row"><button class="btn" data-test ${c.email_available ? "" : "disabled"}>Send me a test</button>
+        <button class="btn primary" ${c.email_available ? "" : "disabled"}>Send to learners</button></div>
+    </form>
+    <div class="card stack"><h3 style="margin:0">Emails sent</h3>
+      ${c.campaigns.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Subject</th><th>To</th><th>Sent</th><th>By</th><th>Started</th></tr></thead><tbody>
+        ${c.campaigns.map((x) => `<tr><td>${esc(x.subject)}</td><td class="small">${x.audience === "free" ? "Free plan" : "Everyone"}</td>
+          <td class="small">${fmt(x.sent)}${x.finished_at ? "" : " · sending"}</td><td class="small">${esc(x.created_by || "–")}</td><td class="muted small">${esc(timeAgo(x.created_at))}</td></tr>`).join("")}
+      </tbody></table></div>` : `<div class="empty">None yet.</div>`}
+      <p class="muted small" style="margin:0">Learners who chose a plan without paying get a reminder a day later, and learners on the free plan a short weekly series in their first weeks, while payments are set up. Both only with their yes to news and offers.</p>
+    </div>`;
+  const form = $("#campForm", body);
+  const send = async (test, button) => {
+    if (!form.reportValidity()) return;
+    const f = Object.fromEntries(new FormData(form));
+    if (!test && !confirm(`Send “${f.subject}” to ${f.audience === "free" ? "learners on the free plan" : "every learner"} who agreed to news and offers?`)) return;
+    button.disabled = true;
+    try {
+      const r = await api("/api/staff/campaigns", { method: "POST", body: { ...f, test } });
+      toast(test ? "Test sent to you" : `On its way to ${plural(r.audience, "learner")}`);
+      if (!test) staffCampaigns(body);
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+    button.disabled = false;
+  };
+  form.addEventListener("submit", (e) => { e.preventDefault(); send(false, e.submitter || $("button.primary", form)); });
+  $("[data-test]", form).addEventListener("click", (e) => { e.preventDefault(); send(true, e.target); });
+}
+
 
 router();
