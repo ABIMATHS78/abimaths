@@ -1,0 +1,987 @@
+{
+  "slug": "sre-reliability-practices",
+  "title": "Site Reliability Engineering: SLOs, Error Budgets and Incidents",
+  "subtitle": "Run services by the numbers: SLIs, SLOs and error budgets, burn-rate alerts, toil and on-call, incident response and postmortems, capacity, safe releases and chaos experiments.",
+  "category": "Cloud & DevOps",
+  "kind": "course",
+  "level": "intermediate",
+  "instructors": [
+    "lachlanee-mitchell",
+    "rodrigoo-silva"
+  ],
+  "skills": [
+    "Service level objectives",
+    "Error budgets",
+    "Burn-rate alerting",
+    "Toil reduction",
+    "On-call design",
+    "Incident command",
+    "Blameless postmortems",
+    "Capacity planning",
+    "Progressive delivery",
+    "Chaos engineering"
+  ],
+  "tools": [
+    "Python",
+    "pandas",
+    "pytest",
+    "FastAPI",
+    "uvicorn",
+    "httpx"
+  ],
+  "outcomes": [
+    "Define SLIs from user journeys and set SLOs with targets, windows and a documented rationale",
+    "Calculate error budgets and burn rates, write an error budget policy and design multiwindow burn-rate alerts",
+    "Measure toil and on-call load, and automate operational tasks so that they're idempotent, safe and tested",
+    "Run an incident with clear roles and communication, build a UTC timeline and write a blameless postmortem",
+    "Plan capacity with headroom, gate canary releases statistically and run chaos experiments with abort conditions"
+  ],
+  "prerequisites": "Python and the command line at the level of Python Scripting and Linux for DevOps; pandas basics help. Observability with Prometheus, Grafana and OpenTelemetry is a good companion for the monitoring side, and CI/CD and Automated Testing for releases. You need Python 3.10 or later with pandas, numpy, pytest, fastapi, uvicorn and httpx.",
+  "description": "Reliability isn't an accident or a heroic effort; it's a set of numbers and practices a team agrees and keeps. This course teaches site reliability engineering through one checkout service and its month of traffic. You'll choose SLIs and set SLOs from real measurements, turn them into error budgets, write the policy for when the budget runs out, and replay the month through alerting rules to see why multiwindow, multi-burn-rate alerts page quickly for real problems and stay quiet otherwise. You'll measure a team's toil and on-call load, and build automation that's safe by default, idempotent and tested.\n\nThen you'll handle what goes wrong: run an incident with clear roles, rebuild its timeline in UTC from logs, alerts and chat, measure what it cost in budget, and write a blameless postmortem. The last module plans capacity with queueing maths and headroom, judges canary releases with a statistical test, and runs a chaos experiment on two local services with a hypothesis and abort conditions. Every lab was run, and its checks quote the real output. Observability with Prometheus, Grafana and OpenTelemetry implements the alerts in PromQL, and Incident Response Fundamentals covers the extra steps that security incidents need.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "SLIs and SLOs: defining reliability",
+      "summary": "Reliability as users experience it: why 100% is the wrong target, how to choose service level indicators, and how to set objectives worth keeping.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Reliability as a feature, and why 100% is wrong",
+          "minutes": 12,
+          "objectives": [
+            "Explain what site reliability engineering is and how it balances reliability with change",
+            "Calculate the downtime an availability target allows"
+          ],
+          "key_points": [
+            "Site reliability engineering (SRE), which began at Google, applies software engineering to operations: reliability is a feature that's specified, measured and engineered like any other, by people who also write code.",
+            "Every extra nine costs more and is worth less: users can't tell 99.99% from 100% through their own networks and devices, while the redundancy, engineering and slower releases needed to get there are real costs.",
+            "Downtime per window is (1 − target) × window: 99.9% allows 43.2 minutes in 30 days (40.3 in 28), 99.95% allows 21.6 minutes and 99.99% only 4.3, far too little for anyone to respond to by hand.",
+            "A service that needs several dependencies in series can be no more available than their product: three at 99.9% each leave at most about 99.7% before its own failures, unless it degrades gracefully when one of them fails.",
+            "The target balances two goods: the reliability users need and the speed of change the business needs. Setting it explicitly turns arguments between development and operations into a shared, measurable decision."
+          ]
+        },
+        {
+          "title": "Choosing service level indicators",
+          "minutes": 13,
+          "objectives": [
+            "Write an SLI as a ratio of good events to valid events",
+            "Choose where and how to measure an SLI"
+          ],
+          "key_points": [
+            "A service level indicator (SLI) is the proportion of valid events that were good, between 0 and 100%: for example, successful checkout requests divided by all checkout requests over a window.",
+            "Choose SLIs from what users do: availability and latency for request-driven services, freshness and correctness for data pipelines, durability for storage. Each important user journey, such as search or checkout, gets a few SLIs, not dozens.",
+            "Define good and valid precisely, and write it down: is a 4xx the client's mistake or the service's, does a 429 from the service's own rate limiter count against it, are health checks and probes excluded? A 5xx is almost always bad.",
+            "Measure latency as a threshold SLI, the share of requests faster than, say, 300 ms, rather than an average, which hides the slow tail. With histogram metrics, put a bucket boundary exactly at the threshold.",
+            "Measure as close to users as you can: load balancer logs see failures servers never record, client telemetry also sees the network, and synthetic probes cover quiet periods; each has blind spots.",
+            "Request-based SLIs weight every request equally, so a night-time outage at low traffic costs little; time-based SLIs count good minutes, which weighs quiet and busy hours alike but is noisy when traffic is low."
+          ]
+        },
+        {
+          "title": "Setting service level objectives",
+          "minutes": 12,
+          "objectives": [
+            "Set an SLO with a target, a window and an owner",
+            "Distinguish an SLO from an SLA and review SLOs over time"
+          ],
+          "key_points": [
+            "A service level objective (SLO) is a target for an SLI over a window: 99.9% of checkout requests succeed, over a rolling 28 days. A rolling window reflects users' recent experience; a calendar month resets the count on the first of the month.",
+            "A 28-day window always holds four of each weekday, so weekly traffic patterns don't make one window's SLI look different from the next.",
+            "Base the target on what users need and what the service achieves now: an SLO far above current performance is broken from day one, and one far below it invites decay. Several thresholds can apply at once, such as 90% within 100 ms and 99% within 1 s.",
+            "A service level agreement (SLA) is a contract with consequences, such as service credits, so it's set looser than the internal SLO, which then warns the team before the SLA is at risk.",
+            "Write an SLO document: each SLI's exact definition and query, the targets and window, the rationale, the owner and a review date. Revisit it, often quarterly at first, as you learn what users notice."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Measure SLIs and choose SLOs from a month of traffic",
+        "tool": "Python",
+        "minutes": 40,
+        "goal": "Generate 28 days of per-minute traffic for a checkout service, measure its availability and latency SLIs, compare them with candidate SLOs, find the worst days, and see how request-based and time-based SLIs judge the same month differently.",
+        "setup": [
+          "Python 3.10 or later in a virtual environment for the course, with pip install pandas numpy pytest fastapi uvicorn httpx (the later labs use the last four)",
+          "A project folder for the course, holding the starter files make_traffic.py and sli.py"
+        ],
+        "steps": [
+          {
+            "do": "Generate the month: per-minute requests, 5xx and 4xx counts and cumulative latency buckets, with five incidents hidden in it. The seed is fixed, so everyone gets the same data.",
+            "code": "python make_traffic.py",
+            "lang": "bash",
+            "see": "wrote data/traffic.csv: 40320 minutes, 6,282,951 requests, 7,785 5xx"
+          },
+          {
+            "do": "Open data/traffic.csv and data/incidents.csv. The le_ columns count requests answered within 100 ms, 300 ms and 1 s, the way Prometheus histogram buckets do, and incidents.csv lists the five incidents with their start times."
+          },
+          {
+            "do": "Read sli.py: good means not a 5xx, valid means every request, and the comment records the decision about 4xx responses. Then run it.",
+            "code": "python sli.py",
+            "lang": "bash",
+            "see": "availability SLI 99.8761%, latency SLI (within 300 ms) 99.1546%, then which candidate SLOs the month met"
+          },
+          {
+            "do": "Read the worst days. The bad deploy on 4 June dominates, but the three-hour night incident on 11 June isn't among them: at night there's little traffic to fail.",
+            "see": "2026-06-04 at 98.207%, then 2026-06-17 and 2026-06-25"
+          },
+          {
+            "do": "Read the time-based line: 526 bad minutes, 237 of them outside any incident. Explain in a sentence or two why a rule that marks a minute bad above 1% errors is so noisy at night."
+          },
+          {
+            "do": "Write the SLO section of an SLO document for checkout: each SLI with its definition and where it's measured, its target and rolling window, and a sentence of rationale based on these measurements."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The traffic was generated with the fixed seed.",
+            "look_for": [
+              "40320 minutes",
+              "6,282,951 requests",
+              "7,785 5xx"
+            ]
+          },
+          {
+            "text": "Both SLIs were measured.",
+            "look_for": [
+              "availability SLI 99.8761%",
+              "latency SLI (within 300 ms) 99.1546%"
+            ]
+          },
+          {
+            "text": "The candidate SLOs are compared.",
+            "look_for": [
+              "availability SLO 99.90%: missed",
+              "latency SLO 99.00%: met"
+            ]
+          },
+          {
+            "text": "The worst days and the time-based SLI.",
+            "look_for": [
+              "98.207%",
+              "526 bad minutes",
+              "237 of them outside the incidents"
+            ]
+          },
+          {
+            "text": "The SLO section gives definitions, targets, a rolling window and rationale.",
+            "look_for": [
+              "rolling"
+            ]
+          }
+        ],
+        "submit": "Paste the output of make_traffic.py and sli.py, your explanation from step 5 and your SLO section from step 6.",
+        "files": [
+          {
+            "path": "make_traffic.py",
+            "content": "\"\"\"Generate 28 days of per-minute traffic for the course's checkout service, with five incidents in it.\nColumns: minute (UTC), requests, errors_5xx, errors_4xx, and latency buckets: requests answered within\n100 ms, 300 ms and 1 s (cumulative, like Prometheus histogram buckets). Fixed seed: everyone gets the same file.\"\"\"\nimport pathlib\n\nimport numpy as np\nimport pandas as pd\n\nrng = np.random.default_rng(2026)\nminutes = pd.date_range(\"2026-06-01\", periods=28 * 1440, freq=\"min\", tz=\"UTC\")\nhour = minutes.hour + minutes.minute / 60\ndaily = 0.55 + 0.45 * np.cos((hour - 14) / 24 * 2 * np.pi)        # busiest at 14:00 UTC\nweekly = np.where(minutes.dayofweek >= 5, 0.6, 1.0)                  # quieter at weekends\nrequests = rng.poisson(320 * daily * weekly)\n\nerr = np.full(len(minutes), 0.0003)                                  # background 5xx ratio\nfast, ok, slow = np.full(len(minutes), 0.80), np.full(len(minutes), 0.992), np.full(len(minutes), 0.999)\nincidents = [  # (name, start, minutes, error ratio or None, share within 300 ms or None)\n    (\"bad deploy\", \"2026-06-04 14:10\", 35, 0.40, None),\n    (\"night dependency errors\", \"2026-06-11 02:00\", 180, 0.015, None),\n    (\"slow memory leak\", \"2026-06-17 10:00\", 20 * 60, 0.004, None),\n    (\"cache misconfiguration\", \"2026-06-23 09:30\", 60, None, 0.80),\n    (\"network blip\", \"2026-06-25 20:00\", 3, 1.0, None),\n]\nfor _, start, length, e, within_300 in incidents:\n    sel = (minutes >= pd.Timestamp(start, tz=\"UTC\")) & (minutes < pd.Timestamp(start, tz=\"UTC\") + pd.Timedelta(minutes=length))\n    if e is not None:\n        err[sel] = e\n    if within_300 is not None:\n        fast[sel], ok[sel] = 0.30, within_300\n\ne5 = rng.binomial(requests, err)\nanswered = requests - e5\ne4 = rng.binomial(answered, 0.02)\nle_100ms = rng.binomial(requests, fast)\nle_300ms = le_100ms + rng.binomial(requests - le_100ms, (ok - fast) / (1 - fast))\nle_1s = le_300ms + rng.binomial(requests - le_300ms, (slow - ok) / (1 - ok))\n\ndf = pd.DataFrame({\"minute\": minutes.strftime(\"%Y-%m-%dT%H:%MZ\"), \"requests\": requests, \"errors_5xx\": e5,\n                   \"errors_4xx\": e4, \"le_100ms\": le_100ms, \"le_300ms\": le_300ms, \"le_1s\": le_1s})\npathlib.Path(\"data\").mkdir(exist_ok=True)\ndf.to_csv(\"data/traffic.csv\", index=False)\npd.DataFrame(incidents, columns=[\"name\", \"start\", \"minutes\", \"error_ratio\", \"within_300ms\"]).to_csv(\n    \"data/incidents.csv\", index=False)\nprint(f\"wrote data/traffic.csv: {len(df)} minutes, {df.requests.sum():,} requests, {df.errors_5xx.sum():,} 5xx\")\n"
+          },
+          {
+            "path": "sli.py",
+            "content": "\"\"\"Module 1 lab: measure the checkout service's SLIs from per-minute traffic and compare them with SLOs.\"\"\"\nimport pandas as pd\n\ndf = pd.read_csv(\"data/traffic.csv\", parse_dates=[\"minute\"])\ntotal, bad = df.requests.sum(), df.errors_5xx.sum()\n\n# Availability: a request is good unless the service failed it (5xx). 4xx responses are the client's\n# mistakes, so they count as valid and good here; that's a decision to write down in the SLO document.\navailability = 1 - bad / total\n# Latency: the share of all requests answered within 300 ms (the le_300ms bucket boundary must equal it).\nlatency = df.le_300ms.sum() / total\nprint(f\"28 days: {total:,} requests, {bad:,} failed\")\nprint(f\"availability SLI {availability:.4%}   latency SLI (within 300 ms) {latency:.4%}\")\nfor target in (0.99, 0.995, 0.999, 0.9995):\n    print(f\"  availability SLO {target:.2%}: {'met' if availability >= target else 'missed'}\"\n          f\"   latency SLO {target:.2%}: {'met' if latency >= target else 'missed'}\")\n\ndaily = df.groupby(df.minute.dt.date)[[\"requests\", \"errors_5xx\", \"le_300ms\"]].sum()\ndaily[\"availability\"] = 1 - daily.errors_5xx / daily.requests\ndaily[\"latency\"] = daily.le_300ms / daily.requests\nprint(\"worst days for availability:\")\nprint(daily.nsmallest(3, \"availability\")[[\"requests\", \"errors_5xx\", \"availability\"]].to_string(\n    formatters={\"availability\": \"{:.3%}\".format}))\n\n# The same month as a time-based SLI: a minute is good when under 1% of its requests failed.\nbad_minute = df.errors_5xx / df.requests > 0.01\nin_incident = pd.Series(False, index=df.index)\nfor _, inc in pd.read_csv(\"data/incidents.csv\").iterrows():\n    start = pd.Timestamp(inc.start, tz=\"UTC\")\n    in_incident |= (df.minute >= start) & (df.minute < start + pd.Timedelta(minutes=inc.minutes))\nprint(f\"time-based availability: {1 - bad_minute.mean():.4%} ({bad_minute.sum()} bad minutes of {len(df)}, \"\n      f\"{(bad_minute & ~in_incident).sum()} of them outside the incidents)\")\nnight = df.minute.dt.hour < 6\nprint(f\"share of requests between 00:00 and 06:00 UTC: {df.requests[night].sum() / total:.1%}\")\n"
+          }
+        ],
+        "hints": [
+          "The scripts need pandas 2.0 or later; check with python -c \"import pandas; print(pandas.__version__)\".",
+          "Leaving 4xx responses out of the valid events, instead of counting them as good, changes the SLI slightly. Either is defensible: choose, write it down and keep it consistent.",
+          "Missing 99.9% this month doesn't make it the wrong target: one bad deploy did most of the damage. Decide what users need, then let the error budget policy in module 2 handle months like this."
+        ]
+      }
+    },
+    {
+      "title": "Error budgets and alerting on burn rate",
+      "summary": "Turn an SLO into an error budget, agree what happens when it runs out, and page on how fast it's burning, with the maths behind multiwindow, multi-burn-rate alerts.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Error budget maths",
+          "minutes": 12,
+          "objectives": [
+            "Calculate an error budget in events and in time",
+            "Calculate burn rates and how long a budget will last"
+          ],
+          "key_points": [
+            "The error budget is 1 − SLO: with 99.9% over 28 days, 0.1% of the window's valid events may fail. At the lab's 6.28 million requests that's about 6,283 failed requests, or 40.3 minutes of complete outage.",
+            "Budget spent is the bad events so far divided by the budget. The lab's month spent 124% of its budget; by the end of 4 June, the day of a 35-minute bad deploy, 76% was already gone.",
+            "The burn rate is the observed error ratio divided by the budget ratio, 1 − SLO: a burn rate of 1 spends the budget exactly over the window, 2 spends it in half the window, and a total outage at 99.9% burns at 1,000.",
+            "A burn rate b sustained for a time t spends b × t / window of the budget, so the whole budget lasts window / b: at 14.4, a 30-day budget lasts 50 hours, losing 2% every hour.",
+            "Background errors spend budget too: the lab's month burned at a median of 0.27 in normal hours, which on its own uses more than a quarter of the budget before any incident."
+          ],
+          "walkthrough": {
+            "tool": "Python console",
+            "title": "Error budget arithmetic",
+            "steps": [
+              {
+                "do": "Start Python and work out the complete outage each target allows over 28 and 30 days, in minutes.",
+                "code": "for slo in (0.999, 0.9995, 0.9999):\n    print(slo, round((1 - slo) * 28 * 24 * 60, 1), round((1 - slo) * 30 * 24 * 60, 1))",
+                "lang": "python",
+                "see": "0.999 40.3 43.2, then 0.9995 20.2 21.6, then 0.9999 4.0 4.3"
+              },
+              {
+                "do": "Derive the standard burn-rate thresholds from the share of a 30-day budget each alert should catch: 2% in an hour, 5% in 6 hours and 10% in 3 days.",
+                "code": "period = 30 * 24          # hours\n[round(share * period / hours, 1) for share, hours in [(0.02, 1), (0.05, 6), (0.10, 72)]]",
+                "lang": "python",
+                "see": "[14.4, 6.0, 1.0]"
+              },
+              {
+                "do": "How long does the whole budget last at a burn rate of 14.4?",
+                "code": "period / 14.4",
+                "lang": "python",
+                "see": "50.0 hours: just over two days"
+              },
+              {
+                "do": "Estimate how long a 1-hour alert at 14.4 takes to fire for a 99.9% SLO when the error ratio jumps to 100%, 10% and 2%: the window × threshold ÷ the actual burn rate.",
+                "code": "[round(60 * 14.4 / (e / 0.001), 1) for e in (1.0, 0.10, 0.02)]",
+                "lang": "python",
+                "see": "[0.9, 8.6, 43.2] minutes: a total outage pages within a minute, a small burn takes most of the hour"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Error budget policies",
+          "minutes": 11,
+          "objectives": [
+            "Write an error budget policy with clear triggers and actions",
+            "Use the remaining budget to decide how much risk to take"
+          ],
+          "key_points": [
+            "An error budget policy, agreed in advance by the service's developers, operators and product owner, says what happens as the budget runs down, so that decisions under pressure follow a rule instead of an argument.",
+            "Typical rules: release normally while budget remains; once it's exhausted, freeze changes except reliability fixes and security patches until the service is back within its SLO; and require a postmortem when one incident spends a large share, 20% in the SRE Workbook's example policy.",
+            "Remaining budget is a currency for risk: spend it on faster releases, experiments, chaos tests and planned maintenance, and save it when it's low. Budget left over quarter after quarter suggests the SLO is stricter than needed or the team could move faster.",
+            "Say what doesn't count and who decides: an outage caused by a provider outside the team's control may be excluded or tracked separately, but name the person who rules on exclusions so that they don't become a habit.",
+            "Name who settles disagreements, such as the head of engineering, and review the policy whenever the SLO changes."
+          ]
+        },
+        {
+          "title": "Alerting on burn rate",
+          "minutes": 14,
+          "objectives": [
+            "Explain why alerts on raw error-ratio thresholds page too often",
+            "Design multiwindow, multi-burn-rate alerts and estimate how fast they fire"
+          ],
+          "key_points": [
+            "Alert on what threatens the SLO, not on every blip: a rule paging whenever the 5-minute error ratio passed the SLO's 0.1% fired 648 times in the lab's month, almost all false alarms, because single errors at low traffic exceed it.",
+            "Page when the budget burns fast: 14.4 over an hour spends 2% of a 30-day budget, and 6 over 6 hours spends 5%. A slow burn, such as 1 over 3 days (10% of the budget), deserves a ticket, not a page.",
+            "A long window alone keeps firing long after a fix, so each rule also needs a short window a twelfth as long (5 minutes for 1 hour, 30 for 6 hours) showing the burn continues; in the lab, firing after recovery fell from 67 minutes to 39.",
+            "Time to detect is the long window × threshold ÷ actual burn rate: a total outage at 99.9% pages within a minute, but a burn of 15, just over 14.4, takes most of an hour, longer if noise holds it near the threshold (103 minutes in the lab).",
+            "Each SLO needs its own alerts: the availability rules never saw the lab's latency incident, which only the latency SLO's rule caught. Low-traffic services may need synthetic traffic or longer windows, since a few errors swing the ratio.",
+            "Observability with Prometheus, Grafana and OpenTelemetry implements these rules in PromQL and tests them with promtool; the design decisions here carry over to any monitoring system."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Spend an error budget and replay a month of alerts",
+        "tool": "Python",
+        "minutes": 45,
+        "goal": "Track the checkout service's 28-day error budget day by day, find when it ran out and how fast it burned, then replay the month through five alerting rules and score each against the known incidents for detection time, time firing after recovery, and false alarms.",
+        "setup": [
+          "The project folder from the module 1 lab, with data/traffic.csv and data/incidents.csv",
+          "The starter files budget.py and alerts.py"
+        ],
+        "steps": [
+          {
+            "do": "Work out the budget and follow its spending through the month.",
+            "code": "python budget.py",
+            "lang": "bash",
+            "see": "budget 6,283 failed requests, 40.3 minutes of complete outage, 76.1% spent on 4 June, and budget exhausted on 2026-06-17"
+          },
+          {
+            "do": "Read the burn-rate lines: the worst hour burned at 235.9 and a normal hour at a median of 0.27. Work out what share of the budget background errors alone would spend over 28 days."
+          },
+          {
+            "do": "Read alerts.py: burn() gives a trailing-window burn rate every minute, the five rules are the naive threshold, a single 1-hour window, the multiwindow page and ticket, and a latency page, and KEEP_FIRING holds an alert for 10 minutes after it clears. Then run it.",
+            "code": "python alerts.py",
+            "lang": "bash",
+            "see": "naive: 648 notifications and 632 false alarms; the multiwindow page catches the deploy within 2 minutes and stops 39 minutes after it; only the latency rule sees the cache misconfiguration"
+          },
+          {
+            "do": "For each rule, note its detection times, how long it fired after each incident ended and its false alarms. Which rule would you want to be woken by, and which incident does only the ticket catch?"
+          },
+          {
+            "do": "Change one thing and run again: lower the 1-hour threshold from 14.4 to 10, or raise KEEP_FIRING to 30, and describe the trade-off you see.",
+            "code": "python alerts.py",
+            "lang": "bash"
+          },
+          {
+            "do": "Write an alerting policy for checkout: which rules page and which open tickets, with thresholds and windows and one sentence of justification each."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The budget and when it ran out.",
+            "look_for": [
+              "budget 6,283 failed requests",
+              "40.3 minutes",
+              "budget exhausted on 2026-06-17"
+            ]
+          },
+          {
+            "text": "The burn rates.",
+            "look_for": [
+              "highest hourly burn rate: 235.9",
+              "median burn rate in normal hours: 0.27"
+            ]
+          },
+          {
+            "text": "The naive rule's false alarms.",
+            "look_for": [
+              "naive: 5m error ratio > 0.1%: 648 notifications",
+              "false alarms: 632"
+            ]
+          },
+          {
+            "text": "The multiwindow page caught the outages without false alarms and stopped sooner than one window.",
+            "look_for": [
+              "availability, multiwindow page: 3 notifications",
+              "39 min after it ended",
+              "67 min after it ended"
+            ]
+          },
+          {
+            "text": "Only the latency rule caught the cache problem, and the ticket caught the slow leak.",
+            "look_for": [
+              "latency, multiwindow page: 1 notifications",
+              "firing 452 min after it began"
+            ]
+          },
+          {
+            "text": "The rerun with a changed threshold or hold-down, and the alerting policy.",
+            "look_for": [
+              "14.4"
+            ]
+          }
+        ],
+        "submit": "Paste the output of budget.py and of alerts.py before and after your change in step 5, your answers to steps 2 and 4, and your alerting policy.",
+        "files": [
+          {
+            "path": "budget.py",
+            "content": "\"\"\"Module 2 lab: the error budget for a 99.9% availability SLO over the 28 days, day by day.\"\"\"\nimport pandas as pd\n\nSLO = 0.999\ndf = pd.read_csv(\"data/traffic.csv\", parse_dates=[\"minute\"])\nbudget = (1 - SLO) * df.requests.sum()          # bad requests the SLO allows over the whole window\nprint(f\"SLO {SLO:.1%} over 28 days: budget {budget:,.0f} failed requests of {df.requests.sum():,}\")\nprint(f\"as time: {(1 - SLO) * 28 * 24 * 60:.1f} minutes of complete outage\")\n\ndaily = df.groupby(df.minute.dt.date)[[\"requests\", \"errors_5xx\"]].sum()\ndaily[\"spent\"] = daily.errors_5xx.cumsum() / budget\nfor day, row in daily.iterrows():\n    if row.errors_5xx > 0.05 * budget or day == daily.index[-1]:\n        print(f\"{day}: {int(row.errors_5xx):>5} failed, {row.spent:7.1%} of the budget spent so far\")\nover = daily.index[daily.spent > 1]\nprint(f\"budget exhausted on {over[0]}\" if len(over) else \"budget not exhausted\")\n\nhourly = df.set_index(\"minute\")[[\"requests\", \"errors_5xx\"]].resample(\"1h\").sum()\nhourly[\"burn\"] = hourly.errors_5xx / hourly.requests / (1 - SLO)\ntop = hourly.burn.idxmax()\nprint(f\"highest hourly burn rate: {hourly.burn.max():.1f} at {top:%Y-%m-%d %H:%M}, which would empty a full \"\n      f\"28-day budget in {28 * 24 / hourly.burn.max():.1f} hours\")\nquiet = hourly.burn[hourly.burn < 2].median()\nprint(f\"median burn rate in normal hours: {quiet:.2f}\")\n"
+          },
+          {
+            "path": "alerts.py",
+            "content": "\"\"\"Module 2 lab, part 2: replay the month through five alerting rules and score them against the known\nincidents: how soon each one notifies, how long it keeps firing afterwards, and how many false alarms.\"\"\"\nimport numpy as np\nimport pandas as pd\n\ndf = pd.read_csv(\"data/traffic.csv\", parse_dates=[\"minute\"])\nincidents = pd.read_csv(\"data/incidents.csv\")\nKEEP_FIRING = 10                       # minutes an alert keeps firing after its condition clears\ntotal = df.requests.to_numpy()\nslos = {\"availability\": (df.errors_5xx.to_numpy(), 0.999),          # bad events, SLO\n        \"latency\": ((df.requests - df.le_300ms).to_numpy(), 0.99)}   # slower than 300 ms\n\n\ndef burn(sli, window):\n    \"\"\"Burn rate over the trailing window, evaluated every minute: error ratio / error budget.\"\"\"\n    bad, slo = slos[sli]\n    b = pd.Series(bad).rolling(window, min_periods=1).sum().to_numpy()\n    n = pd.Series(total).rolling(window, min_periods=1).sum().to_numpy()\n    return b / np.maximum(n, 1) / (1 - slo)\n\n\ndef multiwindow(sli):\n    return ((burn(sli, 60) > 14.4) & (burn(sli, 5) > 14.4)) | ((burn(sli, 360) > 6) & (burn(sli, 30) > 6))\n\n\nrules = {\n    \"naive: 5m error ratio > 0.1%\": burn(\"availability\", 5) > 1,\n    \"availability, 1h burn > 14.4\": burn(\"availability\", 60) > 14.4,\n    \"availability, multiwindow page\": multiwindow(\"availability\"),\n    \"availability, ticket (3d and 6h > 1)\": (burn(\"availability\", 3 * 1440) > 1) & (burn(\"availability\", 360) > 1),\n    \"latency, multiwindow page\": multiwindow(\"latency\"),\n}\nspans = []\nfor _, inc in incidents.iterrows():\n    start = int((pd.Timestamp(inc.start, tz=\"UTC\") - df.minute[0]).total_seconds() // 60)\n    spans.append((inc[\"name\"], start, start + int(inc.minutes)))\n\n\ndef hold(firing):\n    \"\"\"Keep firing for KEEP_FIRING minutes after the condition clears, as Prometheus's keep_firing_for does.\"\"\"\n    return pd.Series(firing.astype(int)).rolling(KEEP_FIRING + 1, min_periods=1).max().to_numpy().astype(bool)\n\n\ndef notifications(held):\n    \"\"\"Start and end minute of each continuous run of firing: one notification per run.\"\"\"\n    edges = np.diff(np.concatenate([[0], held.astype(int), [0]]))\n    return list(zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)))\n\n\nfor name, firing in rules.items():\n    held = hold(firing)\n    runs = notifications(held)\n    print(f\"{name}: {len(runs)} notifications\")\n    for inc, s, e in spans:\n        fired = np.flatnonzero(held[s:e + 60])                      # during the incident or the hour after it\n        if len(fired) == 0:\n            print(f\"   {inc:<24} missed\")\n            continue\n        quiet = np.flatnonzero(~held[e:])                           # first minute after the end with no alert\n        print(f\"   {inc:<24} firing {fired[0]:>3} min after it began, stopped {quiet[0]:>3} min after it ended\")\n    false = [r for r in runs if not any(r[0] < e + 60 and r[1] > s for _, s, e in spans)]\n    print(f\"   false alarms: {len(false)}\")\n"
+          }
+        ],
+        "hints": [
+          "Detection times are minutes from each incident's start; 'missed' means the rule didn't fire during the incident or in the hour after it.",
+          "The ticket rule's 3-day window sees less than three days of history at the start of the month, so treat its early behaviour with care.",
+          "Multiply the median burn rate by the window to see what normal operation spends: a burn of 0.27 for the whole 28 days spends 27% of the budget."
+        ]
+      }
+    },
+    {
+      "title": "Toil, automation and on-call",
+      "summary": "Measure the operational work that grows with the service and crowds out engineering, automate it safely, and design an on-call rotation that people can sustain.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "Toil: what it is and how to measure it",
+          "minutes": 11,
+          "objectives": [
+            "Identify toil from its defining characteristics",
+            "Measure toil and decide which sources to remove first"
+          ],
+          "key_points": [
+            "Toil is operational work that's manual, repetitive, automatable, tactical, without lasting value, and that grows as the service grows: restarting a stuck worker every night is toil; designing the fix that stops it sticking is engineering.",
+            "Not all operational work is toil: handling a new kind of incident, planning capacity and writing a postmortem take judgement and leave something lasting behind.",
+            "Google's SRE teams aim to keep toil below half of each engineer's time, so that the rest goes on engineering that reduces future toil; a team past that point becomes an operations team with no capacity to improve.",
+            "Measure it: tag tickets and pages by category, record the time spent and review the totals regularly. Rank sources by hours, not by count: in the lab, 151 access requests took fewer hours than 49 manual data fixes.",
+            "Match the fix to the source: automate a repeatable procedure, offer self-service for requests, fix the bug that makes manual data repairs necessary, and tune or delete an alert that pages without needing action."
+          ]
+        },
+        {
+          "title": "Automating operations safely",
+          "minutes": 13,
+          "objectives": [
+            "Design automation that is idempotent, observable and safe to run",
+            "Estimate whether automating a task pays back"
+          ],
+          "key_points": [
+            "Automation runs faster and more often than people, so its mistakes spread further: give operational scripts a dry run by default, a limit on how much one run may change, and an explicit opt-in for what they may touch.",
+            "Make actions idempotent: running the automation twice must leave the same result as running it once, so it can be retried after a failure or run on a schedule without checking first.",
+            "Change things atomically, for example by writing a temporary file and renaming it, so that a crash leaves either the old state or the new one, never a half-written file.",
+            "Log every action, and test the automation like any other code, including its refusals: the lab's log cleaner has tests proving it won't touch an unmarked directory or exceed its action limit.",
+            "Payback is the time to build and maintain the automation divided by the time it saves each month. Start with the largest sources, and count the mistakes and interruptions it removes, not only the minutes.",
+            "Automation grows in stages: a written runbook, a script someone runs, a script the system runs on a trigger, and finally a design that needs no procedure at all, such as log rotation built into the service."
+          ]
+        },
+        {
+          "title": "Sustainable on-call",
+          "minutes": 12,
+          "objectives": [
+            "Design an on-call rotation with clear responsibilities and handovers",
+            "Measure on-call load and reduce it"
+          ],
+          "key_points": [
+            "On-call means being reachable and able to respond within an agreed time, typically minutes for a page. A rotation needs primary and secondary responders, an escalation path, and a handover at each change of shift that lists open issues.",
+            "Every page should need urgent human action; anything else belongs in a ticket or on a dashboard. Track pages per shift, the share at night and the share that led to action, and treat a page that needed nothing as a bug.",
+            "Google's SRE book suggests no more than two incidents in a 12-hour shift, because each takes hours to handle and follow up. The lab's team took 162 pages in four weeks, 44% of them at night: far beyond what anyone can sustain.",
+            "Spread the load: Google's SRE book suggests at least eight engineers for a single-site rotation, or six per site across two sites (follow the sun), with compensation or time off for out-of-hours work.",
+            "Prepare responders: a runbook linked from every alert, access checked before the shift, practice with simulated incidents, and a culture in which escalating early is expected, not a failure."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Measure toil and on-call load, then automate safely",
+        "tool": "Python and pytest",
+        "minutes": 50,
+        "goal": "Analyse four weeks of an operations team's work log for toil, its sources and on-call load, estimate automation payback, then run, test and extend a log-cleaning automation that has a dry run, idempotent actions, an action limit and an opt-in marker.",
+        "setup": [
+          "The project folder from the earlier labs, with pytest installed",
+          "The starter files make_tickets.py, toil_report.py, make_logs.py, clean_logs.py and test_clean_logs.py"
+        ],
+        "steps": [
+          {
+            "do": "Generate the team's work log: pages, tickets and project work, with categories, minutes, and whether each is toil.",
+            "code": "python make_tickets.py",
+            "lang": "bash",
+            "see": "wrote data/worklog.csv: 449 entries over 4 weeks"
+          },
+          {
+            "do": "Run the report.",
+            "code": "python toil_report.py",
+            "lang": "bash",
+            "see": "toil 185 hours (54%); ana 44%, chidi 57%, ben 62%; payback for log clean-up 0.4 months; 162 pages, 44% at night"
+          },
+          {
+            "do": "Read it: who carries the most toil and why (check who was on call), which source costs the most hours, and why 'manual data fix' calls for fixing a bug rather than automating the repair."
+          },
+          {
+            "do": "Read clean_logs.py and list its safety rails. Then create a sample log folder and do a dry run.",
+            "code": "python make_logs.py\npython clean_logs.py logs",
+            "lang": "bash",
+            "see": "created 12 logs and 3 archives in logs/, then would compress ... and dry run: 9 to compress, 3 to delete, 0.0 MB freed"
+          },
+          {
+            "do": "Apply it, then apply it again: the second run must do nothing.",
+            "code": "python clean_logs.py logs --apply\npython clean_logs.py logs --apply",
+            "lang": "bash",
+            "see": "applied: 9 to compress, 3 to delete, 11.5 MB freed, then applied: 0 to compress, 0 to delete"
+          },
+          {
+            "do": "Check two refusals: a folder without the marker, and a run that would exceed its action limit. Both should exit without changing anything.",
+            "code": "python clean_logs.py data --apply\npython clean_logs.py logs --apply --compress-after 0 --max-actions 1",
+            "lang": "bash",
+            "see": "refusing: ... has no .clean-logs marker file, then refusing: 3 actions planned, more than --max-actions 1"
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q test_clean_logs.py",
+            "lang": "bash",
+            "see": "7 passed"
+          },
+          {
+            "do": "Add a --keep N option that never deletes the N newest archives, whatever their age. Write its test first, watch it fail, then make it pass.",
+            "code": "python -m pytest -q test_clean_logs.py",
+            "lang": "bash",
+            "see": "8 passed"
+          },
+          {
+            "do": "Write a half-page plan to bring this team's toil under 50% and halve its pages: which sources, which fix for each, in what order, and how you'll measure the result."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The work log and the toil report.",
+            "look_for": [
+              "449 entries",
+              "toil 185 hours (54%)",
+              "ben 62%"
+            ]
+          },
+          {
+            "text": "Automation payback and on-call load.",
+            "look_for": [
+              "0.4 months",
+              "pages: 162 in 4 weeks, 44% between 20:00 and 08:00"
+            ]
+          },
+          {
+            "text": "The dry run, the apply and the rerun that did nothing.",
+            "look_for": [
+              "dry run: 9 to compress, 3 to delete",
+              "applied: 9 to compress, 3 to delete",
+              "applied: 0 to compress, 0 to delete"
+            ]
+          },
+          {
+            "text": "The safety rails refused both unsafe runs.",
+            "look_for": [
+              "no .clean-logs marker file",
+              "more than --max-actions 1"
+            ]
+          },
+          {
+            "text": "All tests pass, including the new one for --keep.",
+            "look_for": [
+              "8 passed"
+            ]
+          },
+          {
+            "text": "The plan tackles the largest sources with the right fix for each.",
+            "look_for": [
+              "manual data fix"
+            ]
+          }
+        ],
+        "submit": "Paste the output of toil_report.py, the clean_logs.py runs from steps 4 to 6, the pytest output from steps 7 and 8, your --keep code and its test, and your plan.",
+        "files": [
+          {
+            "path": "make_tickets.py",
+            "content": "\"\"\"Generate four weeks of an operations team's work log: pages, tickets and project work, with the time\neach took. Fixed seed, so everyone gets the same data/worklog.csv.\"\"\"\nimport pathlib\n\nimport numpy as np\nimport pandas as pd\n\nrng = np.random.default_rng(11)\nteam = [\"ana\", \"ben\", \"chidi\"]\non_call = [\"ben\", \"chidi\", \"ana\", \"ben\"]            # primary on-call, one week each from Monday 09:00\nkinds = {  # category: (kind, per week, typical minutes, toil?, the fix)\n    \"disk full: old logs\": (\"page\", 15, 40, \"yes\", \"automate\"),\n    \"restart stuck worker\": (\"page\", 10, 25, \"yes\", \"automate\"),\n    \"flaky alert\": (\"page\", 15, 10, \"yes\", \"tune or delete the alert\"),\n    \"certificate renewal\": (\"ticket\", 2, 60, \"yes\", \"automate\"),\n    \"access request\": (\"ticket\", 35, 12, \"yes\", \"self-service\"),\n    \"deploy help\": (\"ticket\", 15, 45, \"yes\", \"self-service\"),\n    \"manual data fix\": (\"ticket\", 10, 60, \"yes\", \"fix the bug\"),\n    \"incident response\": (\"page\", 1, 120, \"no\", \"\"),\n    \"postmortem actions\": (\"project\", 2, 180, \"no\", \"\"),\n    \"capacity review\": (\"project\", 1, 120, \"no\", \"\"),\n    \"engineering project\": (\"project\", 7, 300, \"no\", \"\"),\n}\nstart = pd.Timestamp(\"2026-06-01 09:00\", tz=\"UTC\")\nrows = []\nfor week in range(4):\n    for category, (kind, per_week, minutes, toil, fix) in kinds.items():\n        for _ in range(rng.poisson(per_week)):\n            if kind == \"page\":   # pages arrive at any hour and go to that week's on-call engineer\n                when = start + pd.Timedelta(days=7 * week) + pd.Timedelta(minutes=int(rng.integers(0, 7 * 1440)))\n                who = on_call[week]\n            else:                # other work happens in office hours, Monday to Friday\n                when = (start + pd.Timedelta(days=7 * week + int(rng.integers(0, 5)))\n                        + pd.Timedelta(minutes=int(rng.integers(0, 8 * 60))))\n                who = team[int(rng.integers(0, len(team)))]\n            rows.append({\"time\": when.strftime(\"%Y-%m-%dT%H:%MZ\"), \"engineer\": who, \"kind\": kind,\n                         \"category\": category, \"minutes\": int(max(5, rng.normal(minutes, minutes / 4))),\n                         \"toil\": toil, \"fix\": fix})\ndf = pd.DataFrame(rows).sort_values(\"time\")\npathlib.Path(\"data\").mkdir(exist_ok=True)\ndf.to_csv(\"data/worklog.csv\", index=False)\nprint(f\"wrote data/worklog.csv: {len(df)} entries over 4 weeks\")\n"
+          },
+          {
+            "path": "toil_report.py",
+            "content": "\"\"\"Module 3 lab: how much of the team's logged work is toil, where it comes from, what automating it would\npay back, and how heavy on-call is.\"\"\"\nimport pandas as pd\n\ndf = pd.read_csv(\"data/worklog.csv\", parse_dates=[\"time\"])\nhours = df.minutes.sum() / 60\ntoil = df[df.toil == \"yes\"]\nprint(f\"logged {hours:.0f} hours of operational and project work; toil {toil.minutes.sum() / 60:.0f} hours \"\n      f\"({toil.minutes.sum() / df.minutes.sum():.0%})\")\nshare = (toil.groupby(\"engineer\").minutes.sum() / df.groupby(\"engineer\").minutes.sum()).sort_values()\nprint(\"toil share of each engineer's logged time: \" + \", \".join(f\"{e} {v:.0%}\" for e, v in share.items()))\n\nby = toil.groupby([\"category\", \"fix\"]).minutes.agg([\"count\", \"sum\"]).sort_values(\"sum\", ascending=False)\nby[\"hours per month\"] = by[\"sum\"] / 60\nprint(by[[\"count\", \"hours per month\"]].to_string(float_format=lambda v: f\"{v:.1f}\"))\n\nBUILD_HOURS = {\"disk full: old logs\": 16, \"restart stuck worker\": 24, \"certificate renewal\": 12}\nprint(\"automation payback (months until the build time is repaid):\")\nfor category, build in BUILD_HOURS.items():\n    monthly = toil.minutes[toil.category == category].sum() / 60\n    print(f\"  {category:<22} {monthly:5.1f} h/month saved, {build} h to build: {build / monthly:.1f} months\")\n\npages = df[df.kind == \"page\"].copy()\npages[\"week\"] = (pages.time - pd.Timestamp(\"2026-06-01 09:00\", tz=\"UTC\")).dt.days // 7 + 1\nnight = (pages.time.dt.hour < 8) | (pages.time.dt.hour >= 20)\nprint(f\"pages: {len(pages)} in 4 weeks, {night.mean():.0%} between 20:00 and 08:00\")\nshift = pages.set_index(\"time\").minutes.resample(\"12h\", offset=\"8h\").count()\nprint(f\"pages per week: {pages.groupby('week').size().to_dict()}; busiest 12-hour shift: {shift.max()} pages \"\n      f\"(starting {shift.idxmax():%a %d %b %H:%M})\")\n"
+          },
+          {
+            "path": "make_logs.py",
+            "content": "\"\"\"Create a sample log directory: a log per day for the last 12 days, and archives from 35-45 days ago.\"\"\"\nimport gzip\nimport os\nimport random\nimport time\nfrom pathlib import Path\n\nrandom.seed(3)\nroot = Path(\"logs\")\nroot.mkdir(exist_ok=True)\n(root / \".clean-logs\").touch()\nnow = time.time()\nfor age in range(12):\n    path = root / f\"checkout-{age:02d}d.log\"\n    path.write_text(\"\".join(f\"{i} INFO request ok latency_ms={random.randint(5, 900)}\\n\" for i in range(40_000)))\n    os.utime(path, (now - age * 86400 - 3600, now - age * 86400 - 3600))\nfor age in (35, 40, 45):\n    path = root / f\"checkout-{age:02d}d.log.gz\"\n    with gzip.open(path, \"wt\") as f:\n        f.write(\"old\\n\" * 10_000)\n    os.utime(path, (now - age * 86400, now - age * 86400))\nprint(f\"created {len(list(root.glob('*.log')))} logs and {len(list(root.glob('*.log.gz')))} archives in logs/\")\n"
+          },
+          {
+            "path": "clean_logs.py",
+            "content": "\"\"\"Compress application logs after a few days and delete old archives, safely.\n\nSafety rails: it only touches a directory that contains a .clean-logs marker file, it does nothing unless\n--apply is given, it refuses to run if more actions are planned than --max-actions, it never follows\nsymlinks, and every action is logged. Running it twice in a row does nothing the second time.\"\"\"\nimport argparse\nimport gzip\nimport os\nimport shutil\nimport sys\nimport time\nfrom pathlib import Path\n\nMARKER = \".clean-logs\"\n\n\ndef plan(root: Path, compress_after: float, delete_after: float, now: float):\n    \"\"\"Return the (action, path) pairs to perform, oldest first, without changing anything.\"\"\"\n    actions = []\n    for path in sorted(root.iterdir()):\n        if path.is_symlink() or not path.is_file():\n            continue\n        age_days = (now - path.stat().st_mtime) / 86400\n        if path.name.endswith(\".log\") and age_days > compress_after:\n            actions.append((\"compress\", path))\n        elif path.name.endswith(\".log.gz\") and age_days > delete_after:\n            actions.append((\"delete\", path))\n    return actions\n\n\ndef compress(path: Path):\n    \"\"\"gzip to a temporary name, then rename: a crash never leaves a half-written archive.\"\"\"\n    tmp = path.with_name(path.name + \".gz.tmp\")\n    with open(path, \"rb\") as src, gzip.open(tmp, \"wb\") as dst:\n        shutil.copyfileobj(src, dst)\n    stat = path.stat()\n    os.utime(tmp, (stat.st_atime, stat.st_mtime))       # keep the log's age on the archive\n    os.replace(tmp, path.with_name(path.name + \".gz\"))\n    path.unlink()\n\n\ndef main(argv=None):\n    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])\n    p.add_argument(\"root\", type=Path)\n    p.add_argument(\"--compress-after\", type=float, default=3, help=\"days\")\n    p.add_argument(\"--delete-after\", type=float, default=30, help=\"days\")\n    p.add_argument(\"--max-actions\", type=int, default=50)\n    p.add_argument(\"--apply\", action=\"store_true\", help=\"make the changes (default: dry run)\")\n    a = p.parse_args(argv)\n\n    root = a.root.resolve()\n    if not (root / MARKER).is_file():\n        print(f\"refusing: {root} has no {MARKER} marker file\", file=sys.stderr)\n        return 2\n    actions = plan(root, a.compress_after, a.delete_after, time.time())\n    if len(actions) > a.max_actions:\n        print(f\"refusing: {len(actions)} actions planned, more than --max-actions {a.max_actions}\", file=sys.stderr)\n        return 2\n    freed = 0\n    for action, path in actions:\n        size = path.stat().st_size\n        if not a.apply:\n            print(f\"would {action} {path.name}\")\n            continue\n        if action == \"compress\":\n            compress(path)\n            freed += size - path.with_name(path.name + \".gz\").stat().st_size\n        else:\n            path.unlink()\n            freed += size\n        print(f\"{'compressed' if action == 'compress' else 'deleted'} {path.name}\")\n    mode = \"applied\" if a.apply else \"dry run\"\n    print(f\"{mode}: {sum(x == 'compress' for x, _ in actions)} to compress, \"\n          f\"{sum(x == 'delete' for x, _ in actions)} to delete, {freed / 1e6:.1f} MB freed\")\n    return 0\n\n\nif __name__ == \"__main__\":\n    sys.exit(main())\n"
+          },
+          {
+            "path": "test_clean_logs.py",
+            "content": "\"\"\"Tests for clean_logs.py: run with pytest -q.\"\"\"\nimport gzip\nimport os\nimport time\n\nimport clean_logs\n\nDAY = 86400\n\n\ndef make(dir, name, age_days, text=\"line\\n\" * 1000):\n    path = dir / name\n    if name.endswith(\".gz\"):\n        with gzip.open(path, \"wt\") as f:\n            f.write(text)\n    else:\n        path.write_text(text)\n    when = time.time() - age_days * DAY\n    os.utime(path, (when, when))\n    return path\n\n\ndef logs(tmp_path):\n    (tmp_path / \".clean-logs\").touch()\n    make(tmp_path, \"app-new.log\", 1)\n    make(tmp_path, \"app-old.log\", 5)\n    make(tmp_path, \"app-ancient.log.gz\", 40)\n    make(tmp_path, \"app-recent.log.gz\", 10)\n    return tmp_path\n\n\ndef names(dir):\n    return sorted(p.name for p in dir.iterdir())\n\n\ndef test_dry_run_changes_nothing(tmp_path):\n    before = names(logs(tmp_path))\n    assert clean_logs.main([str(tmp_path)]) == 0\n    assert names(tmp_path) == before\n\n\ndef test_apply_compresses_old_logs_and_keeps_new_ones(tmp_path):\n    clean_logs.main([str(logs(tmp_path)), \"--apply\"])\n    assert \"app-old.log.gz\" in names(tmp_path) and \"app-old.log\" not in names(tmp_path)\n    assert \"app-new.log\" in names(tmp_path)\n\n\ndef test_compressed_archive_holds_the_same_text(tmp_path):\n    original = (logs(tmp_path) / \"app-old.log\").read_text()\n    clean_logs.main([str(tmp_path), \"--apply\"])\n    with gzip.open(tmp_path / \"app-old.log.gz\", \"rt\") as f:\n        assert f.read() == original\n\n\ndef test_apply_deletes_only_expired_archives(tmp_path):\n    clean_logs.main([str(logs(tmp_path)), \"--apply\"])\n    assert \"app-ancient.log.gz\" not in names(tmp_path)\n    assert \"app-recent.log.gz\" in names(tmp_path)\n\n\ndef test_second_run_does_nothing(tmp_path, capsys):\n    clean_logs.main([str(logs(tmp_path)), \"--apply\"])\n    after_first = names(tmp_path)\n    clean_logs.main([str(tmp_path), \"--apply\"])\n    assert names(tmp_path) == after_first\n    assert \"applied: 0 to compress, 0 to delete\" in capsys.readouterr().out\n\n\ndef test_refuses_a_directory_without_the_marker(tmp_path):\n    make(tmp_path, \"app-old.log\", 5)\n    assert clean_logs.main([str(tmp_path), \"--apply\"]) == 2\n    assert names(tmp_path) == [\"app-old.log\"]\n\n\ndef test_refuses_when_more_actions_than_the_limit(tmp_path):\n    logs(tmp_path)\n    for i in range(5):\n        make(tmp_path, f\"extra-{i}.log\", 6)\n    assert clean_logs.main([str(tmp_path), \"--apply\", \"--max-actions\", \"3\"]) == 2\n    assert \"extra-0.log\" in names(tmp_path)\n"
+          }
+        ],
+        "hints": [
+          "make_logs.py sets each file's age with os.utime. To start again, delete the logs folder and rerun it.",
+          "For --keep, sort the .log.gz files by modification time in plan() and leave the newest N out of the delete actions.",
+          "On Windows, if python isn't found, try py; the scripts use only the standard library, pandas and numpy."
+        ]
+      }
+    },
+    {
+      "title": "Incident response and blameless postmortems",
+      "summary": "Run an incident with clear roles and steady communication, keep a timeline as you go, mitigate before you diagnose, and learn from it with a blameless postmortem.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "Incident roles and severity",
+          "minutes": 12,
+          "objectives": [
+            "Assign the roles in an incident response and explain each",
+            "Decide when to declare an incident and how severe it is"
+          ],
+          "key_points": [
+            "Declare an incident early, as soon as user impact is likely or the cause isn't clear: declaring brings in roles and communication, and it's cheaper to stand down an incident than to organise a large one late.",
+            "The incident commander (IC) coordinates and decides but doesn't debug; the operations lead and responders work on the system; the communications lead keeps stakeholders informed; a scribe keeps the timeline. One person may hold several roles, but the IC is always named.",
+            "The structure borrows from the Incident Command System used by emergency services: one commander, clear roles, and one place for the response, such as a single chat channel and call.",
+            "Severity levels, such as SEV-1 to SEV-4, are defined in advance by user impact (how many users, which journeys, whether data is at risk), and set who is paged, how often updates go out and whether a postmortem is required.",
+            "Hand over explicitly: when the IC or the operations lead changes, say so in the channel, with a summary of the current state, so that nobody wonders who's in charge.",
+            "Security incidents follow the same discipline plus evidence handling and legal duties, which Incident Response Fundamentals covers."
+          ]
+        },
+        {
+          "title": "Mitigation, communication and the timeline",
+          "minutes": 13,
+          "objectives": [
+            "Put mitigation before root cause during an incident",
+            "Write status updates and keep a timeline in UTC"
+          ],
+          "key_points": [
+            "Mitigate first: roll back the last change, fail over, shed load or switch off a feature to stop the user impact, and find the root cause afterwards. In the lab's incident, rolling back a configuration change ended it minutes after the decision.",
+            "Ask what changed: many incidents follow a deployment, a configuration change or a shift in traffic, so the deploy and change logs belong in the timeline and are among the first places to look.",
+            "Send status updates on a stated cadence, every 30 minutes for example, even when there's no news: what's affected, what's being done, any workaround and when the next update comes. Internal and external audiences need different detail.",
+            "Keep the timeline as you go, in UTC: alerts, decisions, actions and observations with their times. Systems log in different time zones and formats, so normalise them before merging, as the lab's script does.",
+            "Measure each response from its timeline: time to detect (impact to alert), to mitigate and to recover. Averages over a few incidents are noisy because durations vary widely, so read each incident's story rather than tracking a mean."
+          ]
+        },
+        {
+          "title": "Blameless postmortems",
+          "minutes": 13,
+          "objectives": [
+            "Write a blameless postmortem with contributing factors and action items",
+            "Decide when a postmortem is required and how to follow it up"
+          ],
+          "key_points": [
+            "Write a postmortem after significant incidents, defined in advance: user-visible downtime or data loss beyond a threshold, any on-call intervention such as a rollback, or a large share of the error budget spent in one incident.",
+            "Blameless means assuming people acted reasonably with the information and tools they had: ask why the system allowed the mistake and made it hard to catch, not who made it. People who fear blame hide the details that would prevent the next incident.",
+            "Avoid 'human error' and single root causes: list the contributing factors, such as a risky change without review, a missing safety limit, an alert that pointed elsewhere, and a slow route to the change log, each with its own fix.",
+            "A postmortem covers the summary, impact in numbers, detection, response, the timeline, contributing factors, what went well and badly, where the team got lucky, and action items with owners, priorities and tickets.",
+            "Action items only matter once they're done: make them specific and tracked, review them regularly, and share postmortems widely so that other teams learn from them too."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build an incident timeline and write the postmortem",
+        "tool": "Python",
+        "minutes": 60,
+        "goal": "Merge a checkout incident's deploy log, alerts, chat transcript and metrics into one UTC timeline, measure detection, mitigation, recovery and the error budget spent, and write a blameless postmortem with contributing factors and tracked action items.",
+        "setup": [
+          "The project folder from the earlier labs",
+          "The starter files make_metrics.py, timeline.py and postmortem_template.md, and incident/deploys.log, incident/alerts.json and incident/chat.txt"
+        ],
+        "steps": [
+          {
+            "do": "Look at the three raw sources: the deploy log is in local time with a +0200 offset, the alerts are ISO 8601 timestamps in UTC, and the chat transcript has its own format."
+          },
+          {
+            "do": "Write the incident's per-minute metrics.",
+            "code": "python make_metrics.py",
+            "lang": "bash",
+            "see": "wrote incident/metrics.csv: 120 minutes"
+          },
+          {
+            "do": "Build the timeline and the measures.",
+            "code": "python timeline.py",
+            "lang": "bash",
+            "see": "14:02:11 deploy config-push ... db_pool_max value=5 previous=50 ... CHG-4471, through 15:05 closing the incident, then the measures"
+          },
+          {
+            "do": "Read the lines the metrics added: impact began at 14:05 and recovery at 14:42. Read the measures: 4.5 minutes to detect, 33.7 to mitigate, 37.0 to recover, and 54% of the 28-day budget spent.",
+            "see": "failed requests during the incident: 3,420 = 54% of the 28-day error budget"
+          },
+          {
+            "do": "Find the gap: 16 minutes passed between declaring the incident at 14:15 and the question 'what changed?' at 14:31. Note what would have shortened it."
+          },
+          {
+            "do": "Copy postmortem_template.md to postmortem.md and write the postmortem: the summary, impact with the numbers from step 3, detection, response, the timeline, at least four contributing factors, what went well, badly and luckily, and at least four action items with type, owner and priority."
+          },
+          {
+            "do": "Review it for blame: rewrite any sentence about who got something wrong as what the system allowed, and check that no contributing factor says 'human error'."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The timeline is in UTC, with the deploy log's +0200 times converted.",
+            "look_for": [
+              "14:02:11  deploy",
+              "14:38:40  deploy"
+            ]
+          },
+          {
+            "text": "Detection, mitigation and recovery were measured.",
+            "look_for": [
+              "time to detect): 4.5 min",
+              "time to mitigate): 33.7 min",
+              "impact to recovery: 37.0 min"
+            ]
+          },
+          {
+            "text": "The error budget the incident spent.",
+            "look_for": [
+              "3,420",
+              "54% of the 28-day error budget"
+            ]
+          },
+          {
+            "text": "The postmortem has contributing factors and owned action items.",
+            "look_for": [
+              "Contributing factors",
+              "Action items",
+              "Owner"
+            ]
+          },
+          {
+            "text": "The postmortem names the configuration change and what went well.",
+            "look_for": [
+              "db_pool_max",
+              "What went well"
+            ]
+          }
+        ],
+        "submit": "Paste the output of timeline.py and your postmortem.md.",
+        "files": [
+          {
+            "path": "make_metrics.py",
+            "content": "\"\"\"Write incident/metrics.csv: checkout's per-minute requests and 5xx errors from 13:30 to 15:30 UTC.\"\"\"\nimport numpy as np\nimport pandas as pd\n\nrng = np.random.default_rng(9)\nminutes = pd.date_range(\"2026-07-09 13:30\", \"2026-07-09 15:29\", freq=\"min\", tz=\"UTC\")\nrequests = rng.poisson(310, len(minutes))\nt = (minutes - pd.Timestamp(\"2026-07-09 14:02:11\", tz=\"UTC\")).total_seconds() / 60\nratio = np.where((t > 2) & (minutes < pd.Timestamp(\"2026-07-09 14:39\", tz=\"UTC\")),\n                 np.minimum(0.35, 0.05 * (t - 2)), 0.0003)          # the pool drains, errors climb to 35%\nratio = np.where((minutes >= pd.Timestamp(\"2026-07-09 14:39\", tz=\"UTC\")) &\n                 (minutes < pd.Timestamp(\"2026-07-09 14:42\", tz=\"UTC\")), 0.05, ratio)   # draining after rollback\nerrors = rng.binomial(requests, ratio)\npd.DataFrame({\"minute\": minutes.strftime(\"%Y-%m-%dT%H:%MZ\"), \"requests\": requests, \"errors_5xx\": errors}).to_csv(\n    \"incident/metrics.csv\", index=False)\nprint(f\"wrote incident/metrics.csv: {len(minutes)} minutes\")\n"
+          },
+          {
+            "path": "timeline.py",
+            "content": "\"\"\"Module 4 lab: merge the incident's deploy log, alerts, chat and metrics into one UTC timeline, and\nmeasure detection, mitigation and recovery, and the error budget the incident spent.\"\"\"\nimport json\nimport re\nfrom datetime import datetime, timezone\n\nimport pandas as pd\n\nevents = []\nfor line in open(\"incident/deploys.log\"):                     # local time with an offset: convert to UTC\n    stamp, text = line[:25], line[26:].strip()\n    events.append((datetime.strptime(stamp, \"%Y-%m-%d %H:%M:%S %z\").astimezone(timezone.utc), \"deploy\", text))\nfor alert in json.load(open(\"incident/alerts.json\")):          # ISO 8601 in UTC\n    key = \"startsAt\" if alert[\"status\"] == \"firing\" else \"endsAt\"\n    when = datetime.fromisoformat(alert[key].replace(\"Z\", \"+00:00\"))\n    events.append((when, \"alert\", f\"{alert['labels']['alertname']} {alert['status']}\"))\nfor line in open(\"incident/chat.txt\"):                         # [YYYY-MM-DD HH:MM UTC] who: text\n    m = re.match(r\"\\[(.+?) UTC\\] (.+)\", line.strip())\n    events.append((datetime.strptime(m[1], \"%Y-%m-%d %H:%M\").replace(tzinfo=timezone.utc), \"chat\", m[2]))\n\nm = pd.read_csv(\"incident/metrics.csv\", parse_dates=[\"minute\"])\nm[\"ratio\"] = m.errors_5xx / m.requests\nbad = m[m.ratio > 0.01]\nimpact_start, impact_end = bad.minute.min().to_pydatetime(), bad.minute.max().to_pydatetime()\nratio10 = m.errors_5xx.rolling(10).sum() / m.requests.rolling(10).sum()     # trailing 10 minutes\ncalm = (ratio10 < 0.001) & (m.minute - pd.Timedelta(minutes=9) > bad.minute.max())\nrecovered = m.minute[calm].min().to_pydatetime() - pd.Timedelta(minutes=9)  # start of the first calm 10 minutes\nevents += [(impact_start, \"metrics\", \"error ratio above 1%: impact begins\"),\n           (impact_end, \"metrics\", \"last minute with error ratio above 1%\"),\n           (recovered, \"metrics\", \"recovered: the 10 minutes from here have an error ratio under 0.1%\")]\n\nevents.sort(key=lambda e: e[0])\nlo, hi = impact_start - pd.Timedelta(minutes=30), recovered + pd.Timedelta(minutes=30)\nfor when, source, text in events:\n    if lo <= when <= hi:\n        print(f\"{when:%H:%M:%S}  {source:<7} {text}\")\n\n\ndef first(source, pattern):\n    return next(w for w, s, t in events if s == source and re.search(pattern, t))\n\n\nchange = first(\"deploy\", \"CHG-4471\")\npage = first(\"alert\", \"firing\")\nrollback = first(\"deploy\", \"rollback-of=CHG-4471\")\nminutes = lambda a, b: (b - a).total_seconds() / 60\nprint(f\"trigger to impact: {minutes(change, impact_start):.1f} min; impact to page (time to detect): \"\n      f\"{minutes(impact_start, page):.1f} min\")\nprint(f\"impact to rollback (time to mitigate): {minutes(impact_start, rollback):.1f} min; impact to recovery: \"\n      f\"{minutes(impact_start, recovered):.1f} min\")\nwindow = m[(m.minute >= impact_start) & (m.minute < recovered)]\nfailed = int(window.errors_5xx.sum())\nBUDGET = 0.001 * 6_282_951                  # 99.9% of 28 days at the traffic level of module 1\nprint(f\"failed requests during the incident: {failed:,} = {failed / BUDGET:.0%} of the 28-day error budget\")\n"
+          },
+          {
+            "path": "postmortem_template.md",
+            "content": "# Postmortem: <short title of what users experienced>\n\nStatus: draft | in review | final\nIncident: SEV-<n>, <date>, <start>-<end> UTC\nAuthors: <names>    Reviewers: <names>\n\n## Summary\nTwo or three sentences: what users experienced, for how long, the trigger, and how it was mitigated.\n\n## Impact\nWho was affected and how: failed or slow requests, users or orders affected, revenue or data at risk,\nand the error budget spent (% of the 28-day budget). Use numbers from the metrics, not impressions.\n\n## Detection\nHow we found out (alert, customer, colleague), and how long after impact began.\nDid the right alert fire? Would it have fired at 3 am at half the traffic?\n\n## Response and recovery\nWhat was done, by whom (roles, not blame), and what mitigated it. What slowed us down?\n\n## Timeline (UTC)\n| Time | Event |\n|---|---|\n| hh:mm | ... |\n\n## Contributing factors\nThe conditions that together allowed this, not a single \"root cause\" and never \"human error\":\nthe trigger, why it was possible, why it wasn't caught earlier, and why it lasted as long as it did.\n\n## What went well\n\n## What went badly\n\n## Where we got lucky\n\n## Action items\n| Action | Type (prevent / detect / mitigate / process) | Owner | Priority | Ticket |\n|---|---|---|---|---|\n| ... | ... | ... | P0-P2 | ... |\n\n## Lessons learned\n"
+          },
+          {
+            "path": "incident/deploys.log",
+            "content": "2026-07-09 11:47:03 +0200 deploy service=search version=4.12.0 by deploy-bot change=CHG-4468\n2026-07-09 15:20:44 +0200 deploy service=catalogue version=2.7.3 by deploy-bot change=CHG-4470\n2026-07-09 16:02:11 +0200 config-push service=checkout key=db_pool_max value=5 previous=50 by deploy-bot change=CHG-4471\n2026-07-09 16:38:40 +0200 config-push service=checkout key=db_pool_max value=50 previous=5 by sam change=CHG-4473 rollback-of=CHG-4471\n2026-07-09 17:30:12 +0200 deploy service=search version=4.12.1 by deploy-bot change=CHG-4475\n"
+          },
+          {
+            "path": "incident/alerts.json",
+            "content": "[\n  {\"status\": \"firing\", \"labels\": {\"alertname\": \"CheckoutAvailabilityBurnRate\", \"severity\": \"page\", \"window\": \"1h\"},\n   \"annotations\": {\"summary\": \"checkout is burning its 28-day error budget 14.4 times too fast\"},\n   \"startsAt\": \"2026-07-09T14:09:30Z\"},\n  {\"status\": \"firing\", \"labels\": {\"alertname\": \"CheckoutLatencyBurnRate\", \"severity\": \"page\", \"window\": \"1h\"},\n   \"annotations\": {\"summary\": \"checkout latency SLO burning fast\"},\n   \"startsAt\": \"2026-07-09T14:13:30Z\"},\n  {\"status\": \"resolved\", \"labels\": {\"alertname\": \"CheckoutAvailabilityBurnRate\", \"severity\": \"page\", \"window\": \"1h\"},\n   \"startsAt\": \"2026-07-09T14:09:30Z\", \"endsAt\": \"2026-07-09T14:56:30Z\"},\n  {\"status\": \"resolved\", \"labels\": {\"alertname\": \"CheckoutLatencyBurnRate\", \"severity\": \"page\", \"window\": \"1h\"},\n   \"startsAt\": \"2026-07-09T14:13:30Z\", \"endsAt\": \"2026-07-09T14:52:30Z\"}\n]\n"
+          },
+          {
+            "path": "incident/chat.txt",
+            "content": "[2026-07-09 14:12 UTC] sam (on-call): ack on CheckoutAvailabilityBurnRate, looking\n[2026-07-09 14:15 UTC] sam (on-call): checkout 5xx about 20% and rising, customers can't pay. Declaring SEV-2\n[2026-07-09 14:16 UTC] rui: I'll be incident commander. Sam, you're ops lead. Lena, can you take comms?\n[2026-07-09 14:17 UTC] lena: on comms. First status page update going out now, next one at 14:45\n[2026-07-09 14:21 UTC] sam (on-call): database CPU and replication look normal, it isn't the database itself\n[2026-07-09 14:26 UTC] sam (on-call): checkout logs full of \"timeout acquiring connection from pool\"\n[2026-07-09 14:31 UTC] rui: what changed in the last hour for checkout? Check deploys and config\n[2026-07-09 14:33 UTC] sam (on-call): CHG-4471 at 14:02 set db_pool_max to 5 (was 50)\n[2026-07-09 14:35 UTC] rui: decision: roll back CHG-4471 now, investigate why later\n[2026-07-09 14:39 UTC] sam (on-call): rollback pushed, pool back to 50, errors dropping\n[2026-07-09 14:45 UTC] lena: status page: fix applied, monitoring recovery\n[2026-07-09 14:52 UTC] sam (on-call): error ratio under 0.1% for ten minutes\n[2026-07-09 15:05 UTC] rui: closing the incident. Postmortem owner: sam, draft by Friday\n"
+          }
+        ],
+        "hints": [
+          "If the deploy times come out two hours late, the offset wasn't applied: parse them with %z and convert with astimezone(timezone.utc).",
+          "Contributing factors to consider: how the configuration change was reviewed and rolled out (everywhere at once, no canary), the missing limit on pool size, where the alerts and dashboards pointed, and how long it took to find the change.",
+          "This incident spent more than 20% of the budget on its own, so the example error budget policy from module 2 requires this postmortem and at least one high-priority action."
+        ]
+      }
+    },
+    {
+      "title": "Capacity, progressive delivery and chaos engineering",
+      "summary": "Plan capacity with headroom and queueing in mind, release changes gradually with automated canary analysis, and test resilience with careful chaos experiments.",
+      "instructor": "lachlanee-mitchell",
+      "lessons": [
+        {
+          "title": "Capacity planning",
+          "minutes": 13,
+          "objectives": [
+            "Forecast demand and size a service with headroom and redundancy",
+            "Explain why latency rises sharply as utilisation approaches 100%"
+          ],
+          "key_points": [
+            "Capacity planning forecasts organic demand from trend and seasonality, adds inorganic demand such as launches and marketing events, and turns the forecast peak into resources using a measured capacity per instance.",
+            "Measure capacity per instance with a load test: the throughput at which latency still meets the SLO, below the knee where queues build, not the most it can survive.",
+            "Little's law, L = λW, says the average number of requests in a system is the arrival rate times the time each spends there: 600 requests per second each holding a worker for 50 ms keep 30 workers busy on average.",
+            "Queueing delay climbs steeply near saturation: in an M/M/c model carrying 30 workers' worth of load, 32 workers (94% busy) give an average wait of about 16 ms and 40 workers (75%) under 1 ms, so plan for headroom, not for 100%.",
+            "Provision for failure too: N+1 or N+2 means the peak is still served with one or two instances, or a whole zone, lost; across three zones, each must carry half the peak if one fails. Allow for capacity that takes weeks to arrive."
+          ],
+          "walkthrough": {
+            "tool": "Python console",
+            "title": "Headroom and queueing in numbers",
+            "steps": [
+              {
+                "do": "Apply Little's law: 600 requests per second, each holding a worker for 50 ms, keep how many workers busy on average?",
+                "code": "lam, s = 600, 0.050      # arrivals per second, seconds of work per request\na = lam * s\na",
+                "lang": "python",
+                "see": "30.0"
+              },
+              {
+                "do": "Define the Erlang C formula for an M/M/c queue: the probability that a request has to wait for one of c workers.",
+                "code": "import math\ndef erlang_c(c, a):\n    tail = a ** c / math.factorial(c) * c / (c - a)\n    return tail / (sum(a ** k / math.factorial(k) for k in range(c)) + tail)",
+                "lang": "python"
+              },
+              {
+                "do": "Compare five pool sizes: utilisation, the chance of waiting and the mean wait in milliseconds.",
+                "code": "for c in (31, 32, 34, 36, 40):\n    pw = erlang_c(c, a)\n    print(c, f\"{a / c:.0%}\", round(pw, 3), round(1000 * pw / (c / s - lam), 1))",
+                "lang": "python",
+                "see": "31 97% 0.799 39.9, 32 94% 0.63 15.8, 34 88% 0.376 4.7, 36 83% 0.212 1.8, 40 75% 0.055 0.3"
+              },
+              {
+                "do": "Read the shape: going from 32 to 40 workers adds a quarter more capacity but cuts the mean wait from 15.8 ms to 0.3 ms. Real traffic is burstier than this model, so measure, but expect the same steep curve."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Release engineering and progressive delivery",
+          "minutes": 14,
+          "objectives": [
+            "Compare rolling, blue-green and canary releases and feature flags",
+            "Gate a canary on its SLIs with an automated comparison"
+          ],
+          "key_points": [
+            "Release engineering makes change repeatable and reversible: builds reproducible from source, versioned artefacts, configuration treated as code, and a rollback that is tested and fast, since many incidents start with a change.",
+            "A rolling update replaces instances a few at a time; blue-green runs the new version beside the old and switches all traffic at once, with an instant way back; a canary sends a small share of traffic to the new version first, widening it in steps while comparing SLIs.",
+            "Feature flags separate deploying code from releasing a feature: ship it switched off, turn it on for some users, and turn it off in seconds if it misbehaves. Remove each flag once its feature is fully released.",
+            "Compare a canary with a baseline of the same size started at the same time, not with the long-running fleet, so that warm caches and uptime don't bias the result, and judge it on SLIs with a statistical test and a minimum effect size, as the lab does.",
+            "Small canaries need time: detecting an error ratio rising from 0.03% to 0.06% takes about 100,000 requests per group (80% power, one-sided 1% significance), about 33 minutes at 50 requests per second but over 5 hours at 5.",
+            "Progressive delivery tools, such as Argo Rollouts and Flagger on Kubernetes, automate the steps: shift traffic, query the metrics, then promote or roll back. Configuration changes deserve the same care as code: the module 4 incident was a configuration change pushed everywhere at once."
+          ]
+        },
+        {
+          "title": "Chaos engineering basics",
+          "minutes": 12,
+          "objectives": [
+            "Design a chaos experiment with a steady-state hypothesis and abort conditions",
+            "Decide where and how to start practising chaos engineering"
+          ],
+          "key_points": [
+            "Chaos engineering tests resilience by experiment: state a steady-state hypothesis as an SLI, such as '99% of product pages succeed within 500 ms', inject a realistic fault, and look for a difference from normal behaviour.",
+            "Choose faults that happen in real life: an instance or zone lost, a dependency slow or failing, a full disk, clock skew, a network partition. Netflix's Chaos Monkey, which shuts down instances at random, made the practice widely known.",
+            "Limit the blast radius: start in a test environment, then a small share of production traffic, with abort conditions that stop the experiment and remove the fault automatically when the SLI falls below a floor.",
+            "Experiments find weaknesses before users do: in the lab, a shop with a 200 ms timeout and a fallback kept every page good while its recommender failed or slowed; without them, a quarter to a third of pages failed, and a 2-second slowdown broke them all.",
+            "Run game days, planned exercises in which a team practises a failure and its response together, and spend error budget deliberately on experiments; fix what they reveal before widening their scope."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Gate canaries and run a chaos experiment",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Judge three canary releases against same-size baselines with a two-proportion test and a minimum effect size, work out how long a small canary must run, then run a chaos experiment on two local FastAPI services and test a steady-state hypothesis with and without a timeout and fallback.",
+        "setup": [
+          "The project folder from the earlier labs, with fastapi, uvicorn and httpx installed",
+          "The starter files canary.py, recommender.py, shop.py and experiment.py",
+          "Ports 8100 and 8101 free on your computer"
+        ],
+        "steps": [
+          {
+            "do": "Read canary.py: three releases, each with a baseline and a canary of the same size over 60 minutes. A release fails if its canary is significantly worse (one-sided p < 0.01) and at least 20% worse, on errors or on slow requests."
+          },
+          {
+            "do": "Run it.",
+            "code": "python canary.py",
+            "lang": "bash",
+            "see": "v2.3.1: PROMOTE, v2.4.0: ROLL BACK (errors), v2.5.0: ROLL BACK (slow), then the sample size: 100,316 requests per group"
+          },
+          {
+            "do": "Look at v2.3.1: its canary's error ratio was 1.22 times the baseline's, yet it passes. Explain why that's the right call with 17 errors against 14."
+          },
+          {
+            "do": "Read the last two lines and say how long you would run a canary that gets 5 requests per second, and what you could do instead."
+          },
+          {
+            "do": "Read recommender.py, shop.py and experiment.py. The recommender has a /chaos switch; the shop calls it with a 200 ms timeout and shows bestsellers when FALLBACK=on; the experiment states its hypothesis, injects each fault, removes it straight after, and aborts below 50% good pages."
+          },
+          {
+            "do": "Run the experiment. It starts both services, takes about 30 seconds and stops them at the end.",
+            "code": "python experiment.py",
+            "lang": "bash",
+            "see": "with the fallback, every phase holds; without it, '30% of calls fail' and 'calls 2 s slower' break the hypothesis, and the experiment aborts"
+          },
+          {
+            "do": "Write it up as you would after a game day: hypothesis, method, blast radius and abort condition, results, and the action items for a service that behaves like the unguarded shop."
+          },
+          {
+            "do": "Extend it: add a phase injecting 150 ms of latency, under the shop's 200 ms timeout. Predict the result, run it, and explain what it says about choosing timeouts against the SLO's 500 ms."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The canary verdicts.",
+            "look_for": [
+              "v2.3.1: PROMOTE",
+              "v2.4.0: ROLL BACK (errors)",
+              "v2.5.0: ROLL BACK (slow)"
+            ]
+          },
+          {
+            "text": "The sample size and how long a small canary needs.",
+            "look_for": [
+              "100,316 requests per group",
+              "334 minutes at 5 requests/s"
+            ]
+          },
+          {
+            "text": "With the fallback, the hypothesis held under both faults.",
+            "look_for": [
+              "calls 2 s slower",
+              "fallback used 100.0%",
+              "hypothesis holds"
+            ]
+          },
+          {
+            "text": "Without the fallback, the hypothesis broke and the experiment aborted.",
+            "look_for": [
+              "hypothesis broken",
+              "abort: good requests fell below 50%"
+            ]
+          },
+          {
+            "text": "The write-up and the 150 ms phase.",
+            "look_for": [
+              "150 ms"
+            ]
+          }
+        ],
+        "submit": "Paste the output of canary.py and experiment.py, including your 150 ms phase, your answers to steps 3 and 4, and your write-up.",
+        "files": [
+          {
+            "path": "canary.py",
+            "content": "\"\"\"Module 5 lab: judge three canary releases automatically. Each canary is compared with a baseline of the\nsame size started at the same time, on errors (5xx) and on slow requests (over 300 ms).\"\"\"\nimport math\n\nRUNS = {  # release: {group: (requests, 5xx errors, slower than 300 ms)}, over a 60-minute analysis window\n    \"v2.3.1\": {\"baseline\": (48_210, 14, 362), \"canary\": (47_985, 17, 371)},\n    \"v2.4.0\": {\"baseline\": (49_020, 15, 377), \"canary\": (48_870, 61, 402)},\n    \"v2.5.0\": {\"baseline\": (48_640, 13, 355), \"canary\": (48_515, 16, 698)},\n}\nALPHA, MIN_RATIO = 0.01, 1.2      # fail only if significantly worse AND at least 20% worse\n\n\ndef one_sided_p(bad_c, n_c, bad_b, n_b):\n    \"\"\"Two-proportion z-test: how likely is a canary this much worse if it were really no worse?\"\"\"\n    pooled = (bad_c + bad_b) / (n_c + n_b)\n    se = math.sqrt(pooled * (1 - pooled) * (1 / n_c + 1 / n_b))\n    z = (bad_c / n_c - bad_b / n_b) / se if se else 0.0\n    return z, 0.5 * math.erfc(z / math.sqrt(2))\n\n\nfor release, run in RUNS.items():\n    (n_b, err_b, slow_b), (n_c, err_c, slow_c) = run[\"baseline\"], run[\"canary\"]\n    failed = []\n    for sli, bc, bb in ((\"errors\", err_c, err_b), (\"slow\", slow_c, slow_b)):\n        z, p = one_sided_p(bc, n_c, bb, n_b)\n        worse = (bc / n_c) / (bb / n_b)\n        if p < ALPHA and worse > MIN_RATIO:\n            failed.append(sli)\n        print(f\"{release} {sli:<6} canary {bc / n_c:.3%} vs baseline {bb / n_b:.3%}  ({worse:.2f}x, z={z:5.2f}, \"\n              f\"p={p:.4f})\")\n    print(f\"{release}: {'ROLL BACK (' + ', '.join(failed) + ')' if failed else 'PROMOTE'}\")\n\n# How long must a canary run to catch a doubling of a 0.03% error ratio (power 80%, one-sided alpha 0.01)?\np1, p2 = 0.0003, 0.0006\nz_a, z_b = 2.326, 0.842\nn = ((z_a * math.sqrt(2 * (p1 + p2) / 2 * (1 - (p1 + p2) / 2)) + z_b * math.sqrt(p1 * (1 - p1) + p2 * (1 - p2)))\n     / (p2 - p1)) ** 2\nfor rps in (5, 50):\n    print(f\"to detect 0.03% -> 0.06%: {n:,.0f} requests per group, {n / rps / 60:,.0f} minutes at {rps} requests/s\")\n"
+          },
+          {
+            "path": "recommender.py",
+            "content": "\"\"\"The recommendations service the shop depends on, with a fault-injection switch for chaos experiments.\"\"\"\nimport asyncio\nimport random\n\nfrom fastapi import FastAPI, HTTPException\n\napp = FastAPI()\nfault = {\"latency_ms\": 0, \"error_rate\": 0.0}\nrng = random.Random(42)\n\n\n@app.get(\"/health\")\nasync def health():\n    return {\"status\": \"ok\"}\n\n\n@app.get(\"/recommendations/{user_id}\")\nasync def recommendations(user_id: int):\n    if fault[\"latency_ms\"]:\n        await asyncio.sleep(fault[\"latency_ms\"] / 1000)\n    if rng.random() < fault[\"error_rate\"]:\n        raise HTTPException(status_code=503, detail=\"injected failure\")\n    return {\"user_id\": user_id, \"items\": [101, 205, 309]}\n\n\n@app.post(\"/chaos\")\nasync def set_fault(latency_ms: int = 0, error_rate: float = 0.0):\n    \"\"\"Inject latency and errors; POST /chaos with no parameters removes the fault.\"\"\"\n    fault.update(latency_ms=latency_ms, error_rate=error_rate)\n    return fault\n"
+          },
+          {
+            "path": "shop.py",
+            "content": "\"\"\"The shop's product page. It calls the recommender with a short timeout and, when FALLBACK=on, shows\nbestsellers instead if the recommender is slow or failing.\"\"\"\nimport os\n\nimport httpx\nfrom fastapi import FastAPI, HTTPException\n\napp = FastAPI()\nRECOMMENDER = os.environ.get(\"RECOMMENDER_URL\", \"http://127.0.0.1:8101\")\nGUARDED = os.environ.get(\"FALLBACK\", \"on\") == \"on\"\nclient = httpx.AsyncClient(timeout=0.2 if GUARDED else 30.0)    # 200 ms budget for the dependency\nBESTSELLERS = [1, 2, 3]\n\n\n@app.get(\"/health\")\nasync def health():\n    return {\"status\": \"ok\", \"fallback\": GUARDED}\n\n\n@app.get(\"/product/{product_id}\")\nasync def product(product_id: int, user: int = 0):\n    try:\n        r = await client.get(f\"{RECOMMENDER}/recommendations/{user}\")\n        r.raise_for_status()\n        items, source = r.json()[\"items\"], \"recommender\"\n    except httpx.HTTPError:\n        if not GUARDED:                 # unguarded: the dependency's failure becomes ours\n            raise HTTPException(status_code=502, detail=\"recommendations unavailable\")\n        items, source = BESTSELLERS, \"fallback\"\n    return {\"product\": product_id, \"recommended\": items, \"source\": source}\n"
+          },
+          {
+            "path": "experiment.py",
+            "content": "\"\"\"Module 5 lab, part 2: a chaos experiment on your own machine. Steady-state hypothesis: at least 99% of\nproduct pages return 200 within 500 ms, even when the recommender fails or slows down.\"\"\"\nimport asyncio\nimport os\nimport subprocess\nimport sys\nimport time\n\nimport httpx\n\nSHOP, RECOMMENDER = \"http://127.0.0.1:8100\", \"http://127.0.0.1:8101\"\nTARGET, ABORT = 0.99, 0.50          # the hypothesis, and the level at which we stop injecting at once\n\n\ndef start(module, port, **env):\n    cmd = [sys.executable, \"-m\", \"uvicorn\", f\"{module}:app\", \"--port\", str(port), \"--log-level\", \"error\"]\n    proc = subprocess.Popen(cmd, env={**os.environ, **env})\n    for _ in range(100):\n        try:\n            httpx.get(f\"http://127.0.0.1:{port}/health\", timeout=0.5)\n            return proc\n        except httpx.HTTPError:\n            time.sleep(0.1)\n    proc.terminate()\n    raise SystemExit(f\"{module} didn't start on port {port}\")\n\n\nasync def measure(n=200, concurrency=20):\n    \"\"\"Send n product-page requests; return the share that were good and the share served by the fallback.\"\"\"\n    good = fallback = 0\n    sem = asyncio.Semaphore(concurrency)\n    async with httpx.AsyncClient(timeout=5) as c:\n        async def one(i):\n            nonlocal good, fallback\n            async with sem:\n                t0 = time.perf_counter()\n                try:\n                    r = await c.get(f\"{SHOP}/product/{i % 50}\", params={\"user\": i})\n                    ok = r.status_code == 200 and time.perf_counter() - t0 < 0.5\n                    fallback += r.status_code == 200 and r.json()[\"source\"] == \"fallback\"\n                except httpx.HTTPError:\n                    ok = False\n                good += ok\n        await asyncio.gather(*(one(i) for i in range(n)))\n    return good / n, fallback / n\n\n\ndef inject(latency_ms=0, error_rate=0.0):\n    httpx.post(f\"{RECOMMENDER}/chaos\", params={\"latency_ms\": latency_ms, \"error_rate\": error_rate})\n\n\nrecommender = start(\"recommender\", 8101)\ntry:\n    for guard in (\"on\", \"off\"):\n        shop = start(\"shop\", 8100, FALLBACK=guard)\n        try:\n            for phase, latency, errors in [(\"steady state\", 0, 0.0), (\"30% of calls fail\", 0, 0.3),\n                                           (\"calls 2 s slower\", 2000, 0.0)]:\n                inject(latency, errors)\n                good, fallback = asyncio.run(measure())\n                inject()                                        # roll the fault back straight away\n                verdict = \"hypothesis holds\" if good >= TARGET else \"hypothesis broken\"\n                print(f\"fallback {guard:<3} | {phase:<17} | good {good:6.1%} | fallback used {fallback:6.1%} | {verdict}\")\n                if good < ABORT:\n                    print(f\"fallback {guard:<3} | abort: good requests fell below {ABORT:.0%}; fault removed, \"\n                          f\"experiment stopped\")\n                    break\n        finally:\n            shop.terminate()\n            shop.wait()\nfinally:\n    recommender.terminate()\n    recommender.wait()\n"
+          }
+        ],
+        "hints": [
+          "If experiment.py says a service didn't start, another program is using port 8100 or 8101: stop it, or change the ports in experiment.py and set RECOMMENDER_URL for the shop.",
+          "The share of good pages in the unguarded '30% of calls fail' phase varies between runs (63.5% and 76.0% in testing), because the recommender's random failures depend on how requests interleave; the conclusion doesn't change.",
+          "At 150 ms the recommender answers inside the timeout, so pages stay good only while 150 ms plus the shop's own work stays under 500 ms; on a busy laptop, try a few runs."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Choose SLIs and set SLOs from a month of the checkout service's traffic.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Error budgets, the budget policy, and burn-rate alerts replayed against real incidents.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Measure toil and on-call load, and build a safe, tested automation.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Rebuild an incident's timeline, measure its cost and write a blameless postmortem.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Plan capacity, gate canary releases and run a chaos experiment.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Define, defend and test the reliability of a service",
+    "minutes": 600,
+    "brief": "Take a service you run, or the course's checkout, shop and recommender services, and make its reliability explicit and defended. Define two or three SLIs for its main user journeys with exact definitions of good and valid events, set SLOs with a window and a rationale, and work out the error budgets. Write an error budget policy the product owner could sign. Design multiwindow, multi-burn-rate alerts for each SLO and replay at least four weeks of real or generated data through them to show their detection times and false alarms. Measure toil for at least two weeks (or use the course's work log), automate one source with a safe, tested script, and set out the on-call rotation and paging policy. Finally, run a chaos experiment with a stated hypothesis and abort conditions, fix what it reveals, and write a blameless postmortem for the failure it found or for a game day you ran.",
+    "deliverables": [
+      "An SLO document: SLIs with exact definitions and where they're measured, targets, windows, error budgets, rationale, owner and review date",
+      "An error budget policy with its triggers, actions, exclusions and who decides",
+      "The alerting rules, in any monitoring system's syntax or as code, and a replay report giving detection times, time firing after recovery and false alarms for each rule",
+      "A toil report and the automation you built, with its tests and its measured or estimated payback, plus the on-call rotation and paging policy",
+      "The chaos experiment: hypothesis, method, blast radius, abort conditions, results and the fix, with measurements before and after",
+      "A blameless postmortem with a UTC timeline, contributing factors and owned, tracked action items"
+    ],
+    "rubric": [
+      {
+        "name": "SLIs and SLOs",
+        "points": 20,
+        "description": "SLIs measure what users experience, with precise definitions of good and valid; targets are justified from user needs and current performance, and budgets are calculated correctly."
+      },
+      {
+        "name": "Error budget policy and alerting",
+        "points": 25,
+        "description": "The policy is specific and agreed; alerts follow the burn-rate maths with long and short windows; the replay shows detection times and false alarms honestly."
+      },
+      {
+        "name": "Toil, automation and on-call",
+        "points": 20,
+        "description": "Toil is measured by source; the automation is idempotent, safe by default and tested; the on-call design is sustainable."
+      },
+      {
+        "name": "Chaos experiment",
+        "points": 15,
+        "description": "A clear hypothesis, a limited blast radius and abort conditions, honest results, and a fix shown to work."
+      },
+      {
+        "name": "Postmortem",
+        "points": 20,
+        "description": "Blameless, with numbers for impact, a correct UTC timeline, several contributing factors and specific action items with owners."
+      }
+    ],
+    "submit": "Paste a link to your repository or documents: the SLO document, the error budget policy, the alert rules and replay report, the toil report and automation with its test output, the chaos experiment write-up and the postmortem.",
+    "files": []
+  }
+}

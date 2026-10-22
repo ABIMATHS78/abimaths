@@ -1,0 +1,932 @@
+{
+ "slug": "spark-big-data-processing",
+ "title": "Big Data Processing with Apache Spark",
+ "subtitle": "Process large datasets with PySpark DataFrames and Spark SQL, and make jobs fast: partitions, shuffles, joins, windows, caching, Parquet, the Spark UI and tuning.",
+ "category": "Data Engineering",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "camila-torrese",
+  "davaadorji-gantulag"
+ ],
+ "skills": [
+  "Apache Spark",
+  "PySpark DataFrames",
+  "Spark SQL",
+  "Partitioning and shuffles",
+  "Join strategies",
+  "Window functions",
+  "Parquet",
+  "Performance tuning",
+  "Spark UI"
+ ],
+ "tools": [
+  "PySpark",
+  "Spark SQL",
+  "Spark UI",
+  "spark-submit",
+  "Python 3",
+  "Java"
+ ],
+ "outcomes": [
+  "Explain how Spark runs a job: driver, executors, lazy evaluation, the query plan, stages and tasks",
+  "Read, clean and aggregate data with PySpark DataFrames and Spark SQL, with explicit schemas",
+  "Control partitions and shuffles, and choose between broadcast and sort-merge joins",
+  "Use window functions and caching, and write partitioned Parquet that can be rewritten safely",
+  "Find bottlenecks and skew in the Spark UI, tune jobs, and run them with spark-submit"
+ ],
+ "prerequisites": "Data Engineering Foundations: Batch and Streaming Pipelines (Parquet, partitioning, idempotent loads) and SQL as in SQL for Data Analysis with DataGrip: joins, GROUP BY and window functions. Comfortable Python. Install Python 3.10 or later and Java 17 or 21, then pip install pyspark in a virtual environment; the labs were tested with PySpark 4.2.0 and need no cluster or download.",
+ "description": "Apache Spark processes data that is too big or too slow for one machine, by splitting it into partitions and working on them in parallel. This course teaches Spark through PySpark, with a month of synthetic sky-survey observations that Spark generates on your laptop: you'll see how lazy transformations become a query plan, jobs, stages and tasks, read files with explicit schemas and handle rows Spark can't parse, and write the same query with DataFrames and Spark SQL.\n\nThen you'll learn what makes Spark jobs fast or slow: partitions and the shuffles between them, broadcast and sort-merge joins, window functions, caching, and partitioned Parquet that's quick to read and safe to rewrite one partition at a time. The last module shows how to read the Spark UI, find and fix skew, use adaptive query execution and run applications with spark-submit. Every lab prints results you can check, and the capstone turns raw survey files into a clean, partitioned dataset with a tuning report. Afterwards, Orchestrating Data Pipelines with Apache Airflow shows how to schedule such jobs, and Real-Time Data Streaming with Apache Kafka covers streams.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Spark's model: distributed and lazy",
+   "summary": "When a job needs Spark, how a Spark application runs, and how lazy DataFrames become plans, jobs, stages and tasks.",
+   "instructor": "camila-torrese",
+   "lessons": [
+    {
+     "title": "When you need Spark, and how it runs",
+     "minutes": 12,
+     "objectives": [
+      "Decide when data is big enough to need a distributed engine",
+      "Describe the driver, executors and cluster manager of a Spark application"
+     ],
+     "key_points": [
+      "Apache Spark is an engine for processing large datasets in parallel across many machines, with APIs in Python (PySpark), SQL, Scala, Java and R; it suits data and jobs that no longer fit the memory or time budget of one computer.",
+      "For data that fits on one machine, DuckDB or pandas are usually simpler and faster to start; Spark adds start-up time, a JVM and the cost of moving data between machines, which pays off only at scale.",
+      "A Spark application has one driver, which runs your program and plans the work, and executors, which run tasks on partitions of the data and hold cached data; a cluster manager (standalone, YARN or Kubernetes) starts the executors.",
+      "In local mode, master local[4], the driver and four worker threads share one JVM on your computer: the same code later runs on a cluster by changing only the master and resources.",
+      "The SparkSession, spark in the PySpark shell, is the entry point to DataFrames and SQL; spark.version shows the version, and PySpark 4 needs Java 17 or 21."
+     ]
+    },
+    {
+     "title": "DataFrames, transformations and actions",
+     "minutes": 12,
+     "objectives": [
+      "Distinguish transformations from actions",
+      "Explain how lazy evaluation lets Spark optimise a whole query"
+     ],
+     "key_points": [
+      "A DataFrame is a distributed table with named, typed columns, split into partitions; it is immutable, so every transformation returns a new DataFrame and leaves the old one unchanged.",
+      "Transformations such as select, filter, withColumn, join and groupBy are lazy: they only add steps to a plan. Actions such as count, collect, show, take and write make Spark run the plan.",
+      "Laziness lets Spark see the whole query before running it, so the Catalyst optimiser can push filters down, drop unused columns, combine steps and choose join strategies.",
+      "collect() brings every row back to the driver, which can exhaust its memory on large data; use show(), take(n) or limit(n), or write the result to storage.",
+      "Each action runs the plan from the source again unless an intermediate result is cached, so a DataFrame used by several actions may be computed several times."
+     ],
+     "walkthrough": {
+      "tool": "PySpark shell",
+      "title": "Start the PySpark shell and watch a job appear",
+      "steps": [
+       {
+        "do": "In a terminal with your virtual environment active, start the shell with four local threads.",
+        "code": "pyspark --master \"local[4]\"",
+        "lang": "bash",
+        "see": "A Spark banner with the version, Spark context Web UI available at http://...:4040, and SparkSession available as 'spark'."
+       },
+       {
+        "do": "Open http://localhost:4040 in a browser. The Jobs tab is empty."
+       },
+       {
+        "do": "Define a DataFrame with a filter. Nothing runs yet, so the Jobs tab stays empty.",
+        "code": "df = spark.range(1_000_000).filter(\"id % 2 = 0\")",
+        "lang": "python"
+       },
+       {
+        "do": "Run an action.",
+        "code": "df.count()",
+        "lang": "python",
+        "see": "500000, and a completed job in the Jobs tab once you refresh it."
+       },
+       {
+        "do": "Print the physical plan.",
+        "code": "df.explain()",
+        "lang": "python",
+        "see": "== Physical Plan == with a Filter on top of a Range with splits=4: one partition per thread."
+       },
+       {
+        "do": "Leave the shell, which also stops Spark and its UI.",
+        "code": "exit()",
+        "lang": "python"
+       }
+      ]
+     }
+    },
+    {
+     "title": "Jobs, stages, tasks and the query plan",
+     "minutes": 12,
+     "objectives": [
+      "Explain how an action becomes jobs, stages and tasks",
+      "Read a physical plan from explain()"
+     ],
+     "key_points": [
+      "An action starts one or more jobs; each job is split into stages at shuffle boundaries, and each stage runs one task per partition, in parallel on the executors' cores.",
+      "Narrow transformations (filter, select, withColumn) work within each partition, so they run together in one stage; wide transformations (groupBy, join, distinct, orderBy, repartition) need rows from many partitions and add a shuffle.",
+      "df.explain() prints the physical plan, read from the bottom up: a scan or Range at the bottom, then operators such as Filter, Project and HashAggregate, with Exchange marking each shuffle; explain(mode='formatted') gives more detail.",
+      "An operator marked *(1) runs in whole-stage code generation, where Spark compiles a chain of operators into one function; AdaptiveSparkPlan isFinalPlan=false at the top means adaptive query execution may change the plan while it runs.",
+      "An aggregation is usually done in two steps: a partial HashAggregate in each partition before the shuffle and a final one after it, so far less data crosses the network."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Run Spark locally and read its plans",
+    "tool": "PySpark",
+    "minutes": 35,
+    "goal": "Start a local Spark session, see that transformations run nothing until an action, and read the plans of a narrow transformation and of an aggregation that shuffles.",
+    "setup": [
+     "Python 3.10 or later and Java 17 or 21, with PySpark in a virtual environment: python -m pip install pyspark (the labs were tested with PySpark 4.2.0 on Java 21)",
+     "Download the starter file first_steps.py into a folder"
+    ],
+    "steps": [
+     {
+      "do": "Check Java and PySpark.",
+      "code": "java -version\npython -c \"import pyspark; print(pyspark.__version__)\"",
+      "lang": "bash",
+      "see": "Java 17 or 21, and 4.2.0 or another 4.x version."
+     },
+     {
+      "do": "Complete TODO 1: keep the even ids and add bucket = id % 10."
+     },
+     {
+      "do": "Complete TODO 2: collect summary's rows ordered by bucket."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python first_steps.py",
+      "lang": "bash",
+      "see": "0 jobs after the transformations and some after the action, five buckets of 100000 rows, and two plans."
+     },
+     {
+      "do": "Compare the two plans: the plan for evens has no Exchange; the plan for summary has an Exchange hashpartitioning between a partial and a final HashAggregate. Explain why."
+     },
+     {
+      "do": "Change local[4] to local[2] and run it again: what changes in the output, and what doesn't?"
+     }
+    ],
+    "checks": [
+     {
+      "text": "Transformations alone ran no jobs.",
+      "look_for": [
+       "Jobs after the transformations: 0"
+      ]
+     },
+     {
+      "text": "The aggregation is right.",
+      "look_for": [
+       "bucket 0: 100000 rows, total 49999500000",
+       "bucket 8: 100000 rows, total 50000300000"
+      ]
+     },
+     {
+      "text": "The data has four partitions, one per thread.",
+      "look_for": [
+       "Partitions in nums: 4"
+      ]
+     },
+     {
+      "text": "The groupBy's plan shows a shuffle between two aggregation steps.",
+      "look_for": [
+       "AdaptiveSparkPlan isFinalPlan=false",
+       "Exchange hashpartitioning(",
+       "partial_count(1)"
+      ]
+     }
+    ],
+    "submit": "Paste your two TODOs, the output of python first_steps.py, and your answers about the plans and about local[2].",
+    "files": [
+     {
+      "path": "first_steps.py",
+      "content": "\"\"\"Start Spark on your computer, build a DataFrame, and watch lazy evaluation and the query plan.\"\"\"\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql import functions as F\n\nspark = (SparkSession.builder\n         .master(\"local[4]\")  # run on this computer, with four worker threads\n         .appName(\"first-steps\")  # the name shown in the Spark UI\n         .config(\"spark.sql.session.timeZone\", \"UTC\")\n         .config(\"spark.ui.showConsoleProgress\", \"false\")  # no progress bars in the output\n         .getOrCreate())\nspark.sparkContext.setLogLevel(\"ERROR\")\nsc = spark.sparkContext\nprint(f\"Spark {spark.version}, master {sc.master}, default parallelism {sc.defaultParallelism}\")\n\nsc.setJobGroup(\"lab1\", \"first steps\")\nnums = spark.range(1_000_000)  # one column, id, from 0 to 999,999, in 4 partitions\n# TODO 1: make `evens`: keep the rows whose id is even, and add a column bucket = id % 10\nevens = nums\nsummary = evens.groupBy(\"bucket\").agg(F.count(\"*\").alias(\"rows\"), F.sum(\"id\").alias(\"total\"))\nprint(\"Jobs after the transformations:\", len(sc.statusTracker().getJobIdsForGroup(\"lab1\")))\n\n# TODO 2: run an action: collect summary's rows, ordered by bucket, into `rows`\nrows = []\nprint(\"Jobs after the action:\", len(sc.statusTracker().getJobIdsForGroup(\"lab1\")))\nfor r in rows:\n    print(f\"bucket {r['bucket']}: {r['rows']} rows, total {r['total']}\")\n\nprint(\"Partitions in nums:\", nums.rdd.getNumPartitions())\nprint(\"--- plan for evens (narrow transformations only)\")\nevens.explain()\nprint(\"--- plan for summary (groupBy adds a shuffle)\")\nsummary.explain()\nspark.stop()\n"
+     }
+    ],
+    "hints": [
+     "F.col(\"id\") % 2 == 0 is a Column expression; filter() keeps the rows where it's true.",
+     "Spark prints a few WARN lines when it starts, for example about your hostname; they're harmless.",
+     "If Spark fails to start, java -version must show 17 or 21 for PySpark 4."
+    ]
+   }
+  },
+  {
+   "title": "DataFrames and Spark SQL",
+   "summary": "Read files with explicit schemas and deal with bad rows, transform and aggregate with built-in functions, and write the same query in Spark SQL.",
+   "instructor": "davaadorji-gantulag",
+   "lessons": [
+    {
+     "title": "Reading data with schemas",
+     "minutes": 12,
+     "objectives": [
+      "Read CSV, JSON and Parquet with an explicit schema",
+      "Choose how Spark handles rows it can't parse"
+     ],
+     "key_points": [
+      "spark.read reads CSV, JSON, Parquet, ORC and text, from one file, a folder or a glob; Parquet and ORC carry their schema, while CSV and JSON need one inferred or given.",
+      "inferSchema makes an extra pass over the data and guesses types, which is slow on big files and can guess wrong; give a schema as a StructType or a DDL string such as 'obs_id LONG, band STRING, magnitude DOUBLE'.",
+      "A parse mode decides what happens to rows that don't match the schema: PERMISSIVE (the default) sets unreadable fields to null and can keep the raw text in a corrupt-record column, DROPMALFORMED drops them, and FAILFAST stops the read.",
+      "Name the corrupt-record column with columnNameOfCorruptRecord and include it in the schema as a STRING; Spark won't run a query that uses only that column straight from the file, so cache the DataFrame first.",
+      "Formats such as timestampFormat and dateFormat tell Spark how dates are written; set spark.sql.session.timeZone (for example to UTC) so timestamps are read and shown the same way on every machine."
+     ]
+    },
+    {
+     "title": "Transforming columns and aggregating",
+     "minutes": 12,
+     "objectives": [
+      "Transform columns with built-in functions",
+      "Aggregate with groupBy and agg, and avoid slow Python UDFs"
+     ],
+     "key_points": [
+      "Column expressions come from pyspark.sql.functions, imported as F: F.col, F.lit, F.when(...).otherwise(...), F.lower, F.to_date, F.round and hundreds more, all run inside the JVM.",
+      "withColumn adds or replaces one column, select picks or computes columns, filter (or where) keeps rows, and groupBy(...).agg(...) aggregates with functions such as count, sum, avg, min, max and countDistinct.",
+      "Nulls propagate: most expressions with a null input give null, comparisons with null are not true, and aggregates such as avg skip nulls, so handle missing values on purpose with isNull, coalesce or fillna.",
+      "A Python UDF sends every row from the JVM to a Python worker and back, which is far slower than a built-in function; pandas UDFs move data in Arrow batches and are faster, but use a built-in function whenever one exists.",
+      "Chaining many withColumn calls in a loop makes huge plans; for many new columns, build them in one select or with withColumns."
+     ]
+    },
+    {
+     "title": "Spark SQL, views and ANSI mode",
+     "minutes": 12,
+     "objectives": [
+      "Query DataFrames with Spark SQL through temporary views",
+      "Explain ANSI mode and use try_cast"
+     ],
+     "key_points": [
+      "df.createOrReplaceTempView('observations') lets spark.sql() query the DataFrame by name; the result is another DataFrame, so SQL and DataFrame code can be mixed freely.",
+      "SQL and the DataFrame API go through the same Catalyst optimiser to the same physical plans, so the choice between them is about readability, not speed.",
+      "Spark 4.0 turned ANSI mode on by default (spark.sql.ansi.enabled=true): an invalid cast, an integer overflow or a division by zero raises an error instead of quietly returning null, as Spark 3 did.",
+      "try_cast, try_divide and the other try_ functions return null instead of failing, for data that is expected to contain bad values.",
+      "A temporary view belongs to its SparkSession and disappears when it stops; a global temporary view is shared across sessions in the same application, under the global_temp database."
+     ],
+     "walkthrough": {
+      "tool": "PySpark shell",
+      "title": "See ANSI mode at work",
+      "steps": [
+       {
+        "do": "Start the shell.",
+        "code": "pyspark --master \"local[4]\"",
+        "lang": "bash"
+       },
+       {
+        "do": "Check that ANSI mode is on.",
+        "code": "spark.conf.get(\"spark.sql.ansi.enabled\")",
+        "lang": "python",
+        "see": "'true' in Spark 4."
+       },
+       {
+        "do": "Cast text that isn't a number.",
+        "code": "spark.sql(\"SELECT CAST('n/a' AS DOUBLE) AS v\").show()",
+        "lang": "python",
+        "see": "An error starting [CAST_INVALID_INPUT] The value 'n/a' of the type \"STRING\" cannot be cast to \"DOUBLE\" because it is malformed, which suggests try_cast."
+       },
+       {
+        "do": "Use try_cast instead.",
+        "code": "spark.sql(\"SELECT try_cast('n/a' AS DOUBLE) AS v\").show()",
+        "lang": "python",
+        "see": "One row with NULL."
+       },
+       {
+        "do": "Turn ANSI mode off for this session and cast again, as Spark 3 would.",
+        "code": "spark.conf.set(\"spark.sql.ansi.enabled\", \"false\")\nspark.sql(\"SELECT CAST('n/a' AS DOUBLE) AS v\").show()",
+        "lang": "python",
+        "see": "NULL, with no error: the bad value would have slipped through silently."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Clean and summarise survey observations",
+    "tool": "PySpark",
+    "minutes": 40,
+    "goal": "Read a CSV of telescope observations with an explicit schema, set aside the rows Spark can't read, clean the rest, and get the same per-band summary from the DataFrame API and from Spark SQL.",
+    "setup": [
+     "Python 3.10 or later and Java 17 or 21, with PySpark in a virtual environment: python -m pip install pyspark (the labs were tested with PySpark 4.2.0 on Java 21)",
+     "Download the starter files clean_observations.py and observations_sample.csv into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Open observations_sample.csv: 360 synthetic observations, a few of them broken on purpose."
+     },
+     {
+      "do": "Run the starter.",
+      "code": "python clean_observations.py",
+      "lang": "bash",
+      "see": "Rows read: 360, unreadable: 5, with the five rows listed, and a band R line among the summaries."
+     },
+     {
+      "do": "Read the five unreadable rows: two magnitudes that aren't numbers, an impossible date, an hour of 25 and a row with missing fields. Explain why PERMISSIVE mode is safer here than DROPMALFORMED."
+     },
+     {
+      "do": "Complete TODO 1: lower-case band, and keep the five survey bands and rows with a magnitude."
+     },
+     {
+      "do": "Complete TODO 2: the same summary in SQL against the observations view."
+     },
+     {
+      "do": "Run it again.",
+      "code": "python clean_observations.py",
+      "lang": "bash",
+      "see": "Five bands, band r with 70 observations, and SQL gives the same rows: True."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Five rows are set aside as unreadable, with their raw text kept.",
+      "look_for": [
+       "Rows read: 360, unreadable: 5",
+       "unreadable: 90,2,2024-03-34 00:36:19,u,18.707,T2"
+      ]
+     },
+     {
+      "text": "The band in capitals is folded into r.",
+      "look_for": [
+       "band r: 70 observations, mean 18.599, brightest 15.026"
+      ]
+     },
+     {
+      "text": "The summary is right.",
+      "look_for": [
+       "band g: 80 observations, mean 18.66, brightest 15.076",
+       "band z: 73 observations, mean 18.376, brightest 15.018"
+      ]
+     },
+     {
+      "text": "The SQL query gives the same rows as the DataFrame code.",
+      "look_for": [
+       "SQL gives the same rows: True"
+      ]
+     },
+     {
+      "text": "ANSI mode is on, and try_cast returns null for bad input.",
+      "look_for": [
+       "ANSI mode: true",
+       "try_cast('n/a' AS DOUBLE) gives None"
+      ]
+     }
+    ],
+    "submit": "Paste your two TODOs, the output of python clean_observations.py, and your answer about PERMISSIVE and DROPMALFORMED.",
+    "files": [
+     {
+      "path": "clean_observations.py",
+      "content": "\"\"\"Read a CSV of telescope observations with an explicit schema, set aside the rows Spark can't read,\nand summarise the rest with the DataFrame API and with Spark SQL.\"\"\"\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql import functions as F\n\nspark = (SparkSession.builder.master(\"local[4]\").appName(\"clean-observations\")\n         .config(\"spark.sql.session.timeZone\", \"UTC\").config(\"spark.ui.showConsoleProgress\", \"false\")\n         .getOrCreate())\nspark.sparkContext.setLogLevel(\"ERROR\")\n\nschema = (\"obs_id LONG, object_id INT, observed_at TIMESTAMP, band STRING, magnitude DOUBLE, telescope STRING, \"\n          \"_corrupt STRING\")\nraw = (spark.read.schema(schema)\n       .option(\"header\", True)\n       .option(\"timestampFormat\", \"yyyy-MM-dd HH:mm:ss\")\n       .option(\"mode\", \"PERMISSIVE\")  # keep going: put unreadable rows' text in _corrupt\n       .option(\"columnNameOfCorruptRecord\", \"_corrupt\")\n       .csv(\"observations_sample.csv\")\n       .cache())  # Spark won't query only the corrupt-record column of a file unless the data is cached\nbad = raw.filter(F.col(\"_corrupt\").isNotNull())\nprint(f\"Rows read: {raw.count()}, unreadable: {bad.count()}\")\nfor row in bad.select(\"_corrupt\").orderBy(\"_corrupt\").collect():\n    print(\"  unreadable:\", row[\"_corrupt\"])\n\n# TODO 1: make `clean`: the readable rows without the _corrupt column, with band in lower case\n#   (F.lower), keeping only bands u, g, r, i and z and rows where magnitude is not null\nclean = raw.filter(F.col(\"_corrupt\").isNull()).drop(\"_corrupt\")\nprint(\"Clean rows:\", clean.count())\n\nper_band = (clean.groupBy(\"band\")\n            .agg(F.count(\"*\").alias(\"observations\"), F.round(F.avg(\"magnitude\"), 3).alias(\"mean_mag\"),\n                 F.min(\"magnitude\").alias(\"brightest\"))\n            .orderBy(\"band\"))\nfor r in per_band.collect():\n    print(f\"band {r['band']}: {r['observations']} observations, mean {r['mean_mag']}, brightest {r['brightest']}\")\n\nclean.createOrReplaceTempView(\"observations\")\n# TODO 2: write the same summary in SQL against the observations view, ordered by band\nin_sql = spark.sql(\"SELECT 1\")\nprint(\"SQL gives the same rows:\", in_sql.collect() == per_band.collect())\n\nprint(\"ANSI mode:\", spark.conf.get(\"spark.sql.ansi.enabled\"))\nprint(\"try_cast('n/a' AS DOUBLE) gives\", spark.sql(\"SELECT try_cast('n/a' AS DOUBLE) AS v\").first()[\"v\"])\nspark.stop()\n"
+     },
+     {
+      "path": "observations_sample.csv",
+      "content": "obs_id,object_id,observed_at,band,magnitude,telescope\n1,26,2024-03-03 01:26:32,g,19.227,T1\n2,40,2024-03-02 04:22:28,g,16.640,T2\n3,26,2024-03-06 00:45:48,i,16.054,T3\n4,31,2024-03-04 03:24:45,i,15.448,T2\n5,29,2024-03-02 20:18:36,z,18.309,T3\n6,18,2024-03-05 05:12:39,g,20.606,T3\n7,39,2024-03-05 20:58:28,u,16.519,T2\n8,15,2024-03-04 23:00:36,r,17.701,T2\n9,35,2024-03-04 05:02:31,i,21.503,T3\n10,37,2024-03-04 21:37:51,z,21.752,T2\n11,12,2024-03-04 22:06:40,z,19.015,T1\n12,17,2024-03-06 05:53:53,u,20.604,T1\n13,25,2024-03-03 03:41:16,z,15.309,T1\n14,21,2024-03-04 23:18:34,z,21.864,T3\n15,8,2024-03-02 20:46:10,r,15.220,T2\n16,13,2024-03-04 21:33:43,u,21.074,T3\n17,26,2024-03-05 23:46:40,r,18.641,T2\n18,18,2024-03-04 02:12:04,z,18.549,T3\n19,22,2024-03-02 23:00:39,z,18.648,T1\n20,26,2024-03-04 01:47:58,u,19.311,T1\n21,29,2024-03-05 00:39:45,i,17.468,T3\n22,11,2024-03-01 20:36:20,i,21.743,T2\n23,15,2024-03-03 23:12:00,g,17.189,T2\n24,23,2024-03-02 23:46:17,i,15.188,T3\n25,8,2024-03-02 22:13:31,z,n/a,T2\n26,34,2024-03-04 21:01:06,g,17.336,T2\n27,36,2024-03-05 21:41:34,g,19.552,T2\n28,33,2024-03-02 21:12:33,r,16.336,T3\n29,33,2024-03-01 22:47:09,z,19.494,T2\n30,14,2024-03-01 22:55:09,i,16.898,T2\n31,1,2024-03-04 00:05:42,z,16.092,T3\n32,38,2024-03-06 05:52:08,r,21.651,T1\n33,12,2024-03-05 04:22:01,i,18.633,T2\n34,33,2024-03-02 20:40:50,r,17.009,T1\n35,36,2024-03-06 02:56:13,z,21.276,T2\n36,27,2024-03-02 03:27:10,u,17.099,T2\n37,11,2024-03-04 05:23:25,i,17.389,T3\n38,22,2024-03-04 03:49:23,g,16.381,T3\n39,33,2024-03-02 03:55:00,z,20.642,T1\n40,11,2024-03-05 04:37:31,u,16.900,T2\n41,3,2024-03-04 00:43:44,i,15.013,T1\n42,4,2024-03-01 20:41:03,z,20.981,T2\n43,24,2024-03-02 23:08:44,g,19.528,T2\n44,29,2024-03-01 23:17:15,u,18.889,T2\n45,32,2024-03-01 21:47:08,g,19.231,T2\n46,20,2024-03-06 02:13:45,r,17.607,T3\n47,22,2024-03-04 02:56:28,r,16.716,T3\n48,38,2024-03-02 00:14:55,r,21.158,T2\n49,5,2024-03-06 03:54:33,g,18.249,T3\n50,30,2024-03-05 04:52:24,i,19.673,T2\n51,31,2024-03-02 01:52:39,u,16.005,T1\n52,1,2024-03-01 20:59:34,z,16.254,T3\n53,39,2024-03-02 04:26:21,i,20.853,T2\n54,29,2024-03-04 20:21:45,i,18.579,T1\n55,23,2024-03-05 05:20:44,u,17.270,T3\n56,31,2024-03-02 21:47:51,g,19.312,T2\n57,4,2024-03-02 23:57:59,g,17.928,T2\n58,28,2024-03-06 00:07:41,i,16.124,T3\n59,36,2024-03-05 01:10:15,r,19.501,T1\n60,18,2024-03-02 03:28:53,z,18.621,T3\n61,13,2024-03-01 22:40:24,u,19.099,T1\n62,17,2024-03-05 05:32:03,g,19.937,T3\n63,20,2024-03-03 22:40:18,g,15.162,T2\n64,6,2024-03-01 23:36:16,g,20.419,T3\n65,33,2024-03-04 01:59:24,r,20.842,T2\n66,30,2024-03-04 03:12:25,z,17.802,T3\n67,28,2024-03-03 22:17:45,g,20.024,T3\n68,8,2024-03-05 22:25:15,u,16.810,T3\n69,13,2024-03-06 04:59:51,g,21.056,T2\n70,12,2024-03-04 20:51:33,u,20.838,T2\n71,18,2024-03-04 02:45:18,u,17.344,T2\n72,22,2024-03-03 01:51:03,z,17.736,T1\n73,37,2024-03-03 02:39:15,u,21.210,T1\n74,12,2024-03-05 23:44:32,i,20.301,T3\n75,39,2024-03-05 04:03:37,g,20.279,T3\n76,29,2024-03-03 21:07:58,r,17.465,T3\n77,8,2024-03-03 21:49:11,i,19.416,T3\n78,14,2024-03-04 21:13:52,z,15.990,T3\n79,13,2024-03-04 01:32:57,i,18.204,T1\n80,30,2024-03-02 03:09:30,i,18.802,T2\n81,21,2024-03-02 23:50:01,z,15.295,T1\n82,22,2024-03-04 23:32:27,g,17.823,T3\n83,4,2024-03-03 04:28:07,u,16.893,T1\n84,17,2024-03-05 03:16:22,u,16.324,T3\n85,16,2024-03-06 03:29:13,r,16.025,T1\n86,32,2024-03-04 01:41:01,g,16.751,T1\n87,23,2024-03-06 04:54:43,z,17.682,T2\n88,35,2024-03-05 05:46:11,i,17.096,T2\n89,27,2024-03-05 03:16:06,u,20.393,T2\n90,2,2024-03-34 00:36:19,u,18.707,T2\n91,36,2024-03-05 00:26:32,r,21.713,T1\n92,10,2024-03-05 02:13:58,u,17.519,T1\n93,28,2024-03-04 05:17:53,g,21.094,T1\n94,30,2024-03-06 02:00:40,z,20.012,T2\n95,31,2024-03-06 05:19:02,z,18.059,T2\n96,7,2024-03-01 20:25:37,u,16.402,T2\n97,13,2024-03-05 01:22:27,r,19.545,T2\n98,29,2024-03-05 00:00:52,u,21.296,T2\n99,1,2024-03-03 01:17:35,r,16.567,T1\n100,9,2024-03-04 21:26:05,r,16.367,T1\n101,7,2024-03-03 21:40:57,u,15.770,T2\n102,29,2024-03-01 20:13:27,r,17.854,T1\n103,9,2024-03-03 23:57:57,u,21.759,T1\n104,5,2024-03-03 21:38:51,i,17.425,T1\n105,38,2024-03-04 22:45:03,i,18.258,T1\n106,14,2024-03-02 22:39:29,z,19.404,T1\n107,2,2024-03-05 05:41:33,r,15.026,T1\n108,37,2024-03-01 20:21:57,u,19.580,T1\n109,38,2024-03-06 00:46:07,z,21.422,T1\n110,12,2024-03-03 02:04:09,z,15.614,T3\n111,38,2024-03-01 23:53:55,g,19.760,T1\n112,37,2024-03-05 03:20:22,z,18.873,T2\n113,11,2024-03-03 22:17:38,i,18.364,T1\n114,20,2024-03-05 02:03:25,i,17.708,T1\n115,28,2024-03-04 20:13:46,r,20.309,T1\n116,35,2024-03-03 04:26:11,i,21.150,T2\n117,3,2024-03-06 03:19:42,g,17.591,T2\n118,4,2024-03-05 21:02:59,r,15.771,T2\n119,24,2024-03-02 20:29:17,u,19.512,T1\n120,17,2024-03-03 05:40:20,g,18.937,T3\n121,8,2024-03-05 03:53:11,r,16.317,T1\n122,8,2024-03-05 21:07:31,u,21.765,T3\n123,25,2024-03-02 00:39:08,g,20.806,T2\n124,18,2024-03-05 04:43:01,g,19.222,T1\n125,22,2024-03-06 01:56:38,z,16.442,T2\n126,3,2024-03-04 20:46:20,g,18.392,T2\n127,9,2024-03-05 00:13:42,i,19.241,T2\n128,9,2024-03-05 23:21:07,r,15.589,T1\n129,25,2024-03-06 03:15:49,z,21.906,T3\n130,17,2024-03-31 25:10:00,g,18.020,T2\n131,12,2024-03-05 00:04:11,z,21.442,T3\n132,21,2024-03-01 20:57:31,i,17.060,T2\n133,14,2024-03-02 03:27:06,g,18.027,T3\n134,17,2024-03-04 22:52:22,u,17.095,T1\n135,40,2024-03-02 03:37:38,i,21.835,T3\n136,22,2024-03-02 21:36:48,g,18.242,T2\n137,36,2024-03-03 04:31:36,g,18.242,T3\n138,6,2024-03-02 22:25:33,z,15.070,T2\n139,31,2024-03-03 21:39:26,u,16.428,T2\n140,8,2024-03-06 03:51:19,z,15.246,T1\n141,4,2024-03-03 23:22:57,u,18.822,T1\n142,2,2024-03-03 04:01:16,r,16.822,T2\n143,10,2024-03-05 02:45:08,z,20.660,T1\n144,23,2024-03-05 03:53:42,r,20.817,T1\n145,37,2024-03-01 20:10:13,i,21.279,T2\n146,17,2024-03-05 05:17:10,z,19.219,T2\n147,22,2024-03-01 21:49:46,i,21.945,T2\n148,39,2024-03-03 00:32:56,z,18.168,T1\n149,34,2024-03-03 01:13:11,r,20.957,T3\n150,20,2024-03-04 20:18:21,r,18.848,T1\n151,15,2024-03-05 05:06:58,u,19.681,T2\n152,37,2024-03-06 05:36:11,i,16.366,T1\n153,38,2024-03-03 04:16:54,g,16.896,T3\n154,11,2024-03-02 23:55:31,g,15.921,T3\n155,22,2024-03-01 22:17:51,u,15.557,T3\n156,12,2024-03-06 02:18:40,z,15.038,T3\n157,22,2024-03-01 22:40:34,r,16.875,T1\n158,8,2024-03-03 05:34:32,u,21.338,T3\n159,31,2024-03-05 02:28:09,u,15.382,T1\n160,39,2024-03-02 04:13:36,z,15.342,T2\n161,12,2024-03-02 21:04:14,g,21.913,T1\n162,4,2024-03-01 21:16:08,g,21.405,T1\n163,15,2024-03-06 05:58:08,z,16.722,T3\n164,14,2024-03-04 03:02:02,g,15.149,T3\n165,18,2024-03-05 01:41:19,r,18.767,T2\n166,34,2024-03-05 22:00:16,r,21.530,T1\n167,9,2024-03-06 04:24:01,u,16.861,T1\n168,1,2024-03-06 00:05:34,z,15.802,T3\n169,31,2024-03-05 05:54:56,i,18.677,T1\n170,13,2024-03-04 00:24:42,u,19.203,T2\n171,40,2024-03-02 23:10:52,g,19.207,T3\n172,11,2024-03-06 04:21:08,g,21.837,T1\n173,12,2024-03-04 03:19:19,g,19.517,T3\n174,40,2024-03-04 00:46:42,r,21.124,T2\n175,34,2024-03-04 02:10:40,u,17.978,T3\n176,15,2024-03-02 04:32:41,g,21.869,T1\n177,29,2024-03-04 04:50:18,r,21.072,T2\n178,27,2024-03-03 01:03:11,g,17.608,T3\n179,25,2024-03-03 21:27:43,g,17.596,T1\n180,22,2024-03-01 23:12:23,g,15.206,T3\n181,37,2024-03-04 03:22:26,z,20.864,T2\n182,20,2024-03-04 21:12:26,z,17.648,T3\n183,4,2024-03-02 21:53:56,z,19.192,T1\n184,11,2024-03-02 20:04:29,z,16.286,T2\n185,18,2024-03-04 00:19:24,i,19.619,T1\n186,31,2024-03-06 02:54:43,u,18.092,T3\n187,36,2024-03-01 20:05:41,r,17.955,T3\n188,9,2024-03-03 00:11:15,r,21.189,T2\n189,21,2024-03-02 02:24:46,u,21.545,T2\n190,22,2024-03-01 22:19:20,r,21.002,T1\n191,12,2024-03-06 02:36:52,r,16.417,T3\n192,31,2024-03-02 01:18:56,i,17.484,T3\n193,18,2024-03-06 03:22:47,g,15.419,T1\n194,38,2024-03-02 04:42:49,g,20.759,T1\n195,2,2024-03-05 23:58:17,g,16.305,T2\n196,17,2024-03-03 04:30:51,z,15.399,T2\n197,14,2024-03-01 22:30:25,g,19.859,T1\n198,28,2024-03-03 00:25:18,r,16.718,T1\n199,16,2024-03-05 02:05:36,u,20.257,T2\n200,32,2024-03-04 02:16:52,r,fifteen,T3\n201,28,2024-03-04 01:47:23,g,21.291,T1\n202,20,2024-03-06 05:51:40,g,21.969,T1\n203,5,2024-03-04 23:23:19,i,19.084,T2\n204,18,2024-03-06 00:46:40,r,21.042,T2\n205,31,2024-03-04 04:14:18,g,15.655,T2\n206,40,2024-03-03 04:55:17,z,18.790,T3\n207,30,2024-03-04 22:54:46,u,19.750,T2\n208,23,2024-03-04 01:40:18,g,19.883,T2\n209,7,2024-03-02 01:32:22,g,20.074,T2\n210,3,2024-03-02 00:04:57,r,15.748,T2\n211,22,2024-03-03 01:03:03,u,15.706,T3\n212,12,2024-03-06 01:09:18,g,15.463,T1\n213,18,2024-03-05 21:10:19,z,18.337,T1\n214,8,2024-03-05 21:51:38,r,18.575,T1\n215,4,2024-03-06 03:54:28,i,21.320,T3\n216,14,2024-03-04 22:15:13,r,21.821,T3\n217,15,2024-03-02 02:40:18,g,18.562,T3\n218,33,2024-03-05 01:02:29,i,17.994,T1\n219,7,2024-03-04 01:51:23,g,15.326,T2\n220,34,2024-03-03 03:34:53,r,21.672,T3\n221,37,2024-03-02 20:26:06,r,20.220,T1\n222,30,2024-03-02 05:48:17,i,18.392,T1\n223,6,2024-03-04 02:41:10,i,16.128,T2\n224,32,2024-03-05 21:22:52,u,15.580,T2\n225,29,2024-03-04 05:56:24,i,16.843,T1\n226,21,2024-03-03 02:59:10,u,15.229,T1\n227,33,2024-03-05 21:00:58,z,17.719,T2\n228,33,2024-03-04 23:15:58,g,18.167,T2\n229,23,2024-03-03 00:09:31,u,17.210,T2\n230,14,2024-03-03 22:54:00,u,15.185,T1\n231,27,2024-03-03 22:39:12,i,19.210,T3\n232,32,2024-03-04 00:15:56,g,15.440,T2\n233,18,2024-03-02 05:15:58,r,19.365,T1\n234,5,2024-03-05 21:40:54,g,21.995,T2\n235,1,2024-03-03 22:28:35,z,17.899,T2\n236,2,2024-03-02 03:05:05,z,21.340,T3\n237,6,2024-03-03 00:43:34,g,17.135,T2\n238,8,2024-03-02 05:38:30,u,21.749,T1\n239,26,2024-03-05 01:18:31,i,18.559,T1\n240,3,2024-03-05 01:07:28,z,15.043,T3\n241,16,2024-03-06 00:13:01,i,18.924,T2\n242,11,2024-03-04 20:17:19,g,20.166,T2\n243,39,2024-03-02 23:34:34,i,20.206,T2\n244,24,2024-03-02 23:22:09,u,16.677,T2\n245,21,2024-03-02 21:48:57,u,16.250,T1\n246,2,2024-03-06 01:38:54,g,18.018,T3\n247,9,2024-03-04 23:38:10,i,16.907,T1\n248,5,2024-03-02 02:03:31,i,20.094,T3\n249,9,2024-03-03 23:47:05,r,18.029,T2\n250,36,2024-03-05 03:09:08,z\n251,36,2024-03-05 05:47:42,u,20.436,T1\n252,37,2024-03-04 05:28:12,g,20.987,T2\n253,13,2024-03-01 22:09:19,z,17.955,T2\n254,13,2024-03-05 22:32:23,u,21.644,T2\n255,10,2024-03-05 22:49:08,u,21.214,T1\n256,13,2024-03-05 22:17:36,z,17.332,T1\n257,12,2024-03-04 01:36:04,g,18.552,T3\n258,11,2024-03-06 03:31:50,z,15.495,T1\n259,23,2024-03-02 05:41:03,z,21.399,T1\n260,12,2024-03-03 20:33:44,z,16.859,T3\n261,5,2024-03-03 05:13:33,g,19.654,T3\n262,11,2024-03-02 23:27:01,i,19.154,T1\n263,7,2024-03-03 20:14:48,z,17.406,T1\n264,14,2024-03-01 23:09:59,r,17.848,T1\n265,20,2024-03-04 03:47:12,r,20.375,T1\n266,21,2024-03-02 04:28:35,r,17.677,T3\n267,22,2024-03-02 23:36:57,g,15.076,T2\n268,8,2024-03-04 00:30:57,r,20.008,T3\n269,11,2024-03-02 04:39:48,u,20.566,T1\n270,40,2024-03-04 04:23:23,z,21.139,T1\n271,30,2024-03-02 21:04:08,i,18.161,T3\n272,4,2024-03-06 02:46:06,z,18.839,T3\n273,27,2024-03-01 20:51:27,z,16.964,T1\n274,38,2024-03-03 03:09:24,u,18.574,T1\n275,28,2024-03-05 03:26:18,i,20.364,T1\n276,24,2024-03-02 01:21:50,z,16.519,T1\n277,6,2024-03-06 00:27:05,r,19.685,T3\n278,7,2024-03-05 04:35:44,g,16.640,T3\n279,13,2024-03-03 23:53:53,r,19.890,T2\n280,38,2024-03-05 03:46:00,g,15.516,T3\n281,9,2024-03-04 00:02:47,z,18.014,T1\n282,26,2024-03-03 02:00:27,g,21.630,T2\n283,21,2024-03-05 02:01:03,i,18.467,T2\n284,34,2024-03-05 21:55:07,i,17.088,T1\n285,11,2024-03-04 00:25:45,i,16.417,T1\n286,8,2024-03-04 01:45:55,u,16.245,T3\n287,33,2024-03-04 01:39:19,g,19.618,T3\n288,32,2024-03-02 00:23:42,r,15.312,T1\n289,35,2024-03-03 02:15:09,r,18.475,T2\n290,22,2024-03-02 20:38:37,r,17.544,T2\n291,35,2024-03-01 20:22:40,u,15.658,T2\n292,31,2024-03-03 03:06:24,i,15.434,T1\n293,35,2024-03-05 21:25:07,g,16.744,T3\n294,3,2024-03-03 21:29:23,r,19.914,T3\n295,40,2024-03-06 05:19:01,i,19.323,T1\n296,4,2024-03-02 21:13:54,u,20.589,T3\n297,34,2024-03-03 04:46:34,i,19.808,T1\n298,36,2024-03-02 23:41:09,r,19.692,T3\n299,30,2024-03-06 02:57:34,g,18.555,T3\n300,36,2024-03-02 23:33:12,R,16.599,T1\n301,19,2024-03-05 00:51:22,u,18.991,T3\n302,7,2024-03-06 01:51:56,z,21.186,T3\n303,9,2024-03-06 05:54:30,i,17.744,T2\n304,15,2024-03-03 03:34:22,r,20.780,T1\n305,18,2024-03-06 02:37:30,g,18.925,T2\n306,31,2024-03-03 22:51:20,z,21.197,T1\n307,9,2024-03-02 03:18:38,z,19.569,T3\n308,26,2024-03-03 23:44:00,r,18.141,T3\n309,27,2024-03-05 21:06:41,r,21.618,T2\n310,24,2024-03-05 20:18:47,i,19.363,T1\n311,38,2024-03-04 21:15:13,r,16.804,T3\n312,7,2024-03-04 03:32:59,g,18.665,T3\n313,1,2024-03-05 03:36:00,u,20.736,T2\n314,25,2024-03-03 20:35:32,r,21.210,T1\n315,4,2024-03-05 23:33:14,z,17.806,T3\n316,22,2024-03-01 22:31:50,i,15.806,T3\n317,24,2024-03-03 23:28:52,i,20.779,T2\n318,1,2024-03-03 00:04:28,z,21.803,T1\n319,31,2024-03-03 03:55:43,g,16.186,T1\n320,9,2024-03-06 00:33:13,z,20.738,T3\n321,23,2024-03-03 22:13:17,u,19.922,T1\n322,15,2024-03-05 21:58:13,r,15.611,T3\n323,12,2024-03-03 21:32:08,g,19.510,T3\n324,15,2024-03-02 04:41:20,i,20.756,T1\n325,32,2024-03-02 02:16:05,u,15.771,T3\n326,28,2024-03-06 04:22:27,r,21.127,T2\n327,19,2024-03-03 20:14:36,u,16.748,T1\n328,10,2024-03-06 01:45:53,i,21.249,T3\n329,36,2024-03-05 22:40:28,u,20.600,T3\n330,17,2024-03-04 02:01:17,u,16.641,T3\n331,10,2024-03-02 05:16:58,u,21.788,T3\n332,12,2024-03-06 05:32:39,r,19.892,T3\n333,38,2024-03-02 04:50:14,r,15.433,T1\n334,29,2024-03-01 22:35:25,u,16.969,T3\n335,16,2024-03-05 04:32:24,z,20.003,T1\n336,13,2024-03-02 01:28:10,g,20.179,T2\n337,28,2024-03-04 02:16:45,u,16.794,T1\n338,25,2024-03-05 05:39:01,g,21.732,T3\n339,21,2024-03-04 03:31:40,i,16.367,T2\n340,33,2024-03-04 02:35:58,z,20.565,T1\n341,7,2024-03-05 02:16:25,z,15.018,T3\n342,18,2024-03-03 03:03:22,r,17.786,T2\n343,29,2024-03-06 01:20:01,i,17.124,T2\n344,25,2024-03-05 04:47:42,u,21.769,T1\n345,29,2024-03-03 20:58:06,g,20.864,T3\n346,29,2024-03-01 21:04:54,g,18.470,T1\n347,3,2024-03-05 01:50:31,g,20.514,T2\n348,25,2024-03-01 20:25:33,r,18.639,T2\n349,39,2024-03-06 03:50:29,u,15.033,T2\n350,15,2024-03-01 21:46:37,i,16.236,T3\n351,26,2024-03-03 02:32:06,z,20.551,T2\n352,20,2024-03-03 02:24:14,i,19.109,T3\n353,11,2024-03-03 03:08:03,z,15.251,T3\n354,26,2024-03-02 04:10:40,r,15.487,T1\n355,6,2024-03-05 23:01:25,z,21.283,T2\n356,5,2024-03-02 03:34:41,u,15.516,T3\n357,17,2024-03-02 23:13:48,r,18.863,T3\n358,7,2024-03-03 00:45:33,z,16.705,T3\n359,14,2024-03-03 04:55:09,z,17.610,T1\n360,10,2024-03-06 00:25:30,g,16.236,T3\n"
+     }
+    ],
+    "hints": [
+     "F.col(\"band\").isin(\"u\", \"g\", \"r\", \"i\", \"z\") is true when band is one of those.",
+     "Lower-case band before filtering, or the R row is dropped instead of counted.",
+     "For the SQL to match, select the same columns with the same names, in the same order."
+    ]
+   }
+  },
+  {
+   "title": "Partitions, shuffles and joins",
+   "summary": "How data is split into partitions, what a shuffle costs and how to avoid one, and how Spark chooses between broadcast and sort-merge joins.",
+   "instructor": "camila-torrese",
+   "lessons": [
+    {
+     "title": "Partitions and parallelism",
+     "minutes": 12,
+     "objectives": [
+      "Explain how partitions set the parallelism of a stage",
+      "Change the number of partitions with repartition and coalesce"
+     ],
+     "key_points": [
+      "A partition is the unit of parallel work: a stage runs one task per partition, so the number of partitions limits how many cores a stage can use; df.rdd.getNumPartitions() shows it.",
+      "Input partitions come from the source: files are split into pieces of up to spark.sql.files.maxPartitionBytes (128 MB by default), and spark.range uses the default parallelism, which is the number of cores in local mode.",
+      "repartition(n) or repartition(n, col) redistributes rows with a full shuffle, hash-partitioning by the columns given; coalesce(n) merges existing partitions without a shuffle and can only reduce their number.",
+      "Too few partitions leave cores idle and make tasks large; too many create overhead and tiny files. A common target is a few times the number of cores, with partitions of roughly 100-200 MB.",
+      "Hash partitioning sends every row with the same key to the same partition, so a key with few values or one very common value gives empty and oversized partitions."
+     ]
+    },
+    {
+     "title": "Shuffles and what they cost",
+     "minutes": 12,
+     "objectives": [
+      "Recognise operations that shuffle",
+      "Reduce the data a shuffle moves"
+     ],
+     "key_points": [
+      "A shuffle redistributes rows between partitions by key: each task writes its output in shuffle files on local disk, and tasks of the next stage fetch the parts they need over the network.",
+      "groupBy, distinct, join (except broadcast joins), orderBy, window functions and repartition all shuffle; in a plan, each shuffle appears as an Exchange.",
+      "spark.sql.shuffle.partitions (200 by default) sets the number of partitions after a shuffle; adaptive query execution, on by default since Spark 3.2, merges small ones at run time.",
+      "Make shuffles smaller: filter and select only the needed columns before them, aggregate before joining where possible, and broadcast small tables instead of shuffling large ones.",
+      "When shuffle data doesn't fit in memory, Spark spills it to disk, which shows as Spill (Memory) and Spill (Disk) in the Spark UI and usually means partitions are too large."
+     ]
+    },
+    {
+     "title": "Join strategies and broadcast joins",
+     "minutes": 12,
+     "objectives": [
+      "Explain broadcast hash joins and sort-merge joins",
+      "Choose and check the join strategy for a query"
+     ],
+     "key_points": [
+      "A sort-merge join shuffles both sides by the join key, sorts each partition and merges them; it scales to two large tables and is Spark's usual strategy for them.",
+      "A broadcast hash join copies the small side to every executor and joins each partition of the large side locally, with no shuffle of the large side; Spark picks it automatically when one side is estimated below spark.sql.autoBroadcastJoinThreshold (10 MB by default).",
+      "F.broadcast(df), or the SQL hint /*+ BROADCAST(objects) */, asks for a broadcast join; broadcasting something too big can run the driver or executors out of memory.",
+      "Check which strategy Spark chose with explain(): BroadcastHashJoin or SortMergeJoin; adaptive query execution can switch a sort-merge join to a broadcast join at run time when one side turns out small.",
+      "Join keys must have the same type on both sides, and a key that appears in many rows on both sides multiplies rows, so check row counts after a join."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Watch shuffles and choose a join",
+    "tool": "PySpark",
+    "minutes": 45,
+    "goal": "Change partition counts, see how hash partitioning by a column with few values fills partitions unevenly, and compare a broadcast join with a sort-merge join on two million observations.",
+    "setup": [
+     "Python 3.10 or later and Java 17 or 21, with PySpark in a virtual environment: python -m pip install pyspark (the labs were tested with PySpark 4.2.0 on Java 21)",
+     "Download the starter files shuffles_and_joins.py and survey.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Read survey.py: it generates the observations and objects inside Spark from hashes of each row's ID, so everyone gets the same synthetic data. Nothing is downloaded."
+     },
+     {
+      "do": "Complete TODO 1: a join with F.broadcast(objs), then turn automatic broadcasting off and join without the hint."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python shuffles_and_joins.py",
+      "lang": "bash",
+      "see": "Partition counts, rows per partition after repartitioning by band, the two join plans and the rows per object type."
+     },
+     {
+      "do": "Rows per partition by band shows only three numbers for eight partitions: explain what happened to the five bands."
+     },
+     {
+      "do": "Explain the hash exchanges: why the broadcast join needs none and the sort-merge join needs two."
+     },
+     {
+      "do": "Optional: add input(\"Press Enter\") before spark.stop(), run it again, and compare the two joins' stages in the SQL / DataFrame tab at http://localhost:4040."
+     }
+    ],
+    "checks": [
+     {
+      "text": "repartition and coalesce change the partition count.",
+      "look_for": [
+       "Partitions: 4 | repartition(8): 8 | coalesce(2): 2"
+      ]
+     },
+     {
+      "text": "Hash partitioning by band fills only three of the eight partitions.",
+      "look_for": [
+       "Rows per partition by band: [400193, 799750, 800057]"
+      ]
+     },
+     {
+      "text": "The broadcast join shuffles neither side; the sort-merge join shuffles both.",
+      "look_for": [
+       "BroadcastHashJoin True | hash exchanges 0",
+       "SortMergeJoin True | hash exchanges 2"
+      ]
+     },
+     {
+      "text": "Both joins give the same, complete result.",
+      "look_for": [
+       "{'galaxy': 602155, 'quasar': 194306, 'star': 1203539}",
+       "Both joins give the same rows: True"
+      ]
+     }
+    ],
+    "submit": "Paste your TODO, the output of python shuffles_and_joins.py, and your explanations of the partition sizes and the exchanges.",
+    "files": [
+     {
+      "path": "shuffles_and_joins.py",
+      "content": "\"\"\"Partitions, shuffles and joins on two million synthetic observations.\"\"\"\n\nimport contextlib\nimport io\n\nfrom pyspark.sql import functions as F\n\nfrom survey import objects, observations, session\n\n\ndef plan(df):\n    \"\"\"The physical plan that df.explain() prints, as a string.\"\"\"\n    buffer = io.StringIO()\n    with contextlib.redirect_stdout(buffer):\n        df.explain()\n    return buffer.getvalue()\n\n\nspark = session(\"shuffles-and-joins\")\nobs = observations(spark, 2_000_000)\nobjs = objects(spark)\nprint(\"Partitions:\", obs.rdd.getNumPartitions(), \"| repartition(8):\", obs.repartition(8).rdd.getNumPartitions(),\n      \"| coalesce(2):\", obs.coalesce(2).rdd.getNumPartitions())\n\n# Rows in each partition after hash-partitioning by band: five bands can fill at most five of the eight.\nby_band = obs.repartition(8, \"band\").groupBy(F.spark_partition_id().alias(\"partition\")).count()\nprint(\"Rows per partition by band:\", sorted(r[\"count\"] for r in by_band.collect()))\n\nsummary = obs.groupBy(\"band\").agg(F.count(\"*\").alias(\"n\"))\nprint(\"groupBy shuffles:\", \"Exchange hashpartitioning\" in plan(summary))\n\n# TODO 1: join obs to objs on object_id twice: `broadcast_join` with objs wrapped in F.broadcast(),\n#   and, after turning automatic broadcasting off with\n#   spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", -1), `shuffle_join` without the hint\nbroadcast_join = obs\nshuffle_join = obs\nb, s = plan(broadcast_join), plan(shuffle_join)\nprint(\"Broadcast join plan: BroadcastHashJoin\", \"BroadcastHashJoin\" in b, \"| hash exchanges\", b.count(\"Exchange hashpartitioning\"))\nprint(\"Shuffle join plan: SortMergeJoin\", \"SortMergeJoin\" in s, \"| hash exchanges\", s.count(\"Exchange hashpartitioning\"))\n\nper_type = {r[\"object_type\"]: r[\"count\"] for r in broadcast_join.groupBy(\"object_type\").count().collect()}\nprint(\"Observations by object type:\", dict(sorted(per_type.items())))\nprint(\"Both joins give the same rows:\", broadcast_join.count() == shuffle_join.count() == 2_000_000)\nspark.stop()\n"
+     },
+     {
+      "path": "survey.py",
+      "content": "\"\"\"Synthetic sky-survey tables, generated inside Spark.\n\nThe values come from hashes of each row's ID, not from rand(), so every computer and every number of\npartitions produces exactly the same data.\n\"\"\"\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql import functions as F\n\nBANDS = [\"u\", \"g\", \"r\", \"i\", \"z\"]\n\n\ndef session(app):\n    \"\"\"A local Spark session with four worker threads and UTC timestamps, so results match everywhere.\"\"\"\n    spark = (SparkSession.builder.master(\"local[4]\").appName(app)\n             .config(\"spark.sql.session.timeZone\", \"UTC\")\n             .config(\"spark.ui.showConsoleProgress\", \"false\")\n             .getOrCreate())\n    spark.sparkContext.setLogLevel(\"ERROR\")\n    return spark\n\n\ndef uniform(col, salt):\n    \"\"\"A number in [0, 1) from a column's hash: the same value for the same input on every machine.\"\"\"\n    return F.pmod(F.xxhash64(col, F.lit(salt)), F.lit(1_000_000)) / 1_000_000.0\n\n\ndef objects(spark, n=20_000):\n    \"\"\"One row per sky object: its type, position and typical brightness (magnitude: lower is brighter).\"\"\"\n    oid = F.col(\"id\").cast(\"int\")\n    kind = uniform(oid, \"type\")\n    return spark.range(n).select(\n        oid.alias(\"object_id\"),\n        F.when(kind < 0.6, \"star\").when(kind < 0.9, \"galaxy\").otherwise(\"quasar\").alias(\"object_type\"),\n        F.round(uniform(oid, \"ra\") * 360, 4).alias(\"ra\"),\n        F.round(uniform(oid, \"dec\") * 120 - 90, 4).alias(\"dec\"),\n    )\n\n\ndef observations(spark, n=500_000, n_objects=20_000, hot_share=0.0):\n    \"\"\"One row per observation of an object, over 30 nights in March 2024.\n\n    hot_share > 0 sends that share of all observations to object 0, to make the data skewed.\n    \"\"\"\n    oid = F.pmod(F.xxhash64(\"id\", F.lit(\"object\")), F.lit(n_objects)).cast(\"int\")\n    if hot_share:\n        oid = F.when(uniform(F.col(\"id\"), \"hot\") < hot_share, F.lit(0)).otherwise(oid)\n    night = F.date_add(F.lit(\"2024-03-01\").cast(\"date\"), F.pmod(F.xxhash64(\"id\", F.lit(\"night\")), F.lit(30)).cast(\"int\"))\n    seconds = F.pmod(F.xxhash64(\"id\", F.lit(\"time\")), F.lit(36_000))  # from 20:00 until 06:00\n    band = F.element_at(F.array(*[F.lit(b) for b in BANDS]), (F.pmod(F.xxhash64(\"id\", F.lit(\"band\")), F.lit(5)) + 1).cast(\"int\"))\n    return (spark.range(n)\n            .select(F.col(\"id\").alias(\"obs_id\"), oid.alias(\"object_id\"), night.alias(\"night\"), seconds.alias(\"s\"),\n                    band.alias(\"band\"), uniform(F.col(\"id\"), \"noise\").alias(\"noise\"),\n                    F.concat(F.lit(\"T\"), (F.pmod(F.xxhash64(\"id\", F.lit(\"telescope\")), F.lit(3)) + 1).cast(\"string\")).alias(\"telescope\"))\n            .withColumn(\"observed_at\", F.timestamp_seconds(F.unix_timestamp(F.col(\"night\").cast(\"timestamp\")) + 72_000 + F.col(\"s\")))\n            .withColumn(\"magnitude\", F.round(15 + uniform(F.col(\"object_id\"), \"base\") * 7 + (F.col(\"noise\") - 0.5) * 0.6, 3))\n            .select(\"obs_id\", \"object_id\", \"night\", \"observed_at\", \"band\", \"magnitude\", \"telescope\"))\n"
+     }
+    ],
+    "hints": [
+     "Turn broadcasting off with spark.conf.set(\"spark.sql.autoBroadcastJoinThreshold\", -1) before building the second join, or Spark broadcasts the 20,000 objects anyway.",
+     "Two bands whose hashes land in the same partition share it, and the other partitions stay empty.",
+     "The run takes about half a minute on a laptop; the first run is slower while the JVM warms up."
+    ]
+   }
+  },
+  {
+   "title": "Windows, caching and Parquet",
+   "summary": "Rank and compare rows with window functions, reuse results with caching, and write partitioned Parquet that's quick to read and safe to rewrite.",
+   "instructor": "davaadorji-gantulag",
+   "lessons": [
+    {
+     "title": "Window functions",
+     "minutes": 12,
+     "objectives": [
+      "Rank rows and compare each row with its neighbours using windows",
+      "Compute running totals with window frames"
+     ],
+     "key_points": [
+      "A window function computes a value for each row from a group of related rows without collapsing them: Window.partitionBy('night').orderBy('magnitude') defines the group and its order, and F.row_number().over(window) numbers the rows.",
+      "row_number gives 1, 2, 3 with no ties; rank leaves gaps after ties (1, 1, 3); dense_rank doesn't (1, 1, 2). Add a unique column to orderBy, such as an ID, so results are repeatable.",
+      "lag and lead read a column from the previous or next row in the window, which suits changes over time such as an object's brightness since its last observation; the first row's lag is null.",
+      "A frame such as rowsBetween(Window.unboundedPreceding, Window.currentRow) turns sum or avg into running totals or moving averages over the ordered rows.",
+      "A window shuffles all rows of each partitionBy key to one task, so a window with no partitionBy moves every row to a single partition; a very common key makes one task slow."
+     ]
+    },
+    {
+     "title": "Caching and persistence",
+     "minutes": 10,
+     "objectives": [
+      "Decide when caching a DataFrame helps",
+      "Cache, check and release a DataFrame"
+     ],
+     "key_points": [
+      "df.cache() keeps a DataFrame's partitions in executor memory, spilling to disk if needed (MEMORY_AND_DISK), after the first action computes them; later actions reuse them instead of recomputing from the source.",
+      "Cache a DataFrame that several actions or an iterative algorithm reuse, and that is expensive to recompute; caching something used once only adds work and takes memory.",
+      "persist(StorageLevel...) chooses where to keep it, such as MEMORY_ONLY or DISK_ONLY; df.is_cached and df.storageLevel show the state, and the Spark UI's Storage tab shows how much is cached.",
+      "Call df.unpersist() when a cached DataFrame is no longer needed, so its memory goes back to execution and other caches.",
+      "Caching isn't a checkpoint: cached partitions lost with an executor are recomputed from the plan. For results that must survive, or to cut a very long plan, write them out, for example to Parquet."
+     ]
+    },
+    {
+     "title": "Writing Parquet: partitions, files and overwrites",
+     "minutes": 12,
+     "objectives": [
+      "Write partitioned Parquet with a sensible number of files",
+      "Rewrite single partitions safely with dynamic partition overwrite"
+     ],
+     "key_points": [
+      "df.write.partitionBy('night').parquet(path) writes one folder per value, such as night=2024-03-15; reading the path rebuilds the night column from the folder names, and a filter on it reads only the matching folders (PartitionFilters in the plan).",
+      "Each task writes its own file in every partition it has rows for, so many tasks times many partitions gives many small files; df.repartition('night') before the write sends each night to one task, and so to one file.",
+      "Save modes: errorifexists (the default) fails if the path exists, append adds files, overwrite replaces data and ignore does nothing if the path exists.",
+      "By default, overwrite with partitionBy deletes every partition under the path; with spark.sql.sources.partitionOverwriteMode=dynamic only the partitions present in the new data are replaced, which makes reruns of one day safe.",
+      "Filters on ordinary columns are pushed into the Parquet reader (PushedFilters), which skips row groups using their statistics; Spark refuses to overwrite a path that the same query is reading from."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Rank, cache and write a partitioned dataset",
+    "tool": "PySpark",
+    "minutes": 50,
+    "goal": "Use window functions to find each night's brightest observations and each object's biggest change, cache a reused summary, and write, read and partly rewrite a partitioned Parquet dataset.",
+    "setup": [
+     "Python 3.10 or later and Java 17 or 21, with PySpark in a virtual environment: python -m pip install pyspark (the labs were tested with PySpark 4.2.0 on Java 21)",
+     "Download the starter files windows_cache_parquet.py and survey.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1: a window partitioned by night and ordered by magnitude, then obs_id, with row_number, keeping the top three."
+     },
+     {
+      "do": "Complete TODO 2: previous with F.lag over a window partitioned by object_id and band and ordered by observed_at, then obs_id, and change rounded to three decimals."
+     },
+     {
+      "do": "Complete TODO 3: write the observations again after repartition(\"night\")."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python windows_cache_parquet.py",
+      "lang": "bash",
+      "see": "The top three for 2024-03-01, the biggest change, the cache state, the file counts before and after repartitioning, the pruning checks and the dynamic overwrite."
+     },
+     {
+      "do": "Look at the files on disk.",
+      "code": "ls lake/observations/night=2024-03-15/",
+      "lang": "bash",
+      "see": "One part-...snappy.parquet file: Snappy is Spark's default Parquet codec."
+     },
+     {
+      "do": "Explain why the first write made four files for each night, and why the dynamic overwrite left the other 29 nights alone."
+     }
+    ],
+    "checks": [
+     {
+      "text": "row_number ranks each night's observations.",
+      "look_for": [
+       "2024-03-01 #1: object 11961, magnitude 14.713",
+       "2024-03-01 #3: object 2443, magnitude 14.737"
+      ]
+     },
+     {
+      "text": "lag compares each observation with the object's previous one in the same band.",
+      "look_for": [
+       "First observations (no previous): 99327",
+       "Biggest change: object 12067 in band z, 15.866 -> 16.465"
+      ]
+     },
+     {
+      "text": "The summary is cached and reused.",
+      "look_for": [
+       "Cached: True",
+       "Night-band rows: 150; busiest: 2024-03-29 band i with 3446"
+      ]
+     },
+     {
+      "text": "Repartitioning by night turns four files per night into one.",
+      "look_for": [
+       "files for 2024-03-15: 4",
+       "After repartition(\"night\"): files for 2024-03-15: 1"
+      ]
+     },
+     {
+      "text": "The read prunes partitions and pushes the filter down, and the dynamic overwrite keeps every night.",
+      "look_for": [
+       "Partition pruning: True | filter pushed to Parquet: True",
+       "Bright observations on 2024-03-15: 505",
+       "nights 30 | rows 500000 | files for 2024-03-15: 1"
+      ]
+     }
+    ],
+    "submit": "Paste your three TODOs, the output of python windows_cache_parquet.py, the ls output and your explanations.",
+    "files": [
+     {
+      "path": "windows_cache_parquet.py",
+      "content": "\"\"\"Window functions, caching, and a partitioned Parquet dataset written, read and partly rewritten.\"\"\"\n\nimport contextlib\nimport glob\nimport io\n\nfrom pyspark.sql import Window\nfrom pyspark.sql import functions as F\n\nfrom survey import observations, session\n\n\ndef plan(df):\n    buffer = io.StringIO()\n    with contextlib.redirect_stdout(buffer):\n        df.explain()\n    return buffer.getvalue()\n\n\nspark = session(\"windows-cache-parquet\")\nobs = observations(spark, 500_000)\n\n# 1. The three brightest observations of each night (lowest magnitude first; obs_id breaks ties).\n# TODO 1: number the rows within each night with F.row_number() over a window partitioned by night and\n#   ordered by magnitude, then obs_id; keep rank <= 3\ntop = obs.limit(0).withColumn(\"rank\", F.lit(0))\nfor r in top.filter(F.col(\"night\") == \"2024-03-01\").orderBy(\"rank\").collect():\n    print(f\"2024-03-01 #{r['rank']}: object {r['object_id']}, magnitude {r['magnitude']}\")\n\n# 2. Light curves: how much each object changed since its previous observation in the same band.\n# TODO 2: add previous = F.lag(\"magnitude\") over a window partitioned by object_id and band and ordered by\n#   observed_at, then obs_id; and change = magnitude - previous, rounded to 3 decimals\nchanges = obs.withColumn(\"previous\", F.lit(None).cast(\"double\")).withColumn(\"change\", F.lit(None).cast(\"double\"))\nfirst_obs = changes.filter(F.col(\"previous\").isNull()).count()\nbig = changes.orderBy(F.abs(\"change\").desc_nulls_last(), \"obs_id\").first()\nprint(f\"First observations (no previous): {first_obs}\")\nprint(f\"Biggest change: object {big['object_id']} in band {big['band']}, {big['previous']} -> {big['magnitude']}\")\n\n# 3. Cache a summary that several actions reuse.\nnightly = obs.groupBy(\"night\", \"band\").agg(F.count(\"*\").alias(\"n\"), F.round(F.avg(\"magnitude\"), 3).alias(\"mean_mag\"))\nnightly.cache()\nprint(f\"Cached: {nightly.is_cached}, storage level: {nightly.storageLevel}\")\nbusiest = nightly.orderBy(F.desc(\"n\"), \"night\", \"band\").first()\nprint(f\"Night-band rows: {nightly.count()}; busiest: {busiest['night']} band {busiest['band']} with {busiest['n']}\")\nnightly.unpersist()\n\n# 4. Write the observations as Parquet, partitioned by night.\nobs.write.mode(\"overwrite\").partitionBy(\"night\").parquet(\"lake/observations\")\nprint(\"Night folders:\", len(glob.glob(\"lake/observations/night=*\")),\n      \"| files for 2024-03-15:\", len(glob.glob(\"lake/observations/night=2024-03-15/*.parquet\")))\n# TODO 3: write it again, with obs.repartition(\"night\") first, so each night is written by one task\nprint(\"After repartition(\\\"night\\\"): files for 2024-03-15:\",\n      len(glob.glob(\"lake/observations/night=2024-03-15/*.parquet\")))\n\nlake = spark.read.parquet(\"lake/observations\")\none_night = lake.filter((F.col(\"night\") == \"2024-03-15\") & (F.col(\"magnitude\") < 15.2))\np = plan(one_night)\nprint(\"Partition pruning:\", \"PartitionFilters: [isnotnull(night\" in p, \"| filter pushed to Parquet:\", \"LessThan(magnitude,15.2)\" in p)\nprint(\"Bright observations on 2024-03-15:\", one_night.count())\n\n# 5. Replace one night only: dynamic partition overwrite rewrites just the partitions in the new data.\nspark.conf.set(\"spark.sql.sources.partitionOverwriteMode\", \"dynamic\")\nrecalibrated = obs.filter(F.col(\"night\") == \"2024-03-15\").withColumn(\"magnitude\", F.round(F.col(\"magnitude\") - 0.05, 3))\nrecalibrated.repartition(\"night\").write.mode(\"overwrite\").partitionBy(\"night\").parquet(\"lake/observations\")\nlake = spark.read.parquet(\"lake/observations\")\nprint(\"After the dynamic overwrite: nights\", lake.select(\"night\").distinct().count(), \"| rows\", lake.count(),\n      \"| files for 2024-03-15:\", len(glob.glob(\"lake/observations/night=2024-03-15/*.parquet\")))\nspark.stop()\n"
+     },
+     {
+      "path": "survey.py",
+      "content": "\"\"\"Synthetic sky-survey tables, generated inside Spark.\n\nThe values come from hashes of each row's ID, not from rand(), so every computer and every number of\npartitions produces exactly the same data.\n\"\"\"\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql import functions as F\n\nBANDS = [\"u\", \"g\", \"r\", \"i\", \"z\"]\n\n\ndef session(app):\n    \"\"\"A local Spark session with four worker threads and UTC timestamps, so results match everywhere.\"\"\"\n    spark = (SparkSession.builder.master(\"local[4]\").appName(app)\n             .config(\"spark.sql.session.timeZone\", \"UTC\")\n             .config(\"spark.ui.showConsoleProgress\", \"false\")\n             .getOrCreate())\n    spark.sparkContext.setLogLevel(\"ERROR\")\n    return spark\n\n\ndef uniform(col, salt):\n    \"\"\"A number in [0, 1) from a column's hash: the same value for the same input on every machine.\"\"\"\n    return F.pmod(F.xxhash64(col, F.lit(salt)), F.lit(1_000_000)) / 1_000_000.0\n\n\ndef objects(spark, n=20_000):\n    \"\"\"One row per sky object: its type, position and typical brightness (magnitude: lower is brighter).\"\"\"\n    oid = F.col(\"id\").cast(\"int\")\n    kind = uniform(oid, \"type\")\n    return spark.range(n).select(\n        oid.alias(\"object_id\"),\n        F.when(kind < 0.6, \"star\").when(kind < 0.9, \"galaxy\").otherwise(\"quasar\").alias(\"object_type\"),\n        F.round(uniform(oid, \"ra\") * 360, 4).alias(\"ra\"),\n        F.round(uniform(oid, \"dec\") * 120 - 90, 4).alias(\"dec\"),\n    )\n\n\ndef observations(spark, n=500_000, n_objects=20_000, hot_share=0.0):\n    \"\"\"One row per observation of an object, over 30 nights in March 2024.\n\n    hot_share > 0 sends that share of all observations to object 0, to make the data skewed.\n    \"\"\"\n    oid = F.pmod(F.xxhash64(\"id\", F.lit(\"object\")), F.lit(n_objects)).cast(\"int\")\n    if hot_share:\n        oid = F.when(uniform(F.col(\"id\"), \"hot\") < hot_share, F.lit(0)).otherwise(oid)\n    night = F.date_add(F.lit(\"2024-03-01\").cast(\"date\"), F.pmod(F.xxhash64(\"id\", F.lit(\"night\")), F.lit(30)).cast(\"int\"))\n    seconds = F.pmod(F.xxhash64(\"id\", F.lit(\"time\")), F.lit(36_000))  # from 20:00 until 06:00\n    band = F.element_at(F.array(*[F.lit(b) for b in BANDS]), (F.pmod(F.xxhash64(\"id\", F.lit(\"band\")), F.lit(5)) + 1).cast(\"int\"))\n    return (spark.range(n)\n            .select(F.col(\"id\").alias(\"obs_id\"), oid.alias(\"object_id\"), night.alias(\"night\"), seconds.alias(\"s\"),\n                    band.alias(\"band\"), uniform(F.col(\"id\"), \"noise\").alias(\"noise\"),\n                    F.concat(F.lit(\"T\"), (F.pmod(F.xxhash64(\"id\", F.lit(\"telescope\")), F.lit(3)) + 1).cast(\"string\")).alias(\"telescope\"))\n            .withColumn(\"observed_at\", F.timestamp_seconds(F.unix_timestamp(F.col(\"night\").cast(\"timestamp\")) + 72_000 + F.col(\"s\")))\n            .withColumn(\"magnitude\", F.round(15 + uniform(F.col(\"object_id\"), \"base\") * 7 + (F.col(\"noise\") - 0.5) * 0.6, 3))\n            .select(\"obs_id\", \"object_id\", \"night\", \"observed_at\", \"band\", \"magnitude\", \"telescope\"))\n"
+     }
+    ],
+    "hints": [
+     "Window.partitionBy(\"night\").orderBy(\"magnitude\", \"obs_id\") orders by magnitude, then obs_id.",
+     "desc_nulls_last() puts the nulls from first observations at the end when sorting by the change.",
+     "If the file count after repartitioning is still 4, check that repartition(\"night\") comes before .write."
+    ]
+   }
+  },
+  {
+   "title": "The Spark UI and tuning",
+   "summary": "Read what a running application is doing in the Spark UI, find and fix skew, let adaptive query execution help, and run applications with spark-submit.",
+   "instructor": "camila-torrese",
+   "lessons": [
+    {
+     "title": "Reading the Spark UI",
+     "minutes": 12,
+     "objectives": [
+      "Find a slow stage and its cause in the Spark UI",
+      "Keep a finished application's UI with the history server"
+     ],
+     "key_points": [
+      "Every running application serves a web UI, at http://localhost:4040 for the first one on a machine (4041 and up for others); it closes when the application stops.",
+      "The Jobs and Stages tabs show what ran and for how long; a stage's page shows Summary Metrics for its tasks (minimum, 25th percentile, median, 75th percentile and maximum duration, shuffle read and write), where a maximum far above the median means skew.",
+      "The SQL / DataFrame tab draws each query's plan with row counts and sizes per operator, including the final plan chosen by adaptive query execution; it's the quickest way to see which join ran.",
+      "Storage shows cached DataFrames and how much of each is in memory; Environment lists every setting in effect; Executors shows memory, cores and failed tasks for each executor.",
+      "To see an application after it ends, set spark.eventLog.enabled=true and spark.eventLog.dir, and run the history server (sbin/start-history-server.sh in a Spark download), which serves port 18080."
+     ],
+     "walkthrough": {
+      "tool": "Spark UI",
+      "title": "Find the skewed stage",
+      "steps": [
+       {
+        "do": "Run the module 5 lab script with --ui, so Spark stays up when the work is done.",
+        "code": "python skew_and_tuning.py --ui",
+        "lang": "bash",
+        "see": "The results, then The Spark UI is at http://localhost:4040. Press Enter to stop Spark."
+       },
+       {
+        "do": "Open http://localhost:4040 and the Jobs tab: one row per job, with its duration and stages."
+       },
+       {
+        "do": "Open the Stages tab and the stage of a job that repartitioned by object_id; scroll to Summary Metrics for Completed Tasks.",
+        "see": "The maximum shuffle read is many times the median: one task got object 0's half a million rows."
+       },
+       {
+        "do": "Open the SQL / DataFrame tab and a query with a join or aggregation; read its plan graph from the top.",
+        "see": "Each operator with the rows that went through it."
+       },
+       {
+        "do": "Open the Environment tab and find spark.sql.shuffle.partitions and spark.master."
+       },
+       {
+        "do": "Go back to the terminal and press Enter to stop Spark; the UI goes away with it."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Skew, adaptive query execution and tuning",
+     "minutes": 14,
+     "objectives": [
+      "Recognise and fix data skew",
+      "Tune shuffle partitions and memory, one change at a time"
+     ],
+     "key_points": [
+      "Skew is when a few keys hold a large share of the rows, so a few tasks do most of the work and the stage waits for them; group the data by key and look at the largest counts to confirm it.",
+      "Salting spreads a hot key: add a salt column such as pmod(xxhash64(id), 8), aggregate by key and salt, then aggregate the partial results by key; this works for sums and counts, and averages built from them.",
+      "Adaptive query execution (spark.sql.adaptive.enabled, on by default) re-plans at shuffle boundaries using real sizes: it merges small shuffle partitions, splits skewed partitions in sort-merge joins, and switches joins to broadcast when one side is small.",
+      "Start tuning from evidence in the UI, and change one thing at a time: spark.sql.shuffle.partitions, broadcast thresholds, executor memory and cores (spark.executor.memory, spark.executor.cores) and file sizes.",
+      "The cheapest speed-ups are usually in the job itself: read only needed columns and rows, avoid Python UDFs and collect(), cache only what is reused, and write files of a sensible size."
+     ]
+    },
+    {
+     "title": "Running Spark applications",
+     "minutes": 12,
+     "objectives": [
+      "Run an application with spark-submit and its main options",
+      "Describe where Spark runs in production"
+     ],
+     "key_points": [
+      "spark-submit runs an application: spark-submit --master local[4] job.py locally, or --master yarn, spark://host:7077 or k8s://... on a cluster, with options such as --driver-memory, --executor-memory, --num-executors and --conf key=value.",
+      "In client deploy mode the driver runs where spark-submit was called, which suits interactive work; in cluster mode the driver runs inside the cluster, which suits scheduled jobs that shouldn't depend on one machine.",
+      "Python code beyond the main script must reach the executors: package it, or pass modules and archives with --py-files (and a packed environment for dependencies), unless the image already contains them.",
+      "Settings made in code with SparkSession.builder take precedence over spark-submit flags, which take precedence over spark-defaults.conf; keep resource settings out of code so the same job can run anywhere.",
+      "Spark Connect (Spark 3.4 and later) separates a thin client from the Spark server, so DataFrame code can run from a laptop or an application against a remote cluster.",
+      "Managed platforms such as Databricks, Amazon EMR and Google Cloud Dataproc run Spark clusters for you, and an orchestrator such as Airflow usually schedules the jobs."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Run a job with spark-submit",
+      "steps": [
+       {
+        "do": "With the virtual environment active, run the lab script with spark-submit, which comes with the pyspark package.",
+        "code": "spark-submit --master \"local[4]\" skew_and_tuning.py",
+        "lang": "bash",
+        "see": "Spark's INFO start-up logs (spark-submit's own logging), then the same results as with python."
+       },
+       {
+        "do": "Pass a setting on the command line instead of in code.",
+        "code": "spark-submit --master \"local[4]\" --conf spark.sql.shuffle.partitions=16 skew_and_tuning.py",
+        "lang": "bash",
+        "see": "Shuffle partitions setting: 16, and 16 partitions after the groupBy without AQE."
+       },
+       {
+        "do": "Give the driver more memory, which in local mode is the memory for everything.",
+        "code": "spark-submit --master \"local[4]\" --driver-memory 2g skew_and_tuning.py",
+        "lang": "bash"
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Find and fix skew",
+    "tool": "PySpark",
+    "minutes": 45,
+    "goal": "Measure how a hot key unbalances partitions, spread it with salting and a two-stage aggregation that gives the same answers, and see what adaptive query execution does to shuffle partitions.",
+    "setup": [
+     "Python 3.10 or later and Java 17 or 21, with PySpark in a virtual environment: python -m pip install pyspark (the labs were tested with PySpark 4.2.0 on Java 21)",
+     "Download the starter files skew_and_tuning.py and survey.py into one folder"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1: the salt column, from xxhash64 of obs_id, modulo 8."
+     },
+     {
+      "do": "Complete TODO 2: aggregate by object_id and salt, then by object_id, and work the mean out from the partial sums and counts."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python skew_and_tuning.py",
+      "lang": "bash",
+      "see": "Object 0 with 499653 observations, one partition with 561590 rows before salting and 187507 after, no objects that differ, and 1 partition after the groupBy with AQE against 200 without."
+     },
+     {
+      "do": "Run it with spark-submit, and again with a setting changed on the command line.",
+      "code": "spark-submit --master \"local[4]\" skew_and_tuning.py\nspark-submit --master \"local[4]\" --conf spark.sql.shuffle.partitions=16 skew_and_tuning.py",
+      "lang": "bash",
+      "see": "The same results; the second run reports 16 shuffle partitions."
+     },
+     {
+      "do": "Run python skew_and_tuning.py --ui and use the walkthrough to find the skewed stage in the UI."
+     },
+     {
+      "do": "Salting still leaves the largest partition at about three times the smallest. Explain why, and say what a larger salt would change."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The hot key is found.",
+      "look_for": [
+       "Most observed objects: [(0, 499653), (19336, 50), (3445, 46)]"
+      ]
+     },
+     {
+      "text": "Partitioning by object_id puts most rows in one partition, and salting spreads them.",
+      "look_for": [
+       "largest partition 561590 of 1000000 rows",
+       "object_id and salt: largest partition 187507"
+      ]
+     },
+     {
+      "text": "The two-stage aggregation gives the same answers as the direct one.",
+      "look_for": [
+       "Object 0: 499653 observations, mean magnitude 20.743; objects that differ: 0"
+      ]
+     },
+     {
+      "text": "AQE merges the 200 shuffle partitions of a small aggregation.",
+      "look_for": [
+       "partitions after groupBy with AQE: 1",
+       "Partitions after the same groupBy without AQE: 200"
+      ]
+     }
+    ],
+    "submit": "Paste your two TODOs, the output of the python and spark-submit runs, what you saw in the Stages tab, and your answer about the salt.",
+    "files": [
+     {
+      "path": "skew_and_tuning.py",
+      "content": "\"\"\"Find skew in a key, fix it with salting, and see what adaptive query execution does for you.\n\nRun it with python skew_and_tuning.py, or with spark-submit; add --ui to keep the Spark UI open at the end.\n\"\"\"\n\nimport sys\n\nfrom pyspark.sql import functions as F\n\nfrom survey import observations, session\n\nspark = session(\"skew-and-tuning\")\nobs = observations(spark, 1_000_000, hot_share=0.5)  # half of all observations are of object 0\n\ntop = obs.groupBy(\"object_id\").count().orderBy(F.desc(\"count\"), \"object_id\").limit(3).collect()\nprint(\"Most observed objects:\", [(r[\"object_id\"], r[\"count\"]) for r in top])\n\n\ndef partition_sizes(df):\n    return sorted((r[\"count\"] for r in df.groupBy(F.spark_partition_id()).count().collect()), reverse=True)\n\n\nby_object = partition_sizes(obs.repartition(8, \"object_id\"))\nprint(f\"Partitioned by object_id: largest partition {by_object[0]} of 1000000 rows; sizes {by_object}\")\n\n# TODO 1: add a salt column, F.pmod(F.xxhash64(\"obs_id\", F.lit(\"salt\")), F.lit(8)), to make `salted`\nsalted = obs.withColumn(\"salt\", F.lit(0))\nby_salted_key = partition_sizes(salted.repartition(8, \"object_id\", \"salt\"))\nprint(f\"Partitioned by object_id and salt: largest partition {by_salted_key[0]}; sizes {by_salted_key}\")\n\n# Two-stage aggregation: partial results per (object_id, salt), then combined per object_id.\n# TODO 2: group salted by object_id and salt, summing a count and the magnitudes; then group that by object_id\n#   and work out n and mean_mag (rounded to 3 decimals) from the partial sums\ntwo_stage = salted.groupBy(\"object_id\").agg(F.count(\"*\").alias(\"n\"), F.round(F.avg(\"magnitude\"), 3).alias(\"mean_mag\"))\ndirect = obs.groupBy(\"object_id\").agg(F.count(\"*\").alias(\"n\"), F.round(F.avg(\"magnitude\"), 3).alias(\"mean_mag\"))\nmismatches = (two_stage.alias(\"a\").join(direct.alias(\"b\"), \"object_id\")\n              .filter((F.col(\"a.n\") != F.col(\"b.n\")) | (F.abs(F.col(\"a.mean_mag\") - F.col(\"b.mean_mag\")) > 0.0015))\n              .count())\nhot = two_stage.filter(\"object_id = 0\").first()\nprint(f\"Object 0: {hot['n']} observations, mean magnitude {hot['mean_mag']}; objects that differ: {mismatches}\")\n\nprint(\"AQE:\", spark.conf.get(\"spark.sql.adaptive.enabled\"),\n      \"| coalesce partitions:\", spark.conf.get(\"spark.sql.adaptive.coalescePartitions.enabled\"),\n      \"| skew join:\", spark.conf.get(\"spark.sql.adaptive.skewJoin.enabled\"))\nbands = obs.groupBy(\"band\").count()\nprint(\"Shuffle partitions setting:\", spark.conf.get(\"spark.sql.shuffle.partitions\"),\n      \"| partitions after groupBy with AQE:\", bands.rdd.getNumPartitions())\nspark.conf.set(\"spark.sql.adaptive.enabled\", \"false\")\nprint(\"Partitions after the same groupBy without AQE:\", obs.groupBy(\"band\").count().rdd.getNumPartitions())\n\nif \"--ui\" in sys.argv:\n    input(\"The Spark UI is at http://localhost:4040. Press Enter to stop Spark. \")\nspark.stop()\n"
+     },
+     {
+      "path": "survey.py",
+      "content": "\"\"\"Synthetic sky-survey tables, generated inside Spark.\n\nThe values come from hashes of each row's ID, not from rand(), so every computer and every number of\npartitions produces exactly the same data.\n\"\"\"\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql import functions as F\n\nBANDS = [\"u\", \"g\", \"r\", \"i\", \"z\"]\n\n\ndef session(app):\n    \"\"\"A local Spark session with four worker threads and UTC timestamps, so results match everywhere.\"\"\"\n    spark = (SparkSession.builder.master(\"local[4]\").appName(app)\n             .config(\"spark.sql.session.timeZone\", \"UTC\")\n             .config(\"spark.ui.showConsoleProgress\", \"false\")\n             .getOrCreate())\n    spark.sparkContext.setLogLevel(\"ERROR\")\n    return spark\n\n\ndef uniform(col, salt):\n    \"\"\"A number in [0, 1) from a column's hash: the same value for the same input on every machine.\"\"\"\n    return F.pmod(F.xxhash64(col, F.lit(salt)), F.lit(1_000_000)) / 1_000_000.0\n\n\ndef objects(spark, n=20_000):\n    \"\"\"One row per sky object: its type, position and typical brightness (magnitude: lower is brighter).\"\"\"\n    oid = F.col(\"id\").cast(\"int\")\n    kind = uniform(oid, \"type\")\n    return spark.range(n).select(\n        oid.alias(\"object_id\"),\n        F.when(kind < 0.6, \"star\").when(kind < 0.9, \"galaxy\").otherwise(\"quasar\").alias(\"object_type\"),\n        F.round(uniform(oid, \"ra\") * 360, 4).alias(\"ra\"),\n        F.round(uniform(oid, \"dec\") * 120 - 90, 4).alias(\"dec\"),\n    )\n\n\ndef observations(spark, n=500_000, n_objects=20_000, hot_share=0.0):\n    \"\"\"One row per observation of an object, over 30 nights in March 2024.\n\n    hot_share > 0 sends that share of all observations to object 0, to make the data skewed.\n    \"\"\"\n    oid = F.pmod(F.xxhash64(\"id\", F.lit(\"object\")), F.lit(n_objects)).cast(\"int\")\n    if hot_share:\n        oid = F.when(uniform(F.col(\"id\"), \"hot\") < hot_share, F.lit(0)).otherwise(oid)\n    night = F.date_add(F.lit(\"2024-03-01\").cast(\"date\"), F.pmod(F.xxhash64(\"id\", F.lit(\"night\")), F.lit(30)).cast(\"int\"))\n    seconds = F.pmod(F.xxhash64(\"id\", F.lit(\"time\")), F.lit(36_000))  # from 20:00 until 06:00\n    band = F.element_at(F.array(*[F.lit(b) for b in BANDS]), (F.pmod(F.xxhash64(\"id\", F.lit(\"band\")), F.lit(5)) + 1).cast(\"int\"))\n    return (spark.range(n)\n            .select(F.col(\"id\").alias(\"obs_id\"), oid.alias(\"object_id\"), night.alias(\"night\"), seconds.alias(\"s\"),\n                    band.alias(\"band\"), uniform(F.col(\"id\"), \"noise\").alias(\"noise\"),\n                    F.concat(F.lit(\"T\"), (F.pmod(F.xxhash64(\"id\", F.lit(\"telescope\")), F.lit(3)) + 1).cast(\"string\")).alias(\"telescope\"))\n            .withColumn(\"observed_at\", F.timestamp_seconds(F.unix_timestamp(F.col(\"night\").cast(\"timestamp\")) + 72_000 + F.col(\"s\")))\n            .withColumn(\"magnitude\", F.round(15 + uniform(F.col(\"object_id\"), \"base\") * 7 + (F.col(\"noise\") - 0.5) * 0.6, 3))\n            .select(\"obs_id\", \"object_id\", \"night\", \"observed_at\", \"band\", \"magnitude\", \"telescope\"))\n"
+     }
+    ],
+    "hints": [
+     "F.pmod(F.xxhash64(\"obs_id\", F.lit(\"salt\")), F.lit(8)) gives each row a salt from 0 to 7.",
+     "Sum the counts and the magnitudes per (object_id, salt); the mean is total magnitude over total count, not the average of the partial means.",
+     "spark-submit is in your virtual environment's bin folder, so activate the environment first."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "How Spark runs: the driver, executors, lazy DataFrames and plans; run Spark locally.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Schemas, bad rows, transformations and Spark SQL; clean the survey sample.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Partitions, shuffles and join strategies; compare broadcast and sort-merge joins.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Window functions, caching and partitioned Parquet; finish the lab.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "The Spark UI, skew, AQE and spark-submit; fix the skewed aggregation.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Process a month of sky-survey observations",
+  "minutes": 420,
+  "brief": "An observatory's survey sends raw observation files every night, and its scientists need a clean, query-ready dataset and per-object brightness statistics. Generate the raw data with make_survey.py (gzipped CSV, two million rows by default, with unreadable magnitudes, bands in capitals, rows delivered twice and one very common object), then write a PySpark application, run with spark-submit, that reads it with an explicit schema, sets bad rows aside with a reason, removes duplicates, joins the objects with a broadcast join, computes per-object and per-band statistics with aggregations and window functions (number of observations, mean and range of magnitude, and the biggest change between consecutive observations), and writes partitioned Parquet that a rerun replaces cleanly. Finish with a short tuning report based on the Spark UI.",
+  "deliverables": [
+   "The application code, runnable with spark-submit, with the input and output paths as arguments",
+   "Partitioned Parquet output: clean observations by night, and per-object statistics",
+   "A table of rows set aside, counted by reason, and the number of duplicates removed",
+   "Proof that a rerun is safe: row counts per partition before and after running the job twice",
+   "At least three pytest tests of your transformation functions, using a small local SparkSession",
+   "A tuning report of about a page: what the Spark UI showed (stages, shuffle sizes, skew), one change you made and its measured effect"
+  ],
+  "rubric": [
+   {
+    "name": "Correct results",
+    "points": 25,
+    "description": "Bad rows and duplicates are handled, bands are normalised, and the statistics match checks on a sample."
+   },
+   {
+    "name": "Spark technique",
+    "points": 25,
+    "description": "Explicit schema, built-in functions instead of Python UDFs, a broadcast join for the small table, windows with deterministic ordering, and caching only where it's reused."
+   },
+   {
+    "name": "Output layout and reruns",
+    "points": 15,
+    "description": "Partitioned Parquet with sensible file counts, and dynamic partition overwrite (or an equivalent) so reruns don't duplicate or lose data."
+   },
+   {
+    "name": "Tests and code quality",
+    "points": 15,
+    "description": "Transformations in small, named functions with passing tests; settings passed in rather than hard-coded."
+   },
+   {
+    "name": "Tuning report",
+    "points": 20,
+    "description": "Uses evidence from the Spark UI, explains the skew and the shuffles, and measures the effect of a change correctly."
+   }
+  ],
+  "submit": "Paste your application code and tests (each file with its name), the spark-submit command and its output, the counts and rerun evidence from the deliverables, and your tuning report. A link to a repository is welcome too.",
+  "files": [
+   {
+    "path": "make_survey.py",
+    "content": "\"\"\"Write the capstone's raw data: a month of synthetic sky-survey observations as gzipped CSV, plus the objects.\n\n    python make_survey.py [ROWS]     (default 2,000,000; start with 200000 on a small laptop)\n\nCreates raw/observations/ (CSV parts, compressed with gzip) and raw/objects/ (CSV). About 1 in 2,000 rows\nhas an unreadable magnitude, about 1 in 2,000 a band in capitals, about 1 in 1,000 is delivered twice,\nand object 0, a calibration star, has 5% of all observations. Every computer writes the same data.\n\"\"\"\n\nimport sys\n\nfrom pyspark.sql import functions as F\n\nfrom survey import objects, observations, session, uniform\n\nrows = int(sys.argv[1]) if len(sys.argv) > 1 else 2_000_000\nspark = session(\"make-survey\")\nobs = observations(spark, rows, hot_share=0.05)\nmess = uniform(F.col(\"obs_id\"), \"mess\")\nmessy = (obs\n         .withColumn(\"magnitude\", F.when(mess < 0.0005, F.lit(\"n/a\")).otherwise(F.col(\"magnitude\").cast(\"string\")))\n         .withColumn(\"band\", F.when((mess >= 0.0005) & (mess < 0.001), F.upper(\"band\")).otherwise(F.col(\"band\"))))\nraw = messy.unionByName(messy.filter(uniform(F.col(\"obs_id\"), \"again\") < 0.001))\nraw.write.mode(\"overwrite\").option(\"header\", True).option(\"compression\", \"gzip\").csv(\"raw/observations\")\nobjects(spark).write.mode(\"overwrite\").option(\"header\", True).csv(\"raw/objects\")\nwritten = spark.read.option(\"header\", True).csv(\"raw/observations\").count()\nprint(f\"Wrote {written} observation rows to raw/observations and 20000 objects to raw/objects\")\nspark.stop()\n"
+   },
+   {
+    "path": "survey.py",
+    "content": "\"\"\"Synthetic sky-survey tables, generated inside Spark.\n\nThe values come from hashes of each row's ID, not from rand(), so every computer and every number of\npartitions produces exactly the same data.\n\"\"\"\n\nfrom pyspark.sql import SparkSession\nfrom pyspark.sql import functions as F\n\nBANDS = [\"u\", \"g\", \"r\", \"i\", \"z\"]\n\n\ndef session(app):\n    \"\"\"A local Spark session with four worker threads and UTC timestamps, so results match everywhere.\"\"\"\n    spark = (SparkSession.builder.master(\"local[4]\").appName(app)\n             .config(\"spark.sql.session.timeZone\", \"UTC\")\n             .config(\"spark.ui.showConsoleProgress\", \"false\")\n             .getOrCreate())\n    spark.sparkContext.setLogLevel(\"ERROR\")\n    return spark\n\n\ndef uniform(col, salt):\n    \"\"\"A number in [0, 1) from a column's hash: the same value for the same input on every machine.\"\"\"\n    return F.pmod(F.xxhash64(col, F.lit(salt)), F.lit(1_000_000)) / 1_000_000.0\n\n\ndef objects(spark, n=20_000):\n    \"\"\"One row per sky object: its type, position and typical brightness (magnitude: lower is brighter).\"\"\"\n    oid = F.col(\"id\").cast(\"int\")\n    kind = uniform(oid, \"type\")\n    return spark.range(n).select(\n        oid.alias(\"object_id\"),\n        F.when(kind < 0.6, \"star\").when(kind < 0.9, \"galaxy\").otherwise(\"quasar\").alias(\"object_type\"),\n        F.round(uniform(oid, \"ra\") * 360, 4).alias(\"ra\"),\n        F.round(uniform(oid, \"dec\") * 120 - 90, 4).alias(\"dec\"),\n    )\n\n\ndef observations(spark, n=500_000, n_objects=20_000, hot_share=0.0):\n    \"\"\"One row per observation of an object, over 30 nights in March 2024.\n\n    hot_share > 0 sends that share of all observations to object 0, to make the data skewed.\n    \"\"\"\n    oid = F.pmod(F.xxhash64(\"id\", F.lit(\"object\")), F.lit(n_objects)).cast(\"int\")\n    if hot_share:\n        oid = F.when(uniform(F.col(\"id\"), \"hot\") < hot_share, F.lit(0)).otherwise(oid)\n    night = F.date_add(F.lit(\"2024-03-01\").cast(\"date\"), F.pmod(F.xxhash64(\"id\", F.lit(\"night\")), F.lit(30)).cast(\"int\"))\n    seconds = F.pmod(F.xxhash64(\"id\", F.lit(\"time\")), F.lit(36_000))  # from 20:00 until 06:00\n    band = F.element_at(F.array(*[F.lit(b) for b in BANDS]), (F.pmod(F.xxhash64(\"id\", F.lit(\"band\")), F.lit(5)) + 1).cast(\"int\"))\n    return (spark.range(n)\n            .select(F.col(\"id\").alias(\"obs_id\"), oid.alias(\"object_id\"), night.alias(\"night\"), seconds.alias(\"s\"),\n                    band.alias(\"band\"), uniform(F.col(\"id\"), \"noise\").alias(\"noise\"),\n                    F.concat(F.lit(\"T\"), (F.pmod(F.xxhash64(\"id\", F.lit(\"telescope\")), F.lit(3)) + 1).cast(\"string\")).alias(\"telescope\"))\n            .withColumn(\"observed_at\", F.timestamp_seconds(F.unix_timestamp(F.col(\"night\").cast(\"timestamp\")) + 72_000 + F.col(\"s\")))\n            .withColumn(\"magnitude\", F.round(15 + uniform(F.col(\"object_id\"), \"base\") * 7 + (F.col(\"noise\") - 0.5) * 0.6, 3))\n            .select(\"obs_id\", \"object_id\", \"night\", \"observed_at\", \"band\", \"magnitude\", \"telescope\"))\n"
+   }
+  ]
+ }
+}

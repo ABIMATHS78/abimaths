@@ -1,0 +1,968 @@
+{
+  "slug": "kafka-stream-processing",
+  "title": "Real-Time Data Streaming with Apache Kafka",
+  "subtitle": "Run Kafka 4 in KRaft mode, write reliable Python producers and consumers, use transactions and schemas, and build windowed stream processing that copes with late data.",
+  "category": "Data Engineering",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "chaiyapon-srisomboon",
+    "rodrigoo-silva"
+  ],
+  "skills": [
+    "Apache Kafka",
+    "Event streaming design",
+    "Partitioning and ordering",
+    "Consumer groups and offsets",
+    "Delivery semantics",
+    "Kafka transactions",
+    "Schema evolution",
+    "Stream processing"
+  ],
+  "tools": [
+    "Apache Kafka",
+    "Docker",
+    "Python",
+    "confluent-kafka",
+    "fastavro"
+  ],
+  "outcomes": [
+    "Run Kafka 4 in KRaft mode and design topics, keys and partitions for the ordering and parallelism you need",
+    "Write Python producers and consumer groups that deliver at least once, with idempotent producers and deliberate offset commits",
+    "Build exactly-once consume-transform-produce pipelines with transactions, and explain what they don't cover",
+    "Evolve Avro schemas safely using backward, forward and full compatibility and the registry wire format",
+    "Process streams with tables, event-time windows, grace periods and joins, and keep their state fault-tolerant"
+  ],
+  "prerequisites": "Confident Python and the command line (Linux Command Line Essentials), and the batch and streaming basics of Data Engineering Foundations: Batch and Streaming Pipelines. Docker basics from Containerisation and Orchestration with Docker and Kubernetes help. Install Python 3.10 or later and Docker, or Java 17 or later for the Kafka download. Enterprise Data and ML Platforms covers streaming architecture across a whole organisation.",
+  "description": "Apache Kafka is where many organisations keep their events: orders, payments, sensor readings and clicks, stored as durable logs that many applications read independently. This course teaches how Kafka works and how to build on it correctly. You'll run Kafka 4, which needs no ZooKeeper, in KRaft mode on your laptop, see how keys choose partitions and what that means for ordering, and write Python producers and consumers with confluent-kafka that report every delivery and commit offsets on purpose. Then you'll make pipelines reliable with replication, idempotent producers and transactions, and find out exactly where exactly-once stops.\n\nThe second half covers what keeps streaming systems running for years: schemas that evolve without breaking consumers, with the registry wire format and Avro's compatibility rules, and stream processing with tables, event-time windows, grace periods, joins and fault-tolerant state. Every module has a lab against a real broker, with starter code whose output is the same on every run: you'll crash consumers on purpose to see at-most-once and at-least-once, abort a transaction and read around it, and build a windowed processor that drops late events. The capstone is a real-time delivery monitor that survives crashes and schema changes.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Kafka's model: logs, topics, partitions and offsets",
+      "summary": "What an event log is and how Kafka stores one: brokers, topics, partitions, offsets, retention and compaction, how keys decide partitions and ordering, and how to run Kafka 4 in KRaft mode on a laptop.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Event streaming and the log",
+          "minutes": 12,
+          "objectives": [
+            "Describe Kafka's log-based model of records, topics and offsets",
+            "Explain how retention and compaction decide what a topic keeps"
+          ],
+          "key_points": [
+            "Kafka stores streams of records in topics; a record has a key, a value, a timestamp and optional headers, and once written it is never changed, only appended to and eventually removed.",
+            "Each topic is split into partitions, and each partition is an ordered, append-only log on a broker's disk in which every record has a sequential offset: 0, 1, 2 and so on.",
+            "Unlike a traditional message queue, reading doesn't delete anything: each consumer tracks its own offset, so many independent applications can read the same topic, and can rewind to reprocess it.",
+            "Retention decides how long records are kept, by time (retention.ms, 7 days by default) or by size per partition (retention.bytes); old log segments are deleted whether or not anyone has read them.",
+            "A compacted topic (cleanup.policy=compact) keeps at least the latest record for each key, which suits changelogs such as a customer's current address; a record with a null value, a tombstone, deletes its key."
+          ]
+        },
+        {
+          "title": "Partitions, keys and ordering",
+          "minutes": 12,
+          "objectives": [
+            "Predict which partition a keyed record goes to",
+            "Choose keys and partition counts that keep the ordering you need"
+          ],
+          "key_points": [
+            "Kafka guarantees order only within a partition, so records that must stay in order, such as every event for one delivery rider, must share a key and therefore a partition.",
+            "Java clients send a keyed record to murmur2(key) modulo the number of partitions; records without a key are spread across partitions by a sticky partitioner that fills one batch at a time.",
+            "librdkafka-based clients, including Python's confluent-kafka, default to a different hash (consistent_random); set partitioner=murmur2_random so they place keys exactly where Java clients do.",
+            "Partitions are the unit of parallelism: a consumer group can have at most one active consumer per partition, so the partition count caps how far consumption can scale out.",
+            "Adding partitions later changes which partition a key maps to, which breaks per-key ordering across the change, so choose the count up front; with few keys, hashing can also leave partitions hot or empty."
+          ]
+        },
+        {
+          "title": "Running Kafka in KRaft mode",
+          "minutes": 12,
+          "objectives": [
+            "Explain what KRaft replaced and how a Kafka 4 cluster is organised",
+            "Start a single-node broker with Docker or the Apache download"
+          ],
+          "key_points": [
+            "Kafka 4.0 removed ZooKeeper: a cluster's metadata (topics, partitions, configuration and leaders) now lives in an internal Raft-replicated log managed by controller nodes, known as KRaft mode, which has been production-ready since Kafka 3.3.",
+            "Each node has process.roles of broker, controller or both; production clusters run separate controllers, usually three, while a laptop runs one combined node.",
+            "Before its first start, a KRaft node's storage is formatted with a cluster ID: kafka-storage.sh random-uuid makes one and kafka-storage.sh format writes it, with --standalone for a single-controller set-up.",
+            "Listeners say where the node accepts connections and advertised.listeners what it tells clients to connect to; a wrong advertised address is the usual reason a client can reach the bootstrap server but then times out.",
+            "The Apache Kafka project publishes an official Docker image, apache/kafka, whose default configuration runs a single combined node on localhost:9092, with the command-line tools in /opt/kafka/bin."
+          ],
+          "walkthrough": {
+            "tool": "Terminal",
+            "title": "Start Kafka 4.3 in KRaft mode",
+            "steps": [
+              {
+                "do": "With Docker: start a single-node broker from the Apache image, pinned to a version.",
+                "code": "docker run -d --name broker -p 9092:9092 apache/kafka:4.3.1",
+                "lang": "bash",
+                "see": "A container ID; docker logs broker ends with Kafka Server started."
+              },
+              {
+                "do": "Without Docker: download the binary release (Scala 2.13 build) from kafka.apache.org/downloads, unpack it, and check Java 17 or later is installed.",
+                "code": "tar -xzf kafka_2.13-4.3.1.tgz\ncd kafka_2.13-4.3.1\njava -version",
+                "lang": "bash"
+              },
+              {
+                "do": "Generate a cluster ID and format the storage directory for a standalone node.",
+                "code": "KAFKA_CLUSTER_ID=\"$(bin/kafka-storage.sh random-uuid)\"\nbin/kafka-storage.sh format --standalone -t \"$KAFKA_CLUSTER_ID\" -c config/server.properties",
+                "lang": "bash",
+                "see": "Formatting dynamic metadata voter directory /tmp/kraft-combined-logs ..."
+              },
+              {
+                "do": "Start the broker and leave this terminal running.",
+                "code": "bin/kafka-server-start.sh config/server.properties",
+                "lang": "bash",
+                "see": "... Kafka Server started (kafka.server.KafkaRaftServer)"
+              },
+              {
+                "do": "In another terminal, ask the node about the metadata quorum it leads.",
+                "code": "bin/kafka-metadata-quorum.sh --bootstrap-server localhost:9092 describe --status",
+                "lang": "bash",
+                "see": "LeaderId: 1 and CurrentVoters listing node 1."
+              },
+              {
+                "do": "With Docker, run the same tools inside the container.",
+                "code": "docker exec broker /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list",
+                "lang": "bash"
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Run a broker and watch keys find their partitions",
+        "tool": "Apache Kafka",
+        "minutes": 45,
+        "goal": "Run Kafka 4 in KRaft mode, create a topic with three partitions, produce keyed delivery events, see where each rider's events land and in what order, predict it with Kafka's hash, and see what adding a partition does to a key.",
+        "setup": [
+          "Docker, or Java 17 or later and the Kafka 4.3.1 binary download (Linux, macOS or WSL on Windows)",
+          "Python 3.10 or later",
+          "The starter files orders.txt and which_partition.py, in a new lab folder"
+        ],
+        "steps": [
+          {
+            "do": "Start a broker as in the lesson's walkthrough. In the commands below, bin/ means the bin folder of your Kafka download; with Docker, use docker exec broker /opt/kafka/bin/ instead, and add -i to docker exec when a command reads a file with <."
+          },
+          {
+            "do": "Create a topic with three partitions and look at it.",
+            "code": "bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic deliveries --partitions 3 --replication-factor 1\nbin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic deliveries",
+            "lang": "bash",
+            "see": "PartitionCount: 3, ReplicationFactor: 1, and node 1 as the leader of partitions 0, 1 and 2."
+          },
+          {
+            "do": "Produce the ten events in orders.txt. Each line is a key (the rider), a | and a JSON value.",
+            "code": "bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic deliveries \\\n  --reader-property parse.key=true --reader-property key.separator='|' < orders.txt",
+            "lang": "bash"
+          },
+          {
+            "do": "Read the topic from the beginning, printing each record's partition, offset and key. Kafka 4.1 and earlier spell --reader-property and --formatter-property as --property.",
+            "code": "bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic deliveries --from-beginning --max-messages 10 \\\n  --formatter-property print.partition=true --formatter-property print.offset=true \\\n  --formatter-property print.key=true",
+            "lang": "bash",
+            "see": "Every rider-07 event is in partition 0, in the order it was sent; Processed a total of 10 messages."
+          },
+          {
+            "do": "Count the records in each partition from its end offset.",
+            "code": "bin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic deliveries",
+            "lang": "bash",
+            "see": "deliveries:0:8, deliveries:1:2 and deliveries:2:0: partition 2 is empty."
+          },
+          {
+            "do": "Predict the partitions with Kafka's murmur2 hash and compare.",
+            "code": "python which_partition.py 3 rider-07 rider-12 rider-31 rider-44",
+            "lang": "bash",
+            "see": "rider-07, rider-12 and rider-44 map to partition 0 and rider-31 to partition 1."
+          },
+          {
+            "do": "Add a fourth partition, predict again, then send one more rider-31 event and count again.",
+            "code": "bin/kafka-topics.sh --bootstrap-server localhost:9092 --alter --topic deliveries --partitions 4\npython which_partition.py 4 rider-07 rider-12 rider-31 rider-44\necho 'rider-31|{\"order_id\": 5006, \"rider\": \"rider-31\", \"event\": \"picked_up\"}' | \\\n  bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic deliveries --reader-property parse.key=true --reader-property key.separator='|'\nbin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic deliveries",
+            "lang": "bash",
+            "see": "rider-31 now maps to partition 0, so deliveries:0:9: its new event is in a different partition from its old ones."
+          },
+          {
+            "do": "Write two sentences: why partition 2 stayed empty, and what adding the partition did to rider-31's ordering."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The topic was created with three partitions and one replica each.",
+            "look_for": [
+              "PartitionCount: 3",
+              "ReplicationFactor: 1"
+            ]
+          },
+          {
+            "text": "All ten events were produced and read back.",
+            "look_for": [
+              "Processed a total of 10 messages"
+            ]
+          },
+          {
+            "text": "The end offsets show how the keys spread over the partitions.",
+            "look_for": [
+              "deliveries:0:8",
+              "deliveries:1:2",
+              "deliveries:2:0"
+            ]
+          },
+          {
+            "text": "The murmur2 prediction matches where the records went.",
+            "look_for": [
+              "rider-07 -> partition 0",
+              "rider-31 -> partition 1"
+            ]
+          },
+          {
+            "text": "After adding a partition, rider-31's new event goes to a different partition, with an explanation.",
+            "look_for": [
+              "rider-31 -> partition 0",
+              "deliveries:0:9"
+            ]
+          }
+        ],
+        "submit": "Paste the output of the describe, console consumer, get-offsets and which_partition.py commands (before and after adding the partition), and your two sentences.",
+        "files": [
+          {
+            "path": "orders.txt",
+            "content": "rider-07|{\"order_id\": 5001, \"rider\": \"rider-07\", \"zone\": \"Silom\", \"event\": \"picked_up\"}\nrider-12|{\"order_id\": 5002, \"rider\": \"rider-12\", \"zone\": \"Ari\", \"event\": \"picked_up\"}\nrider-07|{\"order_id\": 5001, \"rider\": \"rider-07\", \"zone\": \"Silom\", \"event\": \"delivered\"}\nrider-31|{\"order_id\": 5003, \"rider\": \"rider-31\", \"zone\": \"Thonglor\", \"event\": \"picked_up\"}\nrider-12|{\"order_id\": 5002, \"rider\": \"rider-12\", \"zone\": \"Ari\", \"event\": \"delivered\"}\nrider-44|{\"order_id\": 5004, \"rider\": \"rider-44\", \"zone\": \"Bang Rak\", \"event\": \"picked_up\"}\nrider-07|{\"order_id\": 5005, \"rider\": \"rider-07\", \"zone\": \"Sathorn\", \"event\": \"picked_up\"}\nrider-31|{\"order_id\": 5003, \"rider\": \"rider-31\", \"zone\": \"Thonglor\", \"event\": \"delivered\"}\nrider-44|{\"order_id\": 5004, \"rider\": \"rider-44\", \"zone\": \"Bang Rak\", \"event\": \"delivered\"}\nrider-07|{\"order_id\": 5005, \"rider\": \"rider-07\", \"zone\": \"Sathorn\", \"event\": \"delivered\"}\n"
+          },
+          {
+            "path": "which_partition.py",
+            "content": "\"\"\"Predict the partition Kafka's Java clients choose for a key: murmur2(key) & 0x7fffffff % partitions.\n\nUsage:  python which_partition.py 3 rider-07 rider-12 rider-31 rider-44\n\nThe console producer and other Java clients use this default partitioner for keyed records.\nconfluent-kafka (librdkafka) uses a different default; set partitioner=murmur2_random to match.\n\"\"\"\nimport sys\n\nMASK = 0xFFFFFFFF\n\n\ndef murmur2(data: bytes) -> int:\n    \"\"\"Kafka's 32-bit murmur2 hash (org.apache.kafka.common.utils.Utils.murmur2).\"\"\"\n    m, r = 0x5BD1E995, 24\n    h = (0x9747B28C ^ len(data)) & MASK\n    whole = len(data) // 4\n    for i in range(whole):\n        k = int.from_bytes(data[i * 4:i * 4 + 4], \"little\")\n        k = (k * m) & MASK\n        k ^= k >> r\n        k = (k * m) & MASK\n        h = (h * m) & MASK\n        h ^= k\n    tail = data[whole * 4:]\n    if len(tail) >= 3:\n        h ^= tail[2] << 16\n    if len(tail) >= 2:\n        h ^= tail[1] << 8\n    if len(tail) >= 1:\n        h ^= tail[0]\n        h = (h * m) & MASK\n    h ^= h >> 13\n    h = (h * m) & MASK\n    h ^= h >> 15\n    return h\n\n\ndef partition_for(key: str, partitions: int) -> int:\n    return (murmur2(key.encode(\"utf-8\")) & 0x7FFFFFFF) % partitions\n\n\nif __name__ == \"__main__\":\n    count = int(sys.argv[1])\n    for key in sys.argv[2:]:\n        print(f\"{key} -> partition {partition_for(key, count)}\")\n"
+          }
+        ],
+        "hints": [
+          "If the producer prints nothing and returns, that's success: it only reports errors.",
+          "On Windows, run the binary in WSL, or use Docker; the bin/windows .bat scripts also work but quoting the separator differs.",
+          "A console consumer without --max-messages keeps waiting for new records: stop it with Ctrl+C.",
+          "If clients can't connect to the Docker broker, check the container is running with docker ps and that port 9092 is published."
+        ]
+      }
+    },
+    {
+      "title": "Producers and consumers in Python",
+      "summary": "How a producer batches, acknowledges and reports on what it sends, how consumer groups share partitions and rebalance, and how the moment you commit an offset decides between at-most-once and at-least-once delivery.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "How a producer sends: batching, acks and delivery reports",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a producer batches and acknowledges records",
+            "Use delivery reports to know what was really written"
+          ],
+          "key_points": [
+            "produce() only queues a record in the client's memory; a background thread groups records for the same partition into batches and sends them, so a record isn't safe until the broker acknowledges it.",
+            "linger.ms makes the producer wait a few milliseconds to fill bigger batches and batch.size caps a batch's bytes; compression.type, such as lz4 or zstd, compresses whole batches, which saves network and disk.",
+            "acks=0 doesn't wait at all, acks=1 waits for the partition leader to write the record, and acks=all waits until every in-sync replica has it, the setting to use when losing data matters.",
+            "In confluent-kafka, a delivery callback passed to produce() runs once per record, from poll() or flush(), with an error or the record's partition and offset; call poll(0) regularly and flush() before exiting, or queued records are lost.",
+            "Retries handle temporary errors such as a leader moving; without idempotence, a retry after a lost acknowledgement can write a record twice or out of order, which the next module fixes."
+          ]
+        },
+        {
+          "title": "Consumer groups, assignment and rebalancing",
+          "minutes": 13,
+          "objectives": [
+            "Explain how a consumer group divides partitions among its members",
+            "Describe what triggers a rebalance and how to make rebalances less disruptive"
+          ],
+          "key_points": [
+            "Consumers sharing a group.id form a consumer group: each partition is read by exactly one member at a time, so adding consumers spreads the work, up to one consumer per partition; extra members sit idle.",
+            "A broker acts as the group coordinator; members send heartbeats, and one that stops for session.timeout.ms, or doesn't call poll() within max.poll.interval.ms (5 minutes by default), is removed and its partitions are reassigned.",
+            "A rebalance happens when members join or leave or the subscribed topics change; with the classic eager protocol every member stops consuming during it, while cooperative assignment (cooperative-sticky) moves only the partitions that must move.",
+            "Kafka 4 also offers a newer consumer group protocol, enabled with group.protocol=consumer, in which the broker works out assignments incrementally; the classic protocol is still the clients' default.",
+            "Static membership, a fixed group.instance.id per consumer, lets a restarted consumer take back its partitions within the session timeout without triggering a rebalance.",
+            "Consumer lag is the log-end offset minus the group's committed offset for each partition; kafka-consumer-groups.sh --describe shows it, and lag that keeps growing means consumers can't keep up."
+          ]
+        },
+        {
+          "title": "Offsets, commits and delivery semantics",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish at-most-once, at-least-once and exactly-once delivery",
+            "Commit offsets at the right moment for the guarantee you need"
+          ],
+          "key_points": [
+            "A committed offset is the position a group will resume from: the offset of the next record to read, one more than the last record processed, stored in Kafka's internal __consumer_offsets topic.",
+            "With enable.auto.commit, the default, offsets are committed in the background every few seconds, so a crash can repeat records processed since the last commit or skip records polled but not yet processed.",
+            "Committing before processing gives at-most-once: a crash after the commit loses the record. Processing before committing gives at-least-once: a crash before the commit processes the record again.",
+            "At-least-once is the usual choice, paired with idempotent processing, such as upserts keyed on an event ID or ignoring IDs already seen, so a repeat changes nothing.",
+            "auto.offset.reset decides where a group with no committed offset starts: latest (the default) reads only new records, earliest reads the whole retained log; kafka-consumer-groups.sh --reset-offsets rewinds an inactive group to reprocess."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Produce and consume delivery events with confluent-kafka",
+        "tool": "Python",
+        "minutes": 60,
+        "goal": "Send keyed events with an idempotent, acks=all producer and check its delivery reports, read them in consumer groups, split partitions between two consumers, and crash a consumer on purpose to see at-most-once lose an event and at-least-once repeat one.",
+        "setup": [
+          "The broker from the module 1 lab, running",
+          "A virtual environment with confluent-kafka: pip install confluent-kafka",
+          "The starter files events.py, producer.py and consumer.py, with which_partition.py from module 1"
+        ],
+        "steps": [
+          {
+            "do": "Create the topic for this lab.",
+            "code": "bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic rider-events --partitions 3 --replication-factor 1",
+            "lang": "bash"
+          },
+          {
+            "do": "Read producer.py: acks=all, idempotence, lz4 compression, a 20 ms linger and the murmur2_random partitioner. events.py makes 30 events: riders 01 to 03 have 6 each and riders 04 to 06 have 4. Predict each partition's count.",
+            "code": "python which_partition.py 3 rider-01 rider-02 rider-03 rider-04 rider-05 rider-06",
+            "lang": "bash"
+          },
+          {
+            "do": "Send the events and compare the delivery reports with your prediction.",
+            "code": "python producer.py",
+            "lang": "bash",
+            "see": "Delivered 30 events, 0 failed, 0 still queued, then partition 0: 10, partition 1: 16 and partition 2: 4."
+          },
+          {
+            "do": "Read everything with a new group, then look at the group's offsets and lag.",
+            "code": "python consumer.py --group audit\nbin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group audit",
+            "lang": "bash",
+            "see": "Processed 30 events with 3 deliveries in each zone, and LAG 0 on every partition."
+          },
+          {
+            "do": "consumer.py commits each offset before processing the event. Crash it while it handles the 12th event, then restart the same group. The restart waits about 10 seconds for the broker to drop the dead member.",
+            "code": "python consumer.py --group amo --crash-after 12\npython consumer.py --group amo",
+            "lang": "bash",
+            "see": "11 events processed before the crash and 18 after: 29 in all, so one event was never processed."
+          },
+          {
+            "do": "TODO: swap the order in consumer.py so it processes each event first and commits afterwards. Repeat the experiment with a new group.",
+            "code": "python consumer.py --group alo --crash-after 12\npython consumer.py --group alo",
+            "lang": "bash",
+            "see": "12 events processed before the crash and 19 after: 31 in all, and the 12th event appears in both runs."
+          },
+          {
+            "do": "Run two consumers in one group: start one in each terminal within a few seconds of each other.",
+            "code": "python consumer.py --group dispatch --idle-seconds 10",
+            "lang": "bash",
+            "see": "One prints Assigned partitions: [0, 1] and the other [2]; their processed counts add up to 30."
+          },
+          {
+            "do": "Explain in two or three sentences which delivery semantics a payment-processing consumer needs, and what its processing must do to make repeats harmless."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The producer's delivery reports match the murmur2 prediction.",
+            "look_for": [
+              "Delivered 30 events, 0 failed",
+              "partition 1: 16 events"
+            ]
+          },
+          {
+            "text": "A new group reads every event.",
+            "look_for": [
+              "Processed 30 events",
+              "'Ari': 3"
+            ]
+          },
+          {
+            "text": "The group's committed offsets are shown with their lag.",
+            "look_for": [
+              "CURRENT-OFFSET",
+              "LOG-END-OFFSET"
+            ]
+          },
+          {
+            "text": "Committing before processing loses an event in a crash (at-most-once).",
+            "look_for": [
+              "11 events processed",
+              "Processed 18 events"
+            ]
+          },
+          {
+            "text": "Committing after processing repeats an event instead (at-least-once).",
+            "look_for": [
+              "12 events processed",
+              "Processed 19 events"
+            ]
+          },
+          {
+            "text": "Two consumers in one group split the partitions between them.",
+            "look_for": [
+              "Assigned partitions: [0, 1]",
+              "Assigned partitions: [2]"
+            ]
+          }
+        ],
+        "submit": "Paste your changed loop from consumer.py, the output of each step (the per-event lines can be cut), and your sentences about the payment consumer.",
+        "files": [
+          {
+            "path": "events.py",
+            "content": "\"\"\"The lab's delivery events: 15 orders, each picked up and then delivered, by six riders in five zones.\"\"\"\n\nRIDERS = [\"rider-01\", \"rider-02\", \"rider-03\", \"rider-04\", \"rider-05\", \"rider-06\"]\nZONES = [\"Silom\", \"Ari\", \"Thonglor\", \"Bang Rak\", \"Sathorn\"]\n\n\ndef delivery_events():\n    events = []\n    for n in range(15):\n        order = {\"order_id\": 6001 + n, \"rider\": RIDERS[n % 6], \"zone\": ZONES[(n * 2) % 5],\n                 \"amount\": round(80 + (n * 37) % 120 + 0.5 * (n % 2), 2)}\n        events.append({**order, \"event\": \"picked_up\"})\n        events.append({**order, \"event\": \"delivered\"})\n    return events\n"
+          },
+          {
+            "path": "producer.py",
+            "content": "\"\"\"Send the delivery events to the rider-events topic, keyed by rider, and report where they landed.\n\nUsage:  python producer.py\n\"\"\"\nimport json\nfrom collections import Counter\n\nfrom confluent_kafka import Producer\n\nfrom events import delivery_events\n\nTOPIC = \"rider-events\"\n\nconfig = {\n    \"bootstrap.servers\": \"localhost:9092\",\n    \"acks\": \"all\",                       # wait for every in-sync replica\n    \"enable.idempotence\": True,          # no duplicates or reordering from retries\n    \"linger.ms\": 20,                     # wait up to 20 ms to fill a batch\n    \"compression.type\": \"lz4\",           # compress whole batches\n    \"partitioner\": \"murmur2_random\",     # the same key-to-partition mapping as Java clients\n}\n\ndelivered = Counter()\nfailed = []\n\n\ndef on_delivery(err, msg):\n    \"\"\"Called once per message from poll() or flush(), when the broker has acknowledged it (or given up).\"\"\"\n    if err is not None:\n        failed.append(err)\n    else:\n        delivered[msg.partition()] += 1\n\n\ndef main():\n    producer = Producer(config)\n    for event in delivery_events():\n        producer.produce(TOPIC, key=event[\"rider\"], value=json.dumps(event), on_delivery=on_delivery)\n        producer.poll(0)                 # serve delivery callbacks that are ready\n    remaining = producer.flush(10)       # wait for every outstanding message\n    print(f\"Delivered {sum(delivered.values())} events, {len(failed)} failed, {remaining} still queued\")\n    for partition, count in sorted(delivered.items()):\n        print(f\"  partition {partition}: {count} events\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "consumer.py",
+            "content": "\"\"\"Read rider events in a consumer group, committing offsets by hand.\n\nUsage:\n    python consumer.py --group audit                   # read until the topic is quiet for 5 seconds\n    python consumer.py --group amo --crash-after 12    # die while handling the 12th event\n\"\"\"\nimport argparse\nimport json\nimport os\nfrom collections import Counter\n\nfrom confluent_kafka import Consumer, KafkaException\n\nTOPIC = \"rider-events\"\nassigned = []\n\n\ndef on_assign(consumer, partitions):\n    assigned[:] = sorted(p.partition for p in partitions)\n    print(\"Assigned partitions:\", assigned)\n\n\ndef handle(msg, delivered_by_zone):\n    \"\"\"Process one event: here, count deliveries by zone.\"\"\"\n    event = json.loads(msg.value())\n    if event[\"event\"] == \"delivered\":\n        delivered_by_zone[event[\"zone\"]] += 1\n    print(f\"p{msg.partition()} offset {msg.offset()}: order {event['order_id']} {event['event']}\")\n\n\ndef crash_point(seen, crash_after, processed):\n    if seen == crash_after:\n        print(f\"Simulated crash while handling event {seen}: {processed} events processed\")\n        os._exit(1)                        # no commit, no clean shutdown\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--group\", required=True)\n    parser.add_argument(\"--crash-after\", type=int, default=0)\n    parser.add_argument(\"--idle-seconds\", type=int, default=5)\n    args = parser.parse_args()\n\n    consumer = Consumer({\n        \"bootstrap.servers\": \"localhost:9092\",\n        \"group.id\": args.group,\n        \"auto.offset.reset\": \"earliest\",   # a new group starts from the oldest message\n        \"enable.auto.commit\": False,       # commit by hand\n        \"session.timeout.ms\": 10000,       # a crashed member is noticed after 10 seconds\n    })\n    consumer.subscribe([TOPIC], on_assign=on_assign)\n    seen, processed, idle = 0, 0, 0\n    delivered_by_zone = Counter()\n    try:\n        while idle < args.idle_seconds:\n            msg = consumer.poll(1.0)\n            if msg is None:\n                idle += 1 if assigned else 0   # don't count the wait for an assignment\n                continue\n            if msg.error():\n                raise KafkaException(msg.error())\n            idle = 0\n            seen += 1\n            # TODO: this commits the offset before the event is processed, which is at-most-once.\n            # Swap the order so the event is processed first and then committed (at-least-once).\n            consumer.commit(message=msg, asynchronous=False)\n            crash_point(seen, args.crash_after, processed)\n            handle(msg, delivered_by_zone)\n            processed += 1\n    finally:\n        consumer.close()\n    print(f\"Processed {processed} events; deliveries by zone: {dict(sorted(delivered_by_zone.items()))}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "A group remembers its offsets, so each experiment uses a new group name; reusing one starts where it left off.",
+          "If the restarted consumer prints nothing for a while, it's waiting for the crashed member's session to time out: that's the point of the experiment.",
+          "In the at-least-once order, crash_point() goes after handle() and before commit().",
+          "kafka-consumer-groups.sh --describe works whether or not the group's consumers are running."
+        ]
+      }
+    },
+    {
+      "title": "Reliability: replication, idempotence and transactions",
+      "summary": "How Kafka keeps data when brokers fail, how idempotent producers stop retries from duplicating records, and how transactions give exactly-once consume-transform-produce, along with what they can't promise.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Replication, in-sync replicas and durability",
+          "minutes": 12,
+          "objectives": [
+            "Explain how leaders, followers and in-sync replicas protect data",
+            "Choose replication and acknowledgement settings for durability"
+          ],
+          "key_points": [
+            "Each partition has replication.factor copies on different brokers: one leader that handles writes and, by default, reads, and followers that copy from it; three replicas is the usual production choice.",
+            "The in-sync replicas (ISR) are the replicas caught up with the leader; consumers only see records up to the high watermark, the offset every in-sync replica has, so they never read a record that could vanish in a failover.",
+            "With acks=all a write succeeds once every in-sync replica has it, and min.insync.replicas, commonly 2 with three replicas, makes such writes fail with NotEnoughReplicas when too few replicas are in sync.",
+            "If a leader fails, a controller elects a new leader from the in-sync replicas; unclean.leader.election.enable, false by default, would let an out-of-date replica lead and lose records in exchange for availability.",
+            "Spreading replicas across racks or availability zones with broker.rack means one rack or zone can fail without losing a partition; a topic can't have more replicas than the cluster has brokers."
+          ]
+        },
+        {
+          "title": "Idempotent producers",
+          "minutes": 11,
+          "objectives": [
+            "Explain how an idempotent producer prevents duplicates and reordering from retries",
+            "Know where idempotence stops and application-level duplicates begin"
+          ],
+          "key_points": [
+            "An idempotent producer gets a producer ID from the cluster and numbers each record it sends to a partition; the broker rejects a sequence number it has already written, so a retried batch is stored once.",
+            "It also keeps order across retries with up to five in-flight requests per connection, so throughput doesn't suffer for it.",
+            "Java producers enable idempotence by default since Kafka 3.0, together with acks=all; in librdkafka clients such as confluent-kafka, set enable.idempotence=true, which also sets acks=all.",
+            "Idempotence covers retries within one producer session and partition: if the application restarts and sends the same event again, it gets a new producer ID and the broker can't tell, so events still need their own IDs for downstream deduplication."
+          ]
+        },
+        {
+          "title": "Transactions and exactly-once processing",
+          "minutes": 13,
+          "objectives": [
+            "Describe how Kafka transactions make consume-transform-produce exactly once",
+            "Explain the limits of exactly-once, and what consumers must set"
+          ],
+          "key_points": [
+            "A transactional producer has a transactional.id that stays the same across restarts; init_transactions() registers it with a transaction coordinator and fences any older instance with the same ID, so a zombie can't commit.",
+            "Between begin_transaction() and commit_transaction(), records to any number of partitions, plus the consumer's offsets added with send_offsets_to_transaction(), succeed or fail together; abort_transaction() discards them all.",
+            "Aborted records stay in the log, followed by an abort marker; consumers with isolation.level=read_committed skip them and read only up to the last stable offset, while read_uncommitted, the Java client's default, sees everything.",
+            "Commit and abort markers take up offsets too, so a transactional topic's offsets have gaps, and its end offset is higher than its record count.",
+            "Exactly-once covers reading from and writing to Kafka: a side effect outside it, such as a database write, an email or an HTTP call, can still happen twice, so make it idempotent or write it through an outbox or a connector that supports exactly-once.",
+            "Kafka Streams turns all of this on with processing.guarantee=exactly_once_v2; transactions add latency and coordinator traffic, so use them where duplicates actually cost something."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Validate payments exactly once",
+        "tool": "Python",
+        "minutes": 60,
+        "goal": "Build a consume-transform-produce validator whose outputs and input offsets commit in one transaction, abort a transaction on purpose, and see what read_committed and read_uncommitted consumers each read; then see replication's limit on a one-broker cluster.",
+        "setup": [
+          "The broker from the module 1 lab, running, and your confluent-kafka virtual environment",
+          "The starter files send_payments.py, validator.py and read_topic.py"
+        ],
+        "steps": [
+          {
+            "do": "Create the input and output topics, each with one partition so the batches are the same on every run.",
+            "code": "for t in payments payments-valid payments-rejected; do\n  bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic $t --partitions 1 --replication-factor 1\ndone",
+            "lang": "bash"
+          },
+          {
+            "do": "Try to create a topic with three replicas on your one-broker cluster.",
+            "code": "bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic payments-rf3 --partitions 1 --replication-factor 3",
+            "lang": "bash",
+            "see": "InvalidReplicationFactorException: the target replication factor of 3 cannot be reached because only 1 broker(s) are registered."
+          },
+          {
+            "do": "Send the 12 payments. Four are invalid: a negative amount, a zero amount and two currencies other than THB.",
+            "code": "python send_payments.py",
+            "lang": "bash",
+            "see": "Sent 12 payments"
+          },
+          {
+            "do": "Read validator.py: init_transactions(), a read_committed consumer with auto-commit off, and a transaction for each batch of four. TODO: finish the batch by adding the consumer's positions to the transaction and committing it.",
+            "code": "producer.send_offsets_to_transaction(consumer.position(consumer.assignment()),\n                                     consumer.consumer_group_metadata())\nproducer.commit_transaction()",
+            "lang": "python"
+          },
+          {
+            "do": "Run the validator so that it aborts its second batch, then read the valid topic both ways.",
+            "code": "python validator.py --fail-batch 2\npython read_topic.py payments-valid read_committed\npython read_topic.py payments-valid read_uncommitted",
+            "lang": "bash",
+            "see": "Batch 1 committed and batch 2 aborted; read_committed sees 2 records and read_uncommitted 5."
+          },
+          {
+            "do": "Run the validator again. It resumes from the committed offsets, so batch 1 isn't repeated.",
+            "code": "python validator.py",
+            "lang": "bash",
+            "see": "Two batches committed, with input offsets up to 7 and then 11."
+          },
+          {
+            "do": "Read both output topics with read_committed, then with read_uncommitted, and look at the valid topic's end offset and the transaction's state.",
+            "code": "python read_topic.py payments-valid read_committed\npython read_topic.py payments-rejected read_committed\npython read_topic.py payments-valid read_uncommitted\npython read_topic.py payments-rejected read_uncommitted\nbin/kafka-get-offsets.sh --bootstrap-server localhost:9092 --topic payments-valid\nbin/kafka-transactions.sh --bootstrap-server localhost:9092 list",
+            "lang": "bash",
+            "see": "8 valid and 4 rejected records committed, 11 and 5 including the aborted ones, an end offset of 15, and payment-validator in CompleteCommit."
+          },
+          {
+            "do": "Explain why the end offset is 15 when the topic holds 11 records, and what would still happen twice if the validator also emailed each customer."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Replication can't exceed the number of brokers.",
+            "look_for": [
+              "replication factor of 3 cannot be reached"
+            ]
+          },
+          {
+            "text": "The first run committed one batch and aborted the second.",
+            "look_for": [
+              "Batch 2: aborted after writing 4 results"
+            ]
+          },
+          {
+            "text": "read_committed consumers see each payment exactly once.",
+            "look_for": [
+              "payments-valid (read_committed): 8 records",
+              "payments-rejected (read_committed): 4 records"
+            ]
+          },
+          {
+            "text": "read_uncommitted consumers also see the aborted batch's records.",
+            "look_for": [
+              "payments-valid (read_uncommitted): 11 records",
+              "payments-rejected (read_uncommitted): 5 records"
+            ]
+          },
+          {
+            "text": "The end offset includes the transaction markers, and the explanation says so.",
+            "look_for": [
+              "payments-valid:0:15",
+              "CompleteCommit"
+            ]
+          }
+        ],
+        "submit": "Paste your completed batch code, the output of both validator runs and of every read_topic.py, get-offsets and kafka-transactions.sh command, and your explanation.",
+        "files": [
+          {
+            "path": "send_payments.py",
+            "content": "\"\"\"Send 12 payments to the payments topic with an idempotent producer.\n\nUsage:  python send_payments.py\n\"\"\"\nimport json\n\nfrom confluent_kafka import Producer\n\nPAYMENTS = [  # payment_id, order_id, amount, currency\n    (1, 7001, 450.00, \"THB\"), (2, 7002, 120.50, \"THB\"), (3, 7003, -20.00, \"THB\"), (4, 7004, 300.00, \"USD\"),\n    (5, 7005, 99.00, \"THB\"), (6, 7006, 0.00, \"THB\"), (7, 7007, 250.00, \"THB\"), (8, 7008, 75.25, \"THB\"),\n    (9, 7009, 610.00, \"THB\"), (10, 7010, 45.00, \"EUR\"), (11, 7011, 180.00, \"THB\"), (12, 7012, 32.75, \"THB\"),\n]\n\n\ndef main():\n    producer = Producer({\"bootstrap.servers\": \"localhost:9092\", \"enable.idempotence\": True})\n    for payment_id, order_id, amount, currency in PAYMENTS:\n        value = {\"payment_id\": payment_id, \"order_id\": order_id, \"amount\": amount, \"currency\": currency}\n        producer.produce(\"payments\", key=str(order_id), value=json.dumps(value))\n    producer.flush(10)\n    print(f\"Sent {len(PAYMENTS)} payments\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "validator.py",
+            "content": "\"\"\"Validate payments exactly once: read payments, write each to payments-valid or payments-rejected,\nand commit the input offsets in the same transaction as the output.\n\nUsage:\n    python validator.py                 # process everything, in batches of 4\n    python validator.py --fail-batch 2  # abort the second batch's transaction, then stop\n\"\"\"\nimport argparse\nimport json\n\nfrom confluent_kafka import Consumer, KafkaException, Producer\n\nBATCH = 4\n\n\ndef check(payment):\n    \"\"\"Return the reason a payment is rejected, or None if it's valid.\"\"\"\n    if payment[\"amount\"] <= 0:\n        return \"amount must be positive\"\n    if payment[\"currency\"] != \"THB\":\n        return \"currency must be THB\"\n    return None\n\n\ndef next_batch(consumer, size, idle_seconds=5):\n    batch, idle = [], 0\n    while len(batch) < size and idle < idle_seconds:\n        msg = consumer.poll(1.0)\n        if msg is None:\n            idle += 1\n            continue\n        if msg.error():\n            raise KafkaException(msg.error())\n        batch.append(msg)\n    return batch\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--fail-batch\", type=int, default=0)\n    args = parser.parse_args()\n\n    producer = Producer({\"bootstrap.servers\": \"localhost:9092\",\n                         \"transactional.id\": \"payment-validator\"})   # stable across restarts\n    producer.init_transactions()       # registers the id and fences any older instance using it\n    consumer = Consumer({\"bootstrap.servers\": \"localhost:9092\",\n                         \"group.id\": \"payment-validator\",\n                         \"auto.offset.reset\": \"earliest\",\n                         \"enable.auto.commit\": False,               # offsets go into the transaction\n                         \"isolation.level\": \"read_committed\"})\n    consumer.subscribe([\"payments\"])\n    number = 0\n    try:\n        while batch := next_batch(consumer, BATCH):\n            number += 1\n            producer.begin_transaction()\n            for msg in batch:\n                payment = json.loads(msg.value())\n                reason = check(payment)\n                if reason:\n                    producer.produce(\"payments-rejected\", key=msg.key(), value=json.dumps({**payment, \"reason\": reason}))\n                else:\n                    producer.produce(\"payments-valid\", key=msg.key(), value=msg.value())\n            if number == args.fail_batch:\n                producer.flush()               # the batch's output reaches the log...\n                producer.abort_transaction()   # ...and is then marked as aborted\n                print(f\"Batch {number}: aborted after writing {len(batch)} results; stopping\")\n                return\n            # TODO: add the consumer's current positions to this transaction (send_offsets_to_transaction\n            # takes the positions of the assigned partitions and the consumer's group metadata), then\n            # commit the transaction, so the results and the input offsets commit together or not at all.\n            print(f\"Batch {number}: committed {len(batch)} payments, input offsets up to {batch[-1].offset()}\")\n    finally:\n        consumer.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "read_topic.py",
+            "content": "\"\"\"Print every record in a topic as a consumer with the given isolation level sees it.\n\nUsage:  python read_topic.py payments-valid read_committed\n        python read_topic.py payments-valid read_uncommitted\n\"\"\"\nimport sys\nimport uuid\n\nfrom confluent_kafka import OFFSET_BEGINNING, Consumer, TopicPartition\n\n\ndef main():\n    topic, level = sys.argv[1], sys.argv[2]\n    consumer = Consumer({\"bootstrap.servers\": \"localhost:9092\", \"group.id\": f\"reader-{uuid.uuid4()}\",\n                         \"isolation.level\": level, \"enable.auto.commit\": False})\n    partitions = consumer.list_topics(topic, timeout=10).topics[topic].partitions\n    consumer.assign([TopicPartition(topic, p, OFFSET_BEGINNING) for p in sorted(partitions)])\n    records, idle = [], 0\n    while idle < 3:\n        msg = consumer.poll(1.0)\n        if msg is None:\n            idle += 1\n            continue\n        if not msg.error():\n            records.append(msg.value().decode())\n    consumer.close()\n    print(f\"{topic} ({level}): {len(records)} records\")\n    for value in records:\n        print(\"  \", value)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "If the second run starts again from batch 1's payments, the offsets weren't sent to the transaction, or the consumer's group.id differs from the first run's.",
+          "To start the lab again, delete and recreate the three topics and reset the group with kafka-consumer-groups.sh --delete --group payment-validator.",
+          "Four markers explain the gap: commit, abort, commit, commit."
+        ]
+      }
+    },
+    {
+      "title": "Schemas and evolution on the wire",
+      "summary": "Why streams need schemas, how a schema registry and its wire format work, and which schema changes are backward, forward or fully compatible, checked by actually reading old data with new schemas and new data with old ones.",
+      "instructor": "rodrigoo-silva",
+      "lessons": [
+        {
+          "title": "Serialisation formats and the schema registry",
+          "minutes": 12,
+          "objectives": [
+            "Compare JSON, Avro and Protobuf for Kafka records",
+            "Explain how a schema registry and its wire format connect producers and consumers"
+          ],
+          "key_points": [
+            "Kafka stores keys and values as bytes and never checks them, so producers and consumers must agree on a format; a schema makes that agreement explicit and testable.",
+            "JSON is readable but repeats field names in every record and has no enforced types; Avro and Protobuf are compact binary formats whose readers need the schema, and both are designed for schemas that evolve.",
+            "A schema registry, such as Confluent Schema Registry, Apicurio Registry or Karapace, stores versions of each subject's schema, gives each schema an ID, and rejects new versions that break the subject's compatibility rule.",
+            "By default a subject is named after the topic, such as payments-value for the values in payments, so every record in a topic is checked against one evolving schema.",
+            "By default, registry serialisers write a magic byte of 0, then the schema ID as a 4-byte big-endian integer, then the encoded record; a consumer reads the ID, fetches and caches that writer schema, and decodes.",
+            "Avro decoding resolves the writer's schema against the reader's: fields the reader doesn't know are skipped, fields missing from the data take the reader's default, and some types can be promoted, such as int to long."
+          ]
+        },
+        {
+          "title": "Compatibility rules and safe changes",
+          "minutes": 12,
+          "objectives": [
+            "Classify schema changes as backward, forward or fully compatible",
+            "Plan the order in which producers and consumers upgrade"
+          ],
+          "key_points": [
+            "BACKWARD compatibility, Confluent Schema Registry's default, means the new schema can read data written with the previous one, so consumers upgrade first; FORWARD means the previous schema can read new data, so producers upgrade first.",
+            "FULL means both directions work, so either side can upgrade first; the _TRANSITIVE variants check against every earlier version, not just the latest, which matters when a topic keeps old data.",
+            "Adding a field with a default, or a nullable field defaulting to null, is fully compatible; adding a field without a default breaks backward compatibility, because the new reader has nothing to fill it with in old data.",
+            "Deleting a field breaks forward compatibility unless the field had a default, because old readers still expect it; renaming is a delete plus an add, though an Avro alias lets the new reader find the old name.",
+            "Changing a type is usually breaking, except promotions such as int to long, which old data survives but old readers can't read; when a change must break, publish to a new topic or subject and migrate consumers.",
+            "In Protobuf, every field has a number: never reuse or change a field's number, and mark removed numbers as reserved so nobody reuses them later."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Evolve an Avro schema safely",
+        "tool": "Python",
+        "minutes": 50,
+        "goal": "Test seven schema changes for backward and forward compatibility by writing and reading real Avro data, add a change of your own, then send records in the registry wire format with two schema versions and read them with old and new consumers.",
+        "setup": [
+          "The broker from the module 1 lab, running, and your confluent-kafka virtual environment",
+          "fastavro in the same environment: pip install fastavro",
+          "The starter files schemas.json, avro_tools.py, compat.py, avro_produce.py and avro_consume.py"
+        ],
+        "steps": [
+          {
+            "do": "Read schemas.json: v1 is the current payment schema and v2 to v7 are proposed changes. Before running anything, write down which you expect to be backward, forward or fully compatible."
+          },
+          {
+            "do": "Run the compatibility check. For each change it writes a record with one schema and reads it with the other, in both directions, and prints any resolution error.",
+            "code": "python compat.py",
+            "lang": "bash",
+            "see": "v2 FULL, v3 FORWARD, v4 BACKWARD, v5 NONE, v6 BACKWARD and v7 BACKWARD."
+          },
+          {
+            "do": "TODO: add v8 to schemas.json: v1 plus a field named note of type [\"null\", \"string\"] with default null. Run compat.py again.",
+            "code": "{\"name\": \"note\", \"type\": [\"null\", \"string\"], \"default\": null}",
+            "lang": "json",
+            "see": "v1 -> v8: backward yes, forward yes => FULL"
+          },
+          {
+            "do": "Create the topic, then send three records written with schema ID 1 (v1) and two with ID 2 (v2), and look at the first bytes of a message.",
+            "code": "bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic payments-avro --partitions 1 --replication-factor 1\npython avro_produce.py",
+            "lang": "bash",
+            "see": "First bytes of a schema 2 message: 00 00 00 00 02, the magic byte and then the schema ID."
+          },
+          {
+            "do": "Read the topic as a consumer built against v1, and then as one built against v2.",
+            "code": "python avro_consume.py v1\npython avro_consume.py v2",
+            "lang": "bash",
+            "see": "The v1 reader drops channel from the new records; the v2 reader fills channel with 'app' for the old ones."
+          },
+          {
+            "do": "Optional, with a schema registry running on localhost:8081 (for example Confluent Schema Registry from its Docker image): register v1 for the payments-avro-value subject, set its rule and test v3 against it. The request body is the schema as an escaped JSON string.",
+            "code": "curl -X PUT -H 'Content-Type: application/vnd.schemaregistry.v1+json' \\\n  --data '{\"compatibility\": \"BACKWARD\"}' http://localhost:8081/config/payments-avro-value\ncurl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \\\n  --data @v1-request.json http://localhost:8081/subjects/payments-avro-value/versions\ncurl -X POST -H 'Content-Type: application/vnd.schemaregistry.v1+json' \\\n  --data @v3-request.json http://localhost:8081/compatibility/subjects/payments-avro-value/versions/latest",
+            "lang": "bash",
+            "see": "{\"id\":1} for the registration and {\"is_compatible\":false} for v3."
+          },
+          {
+            "do": "Write a short upgrade plan for v3: what to change so it can ship under BACKWARD, and which side upgrades first."
+          }
+        ],
+        "checks": [
+          {
+            "text": "Adding a field with a default is fully compatible.",
+            "look_for": [
+              "v1 -> v2: backward yes, forward yes => FULL"
+            ]
+          },
+          {
+            "text": "Adding a field without a default breaks backward compatibility.",
+            "look_for": [
+              "v1 -> v3: backward no",
+              "No default value for field terminal_id"
+            ]
+          },
+          {
+            "text": "Removing a field, changing a type and widening int to long are classified correctly.",
+            "look_for": [
+              "v1 -> v4: backward yes, forward no",
+              "v1 -> v5: backward no, forward no => NONE",
+              "v1 -> v6: backward yes, forward no"
+            ]
+          },
+          {
+            "text": "The learner's nullable field is fully compatible.",
+            "look_for": [
+              "v1 -> v8: backward yes, forward yes => FULL"
+            ]
+          },
+          {
+            "text": "Records carry the registry wire format, and each reader resolves them to its own schema.",
+            "look_for": [
+              "00 00 00 00 02",
+              "written with schema 1, read as v2",
+              "'channel': 'app'"
+            ]
+          }
+        ],
+        "submit": "Paste your predictions, your v8 schema, the output of compat.py, avro_produce.py and both avro_consume.py runs, and your upgrade plan for v3.",
+        "files": [
+          {
+            "path": "schemas.json",
+            "content": "{\n  \"v1\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"int\"},\n    {\"name\": \"amount\", \"type\": \"double\"},\n    {\"name\": \"currency\", \"type\": \"string\"}]},\n  \"v2\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"int\"},\n    {\"name\": \"amount\", \"type\": \"double\"},\n    {\"name\": \"currency\", \"type\": \"string\"},\n    {\"name\": \"channel\", \"type\": \"string\", \"default\": \"app\"}]},\n  \"v3\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"int\"},\n    {\"name\": \"amount\", \"type\": \"double\"},\n    {\"name\": \"currency\", \"type\": \"string\"},\n    {\"name\": \"terminal_id\", \"type\": \"string\"}]},\n  \"v4\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"int\"},\n    {\"name\": \"amount\", \"type\": \"double\"}]},\n  \"v5\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"int\"},\n    {\"name\": \"amount\", \"type\": \"string\"},\n    {\"name\": \"currency\", \"type\": \"string\"}]},\n  \"v6\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"long\"},\n    {\"name\": \"amount\", \"type\": \"double\"},\n    {\"name\": \"currency\", \"type\": \"string\"}]},\n  \"v7\": {\"type\": \"record\", \"name\": \"Payment\", \"namespace\": \"com.example.payments\", \"fields\": [\n    {\"name\": \"payment_id\", \"type\": \"long\"},\n    {\"name\": \"order_id\", \"type\": \"int\"},\n    {\"name\": \"amount\", \"type\": \"double\"},\n    {\"name\": \"currency_code\", \"type\": \"string\", \"aliases\": [\"currency\"]}]}\n}\n"
+          },
+          {
+            "path": "avro_tools.py",
+            "content": "\"\"\"Avro helpers for the lab: the schemas, a stand-in for a schema registry, and the Confluent wire format.\n\nThe wire format a schema registry's serialisers use is: one magic byte (0), the schema's ID as a\n4-byte big-endian integer, then the Avro binary encoding of the record.\n\"\"\"\nimport io\nimport json\nimport struct\nfrom pathlib import Path\n\nimport fastavro\n\nSCHEMAS = json.loads((Path(__file__).parent / \"schemas.json\").read_text())\nREGISTRY = {1: \"v1\", 2: \"v2\"}     # schema ID -> version, as a registry would assign them\n\n\ndef parsed(version):\n    return fastavro.parse_schema(SCHEMAS[version])\n\n\ndef encode(record, schema_id):\n    out = io.BytesIO()\n    out.write(struct.pack(\">bI\", 0, schema_id))\n    fastavro.schemaless_writer(out, parsed(REGISTRY[schema_id]), record)\n    return out.getvalue()\n\n\ndef decode(data, reader_version):\n    \"\"\"Find the writer's schema from the ID in the message, then resolve it to the reader's schema.\"\"\"\n    magic, schema_id = struct.unpack(\">bI\", data[:5])\n    if magic != 0:\n        raise ValueError(\"not in the registry wire format\")\n    writer = parsed(REGISTRY[schema_id])\n    record = fastavro.schemaless_reader(io.BytesIO(data[5:]), writer, parsed(reader_version))\n    return schema_id, record\n\n\ndef can_read(writer_version, reader_version, record):\n    \"\"\"Write a record with one schema and read it with another; return (ok, error message).\"\"\"\n    out = io.BytesIO()\n    fastavro.schemaless_writer(out, parsed(writer_version), record)\n    out.seek(0)\n    try:\n        fastavro.schemaless_reader(out, parsed(writer_version), parsed(reader_version))\n        return True, \"\"\n    except Exception as exc:  # fastavro raises SchemaResolutionError and friends\n        return False, str(exc).splitlines()[0]\n"
+          },
+          {
+            "path": "compat.py",
+            "content": "\"\"\"Check each schema change against v1 by actually writing with one version and reading with the other.\n\nBACKWARD: the new schema can read data written with the old one (upgrade consumers first).\nFORWARD:  the old schema can read data written with the new one (upgrade producers first).\nFULL:     both.\nUsage:  python compat.py\n\"\"\"\nfrom avro_tools import SCHEMAS, can_read\n\nSAMPLE = {\"payment_id\": 1, \"order_id\": 7001, \"amount\": 450.0, \"currency\": \"THB\", \"channel\": \"app\",\n          \"terminal_id\": \"T-9\", \"currency_code\": \"THB\"}\n\n\ndef sample_for(version):\n    \"\"\"A record that fits the schema: values from SAMPLE, or a field's default if SAMPLE has none.\"\"\"\n    record = {f[\"name\"]: SAMPLE.get(f[\"name\"], f.get(\"default\")) for f in SCHEMAS[version][\"fields\"]}\n    if version == \"v5\":\n        record[\"amount\"] = \"450.00\"\n    return record\n\n\ndef main():\n    for new in sorted(SCHEMAS):\n        if new == \"v1\":\n            continue\n        backward, why_b = can_read(\"v1\", new, sample_for(\"v1\"))\n        forward, why_f = can_read(new, \"v1\", sample_for(new))\n        verdict = \"FULL\" if backward and forward else \"BACKWARD\" if backward else \"FORWARD\" if forward else \"NONE\"\n        print(f\"v1 -> {new}: backward {'yes' if backward else 'no'}, forward {'yes' if forward else 'no'} => {verdict}\")\n        for why in (why_b, why_f):\n            if why:\n                print(f\"    {why}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "avro_produce.py",
+            "content": "\"\"\"Send Avro payments in the registry wire format: three written with schema 1 (v1), two with schema 2 (v2).\n\nUsage:  python avro_produce.py\n\"\"\"\nfrom confluent_kafka import Producer\n\nfrom avro_tools import encode\n\nOLD = [{\"payment_id\": n, \"order_id\": 7000 + n, \"amount\": 100.0 * n, \"currency\": \"THB\"} for n in (1, 2, 3)]\nNEW = [{\"payment_id\": n, \"order_id\": 7000 + n, \"amount\": 100.0 * n, \"currency\": \"THB\", \"channel\": \"kiosk\"}\n       for n in (4, 5)]\n\n\ndef main():\n    producer = Producer({\"bootstrap.servers\": \"localhost:9092\", \"enable.idempotence\": True})\n    for record in OLD:\n        producer.produce(\"payments-avro\", key=str(record[\"order_id\"]), value=encode(record, 1))\n    for record in NEW:\n        producer.produce(\"payments-avro\", key=str(record[\"order_id\"]), value=encode(record, 2))\n    producer.flush(10)\n    print(f\"Sent {len(OLD)} records with schema ID 1 and {len(NEW)} with schema ID 2\")\n    print(\"First bytes of a schema 2 message:\", encode(NEW[0], 2)[:5].hex(\" \"))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "avro_consume.py",
+            "content": "\"\"\"Read the Avro payments as a consumer whose code was built against one schema version.\n\nUsage:  python avro_consume.py v1\n        python avro_consume.py v2\n\"\"\"\nimport sys\nimport uuid\n\nfrom confluent_kafka import OFFSET_BEGINNING, Consumer, TopicPartition\n\nfrom avro_tools import decode\n\n\ndef main():\n    reader = sys.argv[1]\n    consumer = Consumer({\"bootstrap.servers\": \"localhost:9092\", \"group.id\": f\"avro-{uuid.uuid4()}\",\n                         \"enable.auto.commit\": False})\n    consumer.assign([TopicPartition(\"payments-avro\", 0, OFFSET_BEGINNING)])\n    idle = 0\n    while idle < 3:\n        msg = consumer.poll(1.0)\n        if msg is None:\n            idle += 1\n            continue\n        if msg.error():\n            continue\n        schema_id, record = decode(msg.value(), reader)\n        print(f\"written with schema {schema_id}, read as {reader}: {record}\")\n    consumer.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "In JSON, the default for a nullable union is written null, not \"null\", and null must come first in the union.",
+          "Backward asks: can the new schema read the old data? Forward asks: can the old schema read the new data?",
+          "v3 can ship under BACKWARD once terminal_id has a default, such as an empty string or null with a nullable type."
+        ]
+      }
+    },
+    {
+      "title": "Stream processing: tables, windows, joins and state",
+      "summary": "Processing streams on Kafka: the duality of streams and tables, event time, windows and grace periods, stream-table and stream-stream joins with their co-partitioning rule, fault-tolerant state, and the limits of exactly-once.",
+      "instructor": "chaiyapon-srisomboon",
+      "lessons": [
+        {
+          "title": "Streams and tables",
+          "minutes": 12,
+          "objectives": [
+            "Explain the duality of streams and tables",
+            "Choose between Kafka Streams, Flink and lighter-weight processors"
+          ],
+          "key_points": [
+            "A stream is an unbounded sequence of independent events, such as orders; a table holds the latest value for each key, such as each customer's current region, and every change to it is an event.",
+            "The two convert into each other: replaying a changelog stream builds a table, and recording every update to a table produces a changelog stream; a compacted topic is a table's durable changelog.",
+            "Kafka Streams, a Java library that runs inside your application, models these as KStream, KTable and GlobalKTable, which holds a full copy of a table in every instance; ksqlDB offers the same ideas in SQL.",
+            "Apache Flink and Spark Structured Streaming run jobs on their own clusters and read and write Kafka through connectors; Python libraries, or plain consumers and producers as in the lab, suit smaller jobs.",
+            "Stateless operations, such as filter and map, handle each record alone; stateful ones, such as counts, aggregations, windows and joins, must remember earlier records, and that state has to survive failures."
+          ]
+        },
+        {
+          "title": "Time and windows in Kafka",
+          "minutes": 12,
+          "objectives": [
+            "Distinguish event time from processing time in Kafka records",
+            "Configure tumbling, hopping and session windows with a grace period"
+          ],
+          "key_points": [
+            "Every record has a timestamp: CreateTime, set by the producer and usually the event time, or LogAppendTime, set by the broker, chosen per topic with message.timestamp.type; producers can also set the timestamp explicitly.",
+            "Windows group records by event time: tumbling windows are fixed and don't overlap, hopping windows are fixed but overlap, and session windows grow with activity and close after a gap of inactivity.",
+            "Stream time is the highest timestamp a processor has seen; records can arrive out of order, so a window stays open until stream time passes its end plus a grace period, and later records for it are dropped as late.",
+            "Kafka Streams has asked for the grace period explicitly since version 3.0, as in TimeWindows.ofSizeAndGrace; a longer grace accepts more late data but delays final results and holds more state.",
+            "Windowed aggregations emit updated results as records arrive unless told otherwise; suppressing until the window closes emits one final result per window, which downstream systems such as alerting usually want."
+          ]
+        },
+        {
+          "title": "Joins, state and the limits of exactly-once",
+          "minutes": 13,
+          "objectives": [
+            "Explain stream-table and stream-stream joins and co-partitioning",
+            "Describe how stream processors keep state fault-tolerant, and what exactly-once still leaves to you"
+          ],
+          "key_points": [
+            "A stream-table join enriches each event with the table's current value for its key, such as an order with its customer's region; it uses the value at processing time, so a later table update doesn't change results already emitted.",
+            "A stream-stream join matches events from two streams by key within a time window, such as a payment within 10 minutes of its order, because both sides are unbounded.",
+            "Joins need co-partitioning: both topics with the same number of partitions and the same key and partitioner; if not, the data must be repartitioned by key first, and Kafka Streams creates repartition topics for this, while GlobalKTable joins avoid it.",
+            "Kafka Streams keeps state in local stores, RocksDB by default, each backed by a compacted changelog topic; after a failure another instance restores the store from the changelog, and standby replicas make that quick.",
+            "exactly_once_v2 makes a Kafka Streams application's reads, state updates and writes atomic, but effects outside Kafka, such as calls to other services, still need idempotence, and reprocessing old data recomputes results unless you plan for it."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Windowed revenue with a stream-table join",
+        "tool": "Python",
+        "minutes": 60,
+        "goal": "Build a small stream processor: load a customer table from a compacted topic, honouring updates and tombstones, enrich timestamped orders with each customer's region, total revenue per region in one-minute tumbling windows with a 30-second grace period, and drop events that arrive too late.",
+        "setup": [
+          "The broker from the module 1 lab, running, and your confluent-kafka virtual environment",
+          "The starter files send_stream.py and windows.py"
+        ],
+        "steps": [
+          {
+            "do": "Create a compacted topic for the customer table, and topics for the orders and the results.",
+            "code": "bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic customers --partitions 1 --replication-factor 1 \\\n  --config cleanup.policy=compact\nbin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic orders-stream --partitions 1 --replication-factor 1\nbin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic revenue-by-region --partitions 1 --replication-factor 1",
+            "lang": "bash"
+          },
+          {
+            "do": "Read send_stream.py: customer c-3 moves from North to South, c-4 is deleted by a tombstone, and each order's timestamp is its event time, with some orders arriving out of order. Send the data.",
+            "code": "python send_stream.py",
+            "lang": "bash",
+            "see": "Sent 7 customer records and 10 orders"
+          },
+          {
+            "do": "Run windows.py as it is. It fails while building the table: a tombstone's value is null.",
+            "code": "python windows.py",
+            "lang": "bash",
+            "see": "TypeError: the JSON object must be str, bytes or bytearray, not NoneType"
+          },
+          {
+            "do": "TODO 1: in load_table, remove the key when a record's value is None, then run it again.",
+            "see": "Customer table: c-1 Central, c-2 North, c-3 South and c-5 Central; c-4 is gone. The 12:00 window closes twice, the second time with South 70.00: a late order reopened it."
+          },
+          {
+            "do": "TODO 2: drop an order whose window has already closed, printing a Late line. Run it again.",
+            "code": "python windows.py",
+            "lang": "bash",
+            "see": "Late: order 8007 at 12:00:58 dropped (stream time 12:01:40), and each window closes once."
+          },
+          {
+            "do": "Read the results topic, keyed by window and region.",
+            "code": "bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic revenue-by-region --from-beginning \\\n  --formatter-property print.key=true --timeout-ms 5000",
+            "lang": "bash",
+            "see": "One record per window and region, such as 12:00|South with revenue 200.0."
+          },
+          {
+            "do": "Explain why order 8005 (12:00:55) was counted but order 8007 (12:00:58) was not, why the 12:03 window never closed, and what this processor would lose if it crashed, since its state lives only in memory."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The table reflects the update and the tombstone.",
+            "look_for": [
+              "Customer table: {'c-1': 'Central', 'c-2': 'North', 'c-3': 'South', 'c-5': 'Central'}"
+            ]
+          },
+          {
+            "text": "The first window includes the out-of-order order that arrived within the grace period.",
+            "look_for": [
+              "Window 12:00-12:01 closed: Central 120.00, North 120.00, South 200.00"
+            ]
+          },
+          {
+            "text": "The late order is dropped instead of reopening its window.",
+            "look_for": [
+              "Late: order 8007 at 12:00:58 dropped"
+            ]
+          },
+          {
+            "text": "Orders from the deleted customer are counted under unknown, and later windows close on time.",
+            "look_for": [
+              "Central 60.00, unknown 90.00",
+              "Window 12:02-12:03 closed: Central 180.00"
+            ]
+          },
+          {
+            "text": "The last window is still open when the input ends, with an explanation of why.",
+            "look_for": [
+              "Window 12:03-12:04 still open"
+            ]
+          }
+        ],
+        "submit": "Paste your two TODO changes, the final output of windows.py, a few lines of the results topic, and your explanation.",
+        "files": [
+          {
+            "path": "send_stream.py",
+            "content": "\"\"\"Send the customer table and a stream of timestamped orders for the windowing lab.\n\ncustomers is a compacted topic: the latest value per key wins, and a null value (a tombstone) deletes the key.\nEach order carries its event time as the record's timestamp, and some arrive out of order.\nUsage:  python send_stream.py\n\"\"\"\nimport json\nfrom datetime import datetime, timezone\n\nfrom confluent_kafka import Producer\n\nBASE = datetime(2025, 3, 1, 12, 0, tzinfo=timezone.utc)\n\nCUSTOMERS = [\n    (\"c-1\", {\"name\": \"Somchai\", \"region\": \"Central\"}),\n    (\"c-2\", {\"name\": \"Nok\", \"region\": \"North\"}),\n    (\"c-3\", {\"name\": \"Anan\", \"region\": \"North\"}),\n    (\"c-3\", {\"name\": \"Anan\", \"region\": \"South\"}),   # moved: the later value replaces the earlier one\n    (\"c-4\", {\"name\": \"Pim\", \"region\": \"East\"}),\n    (\"c-4\", None),                                  # tombstone: customer c-4 is deleted\n    (\"c-5\", {\"name\": \"Lek\", \"region\": \"Central\"}),\n]\nORDERS = [  # seconds after 12:00:00, customer, amount; listed in the order they arrive\n    (5, \"c-1\", 120.0), (20, \"c-2\", 80.0), (50, \"c-3\", 200.0), (70, \"c-1\", 60.0), (55, \"c-2\", 40.0),\n    (100, \"c-4\", 90.0), (58, \"c-3\", 70.0), (135, \"c-5\", 150.0), (155, \"c-1\", 30.0), (220, \"c-2\", 10.0),\n]\n\n\ndef main():\n    producer = Producer({\"bootstrap.servers\": \"localhost:9092\", \"enable.idempotence\": True})\n    for key, value in CUSTOMERS:\n        producer.produce(\"customers\", key=key, value=None if value is None else json.dumps(value))\n    base_ms = int(BASE.timestamp() * 1000)\n    for n, (seconds, customer, amount) in enumerate(ORDERS, 1):\n        producer.produce(\"orders-stream\", key=customer, timestamp=base_ms + seconds * 1000,\n                         value=json.dumps({\"order_id\": 8000 + n, \"customer\": customer, \"amount\": amount}))\n    producer.flush(10)\n    print(f\"Sent {len(CUSTOMERS)} customer records and {len(ORDERS)} orders\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "windows.py",
+            "content": "\"\"\"Enrich orders with the customer's region (a stream-table join) and total revenue per region in\none-minute tumbling windows of event time, accepting events up to 30 seconds late.\n\nUsage:  python windows.py\n\"\"\"\nimport json\nimport uuid\nfrom collections import defaultdict\nfrom datetime import datetime, timezone\n\nfrom confluent_kafka import OFFSET_BEGINNING, Consumer, Producer, TopicPartition\n\nWINDOW_MS = 60_000\nGRACE_MS = 30_000\nBOOTSTRAP = \"localhost:9092\"\n\n\ndef read_all(topic):\n    \"\"\"Read a topic from the beginning to its current end; return its records in order.\"\"\"\n    consumer = Consumer({\"bootstrap.servers\": BOOTSTRAP, \"group.id\": f\"windows-{uuid.uuid4()}\",\n                         \"enable.auto.commit\": False})\n    partitions = consumer.list_topics(topic, timeout=10).topics[topic].partitions\n    consumer.assign([TopicPartition(topic, p, OFFSET_BEGINNING) for p in sorted(partitions)])\n    records, idle = [], 0\n    while idle < 3:\n        msg = consumer.poll(1.0)\n        if msg is None:\n            idle += 1\n        elif not msg.error():\n            records.append(msg)\n    consumer.close()\n    return records\n\n\ndef load_table(records):\n    \"\"\"Build the table a compacted topic describes: latest value per key; a tombstone deletes the key.\"\"\"\n    table = {}\n    for msg in records:\n        key = msg.key().decode()\n        # TODO 1: a record with a null value is a tombstone: remove the key from the table instead.\n        table[key] = json.loads(msg.value())\n    return table\n\n\ndef hhmm(ms, seconds=False):\n    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime(\"%H:%M:%S\" if seconds else \"%H:%M\")\n\n\ndef main():\n    customers = load_table(read_all(\"customers\"))\n    print(\"Customer table:\", {k: v[\"region\"] for k, v in sorted(customers.items())})\n    producer = Producer({\"bootstrap.servers\": BOOTSTRAP})\n    windows = defaultdict(lambda: defaultdict(float))   # window start -> region -> revenue\n    stream_time = 0                                      # the highest event time seen so far\n\n    def close_ready():\n        for start in sorted(windows):\n            if stream_time >= start + WINDOW_MS + GRACE_MS:\n                totals = windows.pop(start)\n                for region, revenue in sorted(totals.items()):\n                    producer.produce(\"revenue-by-region\", key=f\"{hhmm(start)}|{region}\",\n                                     value=json.dumps({\"window_start\": hhmm(start), \"region\": region,\n                                                       \"revenue\": round(revenue, 2)}))\n                summary = \", \".join(f\"{r} {v:.2f}\" for r, v in sorted(totals.items()))\n                print(f\"Window {hhmm(start)}-{hhmm(start + WINDOW_MS)} closed: {summary}\")\n\n    for msg in read_all(\"orders-stream\"):\n        order = json.loads(msg.value())\n        _, event_ms = msg.timestamp()\n        start = event_ms - event_ms % WINDOW_MS\n        # TODO 2: if this order's window has already closed (its start + WINDOW_MS + GRACE_MS is at or\n        # before stream_time), print a \"Late: order ... dropped\" line and skip the order.\n        region = customers.get(order[\"customer\"], {}).get(\"region\", \"unknown\")\n        windows[start][region] += order[\"amount\"]\n        stream_time = max(stream_time, event_ms)\n        close_ready()\n    producer.flush(10)\n    for start in sorted(windows):\n        print(f\"Window {hhmm(start)}-{hhmm(start + WINDOW_MS)} still open at stream time {hhmm(stream_time, seconds=True)}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "msg.value() is None for a tombstone; table.pop(key, None) removes a key that may not be there.",
+          "A window starting at start closes when stream_time >= start + WINDOW_MS + GRACE_MS.",
+          "Delete and recreate the revenue-by-region topic if you want the console consumer to show only your latest run."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn Kafka's log model and partitioning, start a KRaft broker, and finish the module 1 lab.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Write producers and consumer groups in Python, and run the at-most-once and at-least-once crash experiments.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Study replication, idempotence and transactions, and build the exactly-once payment validator.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Learn schemas, the registry wire format and compatibility, and test schema changes in the Avro lab.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Process streams with tables, windows and joins, and build the windowed revenue processor.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Build and submit the delivery monitor capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Build a real-time delivery monitor",
+    "minutes": 600,
+    "brief": "A food-delivery platform wants a live view of its city: orders per zone per minute, late deliveries, and riders who go quiet. Build the streaming pipeline on Kafka 4 in KRaft mode with Python (or Kafka Streams if you know Java). A simulator produces order and rider-location events with event timestamps, some out of order and some duplicated, keyed so each order's events stay in order. A validator checks every event against an Avro schema in the registry wire format and splits valid from rejected events in transactions, exactly once. A windowed processor joins orders with a compacted zone table and emits final per-zone counts for one-minute windows with a grace period, plus an alert when a delivery takes longer than its promised time. Show that the pipeline survives a consumer crash without double counting, that a compatible schema change ships without downtime, and that consumer lag stays under control.",
+    "deliverables": [
+      "A topic design: each topic's key, partition count, retention or compaction, and why, with the commands or scripts that create them",
+      "The simulator, validator and windowed processor, with a README explaining how to run them against a local broker",
+      "The Avro schemas, with one compatible change (v2) and the compatibility test that proves it, deployed while the pipeline runs",
+      "Evidence of exactly-once validation: read_committed and read_uncommitted counts before and after a forced abort or crash",
+      "The windowed results and alerts for a fixed simulation run, with late events counted and explained",
+      "A failure test: kill the processor mid-run, restart it, and show the results match an uninterrupted run, or explain and bound any difference",
+      "A design note (one to two pages) on delivery semantics end to end, where state lives, how lag is monitored, and what you'd change for ten times the traffic"
+    ],
+    "rubric": [
+      {
+        "name": "Topic and partition design",
+        "points": 15,
+        "description": "Keys preserve the ordering that matters, partition counts and retention or compaction are justified, and the zone table is a compacted topic."
+      },
+      {
+        "name": "Correct, reliable processing",
+        "points": 25,
+        "description": "Validation is transactional with read_committed downstream; duplicates in the input don't inflate results; the crash test passes or its difference is explained."
+      },
+      {
+        "name": "Windows, joins and late data",
+        "points": 20,
+        "description": "One-minute event-time windows with a grace period emit one final result each; late events are handled deliberately; the zone join is correct after table updates."
+      },
+      {
+        "name": "Schemas and evolution",
+        "points": 15,
+        "description": "Records carry a schema ID; the v2 change is tested for compatibility and deployed in the right upgrade order."
+      },
+      {
+        "name": "Operations",
+        "points": 10,
+        "description": "Consumer lag and errors are visible, for example from kafka-consumer-groups.sh or metrics, and the README lets someone else run the system."
+      },
+      {
+        "name": "Design note",
+        "points": 15,
+        "description": "A clear account of the guarantees at each step, including side effects outside Kafka, and realistic plans for scale."
+      }
+    ],
+    "submit": "Paste your topic design, a link to your repository (or the code of each program), the outputs that show exactly-once validation, the windowed results, the crash test and the schema change, and your design note."
+  }
+}

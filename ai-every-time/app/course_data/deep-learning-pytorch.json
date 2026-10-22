@@ -1,0 +1,1194 @@
+{
+ "slug": "deep-learning-pytorch",
+ "title": "Deep Learning with PyTorch",
+ "subtitle": "Build, train, debug and ship neural networks in PyTorch: tensors and autograd, nn.Module, DataLoaders and the training loop, regularisation, checkpoints and export.",
+ "category": "Machine Learning",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "elena-petrova",
+  "zawadi-mutembo"
+ ],
+ "skills": [
+  "PyTorch",
+  "Tensors and autograd",
+  "nn.Module design",
+  "Dataset and DataLoader",
+  "Training and evaluation loops",
+  "Optimisers and learning-rate schedules",
+  "Regularisation and early stopping",
+  "Debugging neural networks",
+  "Checkpointing and model export"
+ ],
+ "tools": [
+  "Python 3",
+  "PyTorch",
+  "NumPy",
+  "scikit-learn",
+  "pandas"
+ ],
+ "outcomes": [
+  "Work with tensors' shapes, dtypes, devices and memory, and use autograd to compute, check and customise gradients",
+  "Build models as nn.Module classes whose parameters, buffers and state_dict hold exactly what they should",
+  "Feed data through Dataset and DataLoader, and write training and evaluation loops with optimisers and learning-rate schedules",
+  "Control overfitting with dropout, weight decay and early stopping, and find silent bugs with hooks and anomaly detection",
+  "Checkpoint and resume training exactly, load files safely, and export a trained model with torch.export"
+ ],
+ "prerequisites": "Machine Learning Foundations with Python (or experience of training models with scikit-learn), and how a neural network learns, as in Introduction to Neural Networks and TensorFlow. Comfortable Python and NumPy. Install Python 3.10 or later, PyTorch 2.6 or later (pip install torch, or the selector at pytorch.org; the CPU build is enough) and pip install scikit-learn pandas. Every lab runs on a laptop CPU in seconds or minutes.",
+ "description": "PyTorch is where most deep learning research is written and a common choice in production, and its appeal is that a model is ordinary Python: tensors you can inspect, a graph built as the code runs, and a training loop you write yourself. That freedom comes with responsibilities that higher-level libraries hide, such as zeroing gradients, switching between training and evaluation mode, and saving the right state, and this course teaches them precisely, from the tensor up.\n\nYou'll start with tensors, broadcasting, views and autograd, checking gradients against formulas and writing a custom backward pass. Then you'll build models as nn.Module classes with buffers and deliberate initialisation, feed them through your own Dataset and DataLoader, and write reusable training and evaluation loops with AdamW, parameter groups and learning-rate schedules. You'll regularise an overfitting network, debug with hooks and anomaly detection, resume a checkpointed run bit for bit, and export a model with torch.export. The capstone takes a synthetic pump-monitoring dataset from raw CSV to an exported model, compared honestly with scikit-learn. It's the PyTorch companion to Training Deep Neural Networks, and the foundation for Computer Vision with Convolutional Neural Networks, Reinforcement Learning: From Bandits to Policy Gradients and Fine-Tuning Open Language Models with LoRA.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Tensors and automatic differentiation",
+   "summary": "Work with tensors the way PyTorch stores them, with shapes, dtypes, devices and memory layout, then use autograd to compute gradients, check them and write your own.",
+   "instructor": "elena-petrova",
+   "lessons": [
+    {
+     "title": "Tensors: shapes, dtypes, devices and memory",
+     "minutes": 12,
+     "objectives": [
+      "Create tensors and control their dtype and device",
+      "Predict the shapes that broadcasting and reshaping produce",
+      "Tell when two tensors share memory, and when an operation copies"
+     ],
+     "key_points": [
+      "A tensor is an n-dimensional array with a shape, a dtype and a device. torch.tensor() infers the dtype from the data: Python floats give float32 (the default floating-point type) and integers give int64. Operations between tensors on different devices raise an error rather than copying silently.",
+      "Broadcasting lines shapes up from the right: two dimensions are compatible when they're equal or one of them is 1, and missing leading dimensions count as 1. A (3, 1) tensor plus a (4,) tensor gives (3, 4). The classic accident is (N, 1) minus (N,), which silently builds an (N, N) matrix.",
+      "Basic slicing (x[0], x[:, 1:]), transpose(), view() and expand() return views that share storage with the original, so writing to one changes the other. view() needs a compatible memory layout and fails on a transposed tensor; reshape() returns a view when it can and copies when it must; .contiguous() makes a compact copy.",
+      "torch.from_numpy() and Tensor.numpy() share memory with the NumPy array on the CPU, while torch.tensor() always copies. NumPy's default float is float64, so convert with .float() or dtype=torch.float32 before feeding data to a model whose weights are float32.",
+      "Methods ending in an underscore, such as add_() and zero_(), change a tensor in place. They save memory, but if autograd saved the original values for the backward pass, backward() fails with an error saying a variable needed for gradient computation was modified by an inplace operation."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Shapes, views and shared memory",
+      "steps": [
+       {
+        "do": "Check which dtype torch.tensor() infers from integers and from floats, and the default floating-point type.",
+        "code": "import torch\nprint(torch.tensor([1, 2]).dtype, torch.tensor([1.0, 2.0]).dtype, torch.get_default_dtype())",
+        "lang": "python",
+        "see": "torch.int64 torch.float32 torch.float32: integers become int64 and floats the default float32."
+       },
+       {
+        "do": "Broadcast a column against a row, then make the classic mistake: predictions of shape (5, 1) minus targets of shape (5,).",
+        "code": "a = torch.zeros(3, 1)\nb = torch.arange(4.0)\nprint((a + b).shape)\npred, target = torch.zeros(5, 1), torch.zeros(5)\nprint((pred - target).shape)",
+        "lang": "python",
+        "see": "torch.Size([3, 4]) and torch.Size([5, 5]): the subtraction silently built a 5 x 5 matrix."
+       },
+       {
+        "do": "Take a row of a matrix, which is a view, and write to it.",
+        "code": "x = torch.arange(6.0).reshape(2, 3)\nrow = x[0]\nrow[0] = 100\nprint(x)",
+        "lang": "python",
+        "see": "The 100 appears in x as well: the row shares x's storage."
+       },
+       {
+        "do": "Try view() on a transposed tensor, then reshape().",
+        "code": "t = x.t()\ntry:\n    t.view(6)\nexcept RuntimeError as e:\n    print(str(e).split(\" (\")[0])\nprint(t.is_contiguous(), t.reshape(6))",
+        "lang": "python",
+        "see": "view() refuses (\"view size is not compatible with input tensor's size and stride\") because the transposed tensor isn't contiguous; reshape() copies and succeeds."
+       },
+       {
+        "do": "Compare torch.from_numpy() with torch.tensor() after changing the NumPy array.",
+        "code": "import numpy as np\narr = np.zeros(3)\nshared, copied = torch.from_numpy(arr), torch.tensor(arr)\narr[0] = 7\nprint(shared, copied)",
+        "lang": "python",
+        "see": "tensor([7., 0., 0.], dtype=torch.float64) tensor([0., 0., 0.], dtype=torch.float64): from_numpy shares memory, torch.tensor copies, and both keep NumPy's float64."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Autograd: the graph behind every operation",
+     "minutes": 12,
+     "objectives": [
+      "Explain how autograd records operations and computes gradients with backward()",
+      "Control gradient tracking with requires_grad, no_grad, inference_mode and detach",
+      "Avoid the common autograd errors: accumulated gradients, non-scalar backward and freed graphs"
+     ],
+     "key_points": [
+      "Autograd records each operation on tensors that require gradients as the code runs (define-by-run), so ordinary Python loops and ifs just work. Each result's grad_fn points to the operation that made it; backward() on a scalar walks the graph back, applying the chain rule.",
+      "backward() adds gradients into the .grad of leaf tensors (those created with requires_grad=True, such as parameters) rather than overwriting them. The accumulation is deliberate, for accumulating over several batches, so a training loop must reset gradients before each backward().",
+      "backward() frees the graph's saved values, so a second backward() through the same graph fails unless the first used retain_graph=True. backward() on a non-scalar needs a gradient argument of the same shape; usually the fix is to reduce to a scalar loss first, such as with .mean().",
+      "torch.no_grad() stops recording inside its block, for evaluation and manual updates; torch.inference_mode() does the same with less overhead, but its tensors can't be used in autograd later. tensor.detach() returns a tensor that shares the data but is cut from the graph.",
+      "Gradients flow only through floating-point (and complex) tensors. Converting to a Python number with .item(), to NumPy, or through integer results such as argmax() ends the graph, which is why accuracy can be measured but not optimised directly."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Watch autograd record and accumulate",
+      "steps": [
+       {
+        "do": "Build a tiny graph, look at its grad_fn and backpropagate.",
+        "code": "import torch\nw = torch.tensor(3.0, requires_grad=True)\ny = w ** 2 + 2 * w\nprint(y, y.grad_fn.name())\ny.backward()\nprint(w.grad)",
+        "lang": "python",
+        "see": "tensor(15., grad_fn=<AddBackward0>) AddBackward0 | tensor(8.): dy/dw = 2w + 2 = 8 at w = 3."
+       },
+       {
+        "do": "Run the forward pass again and call backward() without zeroing the gradient.",
+        "code": "y = w ** 2 + 2 * w\ny.backward()\nprint(w.grad)",
+        "lang": "python",
+        "see": "tensor(16.): the new gradient was added to the old one."
+       },
+       {
+        "do": "Call backward() a second time through the same graph.",
+        "code": "try:\n    y.backward()\nexcept RuntimeError as e:\n    print(str(e).split(\" (\")[0])",
+        "lang": "python",
+        "see": "\"Trying to backward through the graph a second time\": the first backward() freed the values it saved."
+       },
+       {
+        "do": "Call backward() on a vector instead of a scalar.",
+        "code": "v = w * torch.ones(3)\ntry:\n    v.backward()\nexcept RuntimeError as e:\n    print(e)",
+        "lang": "python",
+        "see": "grad can be implicitly created only for scalar outputs. Reduce to a scalar loss first, for example with .mean()."
+       },
+       {
+        "do": "Switch recording off with torch.no_grad(), and cut a tensor from the graph with detach().",
+        "code": "with torch.no_grad():\n    z = w * 2\nprint(z.requires_grad, w.detach().requires_grad, (w * 2).requires_grad)",
+        "lang": "python",
+        "see": "False False True: only the last product is recorded."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Gradient descent by hand, and custom gradients",
+     "minutes": 12,
+     "objectives": [
+      "Write a gradient descent loop with raw tensors and autograd",
+      "Check gradients numerically with torch.autograd.gradcheck",
+      "Implement an operation with its own backward pass using torch.autograd.Function"
+     ],
+     "key_points": [
+      "A manual update must run inside torch.no_grad() (w -= lr * w.grad), because changing a leaf that requires gradients in place is otherwise an error, and the gradients must then be reset with w.grad.zero_() or w.grad = None. torch.optim's optimisers do both jobs for you.",
+      "torch.autograd.gradcheck compares analytical gradients with finite-difference estimates. Give it float64 inputs with requires_grad=True: in float32 the finite differences are too imprecise, so it warns and usually fails even for a correct gradient.",
+      "A torch.autograd.Function subclass defines static forward(ctx, ...) and backward(ctx, grad_output) methods. forward() saves what backward() needs with ctx.save_for_backward(); backward() returns one gradient per input (None where none is needed). Call it with .apply().",
+      "Custom functions earn their place for numerical stability or speed: log(1 + exp(z)) overflows to inf for large z in float32, while max(z, 0) + log1p(exp(-|z|)) is stable. Most of the time, composing existing differentiable operations is simpler, and autograd derives the backward pass."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Errors that protect your gradients",
+      "steps": [
+       {
+        "do": "Update a leaf tensor in place outside torch.no_grad().",
+        "code": "import torch\nw = torch.zeros(1, requires_grad=True)\ntry:\n    w -= 0.1\nexcept RuntimeError as e:\n    print(e)",
+        "lang": "python",
+        "see": "\"a leaf Variable that requires grad is being used in an in-place operation.\" Wrap manual updates in torch.no_grad()."
+       },
+       {
+        "do": "Run gradcheck on softplus with float32 inputs, then with float64.",
+        "code": "import warnings\nimport torch.nn.functional as F\nwarnings.simplefilter(\"ignore\")\nz32 = torch.randn(8, requires_grad=True)\nz64 = z32.detach().double().requires_grad_()\nprint(torch.autograd.gradcheck(F.softplus, (z32,), raise_exception=False),\n      torch.autograd.gradcheck(F.softplus, (z64,), raise_exception=False))",
+        "lang": "python",
+        "see": "False True: the same correct gradient fails the check in float32 and passes in float64."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Fit a model with raw autograd, and check its gradients",
+    "tool": "Python with PyTorch",
+    "minutes": 45,
+    "goal": "Use autograd with no torch.nn or torch.optim: check its gradient against the formula, see gradients accumulate, fit a line by gradient descent, and write a numerically stable softplus with a hand-written backward pass that passes gradcheck.",
+    "setup": [
+     "Python 3.10 or later with PyTorch: pip install torch (or the command the selector at pytorch.org gives for your system; the CPU build is enough)",
+     "The starter file autograd_lab.py"
+    ],
+    "steps": [
+     {
+      "do": "Read the top of the file: 200 points on y = 3x - 2 plus noise, stored as (200, 1) column tensors, and the mse() helper."
+     },
+     {
+      "do": "Complete formula_grads(), the derivatives of the mean squared error with respect to w and b.",
+      "code": "r = w * x + b - y\nreturn 2 * (r * x).mean(), 2 * r.mean()",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the loop in fit(): backpropagate, update w and b inside torch.no_grad(), then reset their gradients.",
+      "code": "loss.backward()\nwith torch.no_grad():\n    w -= lr * w.grad\n    b -= lr * b.grad\nw.grad = None\nb.grad = None",
+      "lang": "python"
+     },
+     {
+      "do": "Complete StableSoftplus.backward(): the derivative of softplus is the sigmoid, multiplied by the incoming gradient.",
+      "code": "return grad_out * torch.sigmoid(z)",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script.",
+      "code": "python autograd_lab.py",
+      "lang": "bash",
+      "see": "match: True; three backward() calls leave a gradient of 12.0; the loss falls from 7.0161 to 0.0092 with w 2.984 and b -2.002; gradcheck(StableSoftplus): True, and softplus stays finite at -1000 and 1000."
+     },
+     {
+      "do": "Delete the two lines that reset the gradients, run again and describe the loss; then put them back.",
+      "see": "The loss falls at first, then climbs back (6.3008 by step 299 on the course's machine): every step uses the sum of all the gradients so far."
+     },
+     {
+      "do": "In check_custom_function(), change torch.float64 to torch.float32 and run again; then change it back.",
+      "see": "gradcheck warns that its input isn't double precision and returns False, although the backward pass is correct."
+     },
+     {
+      "do": "Write two or three sentences: why the update has to happen inside torch.no_grad(), and why the gradients must be reset after each step."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Autograd's gradients match the hand-derived formula.",
+      "look_for": [
+       "match: True"
+      ]
+     },
+     {
+      "text": "Gradient descent recovers the line: w close to 3 and b close to -2.",
+      "look_for": [
+       "step 299  loss 0.0092  w 2.984  b -2.002"
+      ]
+     },
+     {
+      "text": "The custom softplus passes gradcheck in float64 and stays finite at ±1000.",
+      "look_for": [
+       "gradcheck(StableSoftplus): True",
+       "[0.0, 0.6931, 1000.0]"
+      ]
+     },
+     {
+      "text": "The accumulation demonstration shows three gradients added together.",
+      "look_for": [
+       "without zeroing: 12.0"
+      ]
+     },
+     {
+      "text": "The explanation covers torch.no_grad() and resetting gradients.",
+      "look_for": [
+       "no_grad"
+      ]
+     }
+    ],
+    "submit": "Paste your three completed functions, the full output of python autograd_lab.py, what happened without resetting the gradients and with float32 in gradcheck, and your explanation.",
+    "files": [
+     {
+      "path": "autograd_lab.py",
+      "content": "\"\"\"Fit a line with raw autograd, check autograd's gradient against the formula, and write a custom gradient.\"\"\"\n\nimport torch\n\ntorch.manual_seed(0)\n\n# Synthetic data: y = 3x - 2 plus a little noise, as column vectors of shape (200, 1)\nN = 200\nx = torch.linspace(-1, 1, N).unsqueeze(1)\ny = 3 * x - 2 + 0.1 * torch.randn(N, 1)\n\n\ndef mse(pred, target):\n    return ((pred - target) ** 2).mean()\n\n\ndef formula_grads(w, b):\n    \"\"\"dL/dw and dL/db of L = mean((w*x + b - y)^2), worked out by hand.\"\"\"\n    # TODO: with r = w*x + b - y, return 2*mean(r*x) and 2*mean(r)\n    return torch.tensor(0.0), torch.tensor(0.0)\n\n\ndef check_gradients():\n    w = torch.tensor(0.5, requires_grad=True)\n    b = torch.tensor(0.0, requires_grad=True)\n    mse(w * x + b, y).backward()\n    with torch.no_grad():\n        gw, gb = formula_grads(w, b)\n    print(f\"autograd  dL/dw = {w.grad.item():.4f}  dL/db = {b.grad.item():.4f}\")\n    print(f\"formula   dL/dw = {gw.item():.4f}  dL/db = {gb.item():.4f}\")\n    print(\"match:\", torch.allclose(w.grad, gw) and torch.allclose(b.grad, gb))\n\n\ndef show_accumulation():\n    w = torch.tensor(2.0, requires_grad=True)\n    for _ in range(3):\n        (w ** 2).backward()          # d(w^2)/dw = 4 at w = 2\n    print(\"grad after three backward() calls without zeroing:\", w.grad.item())\n\n\ndef fit(lr=0.1, steps=300):\n    w = torch.zeros(1, requires_grad=True)\n    b = torch.zeros(1, requires_grad=True)\n    for step in range(steps):\n        loss = mse(w * x + b, y)\n        # TODO: backpropagate; then, inside torch.no_grad(), move w and b against their gradients (lr * grad)\n        #  and reset both gradients to None so they don't accumulate\n        pass\n        if step % 100 == 0 or step == steps - 1:\n            print(f\"step {step:3d}  loss {loss.item():.4f}  w {w.item():.3f}  b {b.item():.3f}\")\n    return w, b\n\n\nclass StableSoftplus(torch.autograd.Function):\n    \"\"\"softplus(z) = log(1 + exp(z)), computed without overflow, with a hand-written backward.\"\"\"\n\n    @staticmethod\n    def forward(ctx, z):\n        ctx.save_for_backward(z)\n        return torch.clamp(z, min=0) + torch.log1p(torch.exp(-z.abs()))\n\n    @staticmethod\n    def backward(ctx, grad_out):\n        (z,) = ctx.saved_tensors\n        # TODO: the derivative of softplus is sigmoid(z); return grad_out times it (the chain rule)\n        return grad_out\n\n\ndef check_custom_function():\n    z = torch.randn(8, dtype=torch.float64, requires_grad=True)\n    ok = torch.autograd.gradcheck(StableSoftplus.apply, (z,), raise_exception=False)\n    print(\"gradcheck(StableSoftplus):\", ok)\n    big = torch.tensor([-1000.0, 0.0, 1000.0])\n    print(\"softplus at -1000, 0, 1000:\", [round(v, 4) for v in StableSoftplus.apply(big).tolist()])\n\n\nif __name__ == \"__main__\":\n    print(\"== 1. Autograd against the formula\")\n    check_gradients()\n    print(\"== 2. Gradients accumulate\")\n    show_accumulation()\n    print(\"== 3. Gradient descent by hand\")\n    fit()\n    print(\"== 4. A custom autograd function\")\n    check_custom_function()\n"
+     }
+    ],
+    "hints": [
+     "If match is False, check the residual's sign: r = w*x + b - y. Using y - (w*x + b) flips both gradients.",
+     "\"a leaf Variable that requires grad is being used in an in-place operation\" means the update ran outside torch.no_grad().",
+     "If w.grad is None inside the update, backward() hasn't run on a loss that depends on w: loss.backward() must come first.",
+     "A custom Function's backward() returns one gradient per input of forward(), in the same order."
+    ]
+   }
+  },
+  {
+   "title": "Models with nn.Module",
+   "summary": "Package layers, parameters and state into nn.Module classes, choose and initialise layers deliberately, and give each loss function exactly the inputs it expects.",
+   "instructor": "elena-petrova",
+   "lessons": [
+    {
+     "title": "nn.Module: parameters, buffers and the state_dict",
+     "minutes": 12,
+     "objectives": [
+      "Write a model as an nn.Module subclass with __init__ and forward",
+      "Explain what PyTorch registers as parameters, submodules and buffers",
+      "Read a model's named_parameters and state_dict"
+     ],
+     "key_points": [
+      "A model subclasses nn.Module, calls super().__init__() first, creates its layers in __init__ and describes the computation in forward(). Call the model itself, model(x), rather than model.forward(x): calling it runs any registered hooks around forward().",
+      "Assigning an nn.Parameter or an nn.Module to an attribute registers it, so it appears in parameters(), moves with model.to(device) and is saved in the state_dict. Layers kept in a plain Python list or dict are invisible to all three; use nn.ModuleList or nn.ModuleDict.",
+      "register_buffer() stores a tensor that belongs to the model's state but isn't trained, such as batch normalisation's running statistics or a fixed normalisation mean. Buffers move with the model and are saved in the state_dict (unless persistent=False), but optimisers never see them.",
+      "state_dict() returns an ordered dictionary from dotted names (hidden.0.weight, scale.mean) to tensors: every parameter and persistent buffer. It's the standard thing to save, because it holds only tensors and loads into any instance of the same architecture.",
+      "model.train() and model.eval() set the training flag on every submodule, which changes how dropout and batch normalisation behave. They don't switch gradient tracking on or off; that's what torch.no_grad() is for."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "What a module registers",
+      "steps": [
+       {
+        "do": "Define a module with a parameter, a layer, a buffer and a layer hidden in a plain list, and list its parameters.",
+        "code": "import torch\nfrom torch import nn\n\nclass Demo(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.scale = nn.Parameter(torch.ones(3))\n        self.layer = nn.Linear(3, 2)\n        self.register_buffer(\"mean\", torch.zeros(3))\n        self.forgotten = [nn.Linear(2, 2)]\n\n    def forward(self, x):\n        return self.forgotten[0](self.layer((x - self.mean) * self.scale))\n\nm = Demo()\nprint([name for name, _ in m.named_parameters()])",
+        "lang": "python",
+        "see": "['scale', 'layer.weight', 'layer.bias']: the buffer isn't a parameter, and the layer in the list is missing."
+       },
+       {
+        "do": "List the state_dict's keys.",
+        "code": "print(list(m.state_dict().keys()))",
+        "lang": "python",
+        "see": "['scale', 'mean', 'layer.weight', 'layer.bias']: the buffer is saved; the list's layer is not."
+       },
+       {
+        "do": "Convert the module to float64 and check each part.",
+        "code": "m.to(torch.float64)\nprint(m.layer.weight.dtype, m.mean.dtype, m.forgotten[0].weight.dtype)",
+        "lang": "python",
+        "see": "torch.float64 torch.float64 torch.float32: the layer in the plain list was left behind, as it would be by .to(device)."
+       },
+       {
+        "do": "Switch to evaluation mode and check the flags.",
+        "code": "print(m.training, m.layer.training)\nm.eval()\nprint(m.training, m.layer.training, m.scale.requires_grad)",
+        "lang": "python",
+        "see": "True True then False False True: eval() changes the training flag on every submodule, not whether gradients are tracked."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Layers, containers and initialisation",
+     "minutes": 12,
+     "objectives": [
+      "Build networks from nn.Linear, activations and containers",
+      "Count a model's parameters and predict its layers' shapes",
+      "Initialise weights deliberately with torch.nn.init and model.apply"
+     ],
+     "key_points": [
+      "nn.Linear(in_features, out_features) computes y = x Wᵀ + b with a weight of shape (out_features, in_features), applied to the last dimension of its input, so a (batch, ..., in_features) tensor works too. It has in_features × out_features + out_features parameters.",
+      "nn.Sequential chains modules in order and suits straight pipelines; write your own forward() when the data flow branches, skips or depends on the input. nn.ModuleList holds layers to loop over, and nn.ModuleDict holds named ones, such as one output head per task.",
+      "nn.Linear's default initialisation draws weights and biases uniformly from ±1/√in_features (it calls kaiming_uniform_ with a = √5). He initialisation, nn.init.kaiming_normal_(w, nonlinearity='relu'), gives a standard deviation of √(2/fan_in) and suits ReLU networks; Glorot (xavier_) suits tanh.",
+      "model.apply(fn) calls fn on every submodule, recursively, which is the usual way to initialise: inside fn, check isinstance(m, nn.Linear) and call the nn.init functions, which change the tensors in place (their names end in an underscore) without being recorded by autograd.",
+      "Activations come as modules (nn.ReLU, nn.GELU) to place in containers, or as functions in torch.nn.functional (F.relu) to call in forward(). Layers with weights must be created in __init__: an nn.Linear created inside forward() gets fresh, untrained weights on every call."
+     ]
+    },
+    {
+     "title": "Loss functions and the inputs they expect",
+     "minutes": 12,
+     "objectives": [
+      "Choose the loss for regression, binary, multi-label and multi-class tasks",
+      "Give each loss the shapes and dtypes it expects",
+      "Recognise the classic loss bugs: double softmax and broadcast targets"
+     ],
+     "key_points": [
+      "nn.CrossEntropyLoss takes raw logits of shape (N, C) and targets that are class indices of shape (N,) and dtype int64, or class probabilities of shape (N, C). It applies log_softmax itself (it's LogSoftmax followed by NLLLoss), so the model's last layer should be a plain Linear.",
+      "Applying softmax before CrossEntropyLoss is a silent bug: training runs, but the loss is squeezed into a narrow range (with 10 classes it can't go below about 1.46) and the gradients shrink. Apply softmax only when you need probabilities, for reporting or decisions.",
+      "nn.BCEWithLogitsLoss is for binary and multi-label tasks: logits and float targets of the same shape, one output per label. It's more numerically stable than a sigmoid followed by nn.BCELoss, and its pos_weight argument up-weights the positive class when it's rare.",
+      "nn.MSELoss and nn.L1Loss compare predictions and targets elementwise. With outputs of shape (N, 1) and targets of shape (N,), broadcasting compares every prediction with every target; PyTorch warns about the size mismatch, and the fix is to make the shapes match.",
+      "Losses average over the batch by default (reduction='mean'). CrossEntropyLoss also takes weight for class weights, ignore_index for targets to skip (-100 by default, often used for padding) and label_smoothing, which spreads a little of each target's probability over the other classes."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Feed each loss what it expects",
+      "steps": [
+       {
+        "do": "Check that CrossEntropyLoss on logits equals log_softmax followed by NLLLoss.",
+        "code": "import torch\nimport torch.nn.functional as F\nfrom torch import nn\ntorch.manual_seed(0)\nlogits = torch.randn(4, 3)\ntarget = torch.tensor([0, 2, 1, 2])\nprint(round(nn.CrossEntropyLoss()(logits, target).item(), 4),\n      round(nn.NLLLoss()(F.log_softmax(logits, dim=1), target).item(), 4))",
+        "lang": "python",
+        "see": "0.9357 0.9357: the same value."
+       },
+       {
+        "do": "Find the lowest loss possible after the double-softmax bug, with 10 classes and a perfect prediction.",
+        "code": "perfect = torch.softmax(torch.tensor([[50.0] + [0.0] * 9]), dim=1)   # probability 1 on class 0\nprint(round(nn.CrossEntropyLoss()(perfect, torch.tensor([0])).item(), 4))",
+        "lang": "python",
+        "see": "1.4612, not 0: softmax of probabilities can never be confident."
+       },
+       {
+        "do": "Give MSELoss perfect predictions with shape (4, 1) against targets of shape (4,).",
+        "code": "import warnings\npred = torch.arange(4.0).unsqueeze(1)\ntarget = torch.arange(4.0)\nwith warnings.catch_warnings(record=True) as caught:\n    warnings.simplefilter(\"always\")\n    loss = nn.MSELoss()(pred, target)\nprint(loss.item(), \"|\", str(caught[0].message)[:62], \"...\")\nprint(nn.MSELoss()(pred.squeeze(1), target).item())",
+        "lang": "python",
+        "see": "A loss of 2.5 with a warning about the target size, then 0.0 once the shapes match."
+       },
+       {
+        "do": "Compare BCEWithLogitsLoss with sigmoid then BCELoss for a very confident wrong logit.",
+        "code": "z, t = torch.tensor([200.0]), torch.tensor([0.0])\nprint(nn.BCEWithLogitsLoss()(z, t).item(), nn.BCELoss()(torch.sigmoid(z), t).item())",
+        "lang": "python",
+        "see": "200.0 100.0: BCELoss clamps its logarithm, so it reports 100; the fused loss gives the true 200."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Build a configurable MLP and test what it registers",
+    "tool": "Python with PyTorch",
+    "minutes": 40,
+    "goal": "Write an MLP as an nn.Module that carries its own standardisation in buffers, then test it: parameter count, output shape, state_dict, the plain-list bug, default and He initialisation, and the inputs its losses expect.",
+    "setup": [
+     "Python 3.10 or later with PyTorch",
+     "The starter file modules_lab.py"
+    ],
+    "steps": [
+     {
+      "do": "Run the tests before changing anything.",
+      "code": "python modules_lab.py",
+      "lang": "bash",
+      "see": "Several FAIL lines: the starter keeps its hidden layers in a plain list and its scaling tensors as plain attributes."
+     },
+     {
+      "do": "Complete Standardise.__init__ so that mean and std are buffers.",
+      "code": "self.register_buffer(\"mean\", torch.as_tensor(mean, dtype=torch.float32))\nself.register_buffer(\"std\", torch.as_tensor(std, dtype=torch.float32))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete MLP.__init__: an nn.ModuleList of Linear layers through the hidden sizes, then the output layer.",
+      "code": "self.hidden = nn.ModuleList(nn.Linear(a, b) for a, b in zip(sizes[:-1], sizes[1:]))\nself.out = nn.Linear(sizes[-1], n_out)",
+      "lang": "python"
+     },
+     {
+      "do": "Complete MLP.forward(): each hidden layer, then ReLU, then dropout, and finally the output layer with no activation.",
+      "code": "for layer in self.hidden:\n    x = self.drop(self.act(layer(x)))\nreturn self.out(x)",
+      "lang": "python"
+     },
+     {
+      "do": "Complete he_init() for model.apply().",
+      "code": "nn.init.kaiming_normal_(module.weight, nonlinearity=\"relu\")\nnn.init.zeros_(module.bias)",
+      "lang": "python"
+     },
+     {
+      "do": "Run the tests again.",
+      "code": "python modules_lab.py",
+      "lang": "bash",
+      "see": "Every check says PASS: 17226 parameters, logits of shape (32, 10), scale.mean and scale.std in the state_dict, He weights with a standard deviation close to 0.177, and the double-softmax loss stuck above 1.4612."
+     },
+     {
+      "do": "Work out by hand why ListMLP registers only 650 parameters, and what would happen to its hidden layers if you trained it with torch.optim.AdamW(model.parameters())."
+     },
+     {
+      "do": "Add a second output head with nn.ModuleDict, such as {\"digit\": nn.Linear(64, 10), \"odd\": nn.Linear(64, 1)}, return a dict of outputs from forward(), and check that the parameter count grows by 65."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The MLP registers all 17,226 parameters and returns logits of shape (32, 10).",
+      "look_for": [
+       "PASS  parameter count  17226",
+       "PASS  output shape  (32, 10)"
+      ]
+     },
+     {
+      "text": "The standardisation tensors are buffers: saved in the state_dict, but not trained.",
+      "look_for": [
+       "PASS  buffers saved, not trained",
+       "scale.mean, scale.std"
+      ]
+     },
+     {
+      "text": "The plain-list bug is demonstrated and explained.",
+      "look_for": [
+       "ListMLP registers only 650 parameters"
+      ]
+     },
+     {
+      "text": "He initialisation gives the expected standard deviation and zero biases.",
+      "look_for": [
+       "PASS  He init"
+      ]
+     },
+     {
+      "text": "The loss checks pass, and the double-softmax floor is shown.",
+      "look_for": [
+       "PASS  CrossEntropyLoss = log_softmax + NLL",
+       "can never go below 1.4612",
+       "PASS  BCEWithLogitsLoss = sigmoid + BCELoss"
+      ]
+     }
+    ],
+    "submit": "Paste your completed Standardise, MLP and he_init (with the ModuleDict head if you added it), the full output of python modules_lab.py, and your explanation of the plain-list bug.",
+    "files": [
+     {
+      "path": "modules_lab.py",
+      "content": "\"\"\"Build a configurable MLP as an nn.Module, then test what it registers, how it starts and what its losses expect.\"\"\"\n\nimport torch\nfrom torch import nn\nimport torch.nn.functional as F\n\n\nclass Standardise(nn.Module):\n    \"\"\"Subtracts a mean and divides by a standard deviation that are saved with the model but never trained.\"\"\"\n\n    def __init__(self, mean, std):\n        super().__init__()\n        # TODO: register mean and std as buffers (self.register_buffer), so they move with .to() and are saved\n        self.mean = torch.as_tensor(mean, dtype=torch.float32)\n        self.std = torch.as_tensor(std, dtype=torch.float32)\n\n    def forward(self, x):\n        return (x - self.mean) / self.std\n\n\nclass MLP(nn.Module):\n    \"\"\"Standardise -> [Linear -> ReLU -> Dropout] for each hidden size -> Linear to raw logits.\"\"\"\n\n    def __init__(self, n_in, hidden, n_out, mean=0.0, std=1.0, dropout=0.0):\n        super().__init__()\n        self.scale = Standardise(mean, std)\n        sizes = [n_in] + list(hidden)\n        # TODO: make self.hidden an nn.ModuleList of nn.Linear(sizes[i], sizes[i + 1]) layers,\n        #  and self.out an nn.Linear from the last hidden size to n_out\n        self.hidden = [nn.Linear(a, b) for a, b in zip(sizes[:-1], sizes[1:])]   # a plain list: fix this\n        self.out = nn.Linear(n_in, n_out)\n        self.act = nn.ReLU()\n        self.drop = nn.Dropout(dropout)\n\n    def forward(self, x):\n        x = self.scale(x)\n        # TODO: pass x through each hidden layer, then ReLU, then dropout; return self.out(x), the raw logits\n        return self.out(x)\n\n\nclass ListMLP(nn.Module):\n    \"\"\"The same network with its hidden layers in a plain Python list: a classic bug.\"\"\"\n\n    def __init__(self, n_in, hidden, n_out):\n        super().__init__()\n        sizes = [n_in] + list(hidden)\n        self.hidden = [nn.Linear(a, b) for a, b in zip(sizes[:-1], sizes[1:])]\n        self.out = nn.Linear(sizes[-1], n_out)\n\n    def forward(self, x):\n        for layer in self.hidden:\n            x = torch.relu(layer(x))\n        return self.out(x)\n\n\ndef count_params(model):\n    return sum(p.numel() for p in model.parameters() if p.requires_grad)\n\n\ndef he_init(module):\n    \"\"\"For model.apply(): He (Kaiming) normal weights for ReLU layers and zero biases.\"\"\"\n    if isinstance(module, nn.Linear):\n        # TODO: initialise module.weight with nn.init.kaiming_normal_(..., nonlinearity=\"relu\") and zero the bias\n        pass\n\n\ndef report(name, ok, detail=\"\"):\n    print(f\"{'PASS' if ok else 'FAIL'}  {name}{'  ' + detail if detail else ''}\")\n\n\ndef main():\n    torch.manual_seed(0)\n    model = MLP(64, [128, 64], 10, mean=torch.zeros(64), std=torch.ones(64), dropout=0.2)\n    x = torch.randn(32, 64)\n\n    n = count_params(model)\n    report(\"parameter count\", n == 17226, f\"{n} (64*128+128 + 128*64+64 + 64*10+10 = 17226)\")\n    report(\"output shape\", model(x).shape == (32, 10), str(tuple(model(x).shape)))\n    keys = list(model.state_dict().keys())\n    report(\"buffers saved, not trained\", \"scale.mean\" in keys and n == 17226, \", \".join(keys[:4]) + \", ...\")\n    buggy = ListMLP(64, [128, 64], 10)\n    report(\"ModuleList registers every layer\", count_params(buggy) < n,\n           f\"ListMLP registers only {count_params(buggy)} parameters\")\n\n    bound = 1 / 64 ** 0.5\n    w0 = model.hidden[0].weight\n    report(\"default nn.Linear init\", w0.abs().max().item() <= bound,\n           f\"max |w| {w0.abs().max().item():.4f} <= 1/sqrt(64) = {bound:.4f}\")\n    model.apply(he_init)\n    std = model.hidden[0].weight.std().item()\n    report(\"He init\", abs(std - (2 / 64) ** 0.5) < 0.01 and model.hidden[0].bias.abs().sum().item() == 0,\n           f\"std {std:.3f}, target sqrt(2/64) = {(2 / 64) ** 0.5:.3f}\")\n\n    model.eval()\n    logits = model(x)\n    target = torch.randint(0, 10, (32,))\n    ce = nn.CrossEntropyLoss()(logits, target)\n    manual = -F.log_softmax(logits, dim=1).gather(1, target.unsqueeze(1)).mean()\n    report(\"CrossEntropyLoss = log_softmax + NLL\", torch.allclose(ce, manual), f\"{ce.item():.4f}\")\n    twice = nn.CrossEntropyLoss()(torch.softmax(logits, dim=1), target)\n    print(f\"      softmax applied first (the bug): loss {twice.item():.4f}, and it can never go below \"\n          f\"{-F.log_softmax(torch.tensor([1.0] + [0.0] * 9), 0)[0].item():.4f}\")\n    z = torch.randn(32)\n    t = (torch.rand(32) > 0.5).float()\n    bce = nn.BCEWithLogitsLoss()(z, t)\n    report(\"BCEWithLogitsLoss = sigmoid + BCELoss\", torch.allclose(bce, nn.BCELoss()(torch.sigmoid(z), t)),\n           f\"{bce.item():.4f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "nn.ModuleList accepts any iterable of modules, including a generator expression.",
+     "register_buffer(name, tensor) makes self.<name> available just like an attribute.",
+     "If the He check fails with a standard deviation near 0.07, model.apply(he_init) isn't reaching the layers: they must be registered for apply() to find them.",
+     "The output layer returns raw logits: CrossEntropyLoss applies log_softmax itself."
+    ]
+   }
+  },
+  {
+   "title": "Data and the training loop",
+   "summary": "Feed batches through Dataset and DataLoader, write training and evaluation loops you can reuse, and configure optimisers and learning-rate schedules with torch.optim.",
+   "instructor": "zawadi-mutembo",
+   "lessons": [
+    {
+     "title": "Dataset and DataLoader",
+     "minutes": 12,
+     "objectives": [
+      "Write a map-style Dataset with __len__ and __getitem__",
+      "Configure a DataLoader's batching, shuffling and workers",
+      "Split data reproducibly, and fit preprocessing on the training split only"
+     ],
+     "key_points": [
+      "A map-style Dataset implements __len__ and __getitem__(i), returning one example, often a (features, label) tuple of tensors. TensorDataset wraps tensors already in memory; a custom Dataset can read files lazily or transform each example as it's loaded.",
+      "DataLoader turns a Dataset into batches: batch_size (default 1), shuffle (off by default; turn it on for training only), drop_last to discard a short final batch, and a default collate function that stacks each field of the examples into one batch tensor.",
+      "Shuffling draws on a random number generator; pass generator=torch.Generator().manual_seed(seed) for a reproducible order. torch.utils.data.random_split(dataset, [0.8, 0.2], generator=...) splits a dataset into Subsets by counts or fractions.",
+      "num_workers > 0 loads batches in worker processes, which helps when reading or decoding is slow. Each worker has its own copy of the dataset, and where workers start with spawn (Windows, macOS) the script's top-level code must sit under if __name__ == '__main__':. pin_memory=True speeds copies to a GPU.",
+      "Fit preprocessing, such as standardisation statistics or a vocabulary, on the training split alone and reuse those values for validation and test data. Computing them on all the data leaks information from the test set into training."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Batches, shuffling and splits",
+      "steps": [
+       {
+        "do": "Wrap two tensors in a TensorDataset and read one example.",
+        "code": "import torch\nfrom torch.utils.data import DataLoader, TensorDataset, random_split\nds = TensorDataset(torch.arange(10.0).unsqueeze(1), torch.arange(10))\nprint(len(ds), ds[3])",
+        "lang": "python",
+        "see": "10 (tensor([3.]), tensor(3)): one (features, label) tuple."
+       },
+       {
+        "do": "Batch it in fours, with and without drop_last.",
+        "code": "print([tuple(X.shape) for X, _ in DataLoader(ds, batch_size=4)])\nprint([tuple(X.shape) for X, _ in DataLoader(ds, batch_size=4, drop_last=True)])",
+        "lang": "python",
+        "see": "[(4, 1), (4, 1), (2, 1)] then [(4, 1), (4, 1)]: the short final batch is kept unless you drop it."
+       },
+       {
+        "do": "Shuffle with a seeded generator twice.",
+        "code": "def order(seed):\n    g = torch.Generator().manual_seed(seed)\n    return [y.tolist() for _, y in DataLoader(ds, batch_size=5, shuffle=True, generator=g)]\nprint(order(0), order(0) == order(0), order(0) == order(1))",
+        "lang": "python",
+        "see": "[[3, 7, 5, 2, 0], [8, 1, 6, 9, 4]] True False: the same seed gives the same order."
+       },
+       {
+        "do": "Split 80/20 by fractions, reproducibly.",
+        "code": "train, val = random_split(ds, [0.8, 0.2], generator=torch.Generator().manual_seed(0))\nprint(len(train), len(val), type(val).__name__, sorted(val.indices))",
+        "lang": "python",
+        "see": "8 2 Subset [2, 6]: Subsets that index into the original dataset."
+       }
+      ]
+     }
+    },
+    {
+     "title": "The training and evaluation loops",
+     "minutes": 12,
+     "objectives": [
+      "Write a training step with its five operations in the right order",
+      "Write an evaluation loop that measures without changing the model",
+      "Log losses and metrics correctly over a whole epoch"
+     ],
+     "key_points": [
+      "Each training step does five things in order: optimizer.zero_grad(), the forward pass, the loss, loss.backward() and optimizer.step(). zero_grad() sets gradients to None by default (set_to_none=True), which saves memory and is safe because backward() creates them again.",
+      "Call model.train() at the start of each training epoch and model.eval() before evaluating, and wrap evaluation in torch.no_grad() or torch.inference_mode(), so no graph is built: that saves memory and time.",
+      "Accumulate statistics as Python numbers: loss.item() * len(y) and the count of correct predictions, divided by the number of examples at the end, so a short last batch is weighted correctly. Summing loss tensors instead keeps every batch's graph alive.",
+      "Check before you train: a classifier's first loss should be close to ln(C) for C balanced classes (2.303 for ten), because an untrained model's predictions are close to uniform. A first loss far above that points to badly scaled inputs or initial weights.",
+      "To train with a larger effective batch than fits in memory, accumulate gradients: divide each batch's loss by the number of accumulation steps k, call backward() on every batch, and step and zero the optimiser once every k batches."
+     ]
+    },
+    {
+     "title": "Optimisers, parameter groups and learning-rate schedules",
+     "minutes": 12,
+     "objectives": [
+      "Configure SGD, Adam and AdamW in torch.optim",
+      "Use parameter groups to give parts of a model different settings",
+      "Schedule the learning rate, and step the scheduler in the right place"
+     ],
+     "key_points": [
+      "An optimiser takes the parameters to update and keeps their state, such as momentum buffers and Adam's moment estimates. SGD(params, lr, momentum=0.9, nesterov=True) and Adam(params, lr=1e-3) are the classics; Training Deep Neural Networks covers the theory behind them.",
+      "AdamW decouples weight decay: each step multiplies the weights by (1 − lr × weight_decay) directly, instead of adding an L2 term to the gradient that Adam's scaling would weaken. AdamW's default weight_decay is 0.01 and Adam's is 0; recent releases also take Adam(..., decoupled_weight_decay=True), which behaves as AdamW.",
+      "Parameter groups give parts of a model their own settings: pass a list of dicts such as [{'params': decay}, {'params': no_decay, 'weight_decay': 0.0}]. Excluding biases and normalisation weights from weight decay is common practice, and a lower learning rate for pretrained layers is another use.",
+      "torch.optim.lr_scheduler changes each group's learning rate: StepLR and MultiStepLR drop it at set epochs, CosineAnnealingLR follows a cosine, OneCycleLR warms up then anneals and is stepped after every batch, and ReduceLROnPlateau is stepped with a validation metric, scheduler.step(val_loss).",
+      "Call scheduler.step() after optimizer.step(); PyTorch warns if the order is reversed, and the schedule then skips its first value. get_last_lr() returns the current rates, and clip_grad_norm_(model.parameters(), max_norm), between backward() and step(), caps the gradients' total norm."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Inspect schedules and parameter groups",
+      "steps": [
+       {
+        "do": "Step a StepLR schedule (halve every two epochs) for six epochs.",
+        "code": "import torch\nfrom torch import nn\nopt = torch.optim.SGD([nn.Parameter(torch.zeros(1))], lr=0.1)\nsched = torch.optim.lr_scheduler.StepLR(opt, step_size=2, gamma=0.5)\nlrs = []\nfor epoch in range(6):\n    lrs.append(sched.get_last_lr()[0])\n    opt.step()\n    sched.step()\nprint(lrs)",
+        "lang": "python",
+        "see": "[0.1, 0.1, 0.05, 0.05, 0.025, 0.025]."
+       },
+       {
+        "do": "Step a OneCycleLR schedule over ten batches.",
+        "code": "opt = torch.optim.AdamW([nn.Parameter(torch.zeros(1))], lr=1e-3)\nsched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=0.01, total_steps=10)\nlrs = []\nfor step in range(10):\n    lrs.append(round(sched.get_last_lr()[0], 5))\n    opt.step()\n    sched.step()\nprint(lrs)",
+        "lang": "python",
+        "see": "[0.0004, 0.0052, 0.01, 0.0095, 0.00812, 0.00611, 0.00389, 0.00188, 0.0005, 0.0]: it starts at max_lr / 25, warms up for 30% of the steps, then anneals far below the start."
+       },
+       {
+        "do": "Put biases in their own parameter group without weight decay.",
+        "code": "model = nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 2))\ndecay = [p for n, p in model.named_parameters() if not n.endswith(\"bias\")]\nno_decay = [p for n, p in model.named_parameters() if n.endswith(\"bias\")]\nopt = torch.optim.AdamW([{\"params\": decay}, {\"params\": no_decay, \"weight_decay\": 0.0}], lr=1e-3)\nprint([(len(g[\"params\"]), g[\"weight_decay\"]) for g in opt.param_groups])",
+        "lang": "python",
+        "see": "[(2, 0.01), (2, 0.0)]: two weight matrices decay at AdamW's default 0.01, two bias vectors not at all."
+       },
+       {
+        "do": "Clip the gradients' total norm after a backward pass.",
+        "code": "loss = (model(torch.randn(16, 4)) * 100).pow(2).mean()\nloss.backward()\nbefore = nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)\nafter = torch.norm(torch.stack([p.grad.norm() for p in model.parameters()]))\nprint(round(before.item(), 1), round(after.item(), 4))",
+        "lang": "python",
+        "see": "3659.3 1.0: clip_grad_norm_ returns the norm before clipping and rescales the gradients to the maximum."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Train a digit classifier end to end",
+    "tool": "Python with PyTorch",
+    "minutes": 60,
+    "goal": "Train an MLP on scikit-learn's 8 x 8 handwritten digits with your own Dataset, shuffled DataLoaders, separate training and evaluation loops, AdamW and a one-cycle learning-rate schedule, and evaluate it once on a held-out test set.",
+    "setup": [
+     "Python 3.10 or later with PyTorch and scikit-learn: pip install torch scikit-learn",
+     "The starter file train_digits.py"
+    ],
+    "steps": [
+     {
+      "do": "Read make_loaders(): a stratified 60/20/20 split into training, validation and test sets, standardisation statistics from the training split only (with constant pixels given a standard deviation of 1), and a seeded generator for the shuffling order."
+     },
+     {
+      "do": "Complete DigitsDataset.",
+      "code": "# __init__\nself.X = torch.tensor((X - mean) / std, dtype=torch.float32)\nself.y = torch.tensor(y, dtype=torch.long)\n# __getitem__\nreturn self.X[i], self.y[i]",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the five steps in train_one_epoch(), then step the scheduler: OneCycleLR is stepped after every batch.",
+      "code": "optimizer.zero_grad()\nlogits = model(X)\nloss = loss_fn(logits, y)\nloss.backward()\noptimizer.step()\nscheduler.step()",
+      "lang": "python"
+     },
+     {
+      "do": "Complete evaluate(): eval mode, no gradient tracking, and the same weighted loss and accuracy as train_one_epoch()."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python train_digits.py",
+      "lang": "bash",
+      "see": "1078/359/360 examples; batches of (64, 64) float32 features and (64,) int64 labels; a first validation loss of 2.314 against ln 10 = 2.303; the learning rate rising to about 0.01 by epoch 5 and falling to 0 at epoch 20; a test accuracy of about 0.97."
+     },
+     {
+      "do": "Swap the order of optimizer.step() and scheduler.step(), run again and read the warning; then swap them back.",
+      "see": "UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. The schedule skips its first value."
+     },
+     {
+      "do": "Try max_lr=0.1 and max_lr=0.001 and compare the validation curves and test accuracy with 0.01.",
+      "see": "On the course's machine, 0.1 made training unstable (validation accuracy fell to about 0.75 around epoch 10 and test accuracy ended near 0.88), and 0.001 learned more slowly but reached about 0.97."
+     },
+     {
+      "do": "Write a short paragraph: what the first validation loss tells you, why evaluate() uses torch.no_grad(), and how the learning rate changed over the run."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The Dataset and DataLoaders produce float32 batches of 64 and int64 labels.",
+      "look_for": [
+       "one batch: X (64, 64) torch.float32, y (64,) torch.int64"
+      ]
+     },
+     {
+      "text": "The untrained model's loss is close to ln 10.",
+      "look_for": [
+       "before training: val loss 2.3"
+      ]
+     },
+     {
+      "text": "Training runs for 20 epochs with the one-cycle schedule, ending at a learning rate of 0.",
+      "look_for": [
+       "epoch 20",
+       "lr 0.00000"
+      ]
+     },
+     {
+      "text": "The test set is evaluated once, at the end, with an accuracy of at least 0.95.",
+      "look_for": [
+       "test accuracy 0.9"
+      ]
+     },
+     {
+      "text": "The paragraph explains the first loss, torch.no_grad() and the schedule.",
+      "look_for": [
+       "no_grad"
+      ]
+     }
+    ],
+    "submit": "Paste your DigitsDataset, train_one_epoch() and evaluate(), the full output of python train_digits.py, the warning from swapping the steps, your learning-rate comparison and your paragraph.",
+    "files": [
+     {
+      "path": "train_digits.py",
+      "content": "\"\"\"Train an MLP on scikit-learn's 8 x 8 digits with a Dataset, DataLoaders and a reusable training loop.\"\"\"\n\nimport math\n\nimport torch\nfrom sklearn.datasets import load_digits\nfrom sklearn.model_selection import train_test_split\nfrom torch import nn\nfrom torch.utils.data import DataLoader, Dataset\n\nSEED, EPOCHS, BATCH = 0, 20, 64\n\n\nclass DigitsDataset(Dataset):\n    \"\"\"Each example: 64 standardised pixel values (float32) and the digit, 0-9 (int64).\"\"\"\n\n    def __init__(self, X, y, mean, std):\n        # TODO: store (X - mean) / std as a float32 tensor in self.X and y as an int64 (torch.long) tensor in self.y\n        self.X, self.y = X, y\n\n    def __len__(self):\n        return len(self.y)\n\n    def __getitem__(self, i):\n        # TODO: return the i-th example as a (features, label) pair\n        raise NotImplementedError\n\n\ndef make_loaders():\n    X, y = load_digits(return_X_y=True)\n    X_train, X_rest, y_train, y_rest = train_test_split(X, y, test_size=0.4, random_state=SEED, stratify=y)\n    X_val, X_test, y_val, y_test = train_test_split(X_rest, y_rest, test_size=0.5, random_state=SEED, stratify=y_rest)\n    mean, std = X_train.mean(axis=0), X_train.std(axis=0)\n    std[std == 0] = 1.0                      # some corner pixels are always 0\n    train = DigitsDataset(X_train, y_train, mean, std)\n    val = DigitsDataset(X_val, y_val, mean, std)\n    test = DigitsDataset(X_test, y_test, mean, std)\n    g = torch.Generator().manual_seed(SEED)  # makes the shuffling order reproducible\n    return (DataLoader(train, batch_size=BATCH, shuffle=True, generator=g),\n            DataLoader(val, batch_size=256), DataLoader(test, batch_size=256))\n\n\ndef train_one_epoch(model, loader, loss_fn, optimizer, scheduler):\n    \"\"\"One pass over loader; returns the mean loss and the accuracy over all its examples.\"\"\"\n    model.train()\n    total_loss, correct, n = 0.0, 0, 0\n    for X, y in loader:\n        # TODO: the five steps: zero the gradients, forward, loss, backward, optimizer step;\n        #  then step the scheduler (OneCycleLR is stepped after every batch)\n        logits = model(X)\n        loss = loss_fn(logits, y)\n        total_loss += loss.item() * len(y)   # .item(): a Python float, so no graph is kept\n        correct += (logits.argmax(dim=1) == y).sum().item()\n        n += len(y)\n    return total_loss / n, correct / n\n\n\ndef evaluate(model, loader, loss_fn):\n    # TODO: switch to eval mode and turn off gradient tracking, then return the mean loss and accuracy like\n    #  train_one_epoch, without any optimiser steps\n    return float(\"nan\"), 0.0\n\n\ndef main():\n    torch.manual_seed(SEED)\n    train_loader, val_loader, test_loader = make_loaders()\n    X, y = next(iter(train_loader))\n    print(f\"train/val/test examples: {len(train_loader.dataset)}/{len(val_loader.dataset)}/{len(test_loader.dataset)}\")\n    print(f\"one batch: X {tuple(X.shape)} {X.dtype}, y {tuple(y.shape)} {y.dtype}; {len(train_loader)} batches per epoch\")\n\n    model = nn.Sequential(nn.Linear(64, 128), nn.ReLU(), nn.Linear(128, 64), nn.ReLU(), nn.Linear(64, 10))\n    loss_fn = nn.CrossEntropyLoss()\n    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)\n    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=0.01, epochs=EPOCHS,\n                                                    steps_per_epoch=len(train_loader))\n    loss0, _ = evaluate(model, val_loader, loss_fn)\n    print(f\"before training: val loss {loss0:.3f} (ln 10 = {math.log(10):.3f})\")\n    for epoch in range(1, EPOCHS + 1):\n        tr_loss, tr_acc = train_one_epoch(model, train_loader, loss_fn, optimizer, scheduler)\n        va_loss, va_acc = evaluate(model, val_loader, loss_fn)\n        if epoch in (1, 2, 5, 10, 15, 20):\n            print(f\"epoch {epoch:2d}  train loss {tr_loss:.4f} acc {tr_acc:.3f} | val loss {va_loss:.4f} \"\n                  f\"acc {va_acc:.3f} | lr {scheduler.get_last_lr()[0]:.5f}\")\n    te_loss, te_acc = evaluate(model, test_loader, loss_fn)\n    print(f\"test loss {te_loss:.4f}  test accuracy {te_acc:.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "\"expected scalar type Long\" or a dtype error from the loss means the labels aren't int64: use dtype=torch.long.",
+     "If the loss never falls, check that optimizer.step() runs and that the optimiser was given model.parameters().",
+     "If the accuracy is above 1, divide by the number of examples, not the number of batches.",
+     "Numbers can differ slightly between machines and PyTorch versions; the shape of the curves shouldn't."
+    ]
+   }
+  },
+  {
+   "title": "Regularisation and debugging in PyTorch",
+   "summary": "Make PyTorch's training and evaluation behaviour work for you, with dropout, weight decay, early stopping and normalisation layers, then find the bugs that don't raise errors.",
+   "instructor": "elena-petrova",
+   "lessons": [
+    {
+     "title": "Dropout, weight decay and early stopping in practice",
+     "minutes": 12,
+     "objectives": [
+      "Explain how nn.Dropout behaves in training and evaluation mode",
+      "Apply weight decay through the optimiser",
+      "Implement early stopping that keeps the best weights"
+     ],
+     "key_points": [
+      "nn.Dropout(p) zeroes each element with probability p in training mode and multiplies the survivors by 1/(1 − p), so the expected activation is unchanged (inverted dropout); in evaluation mode it passes its input through untouched. Evaluating without model.eval() gives noisy, pessimistic results.",
+      "A network that memorises its training data shows training accuracy near 1.0 while its validation loss rises, as it grows confident about wrong answers on new data. Validation loss usually turns before validation accuracy does, so it's the earlier warning.",
+      "Weight decay in PyTorch is an optimiser setting, not a layer option: AdamW(params, weight_decay=...) shrinks every parameter in the groups that have it at each step. There's no per-layer regulariser argument as in Keras; an explicit penalty, such as an L1 term, is added to the loss instead.",
+      "Early stopping keeps the weights from the epoch with the best validation score and stops after a patience of epochs without improvement. Keep a copy: state_dict() returns references to the live tensors, so storing it without copy.deepcopy() (or saving it to disk) keeps the final weights, not the best.",
+      "Data augmentation belongs in the training Dataset's __getitem__ (or a transform it calls), so each epoch sees a different random version of each example, while the validation and test Datasets stay fixed."
+     ]
+    },
+    {
+     "title": "Normalisation layers in PyTorch",
+     "minutes": 10,
+     "objectives": [
+      "Explain what BatchNorm1d computes in training and in evaluation mode",
+      "Read PyTorch's batch-norm momentum correctly",
+      "Choose between batch normalisation and layer normalisation"
+     ],
+     "key_points": [
+      "nn.BatchNorm1d(num_features) normalises each feature over the batch in training mode, using the batch's mean and biased variance, then applies a learned scale (weight) and shift (bias). In evaluation mode it uses running estimates instead, so an example's output doesn't depend on the rest of its batch.",
+      "The running estimates are buffers updated in training mode as running = (1 − momentum) × running + momentum × batch statistic, with momentum=0.1 by default, using the unbiased batch variance. Keras defines momentum the other way round, so PyTorch's 0.1 matches Keras' 0.9.",
+      "In training mode batch norm needs more than one value per feature: BatchNorm1d raises a ValueError for a batch of one example. Very small batches give noisy statistics, and drop_last=True avoids a tiny final batch.",
+      "nn.LayerNorm(normalized_shape) normalises each example over its own features, behaves the same in training and evaluation, and doesn't depend on the batch, which is why transformers use it. A Linear layer followed by batch norm doesn't need its own bias, so bias=False is common there.",
+      "model.train() switches every submodule to training mode, so to fine-tune with frozen batch-norm statistics, call .eval() on those layers after model.train() each epoch; set requires_grad=False on their weights as well to freeze their scale and shift."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Batch norm in training and evaluation mode",
+      "steps": [
+       {
+        "do": "Normalise one batch in training mode and check the running mean afterwards.",
+        "code": "import torch\nfrom torch import nn\ntorch.manual_seed(0)\nbn = nn.BatchNorm1d(3)\nx = torch.randn(8, 3) * 2 + 5\ny = bn(x)\nprint(y.mean(0).abs().max().item() < 1e-6, bn.running_mean.allclose(0.1 * x.mean(0)))",
+        "lang": "python",
+        "see": "True True: the batch is normalised to mean 0, and the running mean moved 10% of the way from 0 to the batch mean (momentum 0.1)."
+       },
+       {
+        "do": "Check which variance the running estimate uses.",
+        "code": "print(bn.running_var.allclose(0.9 * torch.ones(3) + 0.1 * x.var(0, unbiased=True)))",
+        "lang": "python",
+        "see": "True: the unbiased batch variance."
+       },
+       {
+        "do": "Feed a single example in training mode, then in evaluation mode.",
+        "code": "try:\n    bn(torch.randn(1, 3))\nexcept ValueError as e:\n    print(e)\nbn.eval()\nprint(bn(torch.randn(1, 3)).shape)",
+        "lang": "python",
+        "see": "Expected more than 1 value per channel when training, got input size torch.Size([1, 3]) | torch.Size([1, 3]): evaluation mode uses the running statistics instead."
+       },
+       {
+        "do": "Compare LayerNorm, which normalises each example over its features.",
+        "code": "ln = nn.LayerNorm(3)\nprint(ln(x).mean(1).abs().max().item() < 1e-6, ln(x[:1]).allclose(ln(x)[:1], atol=1e-6))",
+        "lang": "python",
+        "see": "True True: every row has mean 0, and an example's output doesn't depend on the rest of the batch."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Hooks, anomaly detection and silent bugs",
+     "minutes": 12,
+     "objectives": [
+      "Inspect activations and gradients with forward hooks and named_parameters",
+      "Locate the operation that produces NaN with anomaly detection",
+      "Recognise the PyTorch bugs that raise no error"
+     ],
+     "key_points": [
+      "module.register_forward_hook(fn) calls fn(module, inputs, output) after every forward pass, which records activation statistics, such as the fraction of ReLU outputs that are zero, without editing forward(). It returns a handle whose remove() detaches the hook.",
+      "After loss.backward(), loop over model.named_parameters() and print each p.grad.norm(). A gradient that is None means the parameter isn't connected to the loss; norms that shrink or grow steadily from layer to layer point to vanishing or exploding gradients.",
+      "Inside with torch.autograd.detect_anomaly():, the backward pass raises an error at the first operation that returns NaN, and PyTorch prints the traceback of the forward operation that created it. It slows training down a lot, so use it only while debugging.",
+      "Some bugs raise no error: forgetting zero_grad(), evaluating in training mode, softmax before CrossEntropyLoss, layers in a plain list, (N, 1) outputs against (N,) targets (only a warning), and keeping state_dict() references as the best weights. They show only as worse or odd results.",
+      "Overfit a tiny batch first: a correct model, loss and loop can drive the loss on 10 to 20 examples close to zero within a few hundred steps. If they can't, the bug is in the code, not in the amount of data or the regularisation."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Hooks and anomaly detection",
+      "steps": [
+       {
+        "do": "Record the fraction of zero outputs from a ReLU with a forward hook.",
+        "code": "import torch\nfrom torch import nn\ntorch.manual_seed(0)\nmodel = nn.Sequential(nn.Linear(10, 32), nn.ReLU(), nn.Linear(32, 2))\nstats = {}\nhandle = model[1].register_forward_hook(lambda mod, inp, out: stats.update(zeros=(out == 0).float().mean().item()))\nmodel(torch.randn(64, 10))\nhandle.remove()\nprint(f\"{stats['zeros']:.2f} of the ReLU outputs are zero\")",
+        "lang": "python",
+        "see": "0.46 of the ReLU outputs are zero: about half, as expected for a freshly initialised layer."
+       },
+       {
+        "do": "Wrap the model in a module with a spare layer that forward() never uses, backpropagate and print every gradient norm.",
+        "code": "class WithSpare(nn.Module):\n    def __init__(self, body):\n        super().__init__()\n        self.body, self.spare = body, nn.Linear(2, 2)\n\n    def forward(self, x):\n        return self.body(x)          # self.spare is never used\n\nnet = WithSpare(model)\nnet(torch.randn(64, 10)).pow(2).mean().backward()\nfor name, p in net.named_parameters():\n    print(name, None if p.grad is None else round(p.grad.norm().item(), 4))",
+        "lang": "python",
+        "see": "body.0.weight 0.1416; body.0.bias 0.0952; body.2.weight 0.5334; body.2.bias 0.2469; spare.weight None; spare.bias None. The spare layer's gradients are None: it isn't connected to the loss."
+       },
+       {
+        "do": "Take the square root of a negative number and backpropagate, with anomaly detection on.",
+        "code": "import warnings\nwarnings.simplefilter(\"ignore\")\nx = torch.tensor([-1.0, 4.0], requires_grad=True)\ntry:\n    with torch.autograd.detect_anomaly():\n        torch.sqrt(x).sum().backward()\nexcept RuntimeError as e:\n    print(e)",
+        "lang": "python",
+        "see": "\"Function 'SqrtBackward0' returned nan values in its 0th output.\" With warnings shown, PyTorch also prints the traceback of the forward call."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Rein in an overfitting network",
+    "tool": "Python with PyTorch",
+    "minutes": 50,
+    "goal": "Train a wide network on 400 examples with 15% of their labels flipped, watch it memorise them, then compare dropout, weight decay and early stopping that keeps a copy of the best weights.",
+    "setup": [
+     "Python 3.10 or later with PyTorch and scikit-learn",
+     "The starter file regularise.py"
+    ],
+    "steps": [
+     {
+      "do": "Read make_data(): scikit-learn's make_classification with 30 features and 3 classes, flip_y=0.15, and splits of 400 training, 500 validation and 500 test examples."
+     },
+     {
+      "do": "Complete make_model(): 30 -> 256 -> 256 -> 3, with nn.Dropout after each ReLU.",
+      "code": "return nn.Sequential(nn.Linear(30, 256), nn.ReLU(), nn.Dropout(dropout),\n                     nn.Linear(256, 256), nn.ReLU(), nn.Dropout(dropout),\n                     nn.Linear(256, 3))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the early-stopping bookkeeping in train().",
+      "code": "if val_loss < best_loss:\n    best_loss, best_epoch = val_loss, epoch\n    best_state = copy.deepcopy(model.state_dict())",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script (about 20 seconds).",
+      "code": "python regularise.py",
+      "lang": "bash",
+      "see": "Four rows. Without regularisation, training accuracy reaches 1.000 while validation loss climbs to 2.065 and validation accuracy falls to 0.690. With dropout and weight decay together the final validation loss is 1.078, and early stopping recovers a test accuracy of about 0.74 in every row."
+     },
+     {
+      "do": "Replace copy.deepcopy(model.state_dict()) with model.state_dict(), run again and compare the test accuracy column; then restore the copy.",
+      "see": "The test accuracies drop to the final model's (0.714 instead of 0.740 without regularisation, on the course's machine): the \"best\" state followed the live weights to the end."
+     },
+     {
+      "do": "Add a patience of 20: break out of the epoch loop once epoch - best_epoch reaches 20, and print the epoch each run stopped at.",
+      "see": "The runs without dropout stop after epoch 24 and the dropout runs after epoch 36; the best epochs and test accuracies don't change, and training takes a fraction of the time."
+     },
+     {
+      "do": "Write a paragraph: what memorisation looked like in the numbers, which technique helped most here, and why early stopping needs a copy of the state_dict."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Without regularisation the network memorises the training set while validation loss climbs.",
+      "look_for": [
+       "no regularisation                   1.000     2.065    0.690"
+      ]
+     },
+     {
+      "text": "Dropout and weight decay keep the final validation loss lower.",
+      "look_for": [
+       "dropout + weight decay              1.000     1.078"
+      ]
+     },
+     {
+      "text": "Early stopping restores the best weights, chosen on validation loss.",
+      "look_for": [
+       "|          4     0.639     0.740",
+       "|         16     0.633     0.742"
+      ]
+     },
+     {
+      "text": "The state_dict reference bug is demonstrated.",
+      "look_for": [
+       "follows the live weights: True"
+      ]
+     },
+     {
+      "text": "The patience rule is added and its stopping epochs reported.",
+      "look_for": [
+       "patience"
+      ]
+     },
+     {
+      "text": "The paragraph explains memorisation and why the copy matters.",
+      "look_for": [
+       "deepcopy"
+      ]
+     }
+    ],
+    "submit": "Paste make_model(), your early-stopping code with the patience rule, the full output of python regularise.py, the test accuracies without the copy, and your paragraph.",
+    "files": [
+     {
+      "path": "regularise.py",
+      "content": "\"\"\"Watch a wide network memorise noisy labels, then rein it in with dropout, weight decay and early stopping.\"\"\"\n\nimport copy\n\nimport torch\nfrom sklearn.datasets import make_classification\nfrom sklearn.model_selection import train_test_split\nfrom torch import nn\n\nEPOCHS = 200\n\n\ndef make_data():\n    \"\"\"400 training examples with 15% of labels flipped at random, so there is noise to memorise.\"\"\"\n    X, y = make_classification(n_samples=1400, n_features=30, n_informative=8, n_redundant=4, n_classes=3,\n                               n_clusters_per_class=2, flip_y=0.15, random_state=0)\n    X_tr, X_rest, y_tr, y_rest = train_test_split(X, y, train_size=400, random_state=0, stratify=y)\n    X_va, X_te, y_va, y_te = train_test_split(X_rest, y_rest, test_size=0.5, random_state=0, stratify=y_rest)\n    f = lambda a: torch.tensor(a, dtype=torch.float32)\n    i = lambda a: torch.tensor(a, dtype=torch.long)\n    return f(X_tr), i(y_tr), f(X_va), i(y_va), f(X_te), i(y_te)\n\n\ndef make_model(dropout):\n    # TODO: 30 -> 256 -> 256 -> 3 with ReLU after each hidden Linear and nn.Dropout(dropout) after each ReLU\n    return nn.Sequential(nn.Linear(30, 256), nn.ReLU(), nn.Linear(256, 256), nn.ReLU(), nn.Linear(256, 3))\n\n\ndef accuracy(model, X, y):\n    return (model(X).argmax(dim=1) == y).float().mean().item()\n\n\ndef train(data, dropout=0.0, weight_decay=0.0):\n    X_tr, y_tr, X_va, y_va, X_te, y_te = data\n    torch.manual_seed(0)\n    model = make_model(dropout)\n    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=weight_decay)\n    loss_fn = nn.CrossEntropyLoss()\n    g = torch.Generator().manual_seed(0)\n    best_loss, best_state, best_epoch = float(\"inf\"), None, 0\n    for epoch in range(1, EPOCHS + 1):\n        model.train()\n        order = torch.randperm(len(y_tr), generator=g)\n        for start in range(0, len(y_tr), 32):\n            idx = order[start:start + 32]\n            optimizer.zero_grad()\n            loss_fn(model(X_tr[idx]), y_tr[idx]).backward()\n            optimizer.step()\n        model.eval()\n        with torch.no_grad():\n            val_loss = loss_fn(model(X_va), y_va).item()\n        # TODO: early stopping's bookkeeping: if val_loss beats best_loss, record it, the epoch and a deep copy\n        #  of model.state_dict() (copy.deepcopy: state_dict() returns references to the live tensors)\n        pass\n    with torch.no_grad():\n        final = (accuracy(model, X_tr, y_tr), val_loss, accuracy(model, X_va, y_va))\n        model.load_state_dict(best_state)\n        test_acc = accuracy(model, X_te, y_te)\n    return final, best_epoch, best_loss, test_acc\n\n\ndef show_reference_bug():\n    model = nn.Linear(2, 1)\n    saved = model.state_dict()              # no copy\n    with torch.no_grad():\n        model.weight += 1.0                 # training carries on...\n    print(\"state_dict() without a copy follows the live weights:\",\n          torch.equal(saved[\"weight\"], model.weight.detach()))\n\n\ndef main():\n    data = make_data()\n    print(f\"{'configuration':24} {'final: train acc':>16} {'val loss':>9} {'val acc':>8} | \"\n          f\"{'best epoch':>10} {'val loss':>9} {'test acc':>9}\")\n    for name, kw in [(\"no regularisation\", {}), (\"dropout 0.5\", {\"dropout\": 0.5}),\n                     (\"weight decay 0.5\", {\"weight_decay\": 0.5}),\n                     (\"dropout + weight decay\", {\"dropout\": 0.5, \"weight_decay\": 0.5})]:\n        (tr_acc, va_loss, va_acc), best_epoch, best_loss, test_acc = train(data, **kw)\n        print(f\"{name:24} {tr_acc:16.3f} {va_loss:9.3f} {va_acc:8.3f} | {best_epoch:10d} {best_loss:9.3f} \"\n              f\"{test_acc:9.3f}\")\n    show_reference_bug()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "Dropout only acts in training mode: train() switches model.train() on before each epoch and model.eval() before measuring.",
+     "Early stopping watches validation loss, not test accuracy: the test set is only for the final measurement.",
+     "copy.deepcopy(model.state_dict()) copies every tensor; {k: v.clone() for k, v in model.state_dict().items()} does the same."
+    ]
+   }
+  },
+  {
+   "title": "Saving, resuming and shipping models",
+   "summary": "Save and resume training without losing a step, load checkpoints safely, write device-agnostic and reproducible code, and export a model for inference with torch.export.",
+   "instructor": "zawadi-mutembo",
+   "lessons": [
+    {
+     "title": "state_dicts, checkpoints and safe loading",
+     "minutes": 12,
+     "objectives": [
+      "Save and load a model's weights with its state_dict",
+      "Write a checkpoint that resumes training exactly",
+      "Load files safely with weights_only, and handle missing and unexpected keys"
+     ],
+     "key_points": [
+      "Save the state_dict, not the model object: torch.save(model.state_dict(), 'model.pt') stores only tensors, and loading means building the same architecture in code, then model.load_state_dict(torch.load('model.pt')). Pickling a whole model ties the file to your class definitions and module paths.",
+      "To resume training, not only predict, a checkpoint also needs the optimiser's state_dict (momentum, Adam's moments, the current learning rates), the scheduler's, the next epoch, the best metric so far and the random number generator states; without them the resumed run takes different steps.",
+      "torch.load unpickles, and pickle can run code from an untrusted file. Since PyTorch 2.6 torch.load defaults to weights_only=True, which allows only tensors, primitive types and standard containers: save configs as dicts, allow a trusted class with torch.serialization.add_safe_globals, and use weights_only=False only for trusted files.",
+      "map_location='cpu' loads a checkpoint saved on a GPU onto a machine without one. load_state_dict() is strict by default, so any missing or unexpected key is an error; with strict=False it loads what matches and returns missing_keys and unexpected_keys, which are worth reading rather than ignoring.",
+      "The safetensors format, from the safetensors package, is a common alternative for sharing weights: a file holds only tensors and can't contain code, which is why Hugging Face libraries save model weights in it by default."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Save, load and read the keys",
+      "steps": [
+       {
+        "do": "Save a model's state_dict and load it into a fresh instance.",
+        "code": "import torch\nfrom torch import nn\ntorch.manual_seed(0)\nmake = lambda: nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 2))\nmodel = make()\ntorch.save(model.state_dict(), \"model.pt\")\ncopy = make()\ncopy.load_state_dict(torch.load(\"model.pt\", map_location=\"cpu\"))\nx = torch.randn(3, 4)\nprint(torch.equal(model(x), copy(x)))",
+        "lang": "python",
+        "see": "True: the same weights, so the same outputs. torch.load used weights_only=True by default."
+       },
+       {
+        "do": "Load the file into a model with an extra layer, strictly and then with strict=False.",
+        "code": "bigger = nn.Sequential(nn.Linear(4, 8), nn.ReLU(), nn.Linear(8, 2), nn.Linear(2, 2))\ntry:\n    bigger.load_state_dict(torch.load(\"model.pt\"))\nexcept RuntimeError as e:\n    print(type(e).__name__, \"|\", str(e).splitlines()[0])\nresult = bigger.load_state_dict(torch.load(\"model.pt\"), strict=False)\nprint(result.missing_keys, result.unexpected_keys)",
+        "lang": "python",
+        "see": "\"Error(s) in loading state_dict for Sequential:\" (a RuntimeError), then missing keys ['3.weight', '3.bias'] and no unexpected ones: the new layer keeps its initial weights."
+       },
+       {
+        "do": "Save a checkpoint with an optimiser's state and look inside it.",
+        "code": "opt = torch.optim.AdamW(model.parameters())\nmodel(x).sum().backward()\nopt.step()\ntorch.save({\"model\": model.state_dict(), \"optimizer\": opt.state_dict(), \"epoch\": 1}, \"ckpt.pt\")\nckpt = torch.load(\"ckpt.pt\")\nprint(list(ckpt), list(ckpt[\"optimizer\"]), sorted(ckpt[\"optimizer\"][\"state\"][0]))",
+        "lang": "python",
+        "see": "['model', 'optimizer', 'epoch'] ['state', 'param_groups'] ['exp_avg', 'exp_avg_sq', 'step']: AdamW keeps a step count and two moment estimates for every parameter."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Devices, mixed precision and reproducibility",
+     "minutes": 12,
+     "objectives": [
+      "Write device-agnostic training code",
+      "Explain what autocast and gradient scaling do in mixed-precision training",
+      "Make runs reproducible, and know the limits of reproducibility"
+     ],
+     "key_points": [
+      "Choose the device once and move the model and every batch to it. Recent releases offer torch.accelerator.current_accelerator() when torch.accelerator.is_available(), else torch.device('cpu'); older code checks torch.cuda.is_available(). module.to(device) moves a module in place; tensor.to(device) returns a new tensor to assign.",
+      "Mixed precision runs most operations in a 16-bit type to save memory and time on hardware built for it: wrap the forward pass and loss, not backward(), in torch.autocast(device_type, dtype=...). float16 needs torch.amp.GradScaler so small gradients don't underflow; bfloat16 has float32's range and usually doesn't.",
+      "torch.manual_seed(seed) seeds PyTorch's generators on every device; seed Python's random module and NumPy too if you use them, and give DataLoaders a seeded generator. torch.use_deterministic_algorithms(True) makes PyTorch raise an error wherever an operation has no deterministic implementation.",
+      "Identical results are only expected on the same PyTorch release, platform and hardware: different CPUs, GPUs or thread counts can change the order of floating-point additions and so the last digits. Compare runs with tolerances, and report the spread over a few seeds rather than one lucky run.",
+      "torch.compile(model) compiles the model into optimised code the first time it runs, which can speed up training and inference. The first call is slow, it needs a supported platform (on a CPU, a working C++ compiler), and its outputs should be checked against the uncompiled model's."
+     ]
+    },
+    {
+     "title": "Exporting a model for inference",
+     "minutes": 10,
+     "objectives": [
+      "Prepare a model for inference with eval() and inference_mode()",
+      "Export a model with torch.export and run the exported program",
+      "Choose between a state_dict, an exported program and other formats"
+     ],
+     "key_points": [
+      "For inference, call model.eval(), run under torch.inference_mode() or torch.no_grad(), and apply exactly the preprocessing used in training. Storing normalisation statistics as buffers in the model keeps them with the weights.",
+      "torch.export.export(model, (example_input,)) traces the forward pass into an ExportedProgram: a graph of PyTorch operations with the Python stripped away. torch.export.save() writes it to a .pt2 file, torch.export.load() reads it back, and program.module() returns a module to call.",
+      "An exported program is specialised to the example's shapes unless dynamic_shapes says otherwise, such as {'x': {0: torch.export.Dim('batch')}}, keyed by forward()'s argument name. Use an example batch of at least 2, since sizes 0 and 1 are special-cased, and rewrite data-dependent if statements, for example with torch.cond.",
+      "TorchScript (torch.jit.script and torch.jit.trace) is the older way to serialise models and is deprecated in recent releases in favour of torch.export and torch.compile. torch.onnx.export writes ONNX files for runtimes outside PyTorch, such as ONNX Runtime.",
+      "Pick the format for the job: a state_dict when the code that builds the model goes with it, as for resuming or fine-tuning; an exported program to run without the model's Python source; ONNX for other runtimes. Always compare the exported model's outputs with the original's on the same inputs."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch",
+      "title": "Export a model with a dynamic batch size",
+      "steps": [
+       {
+        "do": "Export a small model with dimension 0 of its input x marked as dynamic, and list the operations in the graph.",
+        "code": "import torch\nfrom torch import nn\n\nclass Net(nn.Module):\n    def __init__(self):\n        super().__init__()\n        self.fc1, self.fc2 = nn.Linear(4, 8), nn.Linear(8, 2)\n\n    def forward(self, x):\n        return self.fc2(torch.relu(self.fc1(x)))\n\ntorch.manual_seed(0)\nmodel = Net().eval()\nbatch = torch.export.Dim(\"batch\")\nprogram = torch.export.export(model, (torch.randn(4, 4),), dynamic_shapes={\"x\": {0: batch}})\nprint([str(n.target) for n in program.graph.nodes if n.op == \"call_function\"])",
+        "lang": "python",
+        "see": "['aten.linear.default', 'aten.relu.default', 'aten.linear.default']: the Python forward() became a graph of ATen operations."
+       },
+       {
+        "do": "Save the program, load it back and run it on a batch of a different size.",
+        "code": "torch.export.save(program, \"net.pt2\")\nloaded = torch.export.load(\"net.pt2\")\nx = torch.randn(9, 4)\nwith torch.inference_mode():\n    print(torch.allclose(loaded.module()(x), model(x)))",
+        "lang": "python",
+        "see": "True: nine rows work although the example had four."
+       },
+       {
+        "do": "Export without dynamic_shapes and call the result with a different batch size.",
+        "code": "static = torch.export.export(model, (torch.randn(4, 4),))\ntry:\n    static.module()(torch.randn(2, 4))\nexcept Exception as e:\n    print(type(e).__name__, str(e).splitlines()[0])",
+        "lang": "python",
+        "see": "AssertionError Guard failed: x.size()[0] == 4: without dynamic_shapes the program is specialised to the example's shape."
+       },
+       {
+        "do": "Try to export with a dynamic batch dimension from an example batch of one.",
+        "code": "try:\n    torch.export.export(model, (torch.randn(1, 4),), dynamic_shapes={\"x\": {0: batch}})\nexcept Exception as e:\n    print(type(e).__name__, str(e).split(\"!\")[0])",
+        "lang": "python",
+        "see": "UserError Constraints violated (batch): sizes 0 and 1 are special-cased, so use an example batch of at least two."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Resume training exactly, then export",
+    "tool": "Python with PyTorch",
+    "minutes": 50,
+    "goal": "Checkpoint a training run halfway, resume it with a fresh model and optimiser and get exactly the same weights as an uninterrupted run, see what weights_only=True refuses, and export the trained model with a dynamic batch size.",
+    "setup": [
+     "Python 3.10 or later with PyTorch 2.6 or later (for weights_only=True by default and the current torch.export) and scikit-learn",
+     "The starter file resume_export.py"
+    ],
+    "steps": [
+     {
+      "do": "Read build() and train_epochs(): every run starts from seed 0, with dropout, AdamW, a StepLR schedule that halves the learning rate every two epochs, and a DataLoader shuffled by its own generator."
+     },
+     {
+      "do": "Complete save_checkpoint().",
+      "code": "torch.save({\"model\": model.state_dict(), \"optimizer\": optimizer.state_dict(),\n            \"scheduler\": scheduler.state_dict(), \"epoch\": next_epoch, \"config\": dataclasses.asdict(cfg),\n            \"torch_rng\": torch.get_rng_state(), \"loader_rng\": gen.get_state()}, path)",
+      "lang": "python"
+     },
+     {
+      "do": "Complete load_checkpoint(): the three state_dicts, and the two random number generator states when restore_rng is true.",
+      "code": "model.load_state_dict(ckpt[\"model\"])\noptimizer.load_state_dict(ckpt[\"optimizer\"])\nscheduler.load_state_dict(ckpt[\"scheduler\"])\nif restore_rng:\n    torch.set_rng_state(ckpt[\"torch_rng\"])\n    gen.set_state(ckpt[\"loader_rng\"])",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the export in main(). An nn.Sequential's forward() argument is called input, so that's the key in dynamic_shapes.",
+      "code": "program = torch.export.export(model_a, (example,), dynamic_shapes={\"input\": {0: batch}})\ntorch.export.save(program, \"digits.pt2\")\nloaded = torch.export.load(\"digits.pt2\")",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script.",
+      "code": "python resume_export.py",
+      "lang": "bash",
+      "see": "With the RNG states restored, the resumed run ends on the uninterrupted run's loss (1.0564) with identical weights; without them, the dropout masks and batch order differ. torch.load refuses the pickled dataclass until it's allowed, and the exported program matches for batches of 1 and 7."
+     },
+     {
+      "do": "Comment out optimizer.load_state_dict(...) in load_checkpoint(), run again and compare the learning rate after six epochs; then restore the line.",
+      "see": "identical weights: False, and a learning rate of 0.00075 instead of 0.000375: the optimiser's parameter groups carry the current learning rate, and its state carries AdamW's moment estimates."
+     },
+     {
+      "do": "Write a paragraph: what each part of the checkpoint is for, and why the config is saved as a dict."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The checkpoint holds the model, optimiser and scheduler states, the epoch, the config and both RNG states.",
+      "look_for": [
+       "checkpoint keys: model, optimizer, scheduler, epoch, config, torch_rng, loader_rng"
+      ]
+     },
+     {
+      "text": "Resuming with the RNG states restored reproduces the uninterrupted run exactly; without them it doesn't.",
+      "look_for": [
+       "(RNG states restored: True): last batch loss 1.0564, identical weights: True",
+       "(RNG states restored: False)"
+      ]
+     },
+     {
+      "text": "weights_only=True refuses the pickled dataclass until it's allowed.",
+      "look_for": [
+       "refused the file: UnpicklingError",
+       "Config(hidden=64, lr=0.003, dropout=0.1)"
+      ]
+     },
+     {
+      "text": "The exported program accepts batches of 1 and 7 and matches the eager model.",
+      "look_for": [
+       "batch of 1: same outputs as the eager model: True",
+       "batch of 7: same outputs as the eager model: True"
+      ]
+     },
+     {
+      "text": "The paragraph explains the optimiser state and the RNG states.",
+      "look_for": [
+       "optimi"
+      ]
+     }
+    ],
+    "submit": "Paste save_checkpoint(), load_checkpoint() and your export code, the full output of python resume_export.py, the learning rate without the optimiser's state, and your paragraph.",
+    "files": [
+     {
+      "path": "resume_export.py",
+      "content": "\"\"\"Checkpoint a training run, resume it exactly, load checkpoints safely, and export the model for inference.\"\"\"\n\nimport dataclasses\nimport os\n\nimport torch\nfrom sklearn.datasets import load_digits\nfrom torch import nn\nfrom torch.utils.data import DataLoader, TensorDataset\n\n\n@dataclasses.dataclass\nclass Config:\n    hidden: int = 64\n    lr: float = 3e-3\n    dropout: float = 0.1\n\n\ndef build(cfg, seed=0):\n    \"\"\"A fresh model, optimiser, scheduler and shuffling DataLoader, all seeded.\"\"\"\n    torch.manual_seed(seed)\n    model = nn.Sequential(nn.Linear(64, cfg.hidden), nn.ReLU(), nn.Dropout(cfg.dropout), nn.Linear(cfg.hidden, 10))\n    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)\n    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=2, gamma=0.5)\n    X, y = load_digits(return_X_y=True)\n    data = TensorDataset(torch.tensor(X / 16.0, dtype=torch.float32), torch.tensor(y))\n    gen = torch.Generator().manual_seed(seed)\n    loader = DataLoader(data, batch_size=64, shuffle=True, generator=gen)\n    return model, optimizer, scheduler, gen, loader\n\n\ndef train_epochs(model, optimizer, scheduler, loader, start, stop):\n    loss_fn = nn.CrossEntropyLoss()\n    for _ in range(start, stop):\n        model.train()\n        for X, y in loader:\n            optimizer.zero_grad()\n            loss = loss_fn(model(X), y)\n            loss.backward()\n            optimizer.step()\n        scheduler.step()\n    return loss.item()\n\n\ndef save_checkpoint(path, model, optimizer, scheduler, gen, next_epoch, cfg):\n    # TODO: torch.save one dict holding the model's, optimiser's and scheduler's state_dicts, next_epoch, the\n    #  config as a plain dict (dataclasses.asdict) and both RNG states: torch.get_rng_state() and gen.get_state()\n    torch.save({\"model\": model.state_dict(), \"epoch\": next_epoch, \"config\": dataclasses.asdict(cfg)}, path)\n\n\ndef load_checkpoint(path, restore_rng=True):\n    ckpt = torch.load(path, map_location=\"cpu\", weights_only=True)\n    model, optimizer, scheduler, gen, loader = build(Config(**ckpt[\"config\"]))\n    # TODO: load the three state_dicts back (load_state_dict); if restore_rng, also restore both RNG states\n    #  with torch.set_rng_state(...) and gen.set_state(...)\n    model.load_state_dict(ckpt[\"model\"])\n    return model, optimizer, scheduler, loader, ckpt[\"epoch\"]\n\n\ndef same_weights(a, b):\n    sa, sb = a.state_dict(), b.state_dict()\n    return all(torch.equal(sa[k], sb[k]) for k in sa)\n\n\ndef main():\n    cfg = Config()\n    print(\"== 1. Resume exactly\")\n    model_a, opt_a, sched_a, _, loader_a = build(cfg)\n    loss_a = train_epochs(model_a, opt_a, sched_a, loader_a, 0, 6)\n    print(f\"uninterrupted: 6 epochs, last batch loss {loss_a:.4f}\")\n\n    model_b, opt_b, sched_b, gen_b, loader_b = build(cfg)\n    train_epochs(model_b, opt_b, sched_b, loader_b, 0, 3)\n    save_checkpoint(\"checkpoint.pt\", model_b, opt_b, sched_b, gen_b, 3, cfg)\n    del model_b, opt_b, sched_b, gen_b, loader_b          # as if the process had stopped\n    print(\"checkpoint keys:\", \", \".join(torch.load(\"checkpoint.pt\", weights_only=True)))\n\n    for restore in (True, False):\n        model_c, opt_c, sched_c, loader_c, start = load_checkpoint(\"checkpoint.pt\", restore_rng=restore)\n        loss_c = train_epochs(model_c, opt_c, sched_c, loader_c, start, 6)\n        print(f\"resumed from epoch {start} (RNG states restored: {restore}): last batch loss {loss_c:.4f}, \"\n              f\"identical weights: {same_weights(model_a, model_c)}\")\n    print(\"learning rate after 6 epochs:\", sched_a.get_last_lr()[0], \"and\", sched_c.get_last_lr()[0])\n\n    print(\"== 2. Load only what you trust\")\n    torch.save({\"model\": model_a.state_dict(), \"config\": cfg}, \"unsafe.pt\")      # a dataclass, not a dict\n    try:\n        torch.load(\"unsafe.pt\", weights_only=True)\n    except Exception as e:\n        print(\"weights_only=True refused the file:\", type(e).__name__)\n    torch.serialization.add_safe_globals([Config])\n    print(\"after add_safe_globals([Config]):\", torch.load(\"unsafe.pt\", weights_only=True)[\"config\"])\n\n    print(\"== 3. Export for inference\")\n    model_a.eval()\n    example = torch.rand(4, 64)\n    batch = torch.export.Dim(\"batch\")\n    # TODO: export model_a with torch.export.export(model, (example,), dynamic_shapes=...) making dimension 0\n    #  dynamic ({\"input\": {0: batch}}: an nn.Sequential's forward argument is called input), save it with\n    #  torch.export.save to \"digits.pt2\", then torch.export.load it back into `loaded`\n    loaded = None\n    print(f\"digits.pt2: {os.path.getsize('digits.pt2') / 1024:.0f} KB\")\n    for n in (1, 7):\n        x = torch.rand(n, 64)\n        with torch.no_grad():\n            match = torch.allclose(loaded.module()(x), model_a(x), atol=1e-6)\n        print(f\"exported program, batch of {n}: same outputs as the eager model: {match}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "The order matters in load_checkpoint(): build() reseeds the global generator, so restore the RNG states after building, as the starter does.",
+     "If the dataclass loads without an error, check that you saved dataclasses.asdict(cfg) in save_checkpoint() and the dataclass itself only in unsafe.pt.",
+     "A shape error from torch.export usually means the dynamic_shapes key doesn't match the forward() argument's name."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Tensors, broadcasting, views and autograd: work through Module 1 and fit a line with raw autograd in its lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Build models with nn.Module, choose layers, initialisation and losses, and test your MLP in the Module 2 lab.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Write Datasets, DataLoaders and training loops, configure AdamW and a one-cycle schedule, and train the digit classifier.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Regularise and debug with dropout, weight decay, early stopping, batch norm and hooks, and finish the overfitting lab.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Checkpoint, resume and export models in Module 5, then generate the capstone data and build its Dataset and model.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Finish the capstone's training, export and report, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Train and ship a pump-fault classifier",
+  "minutes": 420,
+  "brief": "make_data.py generates a synthetic maintenance dataset: hourly sensor summaries from water pumps (temperature, ambient temperature, vibration, pressure, flow, motor current, speed and age), each labelled with what an inspection found: normal, bearing_wear, overheating or cavitation. It writes train.csv (6,000 rows) and test.csv (2,000 rows); about 2% of the ambient readings are missing, and the classes are imbalanced, with normal about 57% of the rows. Build the whole PyTorch workflow: a Dataset that imputes and standardises with statistics from the training rows only, a model that carries those statistics as buffers, a seeded training loop with a validation split, a learning-rate schedule and early stopping, checkpoints you can resume from exactly, and an exported model with a small prediction script. Compare it with scikit-learn's LogisticRegression on the same split, and use test.csv once, at the end. For calibration, on the course's machine logistic regression reached a macro F1 of about 0.79 on test.csv, HistGradientBoostingClassifier about 0.84, and an MLP with two hidden layers of 128 ReLU units, AdamW and early stopping about 0.84.",
+  "deliverables": [
+   "dataset.py: a Dataset for the CSVs that imputes missing ambient readings with the training median, standardises with training statistics and encodes the four conditions as int64 labels 0-3",
+   "model.py: an nn.Module MLP that stores the imputation and standardisation values as buffers, so the saved model carries them",
+   "train.py: a seeded training loop with a validation split, AdamW, a learning-rate schedule, early stopping on validation loss and a checkpoint every epoch, with a --resume option that continues exactly",
+   "predict.py: loads the exported .pt2 program (or the state_dict with weights_only=True) and prints a condition for each row of a CSV",
+   "A results table: macro F1, accuracy and per-class recall on test.csv for your MLP and for logistic regression, plus at least two ablations, such as no schedule or no class weights",
+   "A README of about half a page: how to run each step, what the confusion matrix says about which faults get mixed up, and what you'd monitor if the model went into service"
+  ],
+  "rubric": [
+   {
+    "name": "Data pipeline",
+    "points": 15,
+    "description": "Training-only statistics, correct imputation, int64 labels, a reproducible split and shuffling, and nothing from test.csv used before the final evaluation."
+   },
+   {
+    "name": "Model and training loop",
+    "points": 20,
+    "description": "A clean nn.Module with buffers; the five-step loop in order, train and eval modes, no_grad in evaluation, the scheduler stepped correctly, and early stopping that keeps a copy of the best weights."
+   },
+   {
+    "name": "Checkpointing and resuming",
+    "points": 15,
+    "description": "Checkpoints hold the model, optimiser, scheduler, epoch and RNG states, and a run resumed from a mid-training checkpoint is shown to match an uninterrupted one."
+   },
+   {
+    "name": "Export and prediction",
+    "points": 15,
+    "description": "predict.py loads an exported program or a weights_only state_dict, its outputs are checked against the eager model, and its predictions reproduce the reported metrics."
+   },
+   {
+    "name": "Evaluation and comparison",
+    "points": 20,
+    "description": "Macro F1, accuracy and per-class recall against the logistic regression baseline, at least two ablations, and test.csv used once."
+   },
+   {
+    "name": "Report",
+    "points": 15,
+    "description": "Clear instructions and an honest reading of the results: where the model fails, which faults it confuses and what you'd try next."
+   }
+  ],
+  "submit": "Paste dataset.py, model.py, train.py and predict.py, the console output of a full training run and of a resumed run, your results and ablation table, and your README.",
+  "files": [
+   {
+    "path": "make_data.py",
+    "content": "\"\"\"Generate the capstone's pump-monitoring data: train.csv (6,000 rows) and test.csv (2,000 rows).\n\nEach row is one hourly summary from a water pump's sensors; `condition` is what an engineer found on inspection:\nnormal, bearing_wear, overheating or cavitation. The data is synthetic, so the same seed always gives the same files.\n\"\"\"\n\nimport numpy as np\nimport pandas as pd\n\nCONDITIONS = [\"normal\", \"bearing_wear\", \"overheating\", \"cavitation\"]\n\n\ndef generate(n, rng):\n    df = pd.DataFrame({\n        \"temperature_c\": rng.normal(62, 7, n),\n        \"ambient_c\": rng.normal(22, 6, n),\n        \"vibration_mm_s\": rng.lognormal(np.log(2.4), 0.35, n),\n        \"pressure_bar\": rng.normal(6.0, 0.8, n),\n        \"flow_l_min\": rng.normal(120, 15, n),\n        \"current_a\": rng.normal(18, 2.0, n),\n        \"rpm\": rng.uniform(1400, 3000, n),\n        \"age_days\": rng.uniform(0, 2000, n),\n    })\n    z = lambda c: (df[c] - df[c].mean()) / df[c].std()\n    scores = np.column_stack([\n        np.full(n, 2.0),                                                          # normal\n        2.0 * z(\"vibration_mm_s\") * (z(\"age_days\") + 1.0) + 0.5 * z(\"rpm\"),       # bearing_wear\n        1.8 * np.maximum(z(\"temperature_c\") - 0.7 * z(\"ambient_c\"), 0) * (1 + 0.6 * z(\"current_a\")),  # overheating\n        1.6 * np.maximum(-z(\"pressure_bar\"), 0) * np.maximum(z(\"flow_l_min\") + 0.5, 0) * 2.0,          # cavitation\n    ]) * 2.2\n    p = np.exp(scores - scores.max(axis=1, keepdims=True))\n    p /= p.sum(axis=1, keepdims=True)\n    labels = np.array([rng.choice(4, p=row) for row in p])\n    df[\"condition\"] = [CONDITIONS[i] for i in labels]\n    # sensors drop out now and then: about 2% of ambient readings are missing\n    df.loc[rng.random(n) < 0.02, \"ambient_c\"] = np.nan\n    return df.round({\"temperature_c\": 2, \"ambient_c\": 2, \"vibration_mm_s\": 3, \"pressure_bar\": 3,\n                     \"flow_l_min\": 2, \"current_a\": 2, \"rpm\": 0, \"age_days\": 0})\n\n\nif __name__ == \"__main__\":\n    rng = np.random.default_rng(42)\n    data = generate(8000, rng)\n    data.iloc[:6000].to_csv(\"train.csv\", index=False)\n    data.iloc[6000:].to_csv(\"test.csv\", index=False)\n    print(\"train.csv:\", len(data.iloc[:6000]), \"rows; test.csv:\", len(data.iloc[6000:]), \"rows\")\n    print(data.iloc[:6000][\"condition\"].value_counts().to_string())\n"
+   }
+  ]
+ }
+}

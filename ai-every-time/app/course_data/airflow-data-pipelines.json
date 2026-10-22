@@ -1,0 +1,965 @@
+{
+ "slug": "airflow-data-pipelines",
+ "title": "Orchestrating Data Pipelines with Apache Airflow",
+ "subtitle": "Write, schedule, test and operate Airflow 2 pipelines in Python, with TaskFlow, data intervals, backfills, sensors and retries, and know what changes in Airflow 3.",
+ "category": "Data Engineering",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "rodrigoo-silva",
+  "ngo-thi-huunge"
+ ],
+ "skills": [
+  "Apache Airflow",
+  "Workflow orchestration",
+  "DAG design",
+  "TaskFlow API",
+  "Scheduling and backfills",
+  "Idempotent tasks",
+  "Sensors and retries",
+  "Connections and secrets",
+  "Testing DAGs with pytest"
+ ],
+ "tools": [
+  "Apache Airflow 2",
+  "Python 3",
+  "Docker Compose",
+  "SQLite",
+  "pytest"
+ ],
+ "outcomes": [
+  "Explain Airflow's architecture, and run it locally with airflow standalone or the official Docker Compose quick start",
+  "Write DAGs with classic operators and the TaskFlow API, passing small values between tasks with XCom",
+  "Schedule DAGs and reason about logical dates, data intervals, catchup and backfills",
+  "Make pipelines reliable with idempotent tasks, retries, sensors, fail-fast checks, trigger rules and alerts",
+  "Keep credentials in connections and settings in variables, and test DAGs with pytest",
+  "Identify what to change when moving DAGs from Airflow 2 to Airflow 3"
+ ],
+ "prerequisites": "Data Engineering Foundations: Batch and Streaming Pipelines, or the same ideas: batch loads, idempotency and backfills. Confident Python (functions, modules, virtual environments) and basic SQL. Linux, macOS or WSL 2 with Python 3.12 (Airflow 2.11.2 supports 3.9 to 3.12), or Docker with Compose. The labs use Airflow 2.11.2 and SQLite, which comes with Python.",
+ "description": "Apache Airflow schedules and watches over the batch pipelines that many data teams depend on, as Python code. This course teaches Airflow 2 (2.11.2, the newest 2.x release) by building the pipelines of an online shop: daily order exports to check, totals to load into a warehouse, a flaky payments API to survive and a week of history to backfill. You'll write DAGs with classic operators and the TaskFlow API, pass small values between tasks with XCom, use templates and the run's context, and learn exactly which data interval each run covers, which is the key to correct backfills.\n\nThen you'll make pipelines dependable: idempotent tasks, retries and timeouts, sensors that wait without holding a worker, fail-fast quality checks, trigger rules and failure alerts, with credentials in connections and settings in variables. The last module covers testing DAGs with pytest, running Airflow in production, scheduling DAGs from data with datasets, and what changes in Airflow 3, so your code is ready to move. Every lab runs on a laptop, with airflow standalone or the official Docker Compose set-up, and was tested with Airflow 2.11.2. Afterwards, Analytics Engineering with dbt and DuckDB and Big Data Processing with Apache Spark cover the tools Airflow most often orchestrates.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Airflow's building blocks",
+   "summary": "What Airflow does and how its parts fit together, how DAGs, tasks and operators describe a workflow, and how to run Airflow on a laptop.",
+   "instructor": "rodrigoo-silva",
+   "lessons": [
+    {
+     "title": "What Airflow does, and how it's built",
+     "minutes": 12,
+     "objectives": [
+      "Explain what an orchestrator does, and what Airflow isn't for",
+      "Describe the scheduler, executor, metadata database, webserver and triggerer"
+     ],
+     "key_points": [
+      "Apache Airflow is an open-source platform for writing, scheduling and monitoring batch workflows as Python code. It orchestrates work, deciding what runs when, while heavy processing belongs in the systems its tasks call, such as a warehouse or Spark.",
+      "The scheduler reads DAG files, creates DAG runs when they're due and queues task instances once their dependencies are met; the executor runs them, locally or on workers; the metadata database records every run, task state and setting.",
+      "The webserver serves the UI for watching runs, reading logs, clearing tasks and triggering DAGs; the triggerer runs the waits of deferrable operators asynchronously; in Airflow 2 the scheduler also parses DAG files unless a separate DAG processor is set up.",
+      "Executors decide where tasks run: SequentialExecutor runs one at a time and is the only one that works with SQLite; LocalExecutor runs processes in parallel on one machine; CeleryExecutor uses a pool of workers; KubernetesExecutor starts a pod per task.",
+      "Airflow isn't a streaming engine or a data-processing library: it suits workflows with a start and an end, run on a schedule or a trigger, whose tasks take seconds to hours."
+     ]
+    },
+    {
+     "title": "DAGs, tasks and operators",
+     "minutes": 12,
+     "objectives": [
+      "Describe a workflow as a DAG of tasks made from operators",
+      "Set dependencies between tasks, and keep DAG files fast to parse"
+     ],
+     "key_points": [
+      "A DAG (directed acyclic graph) is a workflow: tasks plus the dependencies between them, with no cycles. Its dag_id, start_date and schedule tell Airflow what it is and when it should run.",
+      "A task is an instance of an operator, a template for one kind of work: BashOperator runs a shell command, PythonOperator a Python callable, EmptyOperator nothing; provider packages add operators and hooks for external systems such as databases and cloud services.",
+      "Dependencies are set with bitshift operators: a >> b runs b after a, a >> [b, c] fans out, and chain() links a longer sequence. By default a task runs only when all its upstream tasks have succeeded.",
+      "Airflow parses every DAG file again and again (by default each file at most every 30 seconds), so top-level code must be quick and free of side effects: no database queries, API calls or Variable.get() outside tasks.",
+      "Each run of a DAG is a DAG run, and each task in it a task instance with its own state (queued, running, success, failed, up_for_retry, upstream_failed, skipped) and its own log."
+     ]
+    },
+    {
+     "title": "Run Airflow on your computer",
+     "minutes": 12,
+     "objectives": [
+      "Install Airflow 2.11.2 with its constraints file and start it with airflow standalone",
+      "Start the official Docker Compose set-up, and run DAGs and tasks from the command line"
+     ],
+     "key_points": [
+      "Install Airflow with pip and the project's constraints file for your Airflow and Python versions, which pins every dependency to a tested version; without it, pip can choose incompatible ones. Airflow 2.11.2 has constraints for Python 3.9 to 3.12.",
+      "airflow standalone sets up the metadata database, creates an admin user, starts every component and prints the password, which it also saves in standalone_admin_password.txt in AIRFLOW_HOME; it is for development only.",
+      "AIRFLOW_HOME (by default ~/airflow) holds airflow.cfg, the SQLite database, the logs and the dags folder; any setting can be overridden by an environment variable named AIRFLOW__SECTION__KEY, such as AIRFLOW__CORE__LOAD_EXAMPLES=False.",
+      "The official Docker Compose quick start runs the CeleryExecutor with PostgreSQL and Redis: docker compose up airflow-init prepares the database and an airflow user (password airflow), then docker compose up starts the UI on port 8080.",
+      "airflow dags test DAG_ID DATE runs a whole DAG in one process without the scheduler; airflow tasks test DAG_ID TASK_ID DATE runs one task without recording its state. Both print the task logs in the terminal."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Install Airflow 2.11.2 and start it",
+      "steps": [
+       {
+        "do": "Create and activate a virtual environment with Python 3.12 (Linux, macOS, or WSL 2 on Windows: Airflow doesn't run natively on Windows).",
+        "code": "python3.12 -m venv airflow-venv\nsource airflow-venv/bin/activate",
+        "lang": "bash"
+       },
+       {
+        "do": "Install Airflow with the constraints file for your Python version.",
+        "code": "AIRFLOW_VERSION=2.11.2\nPYTHON_VERSION=\"$(python -c 'import sys; print(f\"{sys.version_info.major}.{sys.version_info.minor}\")')\"\nCONSTRAINT_URL=\"https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt\"\npip install \"apache-airflow==${AIRFLOW_VERSION}\" --constraint \"${CONSTRAINT_URL}\"\nairflow version",
+        "lang": "bash",
+        "see": "2.11.2"
+       },
+       {
+        "do": "Choose Airflow's home folder and hide the example DAGs. Put these lines in every terminal you use for Airflow (or in your shell's profile).",
+        "code": "export AIRFLOW_HOME=~/airflow\nexport AIRFLOW__CORE__LOAD_EXAMPLES=False",
+        "lang": "bash"
+       },
+       {
+        "do": "Start everything.",
+        "code": "airflow standalone",
+        "lang": "bash",
+        "see": "After a minute or so: standalone | Airflow is ready, then Login with username: admin  password: followed by a generated password."
+       },
+       {
+        "do": "Open http://localhost:8080 and sign in as admin with that password."
+       },
+       {
+        "do": "In a second terminal, with the same virtual environment and variables, create the dags folder and list the DAGs Airflow has found.",
+        "code": "mkdir -p ~/airflow/dags\nairflow dags list",
+        "lang": "bash",
+        "see": "No data found until a DAG file is added. New files can take up to five minutes to appear in the UI, because the folder is scanned every 300 seconds by default."
+       },
+       {
+        "do": "Or use Docker instead: in a new folder, download the official Compose file for 2.11.2 and start it.",
+        "code": "curl -LfO 'https://airflow.apache.org/docs/apache-airflow/2.11.2/docker-compose.yaml'\nmkdir -p ./dags ./logs ./plugins ./config\necho -e \"AIRFLOW_UID=$(id -u)\" > .env\ndocker compose up airflow-init\ndocker compose up -d",
+        "lang": "bash",
+        "see": "The UI on http://localhost:8080 (user airflow, password airflow); run commands with docker compose exec airflow-scheduler airflow dags list."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Run Airflow and your first DAG",
+    "tool": "Apache Airflow",
+    "minutes": 40,
+    "goal": "Get Airflow 2.11.2 running, finish a two-task DAG, and run a task and then the whole DAG from the command line and in the UI.",
+    "setup": [
+     "Airflow 2.11.2 in a Python 3.12 virtual environment, installed with the constraints file and started with airflow standalone, or the official Docker Compose quick start (see the walkthrough)",
+     "Download the starter file dags/hello_airflow.py into your dags folder"
+    ],
+    "steps": [
+     {
+      "do": "Check that Airflow has found the DAG. With Docker Compose, run each airflow command as docker compose exec airflow-scheduler airflow ..., and run the Python scripts on your computer with the project's shop_data folder as their argument.",
+      "code": "airflow dags list",
+      "lang": "bash",
+      "see": "hello_airflow, with its file's location and the owner airflow."
+     },
+     {
+      "do": "Complete the TODO: a PythonOperator with task_id greet that calls greet() with op_kwargs={\"name\": \"Airflow\"}, set to run after say_date with >>."
+     },
+     {
+      "do": "List the DAG's tasks.",
+      "code": "airflow tasks list hello_airflow",
+      "lang": "bash",
+      "see": "greet and say_date"
+     },
+     {
+      "do": "Run one task on its own. Nothing is recorded in the database.",
+      "code": "airflow tasks test hello_airflow say_date 2024-06-01",
+      "lang": "bash",
+      "see": "The rendered command and its output: Running for 2024-06-01."
+     },
+     {
+      "do": "Run the whole DAG for a date.",
+      "code": "airflow dags test hello_airflow 2024-06-01",
+      "lang": "bash",
+      "see": "say_date, then greet, each marked SUCCESS, and a DagRun Finished line ending the run with state=success."
+     },
+     {
+      "do": "Find data_interval_start and data_interval_end in the DagRun Finished line. The run is for 1 June, yet the interval is 31 May to 1 June; module 3 explains why."
+     },
+     {
+      "do": "In the UI, unpause hello_airflow and open its Grid and Graph views, then a task's log. With catchup=False, unpausing creates a run for the latest interval only."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The Bash task's command was rendered with the run's date.",
+      "look_for": [
+       "Running for 2024-06-01"
+      ]
+     },
+     {
+      "text": "The Python task ran and returned a value, which Airflow stores as an XCom.",
+      "look_for": [
+       "Hello, Airflow! This run's logical date is 2024-06-01.",
+       "Returned value was: AIRFLOW"
+      ]
+     },
+     {
+      "text": "Both tasks succeeded, and so did the DAG run.",
+      "look_for": [
+       "task_id=say_date",
+       "task_id=greet",
+       "DagRun Finished: dag_id=hello_airflow",
+       "state=success"
+      ]
+     },
+     {
+      "text": "The new task is a PythonOperator that calls greet.",
+      "look_for": [
+       "PythonOperator(",
+       "python_callable=greet"
+      ]
+     }
+    ],
+    "submit": "Paste your finished hello_airflow.py and the output of airflow tasks list hello_airflow and airflow dags test hello_airflow 2024-06-01 (from the first Running line to the end is enough).",
+    "files": [
+     {
+      "path": "dags/hello_airflow.py",
+      "content": "\"\"\"Your first DAG: two classic operators and a dependency between them.\"\"\"\n\nimport pendulum\nfrom airflow import DAG\nfrom airflow.operators.bash import BashOperator\nfrom airflow.operators.python import PythonOperator\n\n\ndef greet(name, **context):\n    \"\"\"A plain Python function; Airflow passes the run's context as keyword arguments.\"\"\"\n    print(f\"Hello, {name}! This run's logical date is {context['ds']}.\")\n    return name.upper()\n\n\nwith DAG(\n    dag_id=\"hello_airflow\",\n    start_date=pendulum.datetime(2024, 6, 1, tz=\"UTC\"),\n    schedule=\"@daily\",\n    catchup=False,\n    tags=[\"course\"],\n) as dag:\n    say_date = BashOperator(task_id=\"say_date\", bash_command=\"echo 'Running for {{ ds }}'\")\n    # TODO: add a PythonOperator with task_id=\"greet\" that calls greet() with op_kwargs={\"name\": \"Airflow\"},\n    #   then make it run after say_date with >>\n"
+     }
+    ],
+    "hints": [
+     "If airflow dags list doesn't show the DAG, run airflow dags list-import-errors: a mistake in the file appears there with its traceback.",
+     "PythonOperator passes the run's context to **context, and context['ds'] is the logical date as YYYY-MM-DD.",
+     "Docker Compose mounts your project's dags folder into every container, so editing the file on your computer is enough."
+    ]
+   }
+  },
+  {
+   "title": "Writing DAGs with the TaskFlow API",
+   "summary": "Write tasks as Python functions, pass small values between them with XCom, and use Jinja templates and the run's context.",
+   "instructor": "ngo-thi-huunge",
+   "lessons": [
+    {
+     "title": "TaskFlow: tasks as Python functions",
+     "minutes": 12,
+     "objectives": [
+      "Write a DAG with @dag and @task",
+      "Pass return values between tasks and read the run's context"
+     ],
+     "key_points": [
+      "The TaskFlow API (Airflow 2.0 and later) turns a Python function into a task with @task, and a function that builds tasks into a DAG with @dag; calling the decorated DAG function at the bottom of the file registers the DAG.",
+      "Calling one task function with another's result, as in load(transform(extract())), sets the dependencies and passes each return value through XCom; at parse time the call returns a reference (an XComArg), not the value.",
+      "A task function receives context values by naming them as keyword arguments with a default of None, such as ds=None or data_interval_start=None, or by calling get_current_context() inside the task.",
+      "TaskFlow tasks mix with classic operators: set dependencies between them with >>, and read a TaskFlow result in an operator's templated field with ti.xcom_pull().",
+      "@task takes the same arguments as any operator, such as retries, retry_delay and trigger_rule; with multiple_outputs=True, each key of a returned dictionary is stored as its own XCom."
+     ]
+    },
+    {
+     "title": "XCom: passing small values between tasks",
+     "minutes": 12,
+     "objectives": [
+      "Explain what XCom stores, and its limits",
+      "Pass data between tasks through storage, sending only its location"
+     ],
+     "key_points": [
+      "XCom (cross-communication) stores small values in the metadata database, keyed by DAG run, task and key; a task's return value is pushed under the key return_value.",
+      "XCom is for metadata, such as file paths, row counts, IDs and small dictionaries; values are serialised (as JSON by default), and large ones slow the database and can exceed its column limits.",
+      "Pass real data by writing it to storage, such as a file, object storage or a table, and passing its location; a custom XCom backend can keep values in object storage and only references in the database.",
+      "Tasks in one DAG can run on different machines, so a task must never rely on files or memory another task left on a worker, unless that storage is shared.",
+      "Read a value in a template with {{ ti.xcom_pull(task_ids='transform') }} or in Python with ti.xcom_pull(); XComs belong to a task instance, so a task that is run again replaces its value."
+     ]
+    },
+    {
+     "title": "Templates and the run's context",
+     "minutes": 12,
+     "objectives": [
+      "Use Jinja templates in operator fields with the run's context and macros",
+      "Check what a template renders to before and after a run"
+     ],
+     "key_points": [
+      "Operator fields listed in template_fields, such as BashOperator's bash_command, are rendered with Jinja just before the task runs, using the run's context: {{ ds }}, {{ ds_nodash }}, {{ data_interval_start }}, {{ params.name }} and macros such as {{ macros.ds_add(ds, -1) }}.",
+      "ds is the logical date as YYYY-MM-DD; data_interval_start and data_interval_end are timezone-aware pendulum datetimes; templates render for each task instance, so every run and retry gets its own values.",
+      "Templates render only in templated fields, at run time: Jinja written in ordinary Python at the top of a DAG file stays a literal string, and datetime.now() there runs when the file is parsed, not when the task runs.",
+      "airflow tasks render DAG_ID TASK_ID DATE prints a task's rendered fields without running it, and the UI's Rendered Template tab shows what a task instance actually used.",
+      "params give a DAG configurable values with defaults, read as {{ params.name }} in templates and as context['params'] in Python; a manual trigger can override them."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "See a template rendered",
+      "steps": [
+       {
+        "do": "After running orders_taskflow for 2024-06-03 (in this module's lab), render its report task's templated fields for that date.",
+        "code": "airflow tasks render orders_taskflow report 2024-06-03",
+        "lang": "bash",
+        "see": "# property: bash_command, then the echo command with 2024-06-03 and the revenue file's path filled in."
+       },
+       {
+        "do": "Render it for a date that has never run.",
+        "code": "airflow tasks render orders_taskflow report 2024-06-06",
+        "lang": "bash",
+        "see": "The date changes, and the path is None: there is no XCom from transform for that run yet."
+       },
+       {
+        "do": "In the UI, open the run for 2024-06-03, select the report task, and open its Rendered Template tab to see the same values."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Build an ETL DAG with TaskFlow",
+    "tool": "Apache Airflow",
+    "minutes": 45,
+    "goal": "Finish a TaskFlow DAG that extracts a day of shop orders, totals the paid ones by category, loads them into a SQLite warehouse, and reports the result with a templated Bash task.",
+    "setup": [
+     "Airflow 2.11.2 running as in module 1",
+     "Download the starter files: dags/orders_taskflow.py into your dags folder, and make_orders.py anywhere"
+    ],
+    "steps": [
+     {
+      "do": "Generate a week of synthetic orders into $AIRFLOW_HOME/shop_data. With Docker Compose, run python make_orders.py shop_data in the project folder and add - ${AIRFLOW_PROJ_DIR:-.}/shop_data:/opt/airflow/shop_data to the volumes in docker-compose.yaml, then run docker compose up -d again.",
+      "code": "python make_orders.py",
+      "lang": "bash",
+      "see": "Wrote 362 orders for 2024-06-01 to 2024-06-07 to .../shop_data"
+     },
+     {
+      "do": "Complete transform(): read the CSV, and add each paid row's float(amount) to its category's total."
+     },
+     {
+      "do": "Complete the report task: a BashOperator that echoes the date and the path transform returned, pulled with {{ ti.xcom_pull(task_ids='transform') }}, set to run after transform."
+     },
+     {
+      "do": "Run the DAG for 3 June.",
+      "code": "airflow dags test orders_taskflow 2024-06-03",
+      "lang": "bash",
+      "see": "Found 50 orders in orders_2024-06-03.csv, Loaded 5 categories for 2024-06-03: 5397.17 paid, and the report task's Revenue for 2024-06-03 is in .../revenue_2024-06-03.json."
+     },
+     {
+      "do": "Find the Done. Returned value was: lines: extract returned a small dictionary, and transform a path. That's all XCom had to store."
+     },
+     {
+      "do": "Render the report task's template.",
+      "code": "airflow tasks render orders_taskflow report 2024-06-03",
+      "lang": "bash"
+     },
+     {
+      "do": "Run the DAG for the same date again, then count the rows in the warehouse.",
+      "code": "airflow dags test orders_taskflow 2024-06-03\npython -c \"import os, sqlite3; db = os.path.expanduser(os.environ.get('AIRFLOW_HOME', '~/airflow')) + '/shop_data/warehouse.db'; print(sqlite3.connect(db).execute('SELECT COUNT(*), ROUND(SUM(revenue), 2) FROM category_revenue').fetchone())\"",
+      "lang": "bash",
+      "see": "(5, 5397.17): the rerun replaced the day's rows instead of adding to them."
+     }
+    ],
+    "checks": [
+     {
+      "text": "extract found the day's file and passed on a small dictionary, not the data.",
+      "look_for": [
+       "Found 50 orders in orders_2024-06-03.csv",
+       "'rows': 50}"
+      ]
+     },
+     {
+      "text": "transform and load totalled the paid orders and loaded five categories.",
+      "look_for": [
+       "Loaded 5 categories for 2024-06-03: 5397.17 paid"
+      ]
+     },
+     {
+      "text": "The templated Bash task rendered the date and pulled transform's XCom.",
+      "look_for": [
+       "Revenue for 2024-06-03 is in",
+       "revenue_2024-06-03.json"
+      ]
+     },
+     {
+      "text": "Running the DAG twice leaves five rows for the day.",
+      "look_for": [
+       "(5, 5397.17)"
+      ]
+     }
+    ],
+    "submit": "Paste your transform() and report task, the output of airflow dags test orders_taskflow 2024-06-03, the rendered template and the row count after the second run.",
+    "files": [
+     {
+      "path": "dags/orders_taskflow.py",
+      "content": "\"\"\"Extract, transform and load one day of shop orders with the TaskFlow API.\"\"\"\n\nimport csv\nimport json\nimport os\nimport sqlite3\nfrom pathlib import Path\n\nimport pendulum\nfrom airflow.decorators import dag, task\nfrom airflow.operators.bash import BashOperator\n\nDATA = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\n\n\n@dag(\n    dag_id=\"orders_taskflow\",\n    start_date=pendulum.datetime(2024, 6, 1, tz=\"UTC\"),\n    schedule=\"@daily\",\n    catchup=False,\n    default_args={\"retries\": 1},\n    tags=[\"course\", \"shop\"],\n)\ndef orders_taskflow():\n    @task\n    def extract(ds=None):\n        \"\"\"Check the day's export and pass on its path and size: a small value, not the data itself.\"\"\"\n        path = DATA / \"incoming\" / f\"orders_{ds}.csv\"\n        with open(path, newline=\"\", encoding=\"utf-8\") as f:\n            rows = sum(1 for _ in csv.DictReader(f))\n        print(f\"Found {rows} orders in {path.name}\")\n        return {\"path\": str(path), \"rows\": rows}\n\n    @task\n    def transform(extracted: dict, ds=None):\n        \"\"\"Total the paid orders by category, write them to a file, and return the file's path.\"\"\"\n        totals = {}\n        # TODO: read the CSV at extracted[\"path\"] with csv.DictReader and add each row's float(amount)\n        #   to totals[row[\"category\"]], but only for rows whose status is \"paid\"\n        out = DATA / \"revenue\" / f\"revenue_{ds}.json\"\n        out.parent.mkdir(parents=True, exist_ok=True)\n        out.write_text(json.dumps({k: round(v, 2) for k, v in sorted(totals.items())}, indent=2))\n        return str(out)\n\n    @task\n    def load(revenue_path: str, ds=None):\n        \"\"\"Replace the day's rows in the warehouse, so a rerun gives the same table.\"\"\"\n        totals = json.loads(Path(revenue_path).read_text())\n        con = sqlite3.connect(DATA / \"warehouse.db\")\n        with con:  # one transaction: commits at the end, or rolls back on an error\n            con.execute(\"\"\"CREATE TABLE IF NOT EXISTS category_revenue\n                           (day TEXT, category TEXT, revenue REAL, PRIMARY KEY (day, category))\"\"\")\n            con.execute(\"DELETE FROM category_revenue WHERE day = ?\", (ds,))\n            con.executemany(\"INSERT INTO category_revenue VALUES (?, ?, ?)\",\n                            [(ds, category, revenue) for category, revenue in totals.items()])\n        con.close()\n        print(f\"Loaded {len(totals)} categories for {ds}: {sum(totals.values()):.2f} paid\")\n\n    revenue_file = transform(extract())\n    load(revenue_file)\n    # A classic operator in the same DAG: its bash_command is a Jinja template, rendered for each run.\n    # TODO: add a BashOperator with task_id=\"report\" that echoes \"Revenue for <ds> is in <path>\", taking\n    #   the path from transform's XCom with {{ ti.xcom_pull(task_ids='transform') }}, and run it after transform\n\n\norders_taskflow()\n"
+     },
+     {
+      "path": "make_orders.py",
+      "content": "\"\"\"Write a week of synthetic orders from an online shop into shop_data/.\n\n    python make_orders.py [FOLDER]\n\nFOLDER defaults to $AIRFLOW_HOME/shop_data (~/airflow/shop_data if AIRFLOW_HOME isn't set). It creates\nincoming/orders_2024-06-01.csv ... orders_2024-06-07.csv (one export file a day) and shop.db, a SQLite copy of\nthe shop's orders table. Only random.random() is used, so every Python version writes the same data.\n\"\"\"\n\nimport csv\nimport os\nimport random\nimport sqlite3\nimport sys\nfrom datetime import date, datetime, timedelta\nfrom pathlib import Path\n\nCATEGORIES = [\"beauty\", \"electronics\", \"fashion\", \"grocery\", \"home\"]\ndefault = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\nfolder = Path(sys.argv[1]) if len(sys.argv) > 1 else default\n(folder / \"incoming\").mkdir(parents=True, exist_ok=True)\nrng = random.Random(42)\norders = []\nfor d in range(7):\n    day = date(2024, 6, 1) + timedelta(days=d)\n    count = 12 if day == date(2024, 6, 5) else 45 + int(rng.random() * 25)  # 5 June: a partial export\n    seconds = sorted(int(rng.random() * 86400) for _ in range(count))\n    if day == date(2024, 6, 4):\n        seconds[0] = 0  # an order at exactly midnight belongs to the 4 June interval, not the 3rd\n    for n, s in enumerate(seconds, 1):\n        r = rng.random()\n        status = \"paid\" if r < 0.86 else \"refunded\" if r < 0.93 else \"cancelled\"\n        orders.append({\n            \"order_id\": f\"O{day:%m%d}-{n:03d}\",\n            \"ordered_at\": (datetime(day.year, day.month, day.day) + timedelta(seconds=s)).strftime(\"%Y-%m-%d %H:%M:%S\"),\n            \"customer_id\": f\"C{int(rng.random() * 400) + 1:04d}\",\n            \"category\": CATEGORIES[int(rng.random() * len(CATEGORIES))],\n            \"amount\": f\"{5 + rng.random() ** 2 * 295:.2f}\",\n            \"status\": status,\n        })\nfor d in range(7):\n    day = str(date(2024, 6, 1) + timedelta(days=d))\n    with open(folder / \"incoming\" / f\"orders_{day}.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        writer = csv.DictWriter(f, fieldnames=list(orders[0]))\n        writer.writeheader()\n        writer.writerows(o for o in orders if o[\"ordered_at\"].startswith(day))\ndb = folder / \"shop.db\"\nif db.exists():\n    db.unlink()\ncon = sqlite3.connect(db)\ncon.execute(\"\"\"CREATE TABLE orders (order_id TEXT PRIMARY KEY, ordered_at TEXT, customer_id TEXT,\n               category TEXT, amount REAL, status TEXT)\"\"\")\ncon.executemany(\"INSERT INTO orders VALUES (:order_id, :ordered_at, :customer_id, :category, :amount, :status)\", orders)\ncon.commit()\ncon.close()\nprint(f\"Wrote {len(orders)} orders for 2024-06-01 to 2024-06-07 to {folder}\")\n"
+     }
+    ],
+    "hints": [
+     "Inside the task, extracted is the dictionary extract returned: Airflow resolves the XCom before calling transform().",
+     "Use double quotes around the echo text and single quotes inside the Jinja expression, so the shell and Jinja don't trip over each other.",
+     "If extract can't find the file, check that make_orders.py wrote to the same AIRFLOW_HOME that Airflow uses (echo $AIRFLOW_HOME)."
+    ]
+   }
+  },
+  {
+   "title": "Scheduling, data intervals and backfills",
+   "summary": "How schedules, logical dates and data intervals work, what catchup and backfills do, and how to write tasks that give the same result however often they run.",
+   "instructor": "rodrigoo-silva",
+   "lessons": [
+    {
+     "title": "Schedules, logical dates and data intervals",
+     "minutes": 14,
+     "objectives": [
+      "Write schedules with cron expressions, presets and timedeltas",
+      "Work out the data interval a scheduled or manual run covers"
+     ],
+     "key_points": [
+      "The schedule argument (Airflow 2.4 and later) takes a cron expression such as '0 6 * * *', a preset such as '@daily', a timedelta, a timetable, a list of datasets, or None for a DAG that only runs when triggered; schedule_interval is its deprecated older name.",
+      "In Airflow 2 a scheduled run covers a data interval and starts once the interval has ended: the @daily run for 3 June covers 3 June 00:00 to 4 June 00:00 and starts just after midnight on the 4th, when the day's data is complete.",
+      "For a scheduled run, the logical date (ds, called execution_date in older code) is the start of its data interval; process data_interval_start up to data_interval_end, never 'now', so a run always processes the same data.",
+      "A manual run, including airflow dags test, gets the last complete interval before its logical date: testing a @daily DAG for 2024-06-04 processes 3 June, while ds is 2024-06-04, so name outputs after data_interval_start when the two can differ.",
+      "Give a DAG a fixed, timezone-aware start_date such as pendulum.datetime(2024, 6, 1, tz='UTC'), never a moving one like datetime.now(); schedules are worked out in the DAG's time zone, and UTC avoids daylight-saving surprises."
+     ]
+    },
+    {
+     "title": "Catchup and backfills",
+     "minutes": 12,
+     "objectives": [
+      "Explain what catchup does when a DAG is unpaused",
+      "Run and rerun a backfill for a range of dates"
+     ],
+     "key_points": [
+      "With catchup=True, unpausing a DAG creates a run for every interval since start_date that hasn't run; with catchup=False only the latest interval runs. Airflow 2 defaults to catchup=True (the catchup_by_default setting), so set catchup in every DAG.",
+      "A backfill runs a DAG for a range of past dates on demand, after a bug fix or for a new DAG: in Airflow 2, airflow dags backfill DAG_ID --start-date 2024-06-01 --end-date 2024-06-07 runs one DAG run for each interval in the range.",
+      "A backfill leaves dates that already have a successful run alone unless --reset-dagruns clears them, and an existing manual run keeps the interval it was created with, so test with dates outside the range you will backfill.",
+      "max_active_runs limits how many runs of a DAG happen at once, so a catchup or backfill doesn't overload a source; depends_on_past=True makes a task wait for its own previous run to succeed.",
+      "Backfill tasks write their output to task log files (in 2.x under AIRFLOW_HOME/logs/dag_id=.../run_id=backfill__.../task_id=.../attempt=N.log), not to the terminal; the UI shows the same logs."
+     ]
+    },
+    {
+     "title": "Idempotent, deterministic tasks",
+     "minutes": 12,
+     "objectives": [
+      "Make tasks safe to rerun for the same interval",
+      "Handle records on interval boundaries correctly"
+     ],
+     "key_points": [
+      "A task is idempotent when running it again for the same interval gives the same result; retries, reruns from the UI, catchup and backfills all depend on it.",
+      "Write each run's output to a partition named after its interval, and replace it rather than append: delete then insert in one transaction, overwrite the file, or merge on a key.",
+      "Make tasks deterministic: filter the source by the run's data interval, never by the current time, and avoid randomness and unordered results in anything that is compared or used as a key.",
+      "Use half-open intervals, start <= t < end: an order at exactly 00:00:00 on 4 June then belongs only to the interval that starts at that moment, so every record is counted exactly once.",
+      "Keep tasks atomic: a task should either finish all of its output or leave nothing behind, so a retry never builds on half-written data."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Backfill a week of orders safely",
+    "tool": "Apache Airflow",
+    "minutes": 50,
+    "goal": "Fix a task that reads every order instead of its interval's, make its load idempotent, backfill a week, and prove that running the backfill again changes nothing.",
+    "setup": [
+     "Airflow 2.11.2 running as in module 1",
+     "Download the starter files: dags/orders_daily.py into your dags folder, and make_orders.py and check_warehouse.py into a working folder"
+    ],
+    "steps": [
+     {
+      "do": "Generate the shop data if you haven't already. With Docker Compose, run each airflow command as docker compose exec airflow-scheduler airflow ..., and run the Python scripts on your computer with the project's shop_data folder as their argument.",
+      "code": "python make_orders.py",
+      "lang": "bash"
+     },
+     {
+      "do": "Run the starter for a date after the data ends.",
+      "code": "airflow dags test orders_daily 2024-06-10",
+      "lang": "bash",
+      "see": "Interval 2024-06-09 00:00:00 to 2024-06-10 00:00:00: 362 orders: every order in the shop, for a day that had none."
+     },
+     {
+      "do": "Fix extract(): select only the orders with ordered_at >= start and < end, passing both as ? parameters."
+     },
+     {
+      "do": "Write the load's TODO: delete the day's rows, then insert one row per category, inside the with con: transaction."
+     },
+     {
+      "do": "Run the same date again.",
+      "code": "airflow dags test orders_daily 2024-06-10",
+      "lang": "bash",
+      "see": "Interval 2024-06-09 00:00:00 to 2024-06-10 00:00:00: 0 orders. The manual run for 10 June processed 9 June, the last complete interval."
+     },
+     {
+      "do": "Backfill the week the data covers, then look at the warehouse.",
+      "code": "airflow dags backfill orders_daily --start-date 2024-06-01 --end-date 2024-06-07\npython check_warehouse.py",
+      "lang": "bash",
+      "see": "Backfill done for DAG <DAG: orders_daily>, then seven days, from 2024-06-01: 60 orders to 2024-06-07: 56 orders."
+     },
+     {
+      "do": "Read one backfill task's log: the 4 June run counts the order placed at exactly midnight.",
+      "code": "grep Interval \"$AIRFLOW_HOME/logs/dag_id=orders_daily/run_id=backfill__2024-06-04T00:00:00+00:00/task_id=extract/attempt=1.log\"",
+      "lang": "bash",
+      "see": "Interval 2024-06-04 00:00:00 to 2024-06-05 00:00:00: 66 orders"
+     },
+     {
+      "do": "Run the whole backfill again, clearing the existing runs first, and compare the warehouse.",
+      "code": "airflow dags backfill orders_daily --start-date 2024-06-01 --end-date 2024-06-07 --reset-dagruns --yes\npython check_warehouse.py",
+      "lang": "bash",
+      "see": "Exactly the same seven lines: the task is idempotent."
+     },
+     {
+      "do": "Explain what would happen if this DAG had catchup=True and you unpaused it today, and why max_active_runs=1 matters then."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The starter read every order; the fixed task reads only its interval.",
+      "look_for": [
+       "2024-06-10 00:00:00: 362 orders",
+       "2024-06-10 00:00:00: 0 orders"
+      ]
+     },
+     {
+      "text": "The backfill finished and loaded seven days.",
+      "look_for": [
+       "Backfill done for DAG <DAG: orders_daily>",
+       "2024-06-01: 60 orders, 5331.17 paid",
+       "2024-06-07: 56 orders, 5423.54 paid"
+      ]
+     },
+     {
+      "text": "The order at exactly midnight is counted in 4 June's interval.",
+      "look_for": [
+       "Interval 2024-06-04 00:00:00 to 2024-06-05 00:00:00: 66 orders",
+       "2024-06-04: 66 orders, 4848.57 paid"
+      ]
+     },
+     {
+      "text": "The query uses the interval as a half-open range, and the load deletes the day before inserting.",
+      "look_for": [
+       "ordered_at >= ?",
+       "ordered_at < ?",
+       "DELETE FROM daily_orders"
+      ]
+     }
+    ],
+    "submit": "Paste your finished extract() and load(), the output of both dags test runs for 2024-06-10, the check_warehouse.py output after each backfill, the log line, and your answer about catchup.",
+    "files": [
+     {
+      "path": "dags/orders_daily.py",
+      "content": "\"\"\"Copy each data interval's orders from the shop database into the warehouse, one day per run.\"\"\"\n\nimport os\nimport sqlite3\nfrom datetime import timedelta\nfrom pathlib import Path\n\nimport pendulum\nfrom airflow.decorators import dag, task\n\nDATA = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\n\n\n@dag(\n    dag_id=\"orders_daily\",\n    start_date=pendulum.datetime(2024, 6, 1, tz=\"UTC\"),\n    schedule=\"@daily\",\n    catchup=False,\n    max_active_runs=1,\n    default_args={\"retries\": 2, \"retry_delay\": timedelta(minutes=1)},\n    tags=[\"course\", \"shop\"],\n)\ndef orders_daily():\n    @task\n    def extract(data_interval_start=None, data_interval_end=None):\n        \"\"\"Read only this run's orders: start <= ordered_at < end. Never use the current time here.\"\"\"\n        start = data_interval_start.strftime(\"%Y-%m-%d %H:%M:%S\")\n        end = data_interval_end.strftime(\"%Y-%m-%d %H:%M:%S\")\n        con = sqlite3.connect(DATA / \"shop.db\")\n        # TODO: select category, amount and status for the orders with start <= ordered_at < end\n        #   (two ? parameters), into rows\n        rows = con.execute(\"SELECT category, amount, status FROM orders\").fetchall()  # every order: fix this\n        con.close()\n        print(f\"Interval {start} to {end}: {len(rows)} orders\")\n        return rows  # a few dozen small rows; for anything bigger, write a file and return its path\n\n    @task\n    def load(rows, data_interval_start=None):\n        \"\"\"Replace the interval's day in the warehouse: delete, then insert, in one transaction.\"\"\"\n        day = data_interval_start.strftime(\"%Y-%m-%d\")\n        summary = {}\n        for category, amount, status in rows:\n            orders, paid = summary.get(category, (0, 0.0))\n            summary[category] = (orders + 1, paid + (amount if status == \"paid\" else 0.0))\n        con = sqlite3.connect(DATA / \"warehouse.db\")\n        with con:\n            con.execute(\"\"\"CREATE TABLE IF NOT EXISTS daily_orders\n                           (day TEXT, category TEXT, orders INTEGER, paid REAL, PRIMARY KEY (day, category))\"\"\")\n            # TODO: delete the rows for day, then insert one row per category from summary,\n            #   with paid rounded to 2 decimal places\n        con.close()\n        total = sum(n for n, _p in summary.values())\n        print(f\"daily_orders for {day}: {total} orders, {sum(p for _n, p in summary.values()):.2f} paid\")\n\n    load(extract())\n\n\norders_daily()\n"
+     },
+     {
+      "path": "make_orders.py",
+      "content": "\"\"\"Write a week of synthetic orders from an online shop into shop_data/.\n\n    python make_orders.py [FOLDER]\n\nFOLDER defaults to $AIRFLOW_HOME/shop_data (~/airflow/shop_data if AIRFLOW_HOME isn't set). It creates\nincoming/orders_2024-06-01.csv ... orders_2024-06-07.csv (one export file a day) and shop.db, a SQLite copy of\nthe shop's orders table. Only random.random() is used, so every Python version writes the same data.\n\"\"\"\n\nimport csv\nimport os\nimport random\nimport sqlite3\nimport sys\nfrom datetime import date, datetime, timedelta\nfrom pathlib import Path\n\nCATEGORIES = [\"beauty\", \"electronics\", \"fashion\", \"grocery\", \"home\"]\ndefault = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\nfolder = Path(sys.argv[1]) if len(sys.argv) > 1 else default\n(folder / \"incoming\").mkdir(parents=True, exist_ok=True)\nrng = random.Random(42)\norders = []\nfor d in range(7):\n    day = date(2024, 6, 1) + timedelta(days=d)\n    count = 12 if day == date(2024, 6, 5) else 45 + int(rng.random() * 25)  # 5 June: a partial export\n    seconds = sorted(int(rng.random() * 86400) for _ in range(count))\n    if day == date(2024, 6, 4):\n        seconds[0] = 0  # an order at exactly midnight belongs to the 4 June interval, not the 3rd\n    for n, s in enumerate(seconds, 1):\n        r = rng.random()\n        status = \"paid\" if r < 0.86 else \"refunded\" if r < 0.93 else \"cancelled\"\n        orders.append({\n            \"order_id\": f\"O{day:%m%d}-{n:03d}\",\n            \"ordered_at\": (datetime(day.year, day.month, day.day) + timedelta(seconds=s)).strftime(\"%Y-%m-%d %H:%M:%S\"),\n            \"customer_id\": f\"C{int(rng.random() * 400) + 1:04d}\",\n            \"category\": CATEGORIES[int(rng.random() * len(CATEGORIES))],\n            \"amount\": f\"{5 + rng.random() ** 2 * 295:.2f}\",\n            \"status\": status,\n        })\nfor d in range(7):\n    day = str(date(2024, 6, 1) + timedelta(days=d))\n    with open(folder / \"incoming\" / f\"orders_{day}.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        writer = csv.DictWriter(f, fieldnames=list(orders[0]))\n        writer.writeheader()\n        writer.writerows(o for o in orders if o[\"ordered_at\"].startswith(day))\ndb = folder / \"shop.db\"\nif db.exists():\n    db.unlink()\ncon = sqlite3.connect(db)\ncon.execute(\"\"\"CREATE TABLE orders (order_id TEXT PRIMARY KEY, ordered_at TEXT, customer_id TEXT,\n               category TEXT, amount REAL, status TEXT)\"\"\")\ncon.executemany(\"INSERT INTO orders VALUES (:order_id, :ordered_at, :customer_id, :category, :amount, :status)\", orders)\ncon.commit()\ncon.close()\nprint(f\"Wrote {len(orders)} orders for 2024-06-01 to 2024-06-07 to {folder}\")\n"
+     },
+     {
+      "path": "check_warehouse.py",
+      "content": "\"\"\"Print the warehouse's daily_orders table, one line per day.\n\n    python check_warehouse.py [FOLDER]     (FOLDER defaults to $AIRFLOW_HOME/shop_data)\n\"\"\"\n\nimport os\nimport sqlite3\nimport sys\nfrom pathlib import Path\n\nDATA = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\ncon = sqlite3.connect(DATA / \"warehouse.db\")\nfor day, orders, paid, rows in con.execute(\"\"\"SELECT day, SUM(orders), ROUND(SUM(paid), 2), COUNT(*)\n                                              FROM daily_orders GROUP BY day ORDER BY day\"\"\"):\n    print(f\"{day}: {orders} orders, {paid:.2f} paid ({rows} category rows)\")\ncon.close()\n"
+     }
+    ],
+    "hints": [
+     "If a date is missing from the warehouse after a backfill, a dags test run probably exists for that date already: the backfill reused it, with its own interval. Run the backfill with --reset-dagruns.",
+     "sqlite3's with con: block commits when it ends and rolls back if an exception is raised inside it.",
+     "ordered_at is stored as text like 2024-06-04 00:00:00, which sorts and compares correctly as a string."
+    ]
+   }
+  },
+  {
+   "title": "Reliable pipelines",
+   "summary": "Retries, timeouts, fail-fast checks and alerts; sensors that wait without wasting workers; and connections and variables that keep settings and credentials out of DAG code.",
+   "instructor": "ngo-thi-huunge",
+   "lessons": [
+    {
+     "title": "Retries, timeouts and failure handling",
+     "minutes": 12,
+     "objectives": [
+      "Configure retries, timeouts and failure callbacks",
+      "Choose trigger rules, and fail fast when a retry can't help"
+     ],
+     "key_points": [
+      "retries and retry_delay, usually set for every task in default_args, rerun a failed task automatically; retry_exponential_backoff=True lengthens each wait, and on_retry_callback runs before each retry.",
+      "execution_timeout fails a task that runs too long, and that failure can be retried; raising AirflowFailException fails a task at once, without retries, for errors a retry can't fix, such as bad input; AirflowSkipException marks it skipped.",
+      "on_failure_callback runs when a task has finally failed, after its retries, and receives the task's context; use it to alert a person, for example by posting to a chat channel or paging whoever is on call.",
+      "Trigger rules decide when a task runs: all_success (the default), all_done (once every upstream task has finished, whatever happened), one_failed, all_failed, none_failed and none_failed_min_one_success; a task whose upstream failed is marked upstream_failed.",
+      "Retries suit transient failures such as timeouts and brief outages, and they are safe only for idempotent tasks, because a task can fail after doing part of its work."
+     ]
+    },
+    {
+     "title": "Sensors and deferrable operators",
+     "minutes": 12,
+     "objectives": [
+      "Wait for a condition with a sensor in poke or reschedule mode",
+      "Explain what deferrable operators and the triggerer add"
+     ],
+     "key_points": [
+      "A sensor is an operator that waits for something to be true, such as a file appearing (FileSensor), another DAG's task finishing (ExternalTaskSensor) or an endpoint answering (HttpSensor), checking every poke_interval seconds.",
+      "In poke mode a sensor holds a worker slot for the whole wait; in reschedule mode it gives the slot back between checks and is marked up_for_reschedule, which suits waits of minutes or hours.",
+      "timeout limits the total wait, and a sensor that times out fails at once without retries (AirflowSensorTimeout); with soft_fail=True it is marked skipped instead, so a missing optional input skips the tasks after it.",
+      "Deferrable operators, and sensors run with deferrable=True where supported, hand the wait to the triggerer, which waits for many tasks at once asynchronously and uses no worker slot.",
+      "Before adding a sensor, look for an event: data-aware scheduling with datasets starts a DAG when another DAG updates its input, so nothing has to poll.",
+      "FileSensor looks for filepath inside the folder named as path in its fs connection's extra (fs_conn_id, fs_default by default); a fresh airflow db migrate doesn't create default connections such as fs_default, but airflow connections create-default-connections does."
+     ]
+    },
+    {
+     "title": "Connections, variables and secrets",
+     "minutes": 12,
+     "objectives": [
+      "Store credentials in connections and settings in variables",
+      "Read them in tasks without slowing down DAG parsing"
+     ],
+     "key_points": [
+      "A connection stores how to reach an external system (type, host, port, login, password, schema and extra JSON) under a conn_id; hooks such as SqliteHook and PostgresHook read it, so DAG code never contains credentials.",
+      "Create connections in the UI (Admin > Connections), with airflow connections add, or as environment variables named AIRFLOW_CONN_<CONN_ID> holding a URI or, since 2.3, a JSON object; those aren't stored in the database, so the UI's list doesn't show them.",
+      "Variables hold settings, read with Variable.get('min_orders', default_var='20') in a task or {{ var.value.min_orders }} in a template, and set in the UI, with airflow variables set, or as AIRFLOW_VAR_<NAME> environment variables.",
+      "Don't read variables or connections at the top level of a DAG file: that code runs on every parse and loads the metadata database; read them inside tasks or through templates.",
+      "A secrets backend, such as HashiCorp Vault, AWS Secrets Manager or Google Cloud Secret Manager, lets Airflow read connections and variables from a secrets manager; Airflow also masks sensitive values, such as connection passwords, in task logs."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Define a connection and a variable in the environment",
+      "steps": [
+       {
+        "do": "Define the warehouse connection as JSON in an environment variable. Use an absolute path for a SQLite database.",
+        "code": "export AIRFLOW_CONN_SHOP_WAREHOUSE='{\"conn_type\": \"sqlite\", \"host\": \"'\"$AIRFLOW_HOME\"'/shop_data/warehouse.db\"}'",
+        "lang": "bash"
+       },
+       {
+        "do": "Check how Airflow reads it.",
+        "code": "airflow connections get shop_warehouse -o yaml",
+        "lang": "bash",
+        "see": "conn_type: sqlite and host: the full path to warehouse.db."
+       },
+       {
+        "do": "Define a variable the same way, and read it back.",
+        "code": "export AIRFLOW_VAR_MIN_ORDERS=20\nairflow variables get min_orders",
+        "lang": "bash",
+        "see": "20"
+       },
+       {
+        "do": "Set the same two variables in the terminal where airflow standalone runs, and restart it, so the scheduler and workers see them too. With Docker Compose, add them under environment in the x-airflow-common section of docker-compose.yaml instead."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "Wait, retry and fail fast",
+    "tool": "Apache Airflow",
+    "minutes": 50,
+    "goal": "Finish a DAG that waits for the day's file, retries a flaky API call, refuses a file too small to be a full day's export, loads through a connection, and reports how every run went.",
+    "setup": [
+     "Airflow 2.11.2 running as in module 1, and the shop data from module 2 or 3",
+     "Download the starter files: dags/orders_reliable.py into your dags folder, and make_orders.py if you need the data again"
+    ],
+    "steps": [
+     {
+      "do": "Set the two connections and the variable, as in the lesson's walkthrough, in the terminal you'll run the DAG from: shop_files tells FileSensor which folder to look in.",
+      "code": "export AIRFLOW_CONN_SHOP_FILES='{\"conn_type\": \"fs\", \"extra\": {\"path\": \"'\"$AIRFLOW_HOME\"'/shop_data/incoming\"}}'\nexport AIRFLOW_CONN_SHOP_WAREHOUSE='{\"conn_type\": \"sqlite\", \"host\": \"'\"$AIRFLOW_HOME\"'/shop_data/warehouse.db\"}'\nexport AIRFLOW_VAR_MIN_ORDERS=20",
+      "lang": "bash"
+     },
+     {
+      "do": "Complete fetch_payment_statuses(): raise ConnectionError('payments API timed out') on the first try only, and print a success line on later tries."
+     },
+     {
+      "do": "Complete check_volume(): raise AirflowFailException when the file has fewer orders than the minimum."
+     },
+     {
+      "do": "Run a normal day.",
+      "code": "airflow dags test orders_reliable 2024-06-03",
+      "lang": "bash",
+      "see": "fetch_payment_statuses fails with payments API timed out, is marked UP_FOR_RETRY, and succeeds on try 2; the report line shows every task succeeded."
+     },
+     {
+      "do": "Run the day with a partial export.",
+      "code": "airflow dags test orders_reliable 2024-06-05",
+      "lang": "bash",
+      "see": "check_volume fails at once (Immediate failure requested), the ALERT line comes from the failure callback, load is upstream_failed, and report still runs because of trigger_rule all_done."
+     },
+     {
+      "do": "Run a day with no file at all.",
+      "code": "airflow dags test orders_reliable 2024-06-08",
+      "lang": "bash",
+      "see": "wait_for_file is rescheduled every 10 seconds, then Sensor has timed out, and it fails without retrying."
+     },
+     {
+      "do": "Run another missing day, and while the sensor waits, copy a file into place from a second terminal.",
+      "code": "airflow dags test orders_reliable 2024-06-09\n# in a second terminal, within 30 seconds:\ncp \"$AIRFLOW_HOME/shop_data/incoming/orders_2024-06-07.csv\" \"$AIRFLOW_HOME/shop_data/incoming/orders_2024-06-09.csv\"",
+      "lang": "bash",
+      "see": "The sensor's next check finds the file and the rest of the run carries on."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The flaky task failed once and succeeded on its retry.",
+      "look_for": [
+       "payments API timed out",
+       "Payment statuses for 2024-06-03 fetched on try 2"
+      ]
+     },
+     {
+      "text": "A normal day loads through the connection and every task succeeds.",
+      "look_for": [
+       "Loaded 50 orders for 2024-06-03 through the shop_warehouse connection",
+       "Run for 2024-06-03: check_volume=success, fetch_payment_statuses=success, load=success, wait_for_file=success"
+      ]
+     },
+     {
+      "text": "The partial export fails fast, raises an alert, and stops the load.",
+      "look_for": [
+       "only 12 orders for 2024-06-05; expected at least 20",
+       "Immediate failure requested",
+       "ALERT: check_volume failed for 2024-06-05 on try 1",
+       "load=upstream_failed"
+      ]
+     },
+     {
+      "text": "A missing file makes the sensor time out, and the report still runs.",
+      "look_for": [
+       "Sensor has timed out",
+       "wait_for_file=failed"
+      ]
+     }
+    ],
+    "submit": "Paste your two completed tasks and the output of the runs for 2024-06-03, 2024-06-05 and 2024-06-08 (the lines with Payment, Volume, ALERT, Sensor, Loaded and Run for are enough).",
+    "files": [
+     {
+      "path": "dags/orders_reliable.py",
+      "content": "\"\"\"Wait for the day's export, survive a flaky API, refuse a suspiciously small file, and load through a connection.\"\"\"\n\nimport csv\nimport os\nfrom datetime import timedelta\nfrom pathlib import Path\n\nimport pendulum\nfrom airflow.decorators import dag, task\nfrom airflow.exceptions import AirflowFailException\nfrom airflow.models import Variable\nfrom airflow.operators.python import get_current_context\nfrom airflow.providers.sqlite.hooks.sqlite import SqliteHook\nfrom airflow.sensors.filesystem import FileSensor\n\nDATA = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\n\n\ndef alert(context):\n    \"\"\"on_failure_callback: in production this would page someone or post to a chat channel.\"\"\"\n    ti = context[\"ti\"]\n    print(f\"ALERT: {ti.task_id} failed for {context['ds']} on try {ti.try_number}: {context.get('exception')}\")\n\n\n@dag(\n    dag_id=\"orders_reliable\",\n    start_date=pendulum.datetime(2024, 6, 1, tz=\"UTC\"),\n    schedule=\"@daily\",\n    catchup=False,\n    default_args={\"retries\": 2, \"retry_delay\": timedelta(seconds=5), \"on_failure_callback\": alert},\n    tags=[\"course\", \"shop\"],\n)\ndef orders_reliable():\n    wait_for_file = FileSensor(\n        task_id=\"wait_for_file\",\n        fs_conn_id=\"shop_files\",  # an fs connection whose extra \"path\" is the folder to look in\n        filepath=\"orders_{{ ds }}.csv\",\n        poke_interval=10,  # seconds between checks; minutes in production\n        timeout=30,  # give up after 30 seconds; hours in production\n        mode=\"reschedule\",  # free the worker slot between checks\n    )\n\n    @task(retries=3)\n    def fetch_payment_statuses(ds=None):\n        \"\"\"Stands in for a call to a payments API that sometimes times out.\"\"\"\n        ti = get_current_context()[\"ti\"]\n        # TODO: on the first try (ti.try_number == 1), raise ConnectionError(\"payments API timed out\");\n        #   on any later try, print f\"Payment statuses for {ds} fetched on try {ti.try_number}\"\n\n    @task\n    def check_volume(ds=None):\n        \"\"\"Fail fast, without retries, when the file is too small to be a full day's export.\"\"\"\n        minimum = int(Variable.get(\"min_orders\", default_var=\"20\"))\n        with open(DATA / \"incoming\" / f\"orders_{ds}.csv\", newline=\"\", encoding=\"utf-8\") as f:\n            orders = sum(1 for _ in csv.DictReader(f))\n        # TODO: if orders < minimum, raise AirflowFailException with a message naming both numbers\n        print(f\"Volume check passed: {orders} orders (minimum {minimum})\")\n        return orders\n\n    @task\n    def load(orders, ds=None):\n        hook = SqliteHook(sqlite_conn_id=\"shop_warehouse\")\n        con = hook.get_conn()\n        with con:\n            con.execute(\"CREATE TABLE IF NOT EXISTS order_counts (day TEXT PRIMARY KEY, orders INTEGER)\")\n            con.execute(\"INSERT OR REPLACE INTO order_counts VALUES (?, ?)\", (ds, orders))\n        con.close()\n        print(f\"Loaded {orders} orders for {ds} through the shop_warehouse connection\")\n\n    @task(trigger_rule=\"all_done\")\n    def report(ds=None):\n        \"\"\"Runs whether or not the tasks before it succeeded, and says how the run went.\"\"\"\n        dag_run = get_current_context()[\"dag_run\"]\n        states = {ti.task_id: ti.state for ti in dag_run.get_task_instances() if ti.task_id != \"report\"}\n        print(f\"Run for {ds}: \" + \", \".join(f\"{task_id}={state}\" for task_id, state in sorted(states.items())))\n\n    statuses = fetch_payment_statuses()\n    orders = check_volume()\n    wait_for_file >> [statuses, orders]\n    loaded = load(orders)\n    statuses >> loaded\n    loaded >> report()\n\n\norders_reliable()\n"
+     },
+     {
+      "path": "make_orders.py",
+      "content": "\"\"\"Write a week of synthetic orders from an online shop into shop_data/.\n\n    python make_orders.py [FOLDER]\n\nFOLDER defaults to $AIRFLOW_HOME/shop_data (~/airflow/shop_data if AIRFLOW_HOME isn't set). It creates\nincoming/orders_2024-06-01.csv ... orders_2024-06-07.csv (one export file a day) and shop.db, a SQLite copy of\nthe shop's orders table. Only random.random() is used, so every Python version writes the same data.\n\"\"\"\n\nimport csv\nimport os\nimport random\nimport sqlite3\nimport sys\nfrom datetime import date, datetime, timedelta\nfrom pathlib import Path\n\nCATEGORIES = [\"beauty\", \"electronics\", \"fashion\", \"grocery\", \"home\"]\ndefault = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\nfolder = Path(sys.argv[1]) if len(sys.argv) > 1 else default\n(folder / \"incoming\").mkdir(parents=True, exist_ok=True)\nrng = random.Random(42)\norders = []\nfor d in range(7):\n    day = date(2024, 6, 1) + timedelta(days=d)\n    count = 12 if day == date(2024, 6, 5) else 45 + int(rng.random() * 25)  # 5 June: a partial export\n    seconds = sorted(int(rng.random() * 86400) for _ in range(count))\n    if day == date(2024, 6, 4):\n        seconds[0] = 0  # an order at exactly midnight belongs to the 4 June interval, not the 3rd\n    for n, s in enumerate(seconds, 1):\n        r = rng.random()\n        status = \"paid\" if r < 0.86 else \"refunded\" if r < 0.93 else \"cancelled\"\n        orders.append({\n            \"order_id\": f\"O{day:%m%d}-{n:03d}\",\n            \"ordered_at\": (datetime(day.year, day.month, day.day) + timedelta(seconds=s)).strftime(\"%Y-%m-%d %H:%M:%S\"),\n            \"customer_id\": f\"C{int(rng.random() * 400) + 1:04d}\",\n            \"category\": CATEGORIES[int(rng.random() * len(CATEGORIES))],\n            \"amount\": f\"{5 + rng.random() ** 2 * 295:.2f}\",\n            \"status\": status,\n        })\nfor d in range(7):\n    day = str(date(2024, 6, 1) + timedelta(days=d))\n    with open(folder / \"incoming\" / f\"orders_{day}.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        writer = csv.DictWriter(f, fieldnames=list(orders[0]))\n        writer.writeheader()\n        writer.writerows(o for o in orders if o[\"ordered_at\"].startswith(day))\ndb = folder / \"shop.db\"\nif db.exists():\n    db.unlink()\ncon = sqlite3.connect(db)\ncon.execute(\"\"\"CREATE TABLE orders (order_id TEXT PRIMARY KEY, ordered_at TEXT, customer_id TEXT,\n               category TEXT, amount REAL, status TEXT)\"\"\")\ncon.executemany(\"INSERT INTO orders VALUES (:order_id, :ordered_at, :customer_id, :category, :amount, :status)\", orders)\ncon.commit()\ncon.close()\nprint(f\"Wrote {len(orders)} orders for 2024-06-01 to 2024-06-07 to {folder}\")\n"
+     }
+    ],
+    "hints": [
+     "get_current_context()['ti'].try_number is 1 on the first try and goes up by one with each retry.",
+     "AirflowFailException skips the remaining retries; a plain exception would be retried.",
+     "If a task says The conn_id `shop_files` (or `shop_warehouse`) isn't defined, its AIRFLOW_CONN_ variable isn't set in the terminal that runs airflow dags test."
+    ]
+   }
+  },
+  {
+   "title": "Testing, operating and upgrading",
+   "summary": "Test DAGs with pytest, run Airflow in production, schedule DAGs from data with datasets, and see what changes in Airflow 3.",
+   "instructor": "rodrigoo-silva",
+   "lessons": [
+    {
+     "title": "Testing DAGs",
+     "minutes": 12,
+     "objectives": [
+      "Write DAG integrity and structure tests with pytest",
+      "Keep business logic testable without Airflow"
+     ],
+     "key_points": [
+      "A DAG integrity test loads the dags folder into a DagBag and asserts that import_errors is empty, which catches syntax errors, missing imports and cycles before the scheduler sees them.",
+      "Structure tests check what reviewers care about: the expected DAGs exist, every DAG has retries and tags, catchup is set on purpose, and key tasks have the right upstream tasks (task.upstream_task_ids).",
+      "Keep business logic in plain Python modules that DAG files import, and unit-test it without Airflow; the DAG file then only wires tasks together.",
+      "airflow dags test, or dag.test() in a script (2.5 and later), runs a whole DAG in one process for a date, for local debugging; airflow dags list-import-errors shows files the scheduler couldn't parse.",
+      "By default Airflow only parses .py files that contain both the words airflow and dag (DAG discovery safe mode), and skips paths listed in a .airflowignore file, so helper modules in the dags folder aren't parsed as DAGs.",
+      "Run these tests in CI on every pull request, with the same Airflow version and constraints as production, so a broken DAG never reaches the scheduler."
+     ]
+    },
+    {
+     "title": "Running Airflow in production",
+     "minutes": 12,
+     "objectives": [
+      "Choose a database and executor for production",
+      "Deploy DAG code and control how much runs at once"
+     ],
+     "key_points": [
+      "In production use PostgreSQL or MySQL for the metadata database and the LocalExecutor, CeleryExecutor or KubernetesExecutor; SQLite and the SequentialExecutor are only for trying Airflow out.",
+      "Limit load with pools (a fixed number of slots shared by the tasks that use a resource, such as one database), max_active_tasks and max_active_runs per DAG, and priority_weight to decide which queued tasks go first.",
+      "Ship DAGs like application code: from version control, through CI, into the DAGs folder of every component (built into the image, synchronised from git, or on shared storage), with dependencies pinned by the constraints file.",
+      "The official Helm chart runs Airflow on Kubernetes, and managed services such as Amazon MWAA, Google Cloud Composer and Astronomer run it for you; either way, monitor the scheduler's heartbeat, queued tasks, task durations and failures.",
+      "Task logs are written per try and can be shipped to remote storage, such as S3 or Google Cloud Storage, so they survive workers being replaced; keep secrets in a secrets backend, not in files committed to git."
+     ]
+    },
+    {
+     "title": "Data-aware scheduling, and Airflow 3",
+     "minutes": 14,
+     "objectives": [
+      "Trigger a DAG when another DAG updates a dataset",
+      "List the changes to check when moving DAGs to Airflow 3"
+     ],
+     "key_points": [
+      "Datasets (Airflow 2.4 and later) make scheduling event-driven: a task with outlets=[Dataset(uri)] marks the dataset updated when it succeeds, and a DAG with schedule=[Dataset(uri)] runs once every dataset in its list has been updated.",
+      "Airflow 3 renames datasets to assets and removes the airflow.datasets module: DAG authors import dag, task, DAG, Asset, Variable and get_current_context from airflow.sdk, while airflow.decorators still works, with deprecation warnings.",
+      "In Airflow 3, BashOperator, PythonOperator, FileSensor and the other standard operators live in the apache-airflow-providers-standard package; the old airflow.operators and airflow.sensors paths still import, with deprecation warnings.",
+      "Airflow 3 changes defaults: schedule is None, catchup_by_default is False, and cron schedules and presets such as @daily use CronTriggerTimetable, whose runs have a zero-length data interval unless [scheduler] create_cron_data_intervals is set to True.",
+      "Airflow 3 replaces airflow webserver with airflow api-server and a new UI, runs the DAG processor as a separate component, and lets tasks reach the metadata database only through its Task Execution API; backfills become airflow backfill create, run by the scheduler.",
+      "Airflow 3 also removes SubDAGs, SLAs, the execution_date context key and schedule_interval; before upgrading, check DAG files with the Ruff linter's Airflow rules (AIR301 and related), and test every DAG on the new version."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Test your DAGs with pytest",
+    "tool": "Apache Airflow",
+    "minutes": 40,
+    "goal": "Write DAG integrity and structure tests and a unit test for the business logic, then watch them catch a missing retry setting and a broken import.",
+    "setup": [
+     "Airflow 2.11.2 as in module 1, and pytest installed with the same constraints file: pip install pytest --constraint \"${CONSTRAINT_URL}\"",
+     "Download the starter files into a project folder, keeping the dags and tests folders and pytest.ini"
+    ],
+    "steps": [
+     {
+      "do": "Read the layout: dags/orders_daily.py imports summarise() from dags/shop_lib/revenue.py and marks a dataset as an outlet of load; dags/revenue_report.py is scheduled on that dataset; pytest.ini puts dags on the import path."
+     },
+     {
+      "do": "Complete the two TODOs in tests/test_dags.py: every DAG has retries and tags, and load's outlets include the daily_orders dataset."
+     },
+     {
+      "do": "Run the tests from the project folder.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "6 passed"
+     },
+     {
+      "do": "Break a rule on purpose: in revenue_report.py set default_args={\"retries\": 0}, run the tests, and read the failure. Then put it back.",
+      "code": "python -m pytest -q",
+      "lang": "bash",
+      "see": "1 failed, 5 passed, with AssertionError: revenue_report has no retries."
+     },
+     {
+      "do": "Break an import: in orders_daily.py, import summarize instead of summarise. Run the tests and list the import errors Airflow sees, then fix it.",
+      "code": "python -m pytest -q\nAIRFLOW__CORE__DAGS_FOLDER=\"$PWD/dags\" airflow dags list-import-errors",
+      "lang": "bash",
+      "see": "ImportError: cannot import name 'summarize' from 'shop_lib.revenue', in both."
+     },
+     {
+      "do": "Optional: point airflow standalone at this dags folder, unpause both DAGs, and trigger orders_daily from the UI. When its load task succeeds, revenue_report starts by itself; the Datasets view shows the link between them."
+     }
+    ],
+    "checks": [
+     {
+      "text": "All six tests pass.",
+      "look_for": [
+       "6 passed"
+      ]
+     },
+     {
+      "text": "The structure test catches a DAG without retries.",
+      "look_for": [
+       "revenue_report has no retries",
+       "1 failed, 5 passed"
+      ]
+     },
+     {
+      "text": "A broken import fails the integrity test and shows up in Airflow's import errors.",
+      "look_for": [
+       "cannot import name 'summarize' from 'shop_lib.revenue'"
+      ]
+     }
+    ],
+    "submit": "Paste your two completed tests, the pytest summary when everything passes, and the failure output for the missing retries and the broken import.",
+    "files": [
+     {
+      "path": "dags/orders_daily.py",
+      "content": "\"\"\"Copy each data interval's orders into the warehouse, and announce the updated table as a dataset.\"\"\"\n\nimport os\nimport sqlite3\nfrom datetime import timedelta\nfrom pathlib import Path\n\nimport pendulum\nfrom airflow.datasets import Dataset\nfrom airflow.decorators import dag, task\nfrom shop_lib.revenue import summarise\n\nDATA = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\nDAILY_ORDERS = Dataset(\"sqlite://shop_data/warehouse.db/daily_orders\")\n\n\n@dag(\n    dag_id=\"orders_daily\",\n    start_date=pendulum.datetime(2024, 6, 1, tz=\"UTC\"),\n    schedule=\"@daily\",\n    catchup=False,\n    max_active_runs=1,\n    default_args={\"retries\": 2, \"retry_delay\": timedelta(minutes=1)},\n    tags=[\"course\", \"shop\"],\n)\ndef orders_daily():\n    @task\n    def extract(data_interval_start=None, data_interval_end=None):\n        start = data_interval_start.strftime(\"%Y-%m-%d %H:%M:%S\")\n        end = data_interval_end.strftime(\"%Y-%m-%d %H:%M:%S\")\n        con = sqlite3.connect(DATA / \"shop.db\")\n        rows = con.execute(\"\"\"SELECT category, amount, status FROM orders\n                              WHERE ordered_at >= ? AND ordered_at < ?\"\"\", (start, end)).fetchall()\n        con.close()\n        print(f\"Interval {start} to {end}: {len(rows)} orders\")\n        return rows\n\n    @task(outlets=[DAILY_ORDERS])\n    def load(rows, data_interval_start=None):\n        day = data_interval_start.strftime(\"%Y-%m-%d\")\n        summary = summarise(rows)\n        con = sqlite3.connect(DATA / \"warehouse.db\")\n        with con:\n            con.execute(\"\"\"CREATE TABLE IF NOT EXISTS daily_orders\n                           (day TEXT, category TEXT, orders INTEGER, paid REAL, PRIMARY KEY (day, category))\"\"\")\n            con.execute(\"DELETE FROM daily_orders WHERE day = ?\", (day,))\n            con.executemany(\"INSERT INTO daily_orders VALUES (?, ?, ?, ?)\",\n                            [(day, c, n, p) for c, (n, p) in summary.items()])\n        con.close()\n        print(f\"daily_orders for {day}: {sum(n for n, _p in summary.values())} orders\")\n\n    load(extract())\n\n\norders_daily()\n"
+     },
+     {
+      "path": "dags/revenue_report.py",
+      "content": "\"\"\"Runs whenever orders_daily has updated the daily_orders table: data-aware scheduling with a dataset.\"\"\"\n\nimport os\nimport sqlite3\nfrom pathlib import Path\n\nimport pendulum\nfrom airflow.datasets import Dataset\nfrom airflow.decorators import dag, task\n\nDATA = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\n\n\n@dag(\n    dag_id=\"revenue_report\",\n    start_date=pendulum.datetime(2024, 6, 1, tz=\"UTC\"),\n    schedule=[Dataset(\"sqlite://shop_data/warehouse.db/daily_orders\")],\n    catchup=False,\n    default_args={\"retries\": 1},\n    tags=[\"course\", \"shop\"],\n)\ndef revenue_report():\n    @task\n    def best_category():\n        con = sqlite3.connect(DATA / \"warehouse.db\")\n        category, paid = con.execute(\"\"\"SELECT category, ROUND(SUM(paid), 2) FROM daily_orders\n                                        GROUP BY category ORDER BY 2 DESC LIMIT 1\"\"\").fetchone()\n        con.close()\n        print(f\"Best category so far: {category} with {paid:.2f} paid\")\n\n    best_category()\n\n\nrevenue_report()\n"
+     },
+     {
+      "path": "dags/shop_lib/__init__.py",
+      "content": "\"\"\"Helpers for the shop pipelines, kept out of the DAG files so they can be unit-tested.\"\"\"\n"
+     },
+     {
+      "path": "dags/shop_lib/revenue.py",
+      "content": "\"\"\"Business logic kept out of the DAG file, so it can be tested without a scheduler.\"\"\"\n\n\ndef summarise(rows):\n    \"\"\"Turn (category, amount, status) rows into {category: (orders, paid)}, paid rounded to cents.\"\"\"\n    summary = {}\n    for category, amount, status in rows:\n        orders, paid = summary.get(category, (0, 0.0))\n        summary[category] = (orders + 1, paid + (amount if status == \"paid\" else 0.0))\n    return {category: (orders, round(paid, 2)) for category, (orders, paid) in sorted(summary.items())}\n"
+     },
+     {
+      "path": "tests/test_dags.py",
+      "content": "\"\"\"DAG integrity tests: every DAG file imports, and the DAGs have the shape and settings expected.\"\"\"\n\nimport pytest\nfrom airflow.models import DagBag\n\n\n@pytest.fixture(scope=\"session\")\ndef dagbag():\n    return DagBag(dag_folder=\"dags\", include_examples=False)\n\n\ndef test_no_import_errors(dagbag):\n    assert dagbag.import_errors == {}\n\n\ndef test_expected_dags_are_present(dagbag):\n    assert {\"orders_daily\", \"revenue_report\"} <= set(dagbag.dag_ids)\n\n\ndef test_every_dag_retries_and_has_tags(dagbag):\n    # TODO: for every DAG in dagbag.dags.values(), assert dag.default_args.get(\"retries\", 0) >= 1\n    #   and that dag.tags isn't empty; include dag.dag_id in each assert's message\n    pass\n\n\ndef test_orders_daily_shape(dagbag):\n    dag = dagbag.get_dag(\"orders_daily\")\n    assert dag.catchup is False\n    assert dag.get_task(\"load\").upstream_task_ids == {\"extract\"}\n    # TODO: assert that the load task's outlets contain a dataset whose uri ends with \"daily_orders\"\n"
+     },
+     {
+      "path": "tests/test_revenue.py",
+      "content": "\"\"\"Unit tests for the business logic: plain Python, no Airflow needed.\"\"\"\n\nfrom shop_lib.revenue import summarise\n\n\ndef test_only_paid_orders_count_as_revenue():\n    rows = [(\"home\", 10.0, \"paid\"), (\"home\", 5.0, \"refunded\"), (\"beauty\", 2.5, \"paid\")]\n    assert summarise(rows) == {\"beauty\": (1, 2.5), \"home\": (2, 10.0)}\n\n\ndef test_no_orders_gives_an_empty_summary():\n    assert summarise([]) == {}\n"
+     },
+     {
+      "path": "pytest.ini",
+      "content": "[pytest]\npythonpath = dags\ntestpaths = tests\n"
+     }
+    ],
+    "hints": [
+     "dagbag.dags is a dictionary of dag_id to DAG; dag.default_args is a dictionary and dag.tags a list.",
+     "Each outlet is a Dataset object with a uri attribute.",
+     "Run pytest from the folder that holds pytest.ini, so pythonpath = dags and testpaths = tests apply."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Install Airflow, learn its parts, and run your first DAG.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "TaskFlow, XCom and templates; build the orders ETL DAG.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Schedules, data intervals and backfills; backfill a week of orders safely.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Retries, sensors, alerts, connections and variables; finish the reliability lab.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Test DAGs with pytest, learn production set-ups, datasets and Airflow 3.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Orchestrate an online shop's daily pipelines",
+  "minutes": 420,
+  "brief": "An online shop exports its orders once a day, and the finance and marketing teams need trustworthy daily figures by category, plus a report as soon as each day is loaded. Using the data from make_orders.py, build an Airflow 2 project that waits for each day's export, checks it (fail fast on files that are too small or have missing or negative amounts), loads the day's orders and paid revenue into a warehouse idempotently, keyed by data interval, and marks a dataset as updated; a second DAG, scheduled on that dataset, builds the report. Use retries for transient failures, a failure callback for alerts, a connection for the warehouse and a variable for thresholds, keep business logic in a tested module, backfill the whole week, and write notes on what you would change to run the project on Airflow 3.",
+  "deliverables": [
+   "The DAG files and a helper module for the business logic, with no credentials in code",
+   "At least six pytest tests, all passing: DAG integrity, structure and unit tests of the logic",
+   "The output of a backfill for 2024-06-01 to 2024-06-07 and of a second backfill with --reset-dagruns, with the warehouse unchanged between them",
+   "Evidence of the failure handling: the partial export of 2024-06-05 failing its check and raising an alert",
+   "A README that explains how to run the project with airflow standalone or Docker Compose, including the connection and variable it needs",
+   "Upgrade notes listing what you would change for Airflow 3, file by file"
+  ],
+  "rubric": [
+   {
+    "name": "Correct, idempotent pipeline",
+    "points": 25,
+    "description": "Each run processes exactly its data interval, loads correct figures, and gives the same warehouse however often it is rerun or backfilled."
+   },
+   {
+    "name": "Scheduling and data-aware triggering",
+    "points": 15,
+    "description": "Schedules, start dates and catchup are set deliberately, and the report DAG runs from the dataset rather than a guessed time."
+   },
+   {
+    "name": "Reliability",
+    "points": 20,
+    "description": "Sensible retries, a sensor with a timeout, fail-fast checks with AirflowFailException, trigger rules where they're needed, and an alert on final failure."
+   },
+   {
+    "name": "Configuration and security",
+    "points": 10,
+    "description": "The warehouse is reached through a connection and thresholds come from variables; nothing secret is in the code or the repository."
+   },
+   {
+    "name": "Tests",
+    "points": 15,
+    "description": "At least six meaningful tests that pass, covering imports, structure and the business logic."
+   },
+   {
+    "name": "Documentation and Airflow 3 notes",
+    "points": 15,
+    "description": "Someone else can run the project from the README, and the upgrade notes correctly name the imports, defaults and commands that change."
+   }
+  ],
+  "submit": "Paste your DAG files and helper module (each with its file name), your tests and the pytest summary, the backfill outputs and warehouse queries, the failure-handling output, your README and your upgrade notes. A link to a repository is welcome too.",
+  "files": [
+   {
+    "path": "make_orders.py",
+    "content": "\"\"\"Write a week of synthetic orders from an online shop into shop_data/.\n\n    python make_orders.py [FOLDER]\n\nFOLDER defaults to $AIRFLOW_HOME/shop_data (~/airflow/shop_data if AIRFLOW_HOME isn't set). It creates\nincoming/orders_2024-06-01.csv ... orders_2024-06-07.csv (one export file a day) and shop.db, a SQLite copy of\nthe shop's orders table. Only random.random() is used, so every Python version writes the same data.\n\"\"\"\n\nimport csv\nimport os\nimport random\nimport sqlite3\nimport sys\nfrom datetime import date, datetime, timedelta\nfrom pathlib import Path\n\nCATEGORIES = [\"beauty\", \"electronics\", \"fashion\", \"grocery\", \"home\"]\ndefault = Path(os.environ.get(\"AIRFLOW_HOME\", \"~/airflow\")).expanduser() / \"shop_data\"\nfolder = Path(sys.argv[1]) if len(sys.argv) > 1 else default\n(folder / \"incoming\").mkdir(parents=True, exist_ok=True)\nrng = random.Random(42)\norders = []\nfor d in range(7):\n    day = date(2024, 6, 1) + timedelta(days=d)\n    count = 12 if day == date(2024, 6, 5) else 45 + int(rng.random() * 25)  # 5 June: a partial export\n    seconds = sorted(int(rng.random() * 86400) for _ in range(count))\n    if day == date(2024, 6, 4):\n        seconds[0] = 0  # an order at exactly midnight belongs to the 4 June interval, not the 3rd\n    for n, s in enumerate(seconds, 1):\n        r = rng.random()\n        status = \"paid\" if r < 0.86 else \"refunded\" if r < 0.93 else \"cancelled\"\n        orders.append({\n            \"order_id\": f\"O{day:%m%d}-{n:03d}\",\n            \"ordered_at\": (datetime(day.year, day.month, day.day) + timedelta(seconds=s)).strftime(\"%Y-%m-%d %H:%M:%S\"),\n            \"customer_id\": f\"C{int(rng.random() * 400) + 1:04d}\",\n            \"category\": CATEGORIES[int(rng.random() * len(CATEGORIES))],\n            \"amount\": f\"{5 + rng.random() ** 2 * 295:.2f}\",\n            \"status\": status,\n        })\nfor d in range(7):\n    day = str(date(2024, 6, 1) + timedelta(days=d))\n    with open(folder / \"incoming\" / f\"orders_{day}.csv\", \"w\", newline=\"\", encoding=\"utf-8\") as f:\n        writer = csv.DictWriter(f, fieldnames=list(orders[0]))\n        writer.writeheader()\n        writer.writerows(o for o in orders if o[\"ordered_at\"].startswith(day))\ndb = folder / \"shop.db\"\nif db.exists():\n    db.unlink()\ncon = sqlite3.connect(db)\ncon.execute(\"\"\"CREATE TABLE orders (order_id TEXT PRIMARY KEY, ordered_at TEXT, customer_id TEXT,\n               category TEXT, amount REAL, status TEXT)\"\"\")\ncon.executemany(\"INSERT INTO orders VALUES (:order_id, :ordered_at, :customer_id, :category, :amount, :status)\", orders)\ncon.commit()\ncon.close()\nprint(f\"Wrote {len(orders)} orders for 2024-06-01 to 2024-06-07 to {folder}\")\n"
+   }
+  ]
+ }
+}

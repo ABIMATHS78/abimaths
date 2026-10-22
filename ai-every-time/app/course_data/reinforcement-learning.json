@@ -1,0 +1,928 @@
+{
+ "slug": "reinforcement-learning",
+ "title": "Reinforcement Learning: From Bandits to Policy Gradients",
+ "subtitle": "Learn how agents learn from reward, from bandits and dynamic programming through Monte Carlo, TD learning, SARSA and Q-learning to deep Q-networks and policy gradients in PyTorch.",
+ "category": "Machine Learning",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "jae-won-parkk",
+  "kaimana-kahananui"
+ ],
+ "skills": [
+  "Reinforcement learning",
+  "Multi-armed bandits",
+  "Markov decision processes",
+  "Dynamic programming",
+  "Monte Carlo and TD learning",
+  "SARSA and Q-learning",
+  "Deep Q-networks",
+  "Policy gradients",
+  "PyTorch",
+  "Gymnasium"
+ ],
+ "tools": [
+  "Python 3",
+  "NumPy",
+  "PyTorch",
+  "Gymnasium"
+ ],
+ "outcomes": [
+  "Balance exploration and exploitation in bandit problems with ε-greedy, UCB and Thompson sampling, and measure regret",
+  "Formulate problems as Markov decision processes and solve them with policy iteration and value iteration",
+  "Estimate values from experience with Monte Carlo and temporal-difference learning",
+  "Learn control policies with SARSA and Q-learning, and explain how on-policy and off-policy methods differ",
+  "Explain how deep Q-networks stabilise learning, and train a policy-gradient agent with REINFORCE in PyTorch"
+ ],
+ "prerequisites": "Deep Learning with PyTorch (for the last module) and probability at the level of Statistics for Data Science and AI or Foundations of Probability and Statistics: expectations, conditional probability and sampling. Comfortable Python and NumPy. Install Python 3.10 or later with NumPy, PyTorch (pip install torch; the CPU build is enough) and Gymnasium (pip install gymnasium, for CartPole). Everything runs on a laptop CPU.",
+ "description": "Reinforcement learning is learning by trial and error: an agent acts, sees what happens and collects reward, and has to work out which of its actions led to the reward and which exploring is worth the cost. It's behind game-playing agents, robot controllers, recommendation and experimentation systems, and the fine-tuning of large language models from human feedback. This course builds it up in the standard order, each idea on the one before: bandits, Markov decision processes, dynamic programming, Monte Carlo and temporal-difference learning, SARSA and Q-learning, and then deep Q-networks and policy gradients.\n\nEvery module has a lab that reproduces a classic experiment in code you complete yourself: exploration strategies on the 10-armed testbed, policy and value iteration on a slippery grid world, Monte Carlo against TD on the random walk, SARSA against Q-learning on the cliff, and REINFORCE on Gymnasium's CartPole in PyTorch. The capstone is a stock-control problem where dynamic programming gives the optimal policy, so you can measure exactly how close your learned agents get.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Bandits: exploration and exploitation",
+   "summary": "Meet the reinforcement learning problem in its simplest form: choosing between options with uncertain rewards, and deciding when to try something new.",
+   "instructor": "kaimana-kahananui",
+   "lessons": [
+    {
+     "title": "The reinforcement learning problem",
+     "minutes": 10,
+     "objectives": [
+      "Describe the agent-environment loop and the goal of maximising return",
+      "Explain how reinforcement learning differs from supervised learning",
+      "Define policies, value functions and models"
+     ],
+     "key_points": [
+      "In reinforcement learning an agent interacts with an environment: at each step it observes a state, takes an action, and receives a reward and the next state. Its goal is to maximise the total reward it collects over time, not the reward of any single step.",
+      "Unlike supervised learning, nobody provides the correct action: feedback says how good the chosen action was, not which was best; it can arrive many steps after the action that earned it; and the data the agent sees depends on the actions it takes.",
+      "A policy maps states to actions or to probabilities of actions; a value function predicts the future reward from a state, or from a state and an action; a model predicts the environment's next state and reward. Model-based methods plan with a model; model-free methods learn from experience alone.",
+      "Designing the reward is designing the task: an agent optimises exactly what the reward measures, so a reward that only approximates the goal invites behaviour that scores well and misses the point, often called reward hacking."
+     ]
+    },
+    {
+     "title": "Multi-armed bandits and action values",
+     "minutes": 12,
+     "objectives": [
+      "Define a k-armed bandit and the value of an action",
+      "Estimate action values incrementally",
+      "Explain regret as a measure of performance"
+     ],
+     "key_points": [
+      "A k-armed bandit is reinforcement learning with a single state: each step the agent picks one of k actions and receives a random reward from that action's distribution. The action's value q*(a) is its expected reward; the best arm has the highest q*, but the agent only ever sees samples.",
+      "The sample-average estimate Q(a) is the mean of the rewards received from a, updated incrementally as Q ← Q + (R − Q)/n after the nth reward, so no history needs storing. Its form, new estimate = old + step size × (target − old), recurs throughout reinforcement learning.",
+      "A constant step size α weights recent rewards more than old ones (an exponential recency-weighted average), which suits nonstationary problems whose arms change over time; a step size of 1/n weights every reward equally and converges to the true mean for stationary arms.",
+      "Regret is the reward lost against always playing the best arm: the sum over steps of q*(best) − q*(chosen). The best strategies make total regret grow only logarithmically with time; exploring at a fixed rate makes it grow linearly."
+     ],
+     "walkthrough": {
+      "tool": "Python with NumPy",
+      "title": "Estimates that update themselves",
+      "steps": [
+       {
+        "do": "Update a sample average one reward at a time and compare it with the mean of all the rewards.",
+        "code": "import numpy as np\nrng = np.random.default_rng(0)\nrewards = rng.normal(1.0, 1.0, 1000)\nQ = 0.0\nfor n, r in enumerate(rewards, start=1):\n    Q += (r - Q) / n\nprint(round(Q, 6), round(rewards.mean(), 6))",
+        "lang": "python",
+        "see": "0.951972 0.951972: the same number, without storing the history."
+       },
+       {
+        "do": "With a constant step size of 0.1, find how much each of 10 rewards, and the initial estimate, counts.",
+        "code": "alpha, n = 0.1, 10\nweights = [alpha * (1 - alpha) ** (n - i) for i in range(1, n + 1)]\nprint([round(w, 3) for w in weights], round((1 - alpha) ** n, 3))",
+        "lang": "python",
+        "see": "[0.039, 0.043, 0.048, 0.053, 0.059, 0.066, 0.073, 0.081, 0.09, 0.1] 0.349: the latest reward counts most, older ones less and less, and the initial estimate still weighs 0.349."
+       },
+       {
+        "do": "Sample from two Beta posteriors, as Thompson sampling does, to estimate the chance that arm A (7 wins in 10) beats arm B (60 wins in 100).",
+        "code": "a = rng.beta(1 + 7, 1 + 3, 100_000)\nb = rng.beta(1 + 60, 1 + 40, 100_000)\nprint(round(a.mean(), 3), round(b.mean(), 3), round((a > b).mean(), 3))",
+        "lang": "python",
+        "see": "0.666 0.598 0.695: A looks better on average but is far less certain, so Thompson sampling would still play B in about 31% of rounds."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Exploration strategies",
+     "minutes": 12,
+     "objectives": [
+      "Compare greedy, ε-greedy and optimistic initial values",
+      "Explain how UCB and Thompson sampling direct exploration",
+      "Recognise where bandits are used in practice"
+     ],
+     "key_points": [
+      "Greedy selection always exploits the current estimates and can lock onto a poor arm after an unlucky start. ε-greedy explores at random with probability ε: simple and robust, but it keeps choosing bad arms at a fixed rate forever.",
+      "Optimistic initial values, such as Q0 = 5 when rewards are around 1, make every untried arm look attractive, so even a greedy agent tries them all early on. It helps on stationary problems and not on nonstationary ones, since all its exploration happens at the start.",
+      "Upper confidence bound (UCB) selection picks the arm that maximises Q(a) + c√(ln t / N(a)). The bonus is large for arms tried rarely and shrinks as N(a) grows, so exploration goes to the arms whose values are most uncertain.",
+      "Thompson sampling keeps a posterior over each arm's value, such as Beta(1 + successes, 1 + failures) for rewards of 0 or 1, draws one sample per arm and plays the highest. It explores in proportion to the probability that each arm is best, and often has the lowest regret in practice.",
+      "Bandits run online experiments, recommendations and ad selection. Contextual bandits choose using features of the current user or situation, for example with a linear model as LinUCB does, and sit between bandits and full reinforcement learning, where actions also change future states."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Exploration strategies on the 10-armed testbed",
+    "tool": "Python with NumPy",
+    "minutes": 45,
+    "goal": "Implement ε-greedy and UCB selection and the incremental update, compare five strategies on 2,000 random 10-armed bandits, then compare ε-greedy, UCB and Thompson sampling by cumulative regret.",
+    "setup": [
+     "Python 3.10 or later with NumPy",
+     "The starter file bandits.py"
+    ],
+    "steps": [
+     {
+      "do": "Read testbed(): every run is its own bandit, with true values q* drawn from N(0, 1) and rewards from N(q*(a), 1), and all 2,000 runs step together in arrays."
+     },
+     {
+      "do": "Complete epsilon_greedy().",
+      "code": "random_arm = rng.integers(0, Q.shape[1], Q.shape[0])\nreturn np.where(rng.random(Q.shape[0]) < epsilon, random_arm, Q.argmax(axis=1))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete ucb(), giving untried arms an infinite bonus.",
+      "code": "with np.errstate(divide=\"ignore\"):\n    bonus = np.where(N > 0, c * np.sqrt(np.log(t) / np.maximum(N, 1)), np.inf)\nreturn (Q + bonus).argmax(axis=1)",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the incremental update in testbed().",
+      "code": "Q[rows, a] += step * (r - Q[rows, a])",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script (a few seconds).",
+      "code": "python bandits.py",
+      "lang": "bash",
+      "see": "Greedy picks the best arm only 35.5% of the time by the end, ε = 0.1 79.5%, optimistic greedy 86.8% and UCB 85.6%; optimistic greedy earns least over the first 100 steps (0.355) while it tries every arm. On the Bernoulli bandits Thompson sampling's regret after 5,000 steps is 32.9, against 149.5 for UCB and 166.0 for ε-greedy."
+     },
+     {
+      "do": "Add an ε-greedy run whose ε decays as min(1, 10 / t) and compare its final reward and optimal-action rate with the fixed rates."
+     },
+     {
+      "do": "Write a paragraph: why greedy gets stuck, why optimistic greedy starts badly and finishes well, and why ε-greedy's regret keeps growing while Thompson sampling's levels off."
+     }
+    ],
+    "checks": [
+     {
+      "text": "All five strategies are compared on the testbed.",
+      "look_for": [
+       "greedy                                          0.963                   1.039               35.5%",
+       "epsilon-greedy, 0.1                             1.021                   1.372               79.5%"
+      ]
+     },
+     {
+      "text": "UCB and optimistic initial values find the best arm most often.",
+      "look_for": [
+       "86.8%",
+       "85.6%"
+      ]
+     },
+     {
+      "text": "Thompson sampling has the lowest cumulative regret.",
+      "look_for": [
+       "thompson        after 500 steps   17.3   after 5,000 steps   32.9"
+      ]
+     },
+     {
+      "text": "The decaying-ε run is added and compared.",
+      "look_for": [
+       "decay"
+      ]
+     },
+     {
+      "text": "The paragraph explains greedy lock-in, optimism and regret growth.",
+      "look_for": [
+       "regret"
+      ]
+     }
+    ],
+    "submit": "Paste epsilon_greedy(), ucb() and your update, the full output of python bandits.py with your decaying-ε row, and your paragraph.",
+    "files": [
+     {
+      "path": "bandits.py",
+      "content": "\"\"\"Compare exploration strategies on a 10-armed testbed, then on Bernoulli bandits by regret.\n\nEach of the 2,000 runs is its own bandit problem; all runs step together in NumPy arrays, so it takes seconds.\n\"\"\"\n\nimport numpy as np\n\nK, RUNS, STEPS = 10, 2000, 1000\n\n\ndef epsilon_greedy(Q, epsilon, rng):\n    \"\"\"One action per run: a random arm with probability epsilon, otherwise the arm with the highest estimate.\"\"\"\n    # TODO: draw a random arm for each run, then use it where rng.random(runs) < epsilon and the greedy arm\n    #  (Q.argmax(axis=1)) elsewhere\n    return Q.argmax(axis=1)\n\n\ndef ucb(Q, N, t, c):\n    \"\"\"Upper confidence bound: estimate plus c * sqrt(ln t / N); arms never tried come first.\"\"\"\n    # TODO: return the argmax over arms of Q + c * sqrt(ln(t) / N), treating N == 0 as an infinite bonus\n    return Q.argmax(axis=1)\n\n\ndef testbed(strategy, seed=0, epsilon=0.0, q0=0.0, alpha=None, c=2.0):\n    rng = np.random.default_rng(seed)\n    q_star = rng.normal(0, 1, (RUNS, K))\n    best = q_star.argmax(axis=1)\n    Q, N = np.full((RUNS, K), q0), np.zeros((RUNS, K))\n    rewards, optimal = np.zeros(STEPS), np.zeros(STEPS)\n    rows = np.arange(RUNS)\n    for t in range(1, STEPS + 1):\n        a = ucb(Q, N, t, c) if strategy == \"ucb\" else epsilon_greedy(Q, epsilon, rng)\n        r = rng.normal(q_star[rows, a], 1)\n        N[rows, a] += 1\n        step = (1.0 / N[rows, a]) if alpha is None else alpha\n        # TODO: the incremental update: move Q[rows, a] a fraction `step` of the way towards the reward r\n        pass\n        rewards[t - 1], optimal[t - 1] = r.mean(), (a == best).mean()\n    return rewards, optimal\n\n\ndef bernoulli_regret(strategy, seed=0, runs=500, steps=5000):\n    \"\"\"Cumulative regret on 5-armed Bernoulli bandits: the reward lost against always playing the best arm.\"\"\"\n    rng = np.random.default_rng(seed)\n    p = rng.uniform(0.1, 0.9, (runs, 5))\n    rows = np.arange(runs)\n    wins, plays = np.zeros((runs, 5)), np.zeros((runs, 5))\n    regret = np.zeros(steps)\n    for t in range(1, steps + 1):\n        Q = np.divide(wins, plays, out=np.zeros_like(wins), where=plays > 0)\n        if strategy == \"thompson\":\n            a = rng.beta(wins + 1, plays - wins + 1).argmax(axis=1)   # sample from each Beta(1 + wins, 1 + losses)\n        elif strategy == \"ucb\":\n            a = ucb(Q, plays, t, np.sqrt(2))\n        else:\n            a = epsilon_greedy(Q, 0.1, rng)\n        r = rng.random(runs) < p[rows, a]\n        wins[rows, a] += r\n        plays[rows, a] += 1\n        regret[t - 1] = (p.max(axis=1) - p[rows, a]).mean()\n    return regret.cumsum()\n\n\ndef main():\n    print(\"== 1. 10-armed testbed: 2,000 runs, 1,000 steps\")\n    print(f\"{'strategy':32} {'reward, steps 1-100':>20} {'reward, steps 901-1000':>23} {'optimal at the end':>19}\")\n    for name, kw in [(\"greedy\", {\"strategy\": \"eps\"}),\n                     (\"epsilon-greedy, 0.01\", {\"strategy\": \"eps\", \"epsilon\": 0.01}),\n                     (\"epsilon-greedy, 0.1\", {\"strategy\": \"eps\", \"epsilon\": 0.1}),\n                     (\"optimistic greedy, Q0=5, a=0.1\", {\"strategy\": \"eps\", \"q0\": 5.0, \"alpha\": 0.1}),\n                     (\"UCB, c=2\", {\"strategy\": \"ucb\", \"c\": 2.0})]:\n        rewards, optimal = testbed(**kw)\n        print(f\"{name:32} {rewards[:100].mean():20.3f} {rewards[-100:].mean():23.3f} {optimal[-100:].mean():19.1%}\")\n    print(\"== 2. Bernoulli bandits: cumulative regret (500 runs)\")\n    for name in (\"epsilon-greedy\", \"ucb\", \"thompson\"):\n        regret = bernoulli_regret(name)\n        print(f\"{name:15} after 500 steps {regret[499]:6.1f}   after 5,000 steps {regret[-1]:6.1f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "Every array has one row per run: index with Q[rows, a] to update just the chosen arm in each run.",
+     "np.log(t) at t = 1 is 0, so arms already tried get no bonus on the first step; the infinite bonus makes sure each arm is tried once.",
+     "The regret numbers are averages over 500 runs; individual runs vary a lot."
+    ]
+   }
+  },
+  {
+   "title": "Markov decision processes and dynamic programming",
+   "summary": "Describe sequential decision problems as Markov decision processes, write their Bellman equations, and solve them exactly when the dynamics are known.",
+   "instructor": "kaimana-kahananui",
+   "lessons": [
+    {
+     "title": "Markov decision processes",
+     "minutes": 12,
+     "objectives": [
+      "Define the parts of a finite MDP and the Markov property",
+      "Compute discounted returns",
+      "Write the Bellman expectation equation for a policy"
+     ],
+     "key_points": [
+      "A finite Markov decision process (MDP) has states, actions and dynamics p(s′, r | s, a): the probability of each next state and reward given the current state and action. The Markov property says that the current state holds everything about the past that matters for the future.",
+      "The return is the discounted sum of future rewards, G_t = R_{t+1} + γR_{t+2} + γ²R_{t+3} + …, with a discount factor γ from 0 to 1. γ < 1 keeps returns finite in continuing tasks and values sooner rewards more; episodic tasks end in a terminal state and can use γ = 1.",
+      "A policy π(a | s) gives the probability of each action in each state. Its state-value function v_π(s) is the expected return starting from s and following π; its action-value function q_π(s, a) is the expected return after taking a in s and following π afterwards.",
+      "The Bellman expectation equation writes each value in terms of the values one step later: v_π(s) = Σ_a π(a|s) Σ_{s′,r} p(s′, r | s, a)[r + γ v_π(s′)]. For a fixed policy that's a system of linear equations, one per state, which small MDPs can solve directly."
+     ],
+     "walkthrough": {
+      "tool": "Python with NumPy",
+      "title": "Solve a policy's Bellman equation",
+      "steps": [
+       {
+        "do": "Write down a three-state chain under a fixed policy: transition probabilities P and expected rewards r.",
+        "code": "import numpy as np\nP = np.array([[0.5, 0.5, 0.0],\n              [0.0, 0.5, 0.5],\n              [0.0, 0.0, 1.0]])     # state 2 is absorbing\nr = np.array([-1.0, -1.0, 0.0])\ngamma = 0.9",
+        "lang": "python"
+       },
+       {
+        "do": "Solve v = r + gamma P v as one linear system.",
+        "code": "v = np.linalg.solve(np.eye(3) - gamma * P, r)\nprint(v.round(4))",
+        "lang": "python",
+        "see": "[-3.3058 -1.8182  0.    ]: each step costs 1 until the absorbing state."
+       },
+       {
+        "do": "Get the same values by repeated sweeps, as iterative policy evaluation does.",
+        "code": "V = np.zeros(3)\nfor sweep in range(1, 1000):\n    new = r + gamma * P @ V\n    if np.abs(new - V).max() < 1e-10:\n        break\n    V = new\nprint(sweep, V.round(4))",
+        "lang": "python",
+        "see": "35 [-3.3058 -1.8182  0.    ]: the same values after 35 sweeps."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Optimal policies and the Bellman optimality equation",
+     "minutes": 10,
+     "objectives": [
+      "Define optimal value functions and optimal policies",
+      "Write the Bellman optimality equation",
+      "Explain why model-free control learns action values"
+     ],
+     "key_points": [
+      "The optimal value functions are v*(s) = max over policies of v_π(s), and q*(s, a) likewise. Every finite MDP has at least one deterministic optimal policy, and acting greedily with respect to q*, choosing argmax_a q*(s, a), is optimal.",
+      "The Bellman optimality equation, v*(s) = max_a Σ_{s′,r} p(s′, r | s, a)[r + γ v*(s′)], replaces the policy's average over actions with a maximum. The maximum makes it non-linear, so it's solved iteratively rather than as one linear system.",
+      "Small per-step rewards shape behaviour: a step cost pushes an agent to finish quickly, while the discount factor and the chance of slipping decide how wide a berth it gives dangerous states.",
+      "Knowing v* is enough to act optimally only with a model, because choosing an action needs a one-step lookahead through p(s′, r | s, a); knowing q* is enough without one, which is why model-free control methods learn action values."
+     ]
+    },
+    {
+     "title": "Policy iteration and value iteration",
+     "minutes": 12,
+     "objectives": [
+      "Evaluate a policy iteratively",
+      "Improve a policy greedily, and iterate to the optimum",
+      "Compare policy iteration with value iteration"
+     ],
+     "key_points": [
+      "Iterative policy evaluation applies the Bellman expectation equation as an update to every state in turn (a sweep) until the largest change falls below a small threshold θ. With γ < 1, or when every policy eventually reaches a terminal state, it converges to v_π.",
+      "The policy improvement theorem says that acting greedily with respect to v_π gives a policy at least as good as π in every state. Policy iteration alternates full evaluation and greedy improvement until the policy stops changing, which takes finitely many iterations in a finite MDP.",
+      "Value iteration skips full evaluation: each sweep applies the Bellman optimality backup V(s) ← max_a Σ p(s′, r | s, a)[r + γV(s′)], and the greedy policy is read off at the end. Policy iteration takes a few expensive iterations, value iteration many cheap sweeps.",
+      "Dynamic programming needs a complete model, and one sweep costs time proportional to |S|² × |A|. Updating estimates from other estimates, called bootstrapping, carries over to the learning methods that follow, which do without the model."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Solve a slippery grid world with dynamic programming",
+    "tool": "Python with NumPy",
+    "minutes": 50,
+    "goal": "Write the one-step lookahead at the heart of dynamic programming, then use it to evaluate a random policy, and to find the optimal policy with policy iteration and with value iteration.",
+    "setup": [
+     "Python 3.10 or later with NumPy",
+     "The starter file gridworld_dp.py"
+    ],
+    "steps": [
+     {
+      "do": "Read GridWorld: a 3 x 4 grid with a wall, a goal worth +1 and a pit worth -1; each move costs 0.04 and goes the intended way with probability 0.8, slipping to either side with probability 0.1."
+     },
+     {
+      "do": "Complete q_value(), the expected reward plus discounted value of the next state.",
+      "code": "return sum(p * (r + GAMMA * (0.0 if env.terminal(s2) else V[s2])) for p, s2, r in env.transitions(s, a))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the Bellman optimality backup in value_iteration().",
+      "code": "new = max(q_value(env, V, s, a) for a in ACTIONS)",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script.",
+      "code": "python gridworld_dp.py",
+      "lang": "bash",
+      "see": "The random policy's values are negative everywhere (it wanders, paying for each step, and falls in the pit often). Policy iteration is stable after 4 improvements, value iteration converges in 23 sweeps, and both give the same values and arrows."
+     },
+     {
+      "do": "Read the optimal arrows next to the pit: the bottom-right cell moves left, away from the pit, rather than up beside it. Explain why from the slip probabilities."
+     },
+     {
+      "do": "Change STEP_REWARD to -0.4 and run again, then to 0.0: describe how the policy near the pit changes in each case."
+     },
+     {
+      "do": "Write a paragraph: why policy iteration needs so few iterations but value iteration many sweeps, and what dynamic programming needs that an agent learning from experience doesn't have."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The random policy is evaluated.",
+      "look_for": [
+       "The uniform random policy, evaluated in 249 sweeps"
+      ]
+     },
+     {
+      "text": "Policy iteration and value iteration find the same optimal policy.",
+      "look_for": [
+       "stable after 4 improvements",
+       "converged in 23 sweeps",
+       "policy iteration and value iteration agree: True"
+      ]
+     },
+     {
+      "text": "The optimal values and arrows are shown.",
+      "look_for": [
+       "+0.915>",
+       "+0.343<"
+      ]
+     },
+     {
+      "text": "The step-reward experiments are described and explained.",
+      "look_for": [
+       "-0.4"
+      ]
+     }
+    ],
+    "submit": "Paste q_value() and your value_iteration() backup, the full output of python gridworld_dp.py, the policies for the two other step rewards, and your paragraph.",
+    "files": [
+     {
+      "path": "gridworld_dp.py",
+      "content": "\"\"\"Solve a slippery grid world with dynamic programming: policy evaluation, policy iteration and value iteration.\"\"\"\n\nimport numpy as np\n\nLAYOUT = [\"...+\",\n          \".#.-\",\n          \"....\"]          # + goal (reward +1), - pit (reward -1), # wall; the agent starts bottom left\nACTIONS = {\"up\": (-1, 0), \"right\": (0, 1), \"down\": (1, 0), \"left\": (0, -1)}\nARROWS = {\"up\": \"^\", \"right\": \">\", \"down\": \"v\", \"left\": \"<\"}\nSTEP_REWARD, SLIP, GAMMA = -0.04, 0.1, 0.99\n\n\nclass GridWorld:\n    \"\"\"Moves go the intended way with probability 0.8 and slip to each side with probability 0.1.\"\"\"\n\n    def __init__(self):\n        self.rows, self.cols = len(LAYOUT), len(LAYOUT[0])\n        self.states = [(r, c) for r in range(self.rows) for c in range(self.cols) if LAYOUT[r][c] != \"#\"]\n\n    def terminal(self, s):\n        return LAYOUT[s[0]][s[1]] in \"+-\"\n\n    def move(self, s, delta):\n        r, c = s[0] + delta[0], s[1] + delta[1]\n        if 0 <= r < self.rows and 0 <= c < self.cols and LAYOUT[r][c] != \"#\":\n            return (r, c)\n        return s                    # bumping into a wall or the edge leaves the agent where it is\n\n    def transitions(self, s, action):\n        \"\"\"A list of (probability, next state, reward) for taking action in state s.\"\"\"\n        dr, dc = ACTIONS[action]\n        outcomes = [(1 - 2 * SLIP, (dr, dc)), (SLIP, (dc, dr)), (SLIP, (-dc, -dr))]   # intended, and both sides\n        result = []\n        for p, delta in outcomes:\n            s2 = self.move(s, delta)\n            cell = LAYOUT[s2[0]][s2[1]]\n            result.append((p, s2, STEP_REWARD + (1.0 if cell == \"+\" else -1.0 if cell == \"-\" else 0.0)))\n        return result\n\n\ndef q_value(env, V, s, a):\n    # TODO: the one-step lookahead: the sum over (p, s2, r) in env.transitions(s, a) of p * (r + GAMMA * V[s2]),\n    #  where V of a terminal state is always 0\n    return 0.0\n\n\ndef policy_evaluation(env, policy, theta=1e-8):\n    \"\"\"policy[s] maps each action to its probability. Sweeps until no value changes by more than theta.\"\"\"\n    V = {s: 0.0 for s in env.states}\n    sweeps = 0\n    while True:\n        delta, sweeps = 0.0, sweeps + 1\n        for s in env.states:\n            if env.terminal(s):\n                continue\n            new = sum(prob * q_value(env, V, s, a) for a, prob in policy[s].items())\n            delta, V[s] = max(delta, abs(new - V[s])), new\n        if delta < theta:\n            return V, sweeps\n\n\ndef greedy(env, V):\n    return {s: {max(ACTIONS, key=lambda a: q_value(env, V, s, a)): 1.0} for s in env.states}\n\n\ndef policy_iteration(env):\n    policy = {s: {\"up\": 1.0} for s in env.states}\n    for iteration in range(1, 100):\n        V, _ = policy_evaluation(env, policy)\n        improved = greedy(env, V)\n        if improved == policy:\n            return policy, V, iteration\n        policy = improved\n\n\ndef value_iteration(env, theta=1e-8):\n    V = {s: 0.0 for s in env.states}\n    sweeps = 0\n    while True:\n        delta, sweeps = 0.0, sweeps + 1\n        for s in env.states:\n            if env.terminal(s):\n                continue\n            # TODO: the Bellman optimality backup: the largest q_value over the four actions\n            new = V[s]\n            delta, V[s] = max(delta, abs(new - V[s])), new\n        if delta < theta:\n            return greedy(env, V), V, sweeps\n\n\ndef show(env, V, policy=None):\n    for r in range(env.rows):\n        cells = []\n        for c in range(env.cols):\n            s = (r, c)\n            if LAYOUT[r][c] == \"#\":\n                cells.append(\"  ####  \")\n            elif env.terminal(s):\n                cells.append(f\"   {LAYOUT[r][c]}    \")\n            else:\n                arrow = ARROWS[next(iter(policy[s]))] if policy else \" \"\n                cells.append(f\"{V[s]:+.3f}{arrow} \")\n        print(\"  \" + \"\".join(cells))\n\n\ndef main():\n    env = GridWorld()\n    uniform = {s: {a: 0.25 for a in ACTIONS} for s in env.states}\n    V, sweeps = policy_evaluation(env, uniform)\n    print(f\"== 1. The uniform random policy, evaluated in {sweeps} sweeps\")\n    show(env, V)\n    policy, V_pi, iterations = policy_iteration(env)\n    print(f\"== 2. Policy iteration: stable after {iterations} improvements\")\n    show(env, V_pi, policy)\n    vi_policy, V_vi, sweeps = value_iteration(env)\n    print(f\"== 3. Value iteration: converged in {sweeps} sweeps\")\n    show(env, V_vi, vi_policy)\n    same = vi_policy == policy and all(abs(V_vi[s] - V_pi[s]) < 1e-6 for s in env.states)\n    print(\"policy iteration and value iteration agree:\", same)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "A terminal state's value is always 0: the reward for entering it is already in r.",
+     "If value iteration never stops, check that you skip terminal states and that GAMMA is below 1.",
+     "greedy() breaks ties by the order of ACTIONS, so policies with equal values can differ in arrows; the values themselves are what must agree."
+    ]
+   }
+  },
+  {
+   "title": "Learning from experience: Monte Carlo and TD",
+   "summary": "Estimate values without a model, from sampled episodes with Monte Carlo methods and from single steps with temporal-difference learning.",
+   "instructor": "jae-won-parkk",
+   "lessons": [
+    {
+     "title": "Monte Carlo prediction",
+     "minutes": 12,
+     "objectives": [
+      "Estimate state values by averaging sampled returns",
+      "Distinguish first-visit and every-visit Monte Carlo",
+      "Explain Monte Carlo's bias, variance and limits"
+     ],
+     "key_points": [
+      "Monte Carlo methods estimate values from complete episodes of experience: a state's value is the average of the returns that followed visits to it. They need no model of the environment, only the ability to run episodes.",
+      "First-visit Monte Carlo averages the returns that follow the first visit to a state in each episode; every-visit Monte Carlo uses every visit. Both converge to v_π as the number of visits grows.",
+      "Monte Carlo targets are real returns, so the estimates are unbiased, but a return sums many random rewards and so has high variance. Updates must wait until the episode ends, which rules out continuing tasks and makes long episodes slow to learn from.",
+      "With a constant step size, V(S_t) ← V(S_t) + α[G_t − V(S_t)] tracks a changing policy or environment; a smaller α averages away more noise but learns more slowly."
+     ],
+     "walkthrough": {
+      "tool": "Python with NumPy",
+      "title": "Returns for first-visit and every-visit Monte Carlo",
+      "steps": [
+       {
+        "do": "Compute the discounted return after every step of one episode, backwards.",
+        "code": "states = [\"A\", \"B\", \"A\", \"C\"]\nrewards = [0.0, 1.0, 0.0, 5.0]       # rewards received after leaving each state\ngamma = 0.9\nG, returns = 0.0, []\nfor r in reversed(rewards):\n    G = r + gamma * G\n    returns.append(round(G, 4))\nreturns.reverse()\nprint(list(zip(states, returns)))",
+        "lang": "python",
+        "see": "[('A', 4.545), ('B', 5.05), ('A', 4.5), ('C', 5.0)]."
+       },
+       {
+        "do": "Collect the returns each method would average for state A.",
+        "code": "every = [g for s, g in zip(states, returns) if s == \"A\"]\nfirst = every[:1]\nprint(\"first-visit:\", first, \"every-visit:\", every)",
+        "lang": "python",
+        "see": "first-visit: [4.545] every-visit: [4.545, 4.5]: A was visited twice in this episode."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Temporal-difference learning",
+     "minutes": 12,
+     "objectives": [
+      "Apply the TD(0) update and compute the TD error",
+      "Compare TD and Monte Carlo targets",
+      "Describe n-step returns and TD(λ)"
+     ],
+     "key_points": [
+      "TD(0) updates after every step: V(S_t) ← V(S_t) + α[R_{t+1} + γV(S_{t+1}) − V(S_t)]. The bracket is the TD error δ_t. Its target uses the current estimate of the next state's value, so TD bootstraps, like dynamic programming, while learning from samples, like Monte Carlo.",
+      "A TD target depends on one random reward and one estimate, so it has much lower variance than a Monte Carlo return but is biased while the estimates are wrong. On many problems, such as the random walk in this module's lab, TD reaches a lower error for the same amount of experience.",
+      "TD learning works online, in continuing tasks and from incomplete episodes, because each update needs only one transition. For a fixed policy, tabular TD(0) converges to v_π with suitably decreasing step sizes.",
+      "n-step TD uses n real rewards and then bootstraps: G_{t:t+n} = R_{t+1} + … + γ^{n−1}R_{t+n} + γⁿV(S_{t+n}), between TD(0) at n = 1 and Monte Carlo at the episode's length. TD(λ) averages all the n-step returns with weights (1 − λ)λ^{n−1}, efficiently, using eligibility traces."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Monte Carlo against TD(0) on the random walk",
+    "tool": "Python with NumPy",
+    "minutes": 40,
+    "goal": "Estimate the values of the five-state random walk, whose true values are 1/6 to 5/6, with constant-α Monte Carlo and with TD(0), and compare how fast each one's error falls for several step sizes.",
+    "setup": [
+     "Python 3.10 or later with NumPy",
+     "The starter file random_walk.py"
+    ],
+    "steps": [
+     {
+      "do": "Read episode(): the walk starts in the middle state, C, and steps left or right at random until it leaves either end; leaving on the right pays 1, everything else 0."
+     },
+     {
+      "do": "Complete the TD(0) update in td0().",
+      "code": "V[s] += alpha * (target - V[s])",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the Monte Carlo update in monte_carlo(): every return is the final reward here.",
+      "code": "V[s] += alpha * (final - V[s])",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script.",
+      "code": "python random_walk.py",
+      "lang": "bash",
+      "see": "After 100 episodes TD(0) with α = 0.05 is at an RMS error of 0.035, while the best Monte Carlo setting is at 0.082. Larger step sizes learn faster at first, then level off higher."
+     },
+     {
+      "do": "Explain why TD(0) with α = 0.15 starts fastest but ends worse than with α = 0.05."
+     },
+     {
+      "do": "Add a run of 1,000 episodes with α = 0.01 for both methods and report their final errors."
+     },
+     {
+      "do": "Write a paragraph: where each method's target comes from, which is biased and which has higher variance, and why TD wins on this problem."
+     }
+    ],
+    "checks": [
+     {
+      "text": "TD(0) is run for three step sizes.",
+      "look_for": [
+       "TD(0), a=0.05          0.174     0.054      0.035",
+       "TD(0), a=0.15          0.092"
+      ]
+     },
+     {
+      "text": "Monte Carlo is run for three step sizes.",
+      "look_for": [
+       "Monte Carlo, a=0.02     0.194     0.110      0.082"
+      ]
+     },
+     {
+      "text": "The longer runs with a small step size are reported.",
+      "look_for": [
+       "1,000",
+       "0.01"
+      ]
+     },
+     {
+      "text": "The paragraph compares bias and variance.",
+      "look_for": [
+       "variance"
+      ]
+     }
+    ],
+    "submit": "Paste your two updates, the full output of python random_walk.py, the 1,000-episode results and your paragraph.",
+    "files": [
+     {
+      "path": "random_walk.py",
+      "content": "\"\"\"Monte Carlo against TD(0) on the five-state random walk, where the true values are known exactly.\"\"\"\n\nimport numpy as np\n\nTRUE_V = np.arange(1, 6) / 6          # states A-E; terminating on the right pays 1, on the left 0\n\n\ndef episode(rng):\n    \"\"\"Start in the middle (C); step left or right with equal probability until either end.\"\"\"\n    s, states, = 2, [2]\n    while True:\n        s += rng.choice((-1, 1))\n        if s < 0:\n            return states, 0.0\n        if s > 4:\n            return states, 1.0\n        states.append(s)\n\n\ndef td0(alpha, episodes, rng):\n    V, errors = np.full(5, 0.5), []\n    for _ in range(episodes):\n        states, final = episode(rng)\n        for i, s in enumerate(states):\n            if i + 1 < len(states):\n                target = V[states[i + 1]]              # reward 0 on the way, gamma = 1\n            else:\n                target = final                         # the last step reaches a terminal state\n            # TODO: the TD(0) update: move V[s] a fraction alpha of the way towards target\n            pass\n        errors.append(np.sqrt(np.mean((V - TRUE_V) ** 2)))\n    return np.array(errors)\n\n\ndef monte_carlo(alpha, episodes, rng):\n    V, errors = np.full(5, 0.5), []\n    for _ in range(episodes):\n        states, final = episode(rng)\n        for s in states:\n            # TODO: constant-alpha Monte Carlo: every visit's return is the final reward (gamma = 1, no other\n            #  rewards), so move V[s] a fraction alpha of the way towards it\n            pass\n        errors.append(np.sqrt(np.mean((V - TRUE_V) ** 2)))\n    return np.array(errors)\n\n\ndef main():\n    runs, episodes = 100, 100\n    print(f\"RMS error against the true values, averaged over {runs} runs\")\n    print(f\"{'method':18} {'after 10':>9} {'after 50':>9} {'after 100':>10}\")\n    for name, method, alphas in [(\"TD(0)\", td0, (0.05, 0.1, 0.15)), (\"Monte Carlo\", monte_carlo, (0.01, 0.02, 0.04))]:\n        for alpha in alphas:\n            rng = np.random.default_rng(0)\n            errors = np.mean([method(alpha, episodes, rng) for _ in range(runs)], axis=0)\n            print(f\"{name + ', a=' + str(alpha):18} {errors[9]:9.3f} {errors[49]:9.3f} {errors[99]:10.3f}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "The values start at 0.5, the right answer only for the middle state, so the error starts at about 0.236.",
+     "With gamma = 1 and no rewards before the end, a Monte Carlo return is simply the final reward."
+    ]
+   }
+  },
+  {
+   "title": "Control: SARSA and Q-learning",
+   "summary": "Turn value estimates into better behaviour, learning action values on-policy with SARSA and off-policy with Q-learning, and see where each one shines.",
+   "instructor": "jae-won-parkk",
+   "lessons": [
+    {
+     "title": "From prediction to control",
+     "minutes": 10,
+     "objectives": [
+      "Describe generalised policy iteration",
+      "Explain why control without a model learns action values and must explore",
+      "Distinguish on-policy from off-policy learning"
+     ],
+     "key_points": [
+      "Generalised policy iteration describes almost every reinforcement learning control method: keep estimating the values of the current policy, and keep improving the policy towards acting greedily on those values, without waiting for either process to finish.",
+      "Without a model, control learns action values Q(s, a), because choosing the greedy action then needs only argmax_a Q(s, a). The policy must keep exploring, typically ε-greedily, or the values of untried actions are never learned.",
+      "On-policy methods learn the value of the policy they follow, exploration included. Off-policy methods learn the value of a different target policy, usually the greedy one, from data produced by an exploratory behaviour policy, which also lets them learn from old data or from other agents.",
+      "Schedules that are greedy in the limit with infinite exploration (GLIE), such as ε decaying towards 0 while every state-action pair keeps being visited, let tabular methods converge to the optimal action values and an optimal policy."
+     ]
+    },
+    {
+     "title": "SARSA and Expected SARSA",
+     "minutes": 12,
+     "objectives": [
+      "Apply the SARSA update",
+      "Explain what an on-policy method's values include",
+      "Compare Expected SARSA with SARSA"
+     ],
+     "key_points": [
+      "SARSA updates Q(S, A) ← Q(S, A) + α[R + γQ(S′, A′) − Q(S, A)], using the action A′ the policy actually takes next; the quintuple (S, A, R, S′, A′) gives it its name. It's on-policy, so it learns the value of the ε-greedy policy it follows.",
+      "Because SARSA's values include the cost of its own exploration, it prefers actions that stay safe when an occasional random move happens: on the cliff-walking grid it learns a path away from the edge and earns more per episode while exploring than Q-learning does.",
+      "Expected SARSA replaces Q(S′, A′) with its expectation under the current policy, Σ_a π(a | S′) Q(S′, a), which removes the noise of sampling A′; it usually learns at least as well as SARSA and tolerates larger step sizes.",
+      "The step size trades speed against noise: with deterministic rewards and moves large steps work (this module's lab uses α = 0.5), while noisy environments need smaller ones. Optimistic initial action values encourage early exploration, as they do in bandits."
+     ]
+    },
+    {
+     "title": "Q-learning",
+     "minutes": 12,
+     "objectives": [
+      "Apply the Q-learning update",
+      "Explain Q-learning's behaviour on the cliff",
+      "Recognise maximisation bias and how double learning removes it"
+     ],
+     "key_points": [
+      "Q-learning updates Q(S, A) ← Q(S, A) + α[R + γ max_a Q(S′, a) − Q(S, A)]. Its target uses the best action in the next state, whatever the agent does next, so it learns q* directly while behaving ε-greedily: it's off-policy.",
+      "Learning the greedy policy's values means Q-learning ignores the risk its own exploration creates: on the cliff it learns the shortest path, along the edge, which is optimal without exploration, but it falls off now and then while exploring, so its return during training is lower than SARSA's.",
+      "The maximum of noisy estimates is biased upwards (maximisation bias), so Q-learning overestimates uncertain values. Double Q-learning keeps two tables, choosing the next action with one and valuing it with the other, which removes the bias.",
+      "Tabular methods need a separate value for every state-action pair and learn nothing about states they haven't visited; large or continuous state spaces need function approximation, which brings instabilities of its own."
+     ],
+     "walkthrough": {
+      "tool": "Python with NumPy",
+      "title": "Maximisation bias, and the double estimator",
+      "steps": [
+       {
+        "do": "Ten actions are all truly worth 0, and each has six noisy reward samples. Take the maximum of the estimated values, averaged over 10,000 trials.",
+        "code": "import numpy as np\nrng = np.random.default_rng(0)\nsamples = rng.normal(0.0, 1.0, size=(10_000, 10, 6))\nprint(round(samples.mean(axis=2).max(axis=1).mean(), 3))",
+        "lang": "python",
+        "see": "0.629, although the true maximum is 0: the max of noisy estimates is biased upwards."
+       },
+       {
+        "do": "Split the samples in two: choose the action with one half, value it with the other.",
+        "code": "qa, qb = samples[:, :, :3].mean(axis=2), samples[:, :, 3:].mean(axis=2)\nchosen = qa.argmax(axis=1)\nprint(round(qb[np.arange(10_000), chosen].mean(), 3))",
+        "lang": "python",
+        "see": "-0.005: close to 0. Double Q-learning applies this idea with two Q-tables."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "SARSA and Q-learning on the cliff",
+    "tool": "Python with NumPy",
+    "minutes": 45,
+    "goal": "Implement ε-greedy selection and the SARSA and Q-learning updates, train both on the cliff-walking grid, and explain why the on-policy method earns more while exploring and the off-policy one learns the shorter path.",
+    "setup": [
+     "Python 3.10 or later with NumPy",
+     "The starter file cliff.py"
+    ],
+    "steps": [
+     {
+      "do": "Read step(): a 4 x 12 grid, -1 per move, and -100 for stepping into the cliff along the bottom row, which also sends the agent back to the start."
+     },
+     {
+      "do": "Complete choose(), ε-greedy with random tie-breaking.",
+      "code": "if rng.random() < epsilon:\n    return int(rng.integers(4))\nq = Q[s]\nreturn int(rng.choice(np.flatnonzero(q == q.max())))",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the update in run(): the two methods differ only in their target.",
+      "code": "future = 0.0 if s2 == GOAL else (Q[s2][a2] if method == \"sarsa\" else Q[s2].max())\nQ[s][a] += alpha * (r + future - Q[s][a])",
+      "lang": "python"
+     },
+     {
+      "do": "Run the script (about 20 seconds).",
+      "code": "python cliff.py",
+      "lang": "bash",
+      "see": "Over episodes 401-500 SARSA averages -26.3 per episode and Q-learning -49.3. SARSA's greedy path climbs to the top row and goes round; Q-learning's runs along the edge of the cliff."
+     },
+     {
+      "do": "Set epsilon to 0 for evaluation: run each trained agent's greedy policy once and compare the returns.",
+      "see": "Without exploration Q-learning's path is the shorter: 13 steps, a return of -13, against 17 steps for SARSA's path in run 0."
+     },
+     {
+      "do": "Add Expected SARSA (the target uses the ε-greedy average of Q[s2] instead of Q[s2][a2]) and compare its returns with SARSA's."
+     },
+     {
+      "do": "Write a paragraph: what each method's values describe, and which you'd use for a robot that keeps exploring after deployment."
+     }
+    ],
+    "checks": [
+     {
+      "text": "SARSA earns more per episode than Q-learning while both explore.",
+      "look_for": [
+       "sarsa       episodes 1-50:  -110.1   episodes 401-500:  -26.3",
+       "q-learning  episodes 1-50:  -114.1   episodes 401-500:  -49.3"
+      ]
+     },
+     {
+      "text": "Q-learning's greedy path runs along the cliff edge.",
+      "look_for": [
+       "oooooooooooo"
+      ]
+     },
+     {
+      "text": "Expected SARSA is added and compared.",
+      "look_for": [
+       "expected"
+      ]
+     },
+     {
+      "text": "The paragraph explains on-policy and off-policy values.",
+      "look_for": [
+       "off-policy"
+      ]
+     }
+    ],
+    "submit": "Paste choose() and your update, the full output of python cliff.py, the greedy returns, your Expected SARSA results and your paragraph.",
+    "files": [
+     {
+      "path": "cliff.py",
+      "content": "\"\"\"SARSA against Q-learning on the cliff-walking grid: 4 x 12, start bottom left, goal bottom right, cliff between.\"\"\"\n\nimport numpy as np\n\nROWS, COLS = 4, 12\nSTART, GOAL = (3, 0), (3, 11)\nMOVES = [(-1, 0), (0, 1), (1, 0), (0, -1)]          # up, right, down, left\n\n\ndef step(s, a):\n    r, c = min(max(s[0] + MOVES[a][0], 0), ROWS - 1), min(max(s[1] + MOVES[a][1], 0), COLS - 1)\n    if r == 3 and 0 < c < 11:                        # fell off the cliff: -100, back to the start\n        return START, -100.0\n    return (r, c), -1.0\n\n\ndef choose(Q, s, epsilon, rng):\n    # TODO: epsilon-greedy: a random action with probability epsilon, otherwise the best action, breaking ties at\n    #  random (rng.choice(np.flatnonzero(q == q.max())))\n    return int(rng.integers(4))\n\n\ndef run(method, episodes=500, alpha=0.5, epsilon=0.1, seed=0):\n    rng = np.random.default_rng(seed)\n    Q = np.zeros((ROWS, COLS, 4))\n    returns = []\n    for _ in range(episodes):\n        s, total = START, 0.0\n        a = choose(Q, s, epsilon, rng)\n        while s != GOAL:\n            s2, r = step(s, a)\n            total += r\n            a2 = choose(Q, s2, epsilon, rng)\n            # TODO: the target, with gamma = 1 and Q of the goal always 0. SARSA uses the action it will take next,\n            #  Q[s2][a2]; Q-learning uses the best action, Q[s2].max(). Then update Q[s][a] towards the target\n            pass\n            s, a = s2, a2\n        returns.append(total)\n    return Q, np.array(returns)\n\n\ndef greedy_path(Q):\n    s, path = START, [START]\n    while s != GOAL and len(path) < 50:\n        s, _ = step(s, int(Q[s].argmax()))\n        path.append(s)\n    grid = [[\".\" for _ in range(COLS)] for _ in range(ROWS)]\n    for c in range(1, 11):\n        grid[3][c] = \"C\"\n    for r, c in path:\n        grid[r][c] = \"o\"\n    return [\"\".join(row) for row in grid]\n\n\ndef main():\n    print(\"Average return per episode over 50 runs (epsilon = 0.1, alpha = 0.5)\")\n    for method in (\"sarsa\", \"q-learning\"):\n        results = [run(method, seed=seed) for seed in range(50)]\n        returns = np.mean([r for _, r in results], axis=0)\n        print(f\"{method:11} episodes 1-50: {returns[:50].mean():7.1f}   episodes 401-500: {returns[400:].mean():6.1f}\")\n        print(\"   greedy path after training (run 0):\")\n        for line in greedy_path(results[0][0]):\n            print(\"   \" + line)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "SARSA must choose a2 before updating and then actually take it; the starter's loop already does this.",
+     "Ties are common at the start, when every Q is 0; breaking them always towards action 0 would bias the agent upwards.",
+     "Expected SARSA's target under ε-greedy: (1 - epsilon) * Q[s2].max() + epsilon * Q[s2].mean()."
+    ]
+   }
+  },
+  {
+   "title": "Deep reinforcement learning",
+   "summary": "Scale up with neural networks: deep Q-networks and the tricks that keep them stable, policy gradients with REINFORCE, and actor-critic methods, using PyTorch and Gymnasium.",
+   "instructor": "jae-won-parkk",
+   "lessons": [
+    {
+     "title": "Function approximation and deep Q-networks",
+     "minutes": 12,
+     "objectives": [
+      "Explain semi-gradient Q-learning with a neural network",
+      "Describe the deadly triad",
+      "Explain experience replay, target networks and Double DQN"
+     ],
+     "key_points": [
+      "With function approximation, a model q(s, a; w) such as a neural network generalises across states. Semi-gradient Q-learning minimises (r + γ max_a′ q(s′, a′; w) − q(s, a; w))², treating the target as a constant, so gradients flow only through the prediction.",
+      "Function approximation, bootstrapping and off-policy learning together (the deadly triad) can make values diverge. Deep Q-networks (DQN, Mnih and colleagues, 2015) learned to play Atari games from screen pixels by adding two stabilisers to Q-learning: experience replay and a target network.",
+      "Experience replay stores transitions (s, a, r, s′, done) in a large buffer and trains on random minibatches from it, breaking up correlated consecutive steps and reusing each one many times. The target network is a copy of q that's updated only every so often, so the targets don't chase the predictions.",
+      "The details matter: a Huber loss limits the effect of large TD errors, ε decays from 1 to a small value, the target is r alone when s′ is terminal (not when a time limit merely truncated the episode), and Double DQN chooses the next action with the online network and values it with the target network."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch and Gymnasium",
+      "title": "The pieces of a DQN update",
+      "steps": [
+       {
+        "do": "Fill a replay buffer with random CartPole-shaped transitions and sample a minibatch.",
+        "code": "import random\nfrom collections import deque\nimport torch\nfrom torch import nn\nimport torch.nn.functional as F\ntorch.manual_seed(0)\nrandom.seed(0)\nbuffer = deque(maxlen=10_000)\nfor _ in range(500):\n    buffer.append((torch.randn(4), random.randrange(2), 1.0, torch.randn(4), random.random() < 0.05))\nbatch = random.sample(buffer, 32)\ns, a, r, s2, done = zip(*batch)\ns, s2 = torch.stack(s), torch.stack(s2)\na, r, done = torch.tensor(a), torch.tensor(r), torch.tensor(done, dtype=torch.float32)\nprint(len(buffer), tuple(s.shape), tuple(a.shape))",
+        "lang": "python",
+        "see": "500 (32, 4) (32,): random minibatches break up runs of consecutive, correlated steps."
+       },
+       {
+        "do": "Make the online network and a target network that starts as an exact copy.",
+        "code": "online = nn.Sequential(nn.Linear(4, 64), nn.ReLU(), nn.Linear(64, 2))\ntarget = nn.Sequential(nn.Linear(4, 64), nn.ReLU(), nn.Linear(64, 2))\ntarget.load_state_dict(online.state_dict())\ntarget.requires_grad_(False)\nprint(torch.equal(online(s), target(s)))",
+        "lang": "python",
+        "see": "True: the target network is only synced every so often, so the targets stay put between syncs."
+       },
+       {
+        "do": "Compute Double DQN targets without gradients (bootstrapping only where the episode didn't terminate) and the Huber loss.",
+        "code": "gamma = 0.99\nwith torch.no_grad():\n    next_a = online(s2).argmax(dim=1, keepdim=True)          # choose with the online network\n    next_q = target(s2).gather(1, next_a).squeeze(1)         # evaluate with the target network\n    y = r + gamma * (1 - done) * next_q\nq = online(s).gather(1, a.unsqueeze(1)).squeeze(1)\nloss = F.smooth_l1_loss(q, y)\nloss.backward()\nprint(round(loss.item(), 4), online[0].weight.grad is not None, target[0].weight.grad is None)",
+        "lang": "python",
+        "see": "0.6761 True True: gradients reach only the online network."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Policy gradients and REINFORCE",
+     "minutes": 12,
+     "objectives": [
+      "Represent a stochastic policy with a network and torch.distributions",
+      "Derive the REINFORCE update from the policy gradient theorem",
+      "Reduce variance with a baseline"
+     ],
+     "key_points": [
+      "Policy-gradient methods learn a parametrised policy π(a | s; θ) directly, which suits stochastic policies and continuous actions. A network outputs logits, and torch.distributions.Categorical(logits=...) samples actions and returns their log-probabilities.",
+      "The policy gradient theorem makes the gradient of the expected return something an agent can sample: ∇J(θ) ∝ E[G_t ∇log π(A_t | S_t; θ)]. REINFORCE runs an episode, computes each step's return-to-go G_t and moves θ that way; in PyTorch, by minimising −Σ_t G_t log π(A_t | S_t).",
+      "REINFORCE's gradient is unbiased but very noisy. Subtracting a baseline b(S_t) that doesn't depend on the action, such as a learned state value or the mean return, leaves its expectation unchanged and can cut its variance a lot; normalising the returns within each episode is a common simple version.",
+      "Policy-gradient training is unstable: one large step can wreck a good policy, as the dips in this module's lab show. Smaller learning rates, more episodes per update, gradient clipping and an entropy bonus that stops the policy becoming deterministic too early all help."
+     ]
+    },
+    {
+     "title": "Actor-critic methods and reinforcement learning in practice",
+     "minutes": 12,
+     "objectives": [
+      "Describe actor-critic methods and PPO",
+      "Use the Gymnasium environment interface correctly",
+      "Evaluate agents fairly"
+     ],
+     "key_points": [
+      "Actor-critic methods learn a policy (the actor) and a value function (the critic) together, using the critic's TD error or an advantage estimate, A(s, a) = q(s, a) − v(s), in place of the full return. They can update every step and have lower variance, at the cost of some bias; A2C runs several environments in parallel.",
+      "PPO (proximal policy optimisation) limits how far each update moves the policy by clipping the probability ratio π_new(a | s) / π_old(a | s) to the range [1 − ε, 1 + ε] in its objective. It's a common default for policy optimisation, including fine-tuning language models from human feedback.",
+      "Gymnasium is the standard Python interface to environments: env.reset(seed=...) returns (observation, info), and env.step(action) returns (observation, reward, terminated, truncated, info). terminated means the task ended, so bootstrap from 0; truncated means a time limit stopped it, so bootstrap as usual.",
+      "Evaluate agents honestly: results vary a lot between random seeds, so report the mean and spread over several seeds and many evaluation episodes, evaluate with exploration switched off, and compare with simple baselines and, where it can be computed, the optimum."
+     ],
+     "walkthrough": {
+      "tool": "Python with PyTorch and Gymnasium",
+      "title": "The Gymnasium interface",
+      "steps": [
+       {
+        "do": "Create CartPole, look at its spaces and reset it with a seed.",
+        "code": "import gymnasium as gym\nenv = gym.make(\"CartPole-v1\")\nprint(env.observation_space.shape, env.action_space, env.spec.max_episode_steps, env.spec.reward_threshold)\nobs, info = env.reset(seed=0)\nprint(obs.round(3), info)",
+        "lang": "python",
+        "see": "(4,) Discrete(2) 500 475.0 | [ 0.014 -0.023 -0.046 -0.048] {}: four numbers (cart position and velocity, pole angle and angular velocity) and two actions, push left or right."
+       },
+       {
+        "do": "Run a random policy for one episode and see how it ended.",
+        "code": "total, steps = 0.0, 0\nwhile True:\n    obs, reward, terminated, truncated, info = env.step(env.action_space.sample())\n    total, steps = total + reward, steps + 1\n    if terminated or truncated:\n        break\nprint(steps, total, terminated, truncated)",
+        "lang": "python",
+        "see": "A short episode: the pole falls (terminated is True) long before the 500-step time limit (truncated)."
+       },
+       {
+        "do": "Read a toy environment's model: FrozenLake exposes its transition table for dynamic programming.",
+        "code": "lake = gym.make(\"FrozenLake-v1\", is_slippery=True)\nprint(lake.unwrapped.P[0][2])",
+        "lang": "python",
+        "see": "[(0.33333333333333337, 4, 0, False), (0.3333333333333333, 1, 0, False), (0.33333333333333337, 0, 0, False)]: (probability, next state, reward, terminal) for moving right from the start: on the ice the agent goes where it meant to only a third of the time."
+       }
+      ]
+     }
+    }
+   ],
+   "lab": {
+    "title": "REINFORCE on CartPole",
+    "tool": "Python with PyTorch and Gymnasium",
+    "minutes": 60,
+    "goal": "Train a policy network with REINFORCE to balance Gymnasium's CartPole, with and without normalising the returns, and read its learning curve honestly.",
+    "setup": [
+     "Python 3.10 or later with PyTorch and Gymnasium: pip install torch gymnasium (CartPole needs no extra packages)",
+     "The starter file reinforce.py"
+    ],
+    "steps": [
+     {
+      "do": "Read run_episode(): the network outputs two logits, Categorical samples an action and gives its log-probability, and the episode ends when the pole falls (terminated) or at 500 steps (truncated)."
+     },
+     {
+      "do": "Complete returns_to_go().",
+      "code": "G, out = 0.0, []\nfor r in reversed(rewards):\n    G = r + gamma * G\n    out.append(G)\nreturn torch.tensor(out[::-1], dtype=torch.float32)",
+      "lang": "python"
+     },
+     {
+      "do": "Complete the loss and the update in train().",
+      "code": "loss = -(torch.stack(log_probs) * G).sum()\noptimizer.zero_grad()\nloss.backward()\noptimizer.step()",
+      "lang": "python"
+     },
+     {
+      "do": "Run with normalised returns (two or three minutes).",
+      "code": "python reinforce.py",
+      "lang": "bash",
+      "see": "On the course's machine the average return over 100 episodes rose from 90.9 to 478.6 by episode 400, dipped to 185.0 on the way, and wobbled between 424.5 and 493.9 afterwards; the greedy policy balanced the pole for all 500 steps in 20 new episodes."
+     },
+     {
+      "do": "Run without normalising.",
+      "code": "python reinforce.py --no-baseline",
+      "lang": "bash",
+      "see": "It also learns, but less steadily: on the course's machine it collapsed from 470.1 to 195.3 between episodes 400 and 500 before recovering."
+     },
+     {
+      "do": "Run both versions with seeds 1 and 2 (change seed=0 in main()) and tabulate the episode at which each run's 100-episode average first passes 475, if it does."
+     },
+     {
+      "do": "Write a paragraph: why normalising the returns can steady learning without biasing the gradient, why the curves dip, and what you'd change to make training more reliable."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The returns-to-go and the REINFORCE update are implemented.",
+      "look_for": [
+       "episode  400  mean return over the last 100 episodes  478.6"
+      ]
+     },
+     {
+      "text": "The trained greedy policy balances the pole for 500 steps.",
+      "look_for": [
+       "mean return 500.0 (min 500, max 500)"
+      ]
+     },
+     {
+      "text": "The run without normalisation is compared.",
+      "look_for": [
+       "episode  500  mean return over the last 100 episodes  195.3"
+      ]
+     },
+     {
+      "text": "Several seeds are compared in a table.",
+      "look_for": [
+       "seed"
+      ]
+     },
+     {
+      "text": "The paragraph explains baselines and instability.",
+      "look_for": [
+       "baseline"
+      ]
+     }
+    ],
+    "submit": "Paste returns_to_go() and your update, the output of both runs, your table over seeds and your paragraph.",
+    "files": [
+     {
+      "path": "reinforce.py",
+      "content": "\"\"\"REINFORCE: learn to balance Gymnasium's CartPole with a policy network in PyTorch.\n\npython reinforce.py                 # with returns normalised in each episode (a simple baseline)\npython reinforce.py --no-baseline   # with raw returns\n\"\"\"\n\nimport argparse\n\nimport gymnasium as gym\nimport numpy as np\nimport torch\nfrom torch import nn\nfrom torch.distributions import Categorical\n\n\ndef returns_to_go(rewards, gamma):\n    \"\"\"G_t = r_t + gamma * G_(t+1), for every step of one episode.\"\"\"\n    # TODO: walk the rewards backwards accumulating G = r + gamma * G, then return the values in forward order\n    #  as a float32 tensor\n    return torch.zeros(len(rewards))\n\n\ndef run_episode(env, policy, greedy=False):\n    obs, _ = env.reset()\n    log_probs, rewards, done = [], [], False\n    while not done:\n        dist = Categorical(logits=policy(torch.as_tensor(obs, dtype=torch.float32)))\n        action = dist.probs.argmax() if greedy else dist.sample()\n        obs, reward, terminated, truncated, _ = env.step(int(action))\n        log_probs.append(dist.log_prob(action))\n        rewards.append(float(reward))\n        done = terminated or truncated           # terminated: the pole fell; truncated: 500 steps reached\n    return log_probs, rewards\n\n\ndef train(episodes, gamma, lr, baseline, seed):\n    env = gym.make(\"CartPole-v1\")\n    env.reset(seed=seed)\n    torch.manual_seed(seed)\n    policy = nn.Sequential(nn.Linear(4, 64), nn.ReLU(), nn.Linear(64, 2))      # logits for left and right\n    optimizer = torch.optim.Adam(policy.parameters(), lr=lr)\n    lengths = []\n    for episode in range(1, episodes + 1):\n        log_probs, rewards = run_episode(env, policy)\n        G = returns_to_go(rewards, gamma)\n        if baseline:\n            G = (G - G.mean()) / (G.std() + 1e-8)\n        # TODO: the REINFORCE loss is minus the sum over steps of log_prob * G; minimise it with the optimiser\n        pass\n        lengths.append(len(rewards))\n        if episode % 100 == 0:\n            print(f\"episode {episode:4d}  mean return over the last 100 episodes {np.mean(lengths[-100:]):6.1f}\")\n    return policy\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--episodes\", type=int, default=800)\n    parser.add_argument(\"--no-baseline\", action=\"store_true\")\n    args = parser.parse_args()\n    policy = train(args.episodes, gamma=0.99, lr=0.01, baseline=not args.no_baseline, seed=0)\n    env = gym.make(\"CartPole-v1\")\n    env.reset(seed=1000)\n    with torch.no_grad():\n        scores = [sum(run_episode(env, policy, greedy=True)[1]) for _ in range(20)]\n    print(f\"greedy policy over 20 new episodes: mean return {np.mean(scores):.1f} (min {min(scores):.0f}, \"\n          f\"max {max(scores):.0f}); CartPole-v1 counts as solved at 475\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "The loss is negative because optimisers minimise: minimising -log_prob * G raises the probability of actions followed by high returns.",
+     "torch.stack(log_probs) keeps the graph from every step; converting them to floats would cut it.",
+     "Results differ between seeds and machines; that's the point of the seed table."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "The reinforcement learning problem, bandits and exploration; compare strategies on the 10-armed testbed.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "MDPs, Bellman equations, and policy and value iteration; solve the slippery grid world.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Monte Carlo and temporal-difference prediction; compare them on the random walk.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "SARSA and Q-learning; train both on the cliff and explain the difference.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Deep Q-networks, policy gradients and actor-critic methods; train REINFORCE on CartPole.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Solve, learn and compare policies for the stock-control capstone, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Stock control: from dynamic programming to learned agents",
+  "minutes": 480,
+  "brief": "inventory.py models a small shop's stock: each evening the agent orders 0 to 10 units, Poisson demand with a mean of 3 arrives the next day, and the day's profit counts sales, ordering costs (including a fixed cost for any order), holding costs and unmet demand. Episodes last 100 days. Because transition_model() gives the exact dynamics, dynamic programming can find the optimal policy, and every learned agent can be measured against it. Solve the problem with policy or value iteration (γ = 0.99), learn it from simulated experience with Q-learning and SARSA, then train an agent with function approximation in PyTorch, a DQN or REINFORCE, and compare them all with evaluate(), which runs 200 fixed episodes. For calibration, on the course's machine never ordering lost 2.68 a day, ordering 3 every day lost 2.08, the rule 'below 4 in stock, order up to 8' earned 3.86, and the optimal policy earned 4.76. Finally, test each policy when mean demand rises to 4, and explain what a shop owner should take from your results.",
+  "deliverables": [
+   "dp.py: policy or value iteration on transition_model(), printing the optimal order for each stock level and its evaluated profit",
+   "tabular.py: Q-learning and SARSA with an ε schedule, and learning curves of evaluated profit against episodes, with the gap to the optimum",
+   "deep.py: a DQN (replay buffer, target network) or a REINFORCE agent in PyTorch, evaluated the same way",
+   "A results table: mean daily profit with standard errors for the three simple policies, the optimum and each learned agent, plus the episodes each agent needed to come within 2% of the optimum",
+   "A demand-shift test at a mean of 4, with the optimum recomputed for it, and an explanation of how each policy coped",
+   "A report of about a page: which approach you'd use for a real shop and why, and what the reward leaves out"
+  ],
+  "rubric": [
+   {
+    "name": "Dynamic programming",
+    "points": 15,
+    "description": "A correct policy or value iteration, a converged optimal policy and its profit, and an explanation of its shape."
+   },
+   {
+    "name": "Tabular learning",
+    "points": 20,
+    "description": "Correct Q-learning and SARSA with sensible exploration and step sizes, learning curves against the optimum, and a comparison of the two."
+   },
+   {
+    "name": "Deep agent",
+    "points": 20,
+    "description": "A working DQN or REINFORCE implementation with a suitable state encoding, evaluated without exploration."
+   },
+   {
+    "name": "Evaluation",
+    "points": 20,
+    "description": "Every policy evaluated on the same fixed episodes, with standard errors and several training seeds for the learned agents."
+   },
+   {
+    "name": "Shift test and analysis",
+    "points": 15,
+    "description": "The demand shift is run for every policy and the differences are explained, including which policies would need retraining."
+   },
+   {
+    "name": "Report",
+    "points": 10,
+    "description": "A clear, honest recommendation that says what the model and the reward leave out."
+   }
+  ],
+  "submit": "Paste dp.py, tabular.py and deep.py, their console output, your results table, the demand-shift results and your report.",
+  "files": [
+   {
+    "path": "inventory.py",
+    "content": "\"\"\"The capstone's environment: each evening, decide how many units to order for the next day.\n\nState: units in stock at the start of the day, 0 to 20. Action: units to order, 0 to 10, delivered before the shop\nopens (stock can't go above 20; anything beyond that is wasted). Each day's demand is Poisson with mean 3. The day's\nprofit is 5 per unit sold, minus 2 per unit ordered, minus 8 for placing any order at all, minus 0.3 per unit left in\nstock overnight, minus 1 per unit of demand that couldn't be met. An episode is 100 days, starting with 5 in stock.\n\nInventoryEnv follows Gymnasium's API (reset returns (state, info); step returns (state, reward, terminated,\ntruncated, info)), and transition_model() gives the exact probabilities for dynamic programming.\n\"\"\"\n\nimport math\n\nimport numpy as np\n\nMAX_STOCK, MAX_ORDER, MEAN_DEMAND, DAYS = 20, 10, 3.0, 100\nPRICE, UNIT_COST, ORDER_COST, HOLDING, SHORTAGE = 5.0, 2.0, 8.0, 0.3, 1.0\nN_STATES, N_ACTIONS = MAX_STOCK + 1, MAX_ORDER + 1\n\n\ndef day(stock, order, demand):\n    \"\"\"The next morning's stock and the day's profit.\"\"\"\n    available = min(stock + order, MAX_STOCK)\n    sold = min(available, demand)\n    left = available - sold\n    profit = (PRICE * sold - UNIT_COST * order - (ORDER_COST if order > 0 else 0.0) - HOLDING * left\n              - SHORTAGE * (demand - sold))\n    return left, profit\n\n\nclass InventoryEnv:\n    def __init__(self, days=DAYS, start_stock=5):\n        self.days, self.start_stock = days, start_stock\n        self.rng = np.random.default_rng()\n\n    def reset(self, seed=None):\n        if seed is not None:\n            self.rng = np.random.default_rng(seed)\n        self.stock, self.t = self.start_stock, 0\n        return self.stock, {}\n\n    def step(self, action):\n        demand = int(self.rng.poisson(MEAN_DEMAND))\n        self.stock, profit = day(self.stock, int(action), demand)\n        self.t += 1\n        return self.stock, profit, False, self.t >= self.days, {\"demand\": demand}\n\n\ndef transition_model(max_demand=30):\n    \"\"\"P[s][a]: a list of (probability, next_state, reward), one entry per possible demand.\"\"\"\n    probs = np.array([math.exp(-MEAN_DEMAND) * MEAN_DEMAND ** d / math.factorial(d) for d in range(max_demand + 1)])\n    probs /= probs.sum()\n    return [[[(float(p), *day(s, a, d)) for d, p in enumerate(probs)] for a in range(N_ACTIONS)]\n            for s in range(N_STATES)]\n\n\ndef evaluate(policy, episodes=200, seed=1000):\n    \"\"\"Mean profit per day of a policy (a function from stock to order) over fixed simulated episodes.\"\"\"\n    env, totals = InventoryEnv(), []\n    for e in range(episodes):\n        s, _ = env.reset(seed=seed + e)\n        total, done = 0.0, False\n        while not done:\n            s, r, terminated, truncated, _ = env.step(policy(s))\n            total += r\n            done = terminated or truncated\n        totals.append(total / env.days)\n    return float(np.mean(totals)), float(np.std(totals) / np.sqrt(episodes))\n\n\nif __name__ == \"__main__\":\n    for name, policy in [(\"never order\", lambda s: 0),\n                         (\"order 3 every day\", lambda s: 3),\n                         (\"below 4 in stock, order up to 8\", lambda s: 8 - s if s < 4 else 0)]:\n        mean, se = evaluate(policy)\n        print(f\"{name:32} mean profit per day {mean:6.2f} (standard error {se:.2f})\")\n"
+   }
+  ]
+ }
+}

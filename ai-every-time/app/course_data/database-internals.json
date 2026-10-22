@@ -1,0 +1,1293 @@
+{
+  "slug": "database-internals",
+  "title": "Database Internals: Indexes, Transactions and Query Plans",
+  "subtitle": "Look inside a database: how pages, B-trees and LSM trees store data, how the planner uses indexes, and how MVCC, locks and the write-ahead log keep transactions correct.",
+  "category": "Computer Science",
+  "kind": "course",
+  "level": "advanced",
+  "instructors": [
+    "ngo-thi-huunge",
+    "konstantini-papadopoulous"
+  ],
+  "skills": [
+    "Storage engines",
+    "B-trees and LSM trees",
+    "Index design",
+    "Query planning",
+    "EXPLAIN ANALYZE",
+    "Transaction isolation",
+    "MVCC",
+    "Locking and deadlocks",
+    "Write-ahead logging",
+    "Crash recovery"
+  ],
+  "tools": [
+    "SQLite",
+    "PostgreSQL",
+    "psql",
+    "Python",
+    "pytest",
+    "Docker"
+  ],
+  "outcomes": [
+    "Explain how pages, slotted records, heap files and buffer pools store and cache data",
+    "Compare B+trees and LSM trees, and build an LSM tree with Bloom filters and compaction",
+    "Design composite, covering, partial and expression indexes for real queries",
+    "Read EXPLAIN and EXPLAIN ANALYZE plans in SQLite and PostgreSQL, and fix slow queries",
+    "Predict the anomalies each isolation level allows, and explain MVCC, locks and deadlocks",
+    "Explain write-ahead logging and crash recovery, and build a log that survives torn writes"
+  ],
+  "prerequisites": "SQL for Data Analysis with DataGrip, or confident SQL (joins, GROUP BY, subqueries), and confident Python; System Design Fundamentals: Scale, Caching and Load Balancing helps. Install Python 3.10 or newer with pytest; the SQLite labs use Python's own sqlite3 (SQLite 3.36 or newer for the plan wording shown). For the PostgreSQL walkthroughs, install Docker or PostgreSQL 16.",
+  "description": "A database is a carefully engineered program, and knowing how it works is what lets you design schemas and indexes that stay fast, read a query plan with confidence, and choose the isolation level your code really needs. This advanced course opens one up. You'll see how data is laid out in pages and slotted records and cached in the buffer pool, and how B+trees and log-structured merge trees trade read speed against write speed. You'll design composite, covering, partial and expression indexes, learn how a cost-based planner chooses between scans and joins, and read EXPLAIN output in SQLite and PostgreSQL. Then you'll study transactions: the anomalies weak isolation allows, how real databases implement isolation levels, MVCC, locks and deadlocks, and the write-ahead log that makes commits durable and recovery possible.\n\nThe labs run on your laptop with Python and SQLite: you'll parse an SQLite file's pages byte by byte, build an LSM tree with Bloom filters and compaction, fix slow queries by reading their plans, simulate MVCC to watch snapshot isolation allow write skew, and build a write-ahead log that survives torn writes. Walkthroughs in psql show the same ideas in PostgreSQL: ctids and pages, EXPLAIN (ANALYZE, BUFFERS), isolation levels in two sessions, row locks and a deadlock. The capstone has you diagnose and tune a slow help-desk database and fix a race in its code. The course goes deeper than SQL for Data Analysis with DataGrip, which teaches querying, and pairs with Distributed Systems: Replication, Consensus and Consistency, which covers what happens across many database nodes.",
+  "aligned_with": "",
+  "modules": [
+    {
+      "title": "Storage: pages, records and files",
+      "summary": "See how a database lays data out on disk: fixed-size pages, slotted pages that hold records, heap files and clustered tables, and the buffer pool that caches pages in memory. Then open an SQLite file and read its pages yourself.",
+      "instructor": "ngo-thi-huunge",
+      "lessons": [
+        {
+          "title": "Pages and the buffer pool",
+          "minutes": 12,
+          "objectives": [
+            "Explain why databases read and write whole pages",
+            "Describe what a buffer pool does and how it chooses pages to evict",
+            "Relate page reads to the cost of a query"
+          ],
+          "key_points": [
+            "Databases store tables and indexes in fixed-size pages and always read and write whole pages: 8 KB by default in PostgreSQL, 16 KB in MySQL's InnoDB and 4,096 bytes by default in SQLite. The page is the unit of I/O, of caching and often of locking.",
+            "The buffer pool (PostgreSQL's shared buffers, InnoDB's buffer pool, SQLite's page cache) keeps recently used pages in memory. A query whose pages are there does no disk I/O and one that misses must read them, which is why the same query can be fast or slow depending on what's cached.",
+            "A page changed in memory is dirty; a background writer or a checkpoint writes it back later, not at commit. Durability at commit comes from the write-ahead log instead.",
+            "Eviction can't be plain LRU, or one large scan would flush every useful page: PostgreSQL uses a clock-sweep with usage counts and small ring buffers for big scans, and InnoDB splits its LRU list into young and old parts.",
+            "Sequential reads cost far less than random reads, especially on spinning disks, so planners estimate cost in page reads and weigh random reads more heavily: PostgreSQL's defaults are seq_page_cost = 1 and random_page_cost = 4."
+          ]
+        },
+        {
+          "title": "Slotted pages, heap files and clustered tables",
+          "minutes": 13,
+          "objectives": [
+            "Describe the slotted page layout",
+            "Compare heap-organised tables with tables clustered on a key",
+            "Explain how large values and updated rows are stored"
+          ],
+          "key_points": [
+            "Most databases use slotted pages: a header, an array of line pointers (slots) growing from the start, and records growing from the end, with the free space between. A record is addressed by (page, slot), so it can move within its page without its address changing.",
+            "PostgreSQL stores each table as a heap: records in no particular order, each addressed by a ctid such as (0,3), meaning page 0, slot 3. Every index, including the primary key's, is a separate structure that points at ctids.",
+            "InnoDB and SQLite cluster tables on a key: InnoDB keeps rows in the primary key's B+tree, and an ordinary SQLite table is a B+tree keyed by its rowid. Their secondary indexes store that key rather than a physical address, so a lookup through one needs a second search.",
+            "Values too big for a page go elsewhere: PostgreSQL moves large values to a TOAST table, compressed and split into chunks, and SQLite spills them onto overflow pages linked from the record.",
+            "A PostgreSQL UPDATE writes a new row version and leaves the old one for VACUUM. A fill factor below 100 leaves room on each page, so the new version can often stay on the same page; if no indexed column changed, the indexes then need no update (a heap-only tuple, or HOT, update).",
+            "Deleting rows frees space inside pages but rarely shrinks the file: PostgreSQL's VACUUM makes the space reusable and VACUUM FULL rewrites the table; SQLite moves wholly empty pages to a freelist, and its VACUUM rebuilds the file."
+          ],
+          "walkthrough": {
+            "tool": "psql",
+            "title": "See pages, ctids and dead row versions in PostgreSQL",
+            "steps": [
+              {
+                "do": "Start PostgreSQL 16 in Docker and open psql (a local PostgreSQL install works too).",
+                "code": "docker run --name pg -e POSTGRES_PASSWORD=secret -p 5432:5432 -d postgres:16\ndocker exec -it pg psql -U postgres",
+                "lang": "bash",
+                "see": "The postgres=# prompt."
+              },
+              {
+                "do": "Check the page size.",
+                "code": "SHOW block_size;",
+                "lang": "sql",
+                "see": "8192"
+              },
+              {
+                "do": "Create a table and add 1,000 rows.",
+                "code": "CREATE TABLE people (id int PRIMARY KEY, name text NOT NULL);\nINSERT INTO people SELECT g, 'person-' || g FROM generate_series(1, 1000) AS g;",
+                "lang": "sql",
+                "see": "INSERT 0 1000"
+              },
+              {
+                "do": "Ask where some rows live. A ctid is (page, slot).",
+                "code": "SELECT ctid, id, name FROM people WHERE id IN (1, 2, 500, 1000);",
+                "lang": "sql",
+                "see": "(0,1) and (0,2) for the first rows, (2,130) for row 500 and (5,75) for row 1000: 185 of these small rows fit on each 8 KB page."
+              },
+              {
+                "do": "Compare the table's size with its primary key index, a separate structure.",
+                "code": "SELECT pg_relation_size('people') AS heap_bytes,\n       pg_relation_size('people') / current_setting('block_size')::int AS pages,\n       pg_relation_size('people_pkey') AS index_bytes;",
+                "lang": "sql",
+                "see": "49152 bytes in 6 pages for the table, and 40960 bytes for the index."
+              },
+              {
+                "do": "Update a row and look at it again. PostgreSQL wrote a new version elsewhere, with xmin set to your transaction's ID and xmax 0.",
+                "code": "UPDATE people SET name = 'Ama' WHERE id = 1;\nSELECT ctid, xmin, xmax, id, name FROM people WHERE id = 1;",
+                "lang": "sql",
+                "see": "A new ctid, (5,76), because page 0 had no room; xmin is a transaction ID such as 743."
+              },
+              {
+                "do": "Read page 0's header with the pageinspect extension, which ships with PostgreSQL. Free space lies between lower (the end of the line-pointer array) and upper (the start of the row data).",
+                "code": "CREATE EXTENSION pageinspect;\nSELECT lower, upper, special, pagesize FROM page_header(get_raw_page('people', 0));",
+                "lang": "sql",
+                "see": "lower 764 and upper 832: only 68 bytes free on this page."
+              },
+              {
+                "do": "Look at the first two line pointers. Slot 1 held the old version of row 1.",
+                "code": "SELECT lp, lp_flags, lp_off, lp_len, t_xmin, t_xmax, t_ctid\nFROM heap_page_items(get_raw_page('people', 0)) WHERE lp <= 2;",
+                "lang": "sql",
+                "see": "lp 1 with lp_flags 3 (dead, already pruned when the page was read) and no tuple; lp 2 with lp_flags 1 (normal), lp_len 37 and t_ctid (0,2)."
+              },
+              {
+                "do": "Run VACUUM and look again: the dead slot is now free for reuse.",
+                "code": "VACUUM people;\nSELECT lp, lp_flags FROM heap_page_items(get_raw_page('people', 0)) WHERE lp <= 2;",
+                "lang": "sql",
+                "see": "lp 1 now has lp_flags 0 (unused); lp 2 is unchanged."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Inside an SQLite file",
+          "minutes": 12,
+          "objectives": [
+            "Find the header fields and B-tree pages in an SQLite database file",
+            "Explain how SQLite's table and index B-trees differ",
+            "Inspect a database's shape with PRAGMAs and sqlite_schema"
+          ],
+          "key_points": [
+            "An SQLite database is one file of equal-sized pages numbered from 1. Page 1 starts with a 100-byte header: 'SQLite format 3' and a zero byte, then fields such as the page size (2 bytes at offset 16, big-endian), the change counter (offset 24) and the page count (offset 28).",
+            "Every table and index is a B-tree whose pages begin with a header: a type byte (13 leaf table, 5 interior table, 10 leaf index, 2 interior index), the first freeblock, the number of cells, the start of the cell content area and the fragmented free bytes; interior pages add the right-most child's page number.",
+            "Table B-trees are B+trees: rows live only in leaf cells keyed by rowid, and interior pages hold keys and child pointers. Index B-trees keep keys in interior pages too, and each index entry holds the indexed values followed by the rowid.",
+            "The sqlite_schema table on page 1 (sqlite_master in older versions) lists every table and index with its root page; PRAGMA page_size, page_count and freelist_count report the file's shape, and the dbstat virtual table, where SQLite was built with it, shows how full each page is.",
+            "Deleted rows leave free space inside pages, and wholly empty pages go on the freelist; the file doesn't shrink until VACUUM, or auto_vacuum, rebuilds or truncates it."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Read the pages of an SQLite database",
+        "tool": "Python 3 and SQLite",
+        "minutes": 45,
+        "goal": "Parse an SQLite file's 100-byte header and its B-tree page headers with struct, walk a table and an index down from their root pages, and see what deleting rows and running VACUUM do to the pages.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest); sqlite3 comes with Python",
+          "Download the lab files into a new folder: pages.py, explore.py and test_pages.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the tests: the parsers are TODOs.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "4 failed"
+          },
+          {
+            "do": "Implement read_header: unpack the page size (2 bytes at offset 16), the change counter and page count (4 bytes each from offset 24), the freelist count (36) and the encoding (56). '>' in a struct format means big-endian.",
+            "code": "(page_size,) = struct.unpack(\">H\", h[16:18])\n(change_counter, page_count) = struct.unpack(\">II\", h[24:32])",
+            "lang": "python"
+          },
+          {
+            "do": "Implement btree_header: the type byte, then three 2-byte fields and one 1-byte field (struct format '>HHHB'), plus the 4-byte right-most child on interior pages (types 2 and 5). On page 1, start 100 bytes in."
+          },
+          {
+            "do": "Implement children: for each cell, read its 2-byte offset from the cell pointer array after the header, then the 4-byte child page number at that offset; finish with the right-most child."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "4 passed"
+          },
+          {
+            "do": "Build the database and explore it.",
+            "code": "python explore.py",
+            "lang": "bash",
+            "see": "Built: page size 4096, 74 pages (PRAGMA page_count says 74), 0 on the freelist, UTF-8, 2000 rows"
+          },
+          {
+            "do": "Read the two B-trees. The table (root page 2) has one interior page over 64 leaves holding all 2,000 rows; the index on city holds 1,994 entries in its leaves and 6 in its interior page, because index B-trees keep keys in interior pages too.",
+            "see": "people root page 2: depth 2, pages per level [1, 64] ... people_city root page 67: depth 2, pages per level [1, 7], 1994 cells in leaves, 6 in interior pages"
+          },
+          {
+            "do": "Read the lines after deleting ids 1 to 1000: the file still has 74 pages, and 31 of them are on the freelist waiting for reuse.",
+            "see": "After deleting ids 1-1000: page size 4096, 74 pages (PRAGMA page_count says 74), 31 on the freelist"
+          },
+          {
+            "do": "Read the lines after VACUUM: the file is rebuilt with 39 pages and an empty freelist, and the dbstat line (if your SQLite has dbstat) shows how full the pages are.",
+            "see": "After VACUUM: page size 4096, 39 pages (PRAGMA page_count says 39), 0 on the freelist"
+          },
+          {
+            "do": "Change PRAGMA page_size in build() to 1024 and run explore.py again. Record the table's depth and pages per level, and explain why smaller pages make the tree deeper.",
+            "code": "python explore.py",
+            "lang": "bash",
+            "see": "people root page 2: depth 3, pages per level [1, 3, 270]"
+          },
+          {
+            "do": "Write two or three sentences: why does a PostgreSQL index lookup need a second step to fetch the row, and why does an SQLite lookup through a non-covering index on an ordinary table need one too?"
+          }
+        ],
+        "checks": [
+          {
+            "text": "The header and page parsers pass their tests.",
+            "look_for": [
+              "4 passed"
+            ]
+          },
+          {
+            "text": "The parsed header matches what SQLite reports.",
+            "look_for": [
+              "74 pages (PRAGMA page_count says 74)"
+            ]
+          },
+          {
+            "text": "Both B-trees are walked: the table's rows sit in leaves, the index's keys in leaves and interior pages.",
+            "look_for": [
+              "pages per level [1, 64]",
+              "1994 cells in leaves, 6 in interior pages"
+            ]
+          },
+          {
+            "text": "Deleting rows fills the freelist and VACUUM shrinks the file.",
+            "look_for": [
+              "31 on the freelist",
+              "39 pages"
+            ]
+          },
+          {
+            "text": "With 1,024-byte pages the table is one level deeper.",
+            "look_for": [
+              "pages per level [1, 3, 270]"
+            ]
+          }
+        ],
+        "submit": "Paste pages.py, the pytest summary, everything explore.py printed for both page sizes, and your explanations.",
+        "files": [
+          {
+            "path": "pages.py",
+            "content": "\"\"\"Read an SQLite database file's header and B-tree pages as raw bytes.\n\nThe layout is SQLite's documented file format (sqlite.org/fileformat.html). All integers are big-endian.\n\"\"\"\nfrom __future__ import annotations\n\nimport struct\n\nPAGE_TYPES = {2: \"interior index\", 5: \"interior table\", 10: \"leaf index\", 13: \"leaf table\"}\nENCODINGS = {1: \"UTF-8\", 2: \"UTF-16le\", 3: \"UTF-16be\"}\n\n\ndef read_header(path: str) -> dict:\n    \"\"\"Parse the 100-byte header at the start of page 1.\n\n    offset 0, 16 bytes: b\"SQLite format 3\\\\x00\"     offset 16, 2 bytes: page size (1 means 65536)\n    offset 24, 4 bytes: file change counter         offset 28, 4 bytes: database size in pages\n    offset 36, 4 bytes: total freelist pages        offset 56, 4 bytes: text encoding (1, 2 or 3)\n    \"\"\"\n    with open(path, \"rb\") as f:\n        h = f.read(100)\n    if h[:16] != b\"SQLite format 3\\x00\":\n        raise ValueError(f\"{path} is not an SQLite database\")\n    raise NotImplementedError(\"TODO: struct.unpack('>H', ...) and struct.unpack('>I', ...) at the offsets above\")\n\n\ndef read_page(path: str, number: int, page_size: int) -> bytes:\n    \"\"\"Pages are numbered from 1; page n starts at byte (n - 1) * page_size.\"\"\"\n    with open(path, \"rb\") as f:\n        f.seek((number - 1) * page_size)\n        return f.read(page_size)\n\n\ndef btree_header(page: bytes, number: int) -> dict:\n    \"\"\"Parse a B-tree page header. On page 1 it starts after the 100-byte file header.\n\n    byte 0: page type (2, 5, 10 or 13)      bytes 1-2: first freeblock     bytes 3-4: number of cells\n    bytes 5-6: start of the cell content    byte 7: fragmented free bytes\n    bytes 8-11 (interior pages only): the right-most child page number\n    Return type, type_name, cells, content_start, header_size (8 or 12) and right_child (None on leaves).\n    \"\"\"\n    offset = 100 if number == 1 else 0\n    raise NotImplementedError(\"TODO\")\n\n\ndef children(page: bytes, number: int) -> list[int]:\n    \"\"\"Child page numbers of an interior page, left to right.\n\n    The cell pointer array follows the header: one 2-byte offset per cell. Each interior cell starts with\n    its 4-byte left child page number; the right-most child comes from the header.\n    \"\"\"\n    h = btree_header(page, number)\n    if h[\"right_child\"] is None:\n        return []\n    start = (100 if number == 1 else 0) + h[\"header_size\"]\n    raise NotImplementedError(\"TODO: read each cell offset, then the 4-byte child number at that offset\")\n\n\ndef walk(path: str, root: int, page_size: int) -> dict:\n    \"\"\"Visit a B-tree from its root page; count pages per level and cells in leaf and interior pages.\"\"\"\n    levels, leaf_cells, interior_cells = [], 0, 0\n    frontier = [root]\n    while frontier:\n        levels.append(len(frontier))\n        nxt = []\n        for number in frontier:\n            page = read_page(path, number, page_size)\n            h = btree_header(page, number)\n            if h[\"right_child\"] is None:\n                leaf_cells += h[\"cells\"]\n            else:\n                interior_cells += h[\"cells\"]\n                nxt.extend(children(page, number))\n        frontier = nxt\n    return {\"depth\": len(levels), \"pages_per_level\": levels, \"leaf_cells\": leaf_cells,\n            \"interior_cells\": interior_cells}\n"
+          },
+          {
+            "path": "explore.py",
+            "content": "\"\"\"Build a small database, then look inside it with pages.py and compare with what SQLite reports.\"\"\"\nimport random\nimport sqlite3\nfrom pathlib import Path\n\nfrom pages import read_header, walk\n\nDB = \"people.db\"\nCITIES = [\"Accra\", \"Dakar\", \"Hanoi\", \"Lagos\", \"Lima\", \"Porto\", \"Quito\", \"Seoul\"]\n\n\ndef build(rows: int = 2_000) -> None:\n    Path(DB).unlink(missing_ok=True)\n    rng = random.Random(1)\n    conn = sqlite3.connect(DB)\n    conn.execute(\"PRAGMA page_size = 4096\")          # the default since SQLite 3.12; set it to be sure\n    conn.execute(\"CREATE TABLE people (id INTEGER PRIMARY KEY, name TEXT NOT NULL, city TEXT NOT NULL, \"\n                 \"bio TEXT NOT NULL)\")\n    conn.executemany(\"INSERT INTO people VALUES (?, ?, ?, ?)\",\n                     [(i, f\"person-{i:05d}\", rng.choice(CITIES), \"x\" * rng.randint(50, 150))\n                      for i in range(1, rows + 1)])\n    conn.execute(\"CREATE INDEX people_city ON people (city)\")\n    conn.commit()\n    conn.close()\n\n\ndef report(label: str) -> None:\n    h = read_header(DB)\n    conn = sqlite3.connect(DB)\n    pragma = conn.execute(\"PRAGMA page_count\").fetchone()[0]\n    roots = conn.execute(\"SELECT name, rootpage FROM sqlite_schema WHERE type IN ('table', 'index') \"\n                         \"ORDER BY rootpage\").fetchall()\n    rows = conn.execute(\"SELECT count(*) FROM people\").fetchone()[0]\n    conn.close()\n    print(f\"{label}: page size {h['page_size']}, {h['page_count']} pages (PRAGMA page_count says {pragma}), \"\n          f\"{h['freelist_pages']} on the freelist, {h['encoding']}, {rows} rows\")\n    for name, root in roots:\n        t = walk(DB, root, h[\"page_size\"])\n        print(f\"    {name:<12} root page {root}: depth {t['depth']}, pages per level {t['pages_per_level']}, \"\n              f\"{t['leaf_cells']} cells in leaves, {t['interior_cells']} in interior pages\")\n\n\nif __name__ == \"__main__\":\n    build()\n    report(\"Built\")\n    conn = sqlite3.connect(DB)\n    conn.execute(\"DELETE FROM people WHERE id <= 1000\")\n    conn.commit()\n    conn.close()\n    report(\"After deleting ids 1-1000\")\n    conn = sqlite3.connect(DB)\n    conn.execute(\"VACUUM\")\n    try:\n        fill = conn.execute(\"SELECT name, count(*), round(100.0 * sum(pgsize - unused) / sum(pgsize), 1) \"\n                            \"FROM dbstat GROUP BY name ORDER BY name\").fetchall()\n        print(\"dbstat (pages, % used): \" + \", \".join(f\"{n} {c} pages {p}%\" for n, c, p in fill))\n    except sqlite3.OperationalError:\n        print(\"dbstat isn't built into this SQLite; skip it\")\n    conn.close()\n    report(\"After VACUUM\")\n"
+          },
+          {
+            "path": "test_pages.py",
+            "content": "import sqlite3\n\nimport pytest\n\nfrom pages import btree_header, children, read_header, read_page, walk\n\n\n@pytest.fixture\ndef db(tmp_path):\n    path = str(tmp_path / \"t.db\")\n    conn = sqlite3.connect(path)\n    conn.execute(\"PRAGMA page_size = 1024\")\n    conn.execute(\"CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)\")\n    conn.executemany(\"INSERT INTO t VALUES (?, ?)\", [(i, \"v\" * 40) for i in range(1, 501)])\n    conn.commit()\n    root = conn.execute(\"SELECT rootpage FROM sqlite_schema WHERE name = 't'\").fetchone()[0]\n    count = conn.execute(\"PRAGMA page_count\").fetchone()[0]\n    conn.close()\n    return path, root, count\n\n\ndef test_header(db):\n    path, _, count = db\n    h = read_header(path)\n    assert h[\"page_size\"] == 1024 and h[\"page_count\"] == count\n    assert h[\"freelist_pages\"] == 0 and h[\"encoding\"] == \"UTF-8\"\n\n\ndef test_page_one_holds_the_schema_table(db):\n    path, _, _ = db\n    h = btree_header(read_page(path, 1, 1024), 1)\n    assert h[\"type_name\"] == \"leaf table\" and h[\"cells\"] == 1 and h[\"right_child\"] is None\n\n\ndef test_root_of_a_big_table_is_interior(db):\n    path, root, _ = db\n    page = read_page(path, root, 1024)\n    h = btree_header(page, root)\n    assert h[\"type\"] == 5 and h[\"header_size\"] == 12\n    kids = children(page, root)\n    assert len(kids) == h[\"cells\"] + 1 and kids[-1] == h[\"right_child\"]\n\n\ndef test_walk_finds_every_row(db):\n    path, root, _ = db\n    t = walk(path, root, 1024)\n    assert t[\"leaf_cells\"] == 500 and t[\"pages_per_level\"][0] == 1\n"
+          }
+        ],
+        "hints": [
+          "struct.unpack always returns a tuple: (page_size,) = struct.unpack('>H', ...) unpacks its one value.",
+          "A cell content start of 0 means 65536, which happens only with 64 KB pages.",
+          "An interior table cell starts with its 4-byte left child page number, followed by the rowid key as a varint, which children() doesn't need."
+        ]
+      }
+    },
+    {
+      "title": "B-trees, LSM trees and other index structures",
+      "summary": "Compare the structures storage engines are built on: B+trees that update pages in place, log-structured merge trees that buffer writes and merge sorted files in the background, and the hash, GIN, GiST and BRIN indexes for other kinds of query.",
+      "instructor": "ngo-thi-huunge",
+      "lessons": [
+        {
+          "title": "B-trees and B+trees",
+          "minutes": 14,
+          "objectives": [
+            "Explain how a B+tree finds, inserts and deletes keys",
+            "Estimate a B+tree's height from its fan-out",
+            "Identify the costs of updating a B+tree in place"
+          ],
+          "key_points": [
+            "A B+tree is a balanced tree of pages: interior pages hold keys and child pointers that divide the key space, and leaf pages hold the keys with their values or row pointers, linked to their neighbours so a range scan walks along the leaves.",
+            "Each node is a page, so fan-out is high: with 8 KB pages and small keys an interior page holds hundreds of child pointers, and a tree three or four levels deep holds hundreds of millions of keys. A lookup reads one page per level, and the top levels usually stay in the buffer pool.",
+            "Inserting into a full leaf splits it into two half-full pages and adds a separator key to the parent, which may split in turn; only a root split makes the tree taller, so every leaf stays at the same depth. Deletes may merge underfull pages, though many engines leave them part-empty.",
+            "Updates happen in place: changing one row rewrites its whole page (write amplification), and a crash half-way through a split could corrupt the tree, which is why B-tree engines log each change to the write-ahead log first.",
+            "B+trees give predictable lookups in O(log n) page reads, range scans in key order and one place for each key, which also makes ranges easy to lock. PostgreSQL, InnoDB and SQLite all use them.",
+            "Random inserts touch pages all over the tree and leave pages around two-thirds full after splits; ever-increasing keys (an auto-increment ID or a timestamp) append at the right edge, which is cheap but puts every insert on the same page."
+          ]
+        },
+        {
+          "title": "Log-structured merge trees",
+          "minutes": 14,
+          "objectives": [
+            "Trace a write and a read through an LSM tree",
+            "Explain how Bloom filters, tombstones and compaction work",
+            "Compare size-tiered and leveled compaction"
+          ],
+          "key_points": [
+            "An LSM tree appends each write to a write-ahead log and inserts it into an in-memory sorted structure, the memtable. When the memtable fills, it's written out as an immutable sorted file, an SSTable, and a new memtable starts. Writes are sequential, so they're fast.",
+            "A read checks the memtable, then the SSTables from newest to oldest, and stops at the first match. Each SSTable has an index for finding a key's block and usually a Bloom filter, so most files that don't hold the key are skipped without being read.",
+            "A Bloom filter is a bit array with k hash functions: adding a key sets k bits, and a lookup that finds any of its k bits clear proves the key absent. False positives occur at a rate set by the bits per key (about 10 bits gives roughly 1%); false negatives never do.",
+            "A delete writes a tombstone, a marker that hides older values of the key. The space comes back only when compaction merges files and drops the tombstone, which is safe once no older file could still hold that key.",
+            "Compaction merges SSTables in the background, keeping each key's newest version. Size-tiered compaction merges files of similar size (less rewriting, more space, slower reads); leveled compaction keeps each level's key ranges from overlapping (faster reads, more rewriting). RocksDB, LevelDB and Cassandra work this way.",
+            "The trade-off: LSM trees turn random writes into sequential ones and avoid half-empty pages, but a lookup may touch several files and compaction competes for disk bandwidth; B-trees read in a predictable number of pages but rewrite a whole page for each small change."
+          ]
+        },
+        {
+          "title": "Hash, GIN, GiST and BRIN indexes",
+          "minutes": 12,
+          "objectives": [
+            "Match an index structure to the queries it can serve",
+            "Explain when a BRIN index beats a B-tree",
+            "Choose GIN or GiST for multi-valued and spatial data"
+          ],
+          "key_points": [
+            "A hash index maps a hash of the key to its rows and answers only equality: no ranges, no sorting. PostgreSQL's hash indexes are crash-safe since version 10, but a B-tree, which also handles equality, is usually as fast and more flexible.",
+            "A GIN (generalised inverted) index maps each element (an array value, a word in a document, a JSONB key) to the rows that contain it, like the index of a book. It suits containment and full-text queries such as tags @> ARRAY['urgent'], and is slower to update than a B-tree.",
+            "A GiST (generalised search tree) is a balanced tree of possibly overlapping regions; it serves geometric, range and nearest-neighbour queries (overlaps, contains, ORDER BY distance), and PostGIS builds its spatial indexes on it.",
+            "A BRIN (block range) index stores only a summary, such as the minimum and maximum, for each range of table pages (128 by default). It's tiny and cheap to maintain, and works when values follow the physical order, such as timestamps in an append-only log; on randomly ordered data it filters nothing.",
+            "SQLite offers B-tree indexes plus virtual-table modules such as FTS5 for full-text search and R*Tree for spatial data; InnoDB has full-text and spatial index types beside its B+trees.",
+            "Every index costs space and write time and must be kept in step with its table, so choose the structure from the predicates the queries actually use, then measure."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Build a small LSM tree",
+        "tool": "Python 3 and pytest",
+        "minutes": 60,
+        "goal": "Implement a Bloom filter, then an LSM tree's flush, read path and compaction, and measure how many SSTables lookups open with and without Bloom filters, and what compaction does to the number and size of the files.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest); sqlite3 comes with Python",
+          "Download the lab files into a new folder: bloom.py, lsm.py, experiment.py and test_lsm.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 failed"
+          },
+          {
+            "do": "Implement BloomFilter.add and might_contain: set, then test, the bit at each of the k positions from _positions. Bit p lives in byte p // 8, at bit p % 8.",
+            "code": "for p in self._positions(key):\n    self.bits[p // 8] |= 1 << (p % 8)",
+            "lang": "python"
+          },
+          {
+            "do": "Implement flush: do nothing if the memtable is empty; otherwise write it with _write_table, append the new path to self.tables (newest last) and start an empty memtable."
+          },
+          {
+            "do": "Implement get: if the key is in the memtable, return its value (a tombstone is None: deleted). Otherwise check the SSTables from newest to oldest, skipping any whose Bloom filter rules the key out, and return the first value found."
+          },
+          {
+            "do": "Implement compact: read every table oldest first into one dict so newer values win, drop the tombstones, write the result as one table, and delete the old tables and their filters."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 passed"
+          },
+          {
+            "do": "Run the experiment.",
+            "code": "python experiment.py",
+            "lang": "bash",
+            "see": "22 SSTables, 109,399 bytes, 2065 live keys; Every key agrees with a plain dict: True"
+          },
+          {
+            "do": "Compare the lookup lines: without filters a present key opens 10.49 tables on average and an absent key all 22; with filters, 1.10 and 0.22.",
+            "see": "with Bloom filters   : 1.10 SSTables per lookup of a present key, 0.22 per absent key"
+          },
+          {
+            "do": "Read the false-positive line: 0.98% of the checks for absent keys passed a filter, close to the 1% expected from 10 bits per key and 7 hash functions.",
+            "see": "Bloom false positives: 216 of 22,000 filter checks (0.98%)"
+          },
+          {
+            "do": "Read the compaction line: one table of 43,148 bytes replaces 22 tables of 109,399 bytes because overwritten values and tombstones are gone, and a present key now opens exactly one table.",
+            "see": "After compaction: 1 SSTable, 43,148 bytes, 1.00 SSTables per present lookup, still agrees: True"
+          },
+          {
+            "do": "Change bits_per_key in BloomFilter.for_keys from 10 to 5 and run the experiment again. Note the new false-positive rate and lookup costs, and explain the trade-off; then change it back.",
+            "code": "python experiment.py",
+            "lang": "bash",
+            "see": "Bloom false positives: 2026 of 22,000 filter checks (9.21%)"
+          },
+          {
+            "do": "Explain in a few sentences why compaction may drop a tombstone only when no older SSTable could still hold the key, and what readers would see if it dropped one too early."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The Bloom filter and the LSM tree pass their tests.",
+            "look_for": [
+              "6 passed"
+            ]
+          },
+          {
+            "text": "Bloom filters cut the number of SSTables each lookup opens.",
+            "look_for": [
+              "10.49",
+              "1.10 SSTables per lookup",
+              "0.22 per absent key"
+            ]
+          },
+          {
+            "text": "False positives are close to the expected rate.",
+            "look_for": [
+              "216 of 22,000",
+              "0.98%"
+            ]
+          },
+          {
+            "text": "Compaction keeps every answer and shrinks the data.",
+            "look_for": [
+              "43,148 bytes",
+              "still agrees: True"
+            ]
+          },
+          {
+            "text": "The 5-bit filters' higher false-positive rate is measured and explained.",
+            "look_for": [
+              "9.21%"
+            ]
+          }
+        ],
+        "submit": "Paste bloom.py and lsm.py, the pytest summary, both runs of experiment.py and your explanations.",
+        "files": [
+          {
+            "path": "bloom.py",
+            "content": "\"\"\"A Bloom filter: 'definitely not present' or 'possibly present', never a false 'not present'.\"\"\"\nfrom __future__ import annotations\n\nimport hashlib\nimport json\nimport math\n\n\nclass BloomFilter:\n    def __init__(self, n_bits: int, n_hashes: int, bits: bytearray | None = None) -> None:\n        self.n_bits, self.n_hashes = n_bits, n_hashes\n        self.bits = bits if bits is not None else bytearray((n_bits + 7) // 8)\n\n    @classmethod\n    def for_keys(cls, n_keys: int, bits_per_key: int = 10) -> \"BloomFilter\":\n        \"\"\"Size the filter for n_keys; k = bits_per_key x ln 2 hashes minimises false positives (7 for 10).\"\"\"\n        return cls(max(8, n_keys * bits_per_key), max(1, round(bits_per_key * math.log(2))))\n\n    def _positions(self, key: str) -> list[int]:\n        \"\"\"k bit positions by double hashing: h1 + i*h2 for i in 0..k-1, from one SHA-256 digest.\"\"\"\n        d = hashlib.sha256(key.encode(\"utf-8\")).digest()\n        h1, h2 = int.from_bytes(d[:8], \"big\"), int.from_bytes(d[8:16], \"big\") | 1\n        return [(h1 + i * h2) % self.n_bits for i in range(self.n_hashes)]\n\n    def add(self, key: str) -> None:\n        raise NotImplementedError(\"TODO: set the bit at each position\")\n\n    def might_contain(self, key: str) -> bool:\n        raise NotImplementedError(\"TODO: True only if every position's bit is set\")\n\n    def to_json(self) -> str:\n        return json.dumps({\"n_bits\": self.n_bits, \"n_hashes\": self.n_hashes, \"bits\": self.bits.hex()})\n\n    @classmethod\n    def from_json(cls, text: str) -> \"BloomFilter\":\n        d = json.loads(text)\n        return cls(d[\"n_bits\"], d[\"n_hashes\"], bytearray.fromhex(d[\"bits\"]))\n"
+          },
+          {
+            "path": "lsm.py",
+            "content": "\"\"\"A small log-structured merge tree.\n\nWrites go to an in-memory memtable. When it holds `memtable_limit` keys it is flushed to a new SSTable:\na file of [key, value] JSON lines sorted by key, with a Bloom filter saved beside it. A delete writes a\ntombstone (None, stored as JSON null). Reads check the memtable, then the SSTables from newest to oldest.\nA real engine also appends every write to a write-ahead log first, so the memtable survives a crash.\n\"\"\"\nfrom __future__ import annotations\n\nimport json\nfrom pathlib import Path\n\nfrom bloom import BloomFilter\n\nTOMBSTONE = None\n\n\nclass LSMTree:\n    def __init__(self, directory: str, memtable_limit: int = 250, use_bloom: bool = True) -> None:\n        self.dir = Path(directory)\n        self.dir.mkdir(parents=True, exist_ok=True)\n        self.limit, self.use_bloom = memtable_limit, use_bloom\n        self.memtable: dict[str, object] = {}\n        self.tables: list[Path] = sorted(self.dir.glob(\"sst_*.jsonl\"))          # oldest first\n        self.filters = {p: BloomFilter.from_json(p.with_suffix(\".bloom\").read_text()) for p in self.tables}\n        self.next_id = int(self.tables[-1].stem[4:]) + 1 if self.tables else 0\n        self.files_read = 0        # SSTables actually opened by get()\n\n    # writes ---------------------------------------------------------------------------------------\n    def put(self, key: str, value: object) -> None:\n        self.memtable[key] = value\n        if len(self.memtable) >= self.limit:\n            self.flush()\n\n    def delete(self, key: str) -> None:\n        self.put(key, TOMBSTONE)\n\n    def _write_table(self, entries: dict[str, object]) -> Path:\n        \"\"\"Write entries sorted by key as the next SSTable, with its Bloom filter; return its path.\"\"\"\n        path = self.dir / f\"sst_{self.next_id:04d}.jsonl\"\n        self.next_id += 1\n        bloom = BloomFilter.for_keys(len(entries))\n        with open(path, \"w\", encoding=\"utf-8\") as f:\n            for key in sorted(entries):\n                f.write(json.dumps([key, entries[key]]) + \"\\n\")\n                bloom.add(key)\n        path.with_suffix(\".bloom\").write_text(bloom.to_json())\n        self.filters[path] = bloom\n        return path\n\n    def flush(self) -> None:\n        \"\"\"Write the memtable as a new SSTable (the newest), then start an empty memtable.\"\"\"\n        raise NotImplementedError(\"TODO: nothing to do if empty; else _write_table, append to self.tables, clear\")\n\n    # reads ----------------------------------------------------------------------------------------\n    def _search(self, path: Path, key: str) -> tuple[bool, object]:\n        \"\"\"Scan one SSTable for key: (found, value). Sorted order lets it stop early.\"\"\"\n        self.files_read += 1\n        with open(path, encoding=\"utf-8\") as f:\n            for line in f:\n                k, v = json.loads(line)\n                if k == key:\n                    return True, v\n                if k > key:\n                    break\n        return False, None\n\n    def get(self, key: str) -> object:\n        \"\"\"The newest value for key, or None if it was never written or was deleted.\n        Skip an SSTable without opening it when use_bloom is on and its filter rules the key out.\"\"\"\n        raise NotImplementedError(\"TODO: memtable first, then reversed(self.tables), stopping at the first hit\")\n\n    # compaction -----------------------------------------------------------------------------------\n    def compact(self) -> None:\n        \"\"\"Merge every SSTable into one: keep each key's newest value and drop tombstones. Dropping them is\n        safe only because no older SSTable remains that could still hold the key.\"\"\"\n        raise NotImplementedError(\"TODO: read the tables oldest first into a dict, drop tombstones, write one table\")\n\n    def disk_bytes(self) -> int:\n        return sum(p.stat().st_size for p in self.tables)\n"
+          },
+          {
+            "path": "experiment.py",
+            "content": "\"\"\"Load an LSM tree, then measure how many SSTables lookups open, with and without Bloom filters,\nbefore and after compaction.\"\"\"\nimport random\nimport shutil\n\nfrom lsm import LSMTree\n\n\ndef load(directory: str) -> tuple[LSMTree, dict]:\n    shutil.rmtree(directory, ignore_errors=True)\n    rng = random.Random(5)\n    tree, model = LSMTree(directory), {}\n    for i in range(5_000):\n        key = f\"user:{rng.randrange(3_000):05d}\"\n        tree.put(key, i)\n        model[key] = i\n    for _ in range(500):\n        key = f\"user:{rng.randrange(3_000):05d}\"\n        tree.delete(key)\n        model.pop(key, None)\n    tree.flush()\n    return tree, model\n\n\ndef lookups(tree: LSMTree, keys: list[str]) -> float:\n    tree.files_read = 0\n    for k in keys:\n        tree.get(k)\n    return tree.files_read / len(keys)\n\n\nif __name__ == \"__main__\":\n    tree, model = load(\"lsm_data\")\n    present = sorted(model)[:1_000]\n    absent = [f\"ghost:{i:05d}\" for i in range(1_000)]\n    print(f\"{len(tree.tables)} SSTables, {tree.disk_bytes():,} bytes, {len(model)} live keys\")\n    agree = all(tree.get(f\"user:{n:05d}\") == model.get(f\"user:{n:05d}\") for n in range(3_000))\n    print(f\"Every key agrees with a plain dict: {agree}\")\n    for use_bloom in (False, True):\n        tree.use_bloom = use_bloom\n        label = \"with Bloom filters   \" if use_bloom else \"without Bloom filters\"\n        print(f\"{label}: {lookups(tree, present):.2f} SSTables per lookup of a present key, \"\n              f\"{lookups(tree, absent):.2f} per absent key\")\n    tree.use_bloom = True\n    checks = len(absent) * len(tree.tables)\n    lookups(tree, absent)\n    print(f\"Bloom false positives: {tree.files_read} of {checks:,} filter checks ({tree.files_read / checks:.2%})\")\n    tree.compact()\n    agree = all(tree.get(f\"user:{n:05d}\") == model.get(f\"user:{n:05d}\") for n in range(3_000))\n    print(f\"After compaction: {len(tree.tables)} SSTable, {tree.disk_bytes():,} bytes, \"\n          f\"{lookups(tree, present):.2f} SSTables per present lookup, still agrees: {agree}\")\n"
+          },
+          {
+            "path": "test_lsm.py",
+            "content": "from bloom import BloomFilter\nfrom lsm import LSMTree\n\n\ndef test_bloom_has_no_false_negatives():\n    bf = BloomFilter.for_keys(1_000)\n    keys = [f\"k{i}\" for i in range(1_000)]\n    for k in keys:\n        bf.add(k)\n    assert all(bf.might_contain(k) for k in keys)\n    assert bf.n_hashes == 7\n    false_pos = sum(bf.might_contain(f\"other{i}\") for i in range(10_000))\n    assert false_pos < 300                       # about 1% expected at 10 bits per key\n\n\ndef test_put_get_and_overwrite(tmp_path):\n    t = LSMTree(tmp_path, memtable_limit=3)\n    for i in range(10):\n        t.put(f\"k{i % 4}\", i)\n    assert t.get(\"k1\") == 9 and t.get(\"k3\") == 7 and t.get(\"zzz\") is None\n    assert len(t.tables) >= 2\n\n\ndef test_flush_writes_a_sorted_table(tmp_path):\n    t = LSMTree(tmp_path, memtable_limit=100)\n    for k in [\"b\", \"c\", \"a\"]:\n        t.put(k, k.upper())\n    t.flush()\n    lines = t.tables[0].read_text().splitlines()\n    assert lines == ['[\"a\", \"A\"]', '[\"b\", \"B\"]', '[\"c\", \"C\"]']\n    assert t.memtable == {}\n\n\ndef test_a_tombstone_hides_older_values(tmp_path):\n    t = LSMTree(tmp_path, memtable_limit=2)\n    t.put(\"a\", 1)\n    t.put(\"b\", 2)                                # flushed\n    t.delete(\"a\")\n    t.flush()\n    assert t.get(\"a\") is None and t.get(\"b\") == 2\n\n\ndef test_bloom_filters_skip_tables(tmp_path):\n    t = LSMTree(tmp_path, memtable_limit=10)\n    for i in range(100):\n        t.put(f\"k{i:03d}\", i)\n    t.files_read = 0\n    t.get(\"absent\")\n    assert t.files_read <= 1                     # ten tables, at most a rare false positive\n\n\ndef test_compaction_keeps_answers_and_drops_garbage(tmp_path):\n    t = LSMTree(tmp_path, memtable_limit=5)\n    for i in range(50):\n        t.put(f\"k{i % 10}\", i)\n    for i in range(0, 10, 2):\n        t.delete(f\"k{i}\")\n    t.flush()\n    before = {f\"k{i}\": t.get(f\"k{i}\") for i in range(10)}\n    t.compact()\n    assert len(t.tables) == 1\n    assert {f\"k{i}\": t.get(f\"k{i}\") for i in range(10)} == before\n    assert len(t.tables[0].read_text().splitlines()) == 5      # only the five live keys\n    reopened = LSMTree(tmp_path)\n    assert reopened.get(\"k9\") == 49\n"
+          }
+        ],
+        "hints": [
+          "In get, check `key in self.memtable` before anything else, even when its value is None: a tombstone in the memtable hides older values on disk.",
+          "self.tables runs oldest first: iterate over reversed(self.tables) to read, and over self.tables to compact.",
+          "Delete each old table's .bloom file as well as its .jsonl file, and remove it from self.filters."
+        ]
+      }
+    },
+    {
+      "title": "Indexes and query planning",
+      "summary": "Design indexes for real queries (composite, covering, partial and expression indexes), learn how a cost-based planner chooses scans and joins from statistics, and read EXPLAIN output in SQLite and PostgreSQL.",
+      "instructor": "ngo-thi-huunge",
+      "lessons": [
+        {
+          "title": "Composite, covering and partial indexes",
+          "minutes": 14,
+          "objectives": [
+            "Order a composite index's columns for a query's filters and sort",
+            "Use covering indexes to avoid table lookups",
+            "Shrink indexes with partial and expression indexes"
+          ],
+          "key_points": [
+            "A composite index on (a, b, c) is sorted by a, then by b within a, then by c. It serves filters on a, on a and b, or on all three (a leftmost prefix), but not a filter on b alone. Put the columns compared with = first and the range or sort column after them.",
+            "With an index on (customer_id, created_at), WHERE customer_id = 42 AND created_at >= '2026-01-01' ORDER BY created_at reads one contiguous range of the index, already in order; with the columns reversed, the index can serve only the date range, checking every customer's rows in it.",
+            "A covering index contains every column a query needs, so the database answers from the index alone: PostgreSQL shows an Index Only Scan (INCLUDE adds non-key columns, since version 11) and SQLite shows USING COVERING INDEX.",
+            "PostgreSQL's index-only scans still check the visibility map, because index entries don't say whether a row version is visible; on pages changed since the last VACUUM, the scan must visit the table anyway (Heap Fetches in EXPLAIN ANALYZE).",
+            "A partial index covers only rows matching its WHERE clause, such as CREATE INDEX ... ON orders (created_at) WHERE status = 'pending', so it stays small when the interesting rows are few; a query can use it only if the query's own WHERE clause implies the index's condition.",
+            "An expression index stores a computed value such as lower(email), so WHERE lower(email) = ? can search it; a plain index on email can't serve that query, because the function hides the column. Every extra index slows writes and takes space."
+          ]
+        },
+        {
+          "title": "How the planner chooses a plan",
+          "minutes": 13,
+          "objectives": [
+            "Explain cost-based planning and the statistics it depends on",
+            "Compare sequential, index, index-only and bitmap scans",
+            "Compare nested-loop, hash and merge joins"
+          ],
+          "key_points": [
+            "A cost-based planner enumerates candidate plans (access paths, join orders and join algorithms), estimates each one's cost from the expected page reads and rows processed, and runs the cheapest. The estimate is only as good as its guesses of row counts.",
+            "Row counts come from statistics gathered by ANALYZE: PostgreSQL's pg_stats view shows each column's null fraction, number of distinct values, most common values and a histogram, and SQLite's ANALYZE fills sqlite_stat1. Stale statistics are a common cause of bad plans.",
+            "A sequential scan reads every page and wins when a query needs much of the table; an index scan follows the index into the table and wins for few rows; an index-only scan skips the table; PostgreSQL's bitmap scan collects matching row addresses, sorts them by page, then reads each page once.",
+            "Joins: a nested loop probes the inner side once per outer row (good for a small outer side and an indexed inner side); a hash join builds a hash table on the smaller input and probes it (good for large equality joins); a merge join walks two inputs sorted on the join key.",
+            "Estimates go wrong with correlated columns (city and postcode), skewed values, functions on columns and values unknown at planning time. PostgreSQL's CREATE STATISTICS can record dependencies between columns; SQLite relies on sqlite_stat1 and its own rules.",
+            "No statistics help when the predicate itself prevents an index search: an unconstrained leading column, a function or cast hiding the column, or LIKE '%term' with a leading wildcard. Rewrite the predicate, or index the expression."
+          ]
+        },
+        {
+          "title": "Reading EXPLAIN and EXPLAIN ANALYZE",
+          "minutes": 14,
+          "objectives": [
+            "Read the node tree, costs and row estimates in PostgreSQL's EXPLAIN",
+            "Compare estimated and actual rows with EXPLAIN ANALYZE and BUFFERS",
+            "Read SQLite's EXPLAIN QUERY PLAN output"
+          ],
+          "key_points": [
+            "EXPLAIN prints the plan as a tree of nodes, each with cost=startup..total, rows and width: the estimated cost before the first row and for all rows, the estimated row count and the average row width in bytes. Indentation and arrows (->) show which nodes feed which.",
+            "EXPLAIN ANALYZE runs the query and adds actual time (to the first row and to all rows, in milliseconds), actual rows and loops to each node; per-node figures are per loop. It really executes the statement, so wrap an UPDATE or DELETE in BEGIN and ROLLBACK.",
+            "The most useful signal is a big gap between estimated and actual rows: the planner chose its plan for a different query from the one it ran. Fix the statistics (ANALYZE, a higher statistics target, CREATE STATISTICS) or the query.",
+            "BUFFERS adds shared hit (pages found in shared buffers) and read (pages fetched from the operating system or disk) to each node: the clearest measure of how much I/O a plan does.",
+            "SQLite's EXPLAIN QUERY PLAN prints one line per step: SCAN t (a full scan), SEARCH t USING INDEX i (a=?) (an index search), USING COVERING INDEX (no table lookups), USING INTEGER PRIMARY KEY (rowid=?) and USE TEMP B-TREE FOR ORDER BY (an extra sort). Older versions write SCAN TABLE t.",
+            "SQLite's plain EXPLAIN prints the bytecode its virtual machine runs, which mostly matters for debugging SQLite itself; PostgreSQL's auto_explain module can log the plans of slow queries automatically."
+          ],
+          "walkthrough": {
+            "tool": "psql",
+            "title": "Read EXPLAIN and EXPLAIN ANALYZE in psql",
+            "steps": [
+              {
+                "do": "In psql, create an orders table with 200,000 random rows. setseed makes random() repeatable in the session; ANALYZE gathers the statistics the planner uses.",
+                "code": "CREATE TABLE orders (\n  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,\n  customer_id int NOT NULL,\n  status text NOT NULL,\n  total numeric(10,2) NOT NULL,\n  created_at timestamptz NOT NULL\n);\nSELECT setseed(0.42);\nINSERT INTO orders (customer_id, status, total, created_at)\nSELECT 1 + floor(random() * 10000)::int,\n       (ARRAY['paid', 'shipped', 'pending'])[1 + floor(random() * 3)::int],\n       round((random() * 200)::numeric, 2),\n       timestamptz '2026-01-01' + random() * interval '365 days'\nFROM generate_series(1, 200000);\nANALYZE orders;",
+                "lang": "sql",
+                "see": "INSERT 0 200000, then ANALYZE."
+              },
+              {
+                "do": "Plan one customer's orders before any index exists.",
+                "code": "EXPLAIN SELECT * FROM orders WHERE customer_id = 42;",
+                "lang": "sql",
+                "see": "Seq Scan on orders  (cost=0.00..4107.00 rows=20 width=33) with Filter: (customer_id = 42)."
+              },
+              {
+                "do": "Add an index and plan again. About 20 rows scattered across the table suit a bitmap scan: collect their addresses from the index, then visit each page once.",
+                "code": "CREATE INDEX orders_customer_idx ON orders (customer_id);\nEXPLAIN SELECT * FROM orders WHERE customer_id = 42;",
+                "lang": "sql",
+                "see": "Bitmap Heap Scan on orders  (cost=4.45..78.01 rows=20 width=33) over -> Bitmap Index Scan on orders_customer_idx."
+              },
+              {
+                "do": "Run it for real. Compare rows=20 (estimated) with the actual rows, and read the Buffers line: hit pages came from shared buffers, read pages from the operating system.",
+                "code": "EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders WHERE customer_id = 42;",
+                "lang": "sql",
+                "see": "(actual time=... rows=11 loops=1), Heap Blocks: exact=11 and Buffers: shared hit=... on each node. Times and buffer counts vary between runs."
+              },
+              {
+                "do": "Cover the query: key columns for the filter and the sort, and total as an INCLUDE column. VACUUM sets the visibility map that index-only scans rely on.",
+                "code": "CREATE INDEX orders_customer_created_idx ON orders (customer_id, created_at) INCLUDE (total);\nVACUUM orders;\nEXPLAIN (ANALYZE, BUFFERS)\nSELECT created_at, total FROM orders WHERE customer_id = 42 ORDER BY created_at;",
+                "lang": "sql",
+                "see": "Index Only Scan using orders_customer_created_idx on orders, Heap Fetches: 0, and no Sort node."
+              },
+              {
+                "do": "Plan a join: for each of 100 IDs from generate_series, a nested loop probes the index.",
+                "code": "EXPLAIN SELECT o.customer_id, count(*)\nFROM orders o JOIN generate_series(1, 100) AS c(id) ON c.id = o.customer_id\nGROUP BY o.customer_id;",
+                "lang": "sql",
+                "see": "HashAggregate over a Nested Loop whose inner side is an Index Only Scan using orders_customer_idx with Index Cond: (customer_id = c.id)."
+              },
+              {
+                "do": "Run a query no index serves. PostgreSQL may split a big scan between workers; per-node figures are per loop, so multiply rows by loops.",
+                "code": "EXPLAIN ANALYZE SELECT * FROM orders\nWHERE status = 'pending' AND total > 150 AND created_at > '2026-12-01';",
+                "lang": "sql",
+                "see": "Gather over a Parallel Seq Scan with rows=696 loops=2 and a Rows Removed by Filter line: 1,392 rows in all."
+              },
+              {
+                "do": "Look at the statistics behind the estimates.",
+                "code": "SELECT attname, n_distinct, most_common_vals FROM pg_stats\nWHERE tablename = 'orders' AND attname IN ('status', 'customer_id');",
+                "lang": "sql",
+                "see": "n_distinct 3 for status, with its three values as most_common_vals; about 10,000 for customer_id."
+              }
+            ]
+          }
+        }
+      ],
+      "lab": {
+        "title": "Fix slow queries by reading their plans",
+        "tool": "Python 3 and SQLite",
+        "minutes": 50,
+        "goal": "Create a shop database, read SQLite's plans for eight queries, then add composite, covering, partial and expression indexes and rewrite one query until each plan searches instead of scanning; finally, watch ANALYZE change a join plan.",
+        "setup": [
+          "Python 3.10 or newer. The plan wording below is SQLite 3.36 or newer (check with python -c \"import sqlite3; print(sqlite3.sqlite_version)\"); older versions write SCAN TABLE and SEARCH TABLE",
+          "Download the lab files into a new folder: make_shop.py, plans.py and indexes.sql"
+        ],
+        "steps": [
+          {
+            "do": "Create the database.",
+            "code": "python make_shop.py",
+            "lang": "bash",
+            "see": "shop.db: 10,000 customers, 100,000 orders (3,027 pending), 1,215 pages of 4096 bytes"
+          },
+          {
+            "do": "Show every plan with no indexes, and note each query's time. --reset drops all indexes, then applies indexes.sql, so the database always holds exactly the indexes in the file.",
+            "code": "python plans.py --reset",
+            "lang": "bash",
+            "see": "Indexes: none; every query but Q7 shows SCAN orders or SCAN customers, and Q1 also USE TEMP B-TREE FOR ORDER BY."
+          },
+          {
+            "do": "Q1 tests customer_id with = and created_at with a range, then sorts by created_at. Add this index to indexes.sql and run python plans.py --reset: the rows are found, but still sorted afterwards.",
+            "code": "CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders (customer_id);",
+            "lang": "sql",
+            "see": "SEARCH orders USING INDEX idx_orders_customer (customer_id=?) and USE TEMP B-TREE FOR ORDER BY"
+          },
+          {
+            "do": "Replace it with a composite index, equality column first, then the range and sort column, and run python plans.py --reset. The sort disappears.",
+            "code": "CREATE INDEX IF NOT EXISTS idx_orders_customer_created ON orders (customer_id, created_at);",
+            "lang": "sql",
+            "see": "SEARCH orders USING INDEX idx_orders_customer_created (customer_id=? AND created_at>?)"
+          },
+          {
+            "do": "Try the columns the other way round, (created_at, customer_id), and explain the plan. Then go back to the previous order and add total, so the index covers Q1.",
+            "code": "CREATE INDEX IF NOT EXISTS idx_orders_customer_created ON orders (customer_id, created_at, total);",
+            "lang": "sql",
+            "see": "Reversed: SEARCH orders USING INDEX ... (created_at>?) only. With total: SEARCH orders USING COVERING INDEX idx_orders_customer_created (customer_id=? AND created_at>?)"
+          },
+          {
+            "do": "Q2 counts pending orders, 3% of the table. Add a partial index that holds only those rows.",
+            "code": "CREATE INDEX IF NOT EXISTS idx_orders_pending_created ON orders (created_at) WHERE status = 'pending';",
+            "lang": "sql",
+            "see": "SEARCH orders USING COVERING INDEX idx_orders_pending_created (created_at>?)"
+          },
+          {
+            "do": "Q3 wraps email in lower(). Add an expression index; a plain index on email could only be scanned.",
+            "code": "CREATE INDEX IF NOT EXISTS idx_customers_email_lower ON customers (lower(email));",
+            "lang": "sql",
+            "see": "SEARCH customers USING INDEX idx_customers_email_lower (<expr>=?)"
+          },
+          {
+            "do": "Q4 applies strftime() to created_at. Add an index on created_at and see that SQLite can only scan it, because the function hides the column; then rewrite Q4b in plans.py as a range on created_at that returns the same count.",
+            "code": "CREATE INDEX IF NOT EXISTS idx_orders_created ON orders (created_at);",
+            "lang": "sql",
+            "see": "Q4: SCAN orders USING COVERING INDEX idx_orders_created; Q4b: (50320,) with SEARCH orders USING COVERING INDEX idx_orders_created (created_at>? AND created_at<?)"
+          },
+          {
+            "do": "Compare Q6 and Q7: OFFSET still reads and throws away 50,000 rows, while the keyset version jumps to them through the rowid.",
+            "see": "Q6: SCAN orders; Q7: SEARCH orders USING INTEGER PRIMARY KEY (rowid>?)"
+          },
+          {
+            "do": "Note Q5's plan and time, then gather statistics and look again.",
+            "code": "python plans.py --analyze",
+            "lang": "bash",
+            "see": "sqlite_stat1 rows such as ('orders', 'idx_orders_customer_created', '100000 11 1 1'), and Q5 now runs SCAN c with SEARCH o USING COVERING INDEX idx_orders_customer_created (customer_id=? AND created_at>?)"
+          },
+          {
+            "do": "Explain what '100000 11 1 1' tells the planner (the rows in the table, then the average rows for each distinct value of the first one, two and three columns), why the new Q5 plan suits 10,000 customers, and how its time compares with the old plan."
+          },
+          {
+            "do": "Say which of your five indexes you would drop first if inserts became too slow, and why."
+          }
+        ],
+        "checks": [
+          {
+            "text": "A composite, covering index serves Q1 with no sort.",
+            "look_for": [
+              "SEARCH orders USING COVERING INDEX idx_orders_customer_created (customer_id=? AND created_at>?)"
+            ]
+          },
+          {
+            "text": "The partial and expression indexes are used.",
+            "look_for": [
+              "COVERING INDEX idx_orders_pending_created (created_at>?)",
+              "idx_customers_email_lower (<expr>=?)"
+            ]
+          },
+          {
+            "text": "The function on created_at is rewritten as a range that returns the same count.",
+            "look_for": [
+              "(created_at>? AND created_at<?)",
+              "(50320,)"
+            ]
+          },
+          {
+            "text": "Keyset pagination searches by rowid.",
+            "look_for": [
+              "SEARCH orders USING INTEGER PRIMARY KEY (rowid>?)"
+            ]
+          },
+          {
+            "text": "ANALYZE's statistics change the join plan.",
+            "look_for": [
+              "100000 11 1 1",
+              "SCAN c"
+            ]
+          }
+        ],
+        "submit": "Paste your indexes.sql, your Q4b, everything plans.py --analyze printed, and your explanations (the reversed index, sqlite_stat1 and the index you'd drop).",
+        "files": [
+          {
+            "path": "make_shop.py",
+            "content": "\"\"\"Create shop.db: 10,000 customers and 100,000 orders over two years. Same data every run (fixed seed).\"\"\"\nimport random\nimport sqlite3\nfrom datetime import datetime, timedelta\nfrom pathlib import Path\n\nCOUNTRIES = [\"Brazil\", \"Ghana\", \"India\", \"Japan\", \"Kenya\", \"Mexico\", \"Poland\", \"Vietnam\"]\nSTATUSES = [\"paid\"] * 70 + [\"shipped\"] * 25 + [\"pending\"] * 3 + [\"refunded\"] * 2\n\n\ndef main(path: str = \"shop.db\") -> None:\n    Path(path).unlink(missing_ok=True)\n    rng = random.Random(2026)\n    conn = sqlite3.connect(path)\n    conn.executescript(\"\"\"\n        CREATE TABLE customers (\n            id INTEGER PRIMARY KEY,\n            email TEXT NOT NULL,\n            country TEXT NOT NULL\n        );\n        CREATE TABLE orders (\n            id INTEGER PRIMARY KEY,\n            customer_id INTEGER NOT NULL REFERENCES customers (id),\n            status TEXT NOT NULL,\n            total REAL NOT NULL,\n            created_at TEXT NOT NULL              -- 'YYYY-MM-DD HH:MM:SS', which sorts as text\n        );\n    \"\"\")\n    conn.executemany(\"INSERT INTO customers VALUES (?, ?, ?)\",\n                     [(i, f\"User{i}@Example.com\", rng.choice(COUNTRIES)) for i in range(1, 10_001)])\n    start = datetime(2025, 1, 1)\n    conn.executemany(\"INSERT INTO orders VALUES (?, ?, ?, ?, ?)\",\n                     [(i, rng.randint(1, 10_000), rng.choice(STATUSES), round(rng.uniform(5, 500), 2),\n                       (start + timedelta(seconds=rng.randrange(730 * 86_400))).strftime(\"%Y-%m-%d %H:%M:%S\"))\n                      for i in range(1, 100_001)])\n    conn.commit()\n    pending = conn.execute(\"SELECT count(*) FROM orders WHERE status = 'pending'\").fetchone()[0]\n    print(f\"shop.db: 10,000 customers, 100,000 orders ({pending:,} pending), \"\n          f\"{conn.execute('PRAGMA page_count').fetchone()[0]:,} pages of 4096 bytes\")\n    conn.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "indexes.sql",
+            "content": "-- Your indexes. plans.py runs this file before showing the plans; edit it and run plans.py again.\n-- Name them as the lab's steps say, so your plans match the ones in the steps.\n"
+          },
+          {
+            "path": "plans.py",
+            "content": "\"\"\"Show SQLite's plan, the answer and a median time for each query.\n\npython plans.py            apply indexes.sql, then show every plan\npython plans.py --reset    drop every index first (back to no indexes)\npython plans.py --analyze  also run ANALYZE and print sqlite_stat1\n\"\"\"\nimport sqlite3\nimport statistics\nimport sys\nimport time\n\nQUERIES = {\n    \"Q1 one customer's orders this year\": (\n        \"SELECT id, total, created_at FROM orders WHERE customer_id = ? AND created_at >= ? ORDER BY created_at\",\n        (4242, \"2026-01-01\")),\n    \"Q2 pending orders this year\": (\n        \"SELECT count(*) FROM orders WHERE status = 'pending' AND created_at >= ?\", (\"2026-01-01\",)),\n    \"Q3 log-in by email, ignoring case\": (\n        \"SELECT id FROM customers WHERE lower(email) = ?\", (\"user4242@example.com\",)),\n    \"Q4 orders in 2025, with a function on the column\": (\n        \"SELECT count(*) FROM orders WHERE strftime('%Y', created_at) = '2025'\", ()),\n    \"Q4b orders in 2025, rewritten as a range\": (\n        \"SELECT count(*) FROM orders WHERE strftime('%Y', created_at) = '2025'\",   # TODO: rewrite as a range\n        ()),\n    \"Q5 revenue by country since June 2026\": (\n        \"SELECT c.country, round(sum(o.total), 2) FROM orders o JOIN customers c ON c.id = o.customer_id \"\n        \"WHERE o.created_at >= ? GROUP BY c.country ORDER BY 2 DESC\", (\"2026-06-01\",)),\n    \"Q6 page 2,501 of all orders, by OFFSET\": (\n        \"SELECT id, total FROM orders ORDER BY id LIMIT 20 OFFSET 50000\", ()),\n    \"Q7 the same page, by keyset\": (\n        \"SELECT id, total FROM orders WHERE id > ? ORDER BY id LIMIT 20\", (50000,)),\n}\n\n\ndef plan(conn: sqlite3.Connection, sql: str, params: tuple) -> list[str]:\n    \"\"\"EXPLAIN QUERY PLAN rows are (id, parent, notused, detail); indent each detail under its parent.\"\"\"\n    rows = conn.execute(\"EXPLAIN QUERY PLAN \" + sql, params).fetchall()\n    depth = {0: 0}\n    out = []\n    for node, parent, _, detail in rows:\n        depth[node] = depth.get(parent, 0) + 1\n        out.append(\"  \" * depth[node] + detail)\n    return out\n\n\ndef timed(conn: sqlite3.Connection, sql: str, params: tuple, runs: int = 5):\n    times, result = [], None\n    for _ in range(runs):\n        t0 = time.perf_counter()\n        result = conn.execute(sql, params).fetchall()\n        times.append(time.perf_counter() - t0)\n    return result, statistics.median(times) * 1000\n\n\ndef main() -> None:\n    conn = sqlite3.connect(\"shop.db\")\n    if \"--reset\" in sys.argv:\n        for (name,) in conn.execute(\"SELECT name FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL\")\\\n                .fetchall():\n            conn.execute(f\"DROP INDEX {name}\")\n        conn.execute(\"DROP TABLE IF EXISTS sqlite_stat1\")\n    with open(\"indexes.sql\", encoding=\"utf-8\") as f:\n        conn.executescript(f.read())\n    if \"--analyze\" in sys.argv:\n        conn.execute(\"ANALYZE\")\n        for row in conn.execute(\"SELECT tbl, idx, stat FROM sqlite_stat1 ORDER BY tbl, idx\"):\n            print(\"sqlite_stat1:\", row)\n    names = [n for (n,) in conn.execute(\"SELECT name FROM sqlite_schema WHERE type = 'index' AND sql IS NOT NULL \"\n                                        \"ORDER BY name\")]\n    print(f\"Indexes: {', '.join(names) or 'none'}\")\n    for name, (sql, params) in QUERIES.items():\n        result, ms = timed(conn, sql, params)\n        summary = result[0] if len(result) == 1 else f\"{len(result)} rows\"\n        print(f\"\\n{name}: {summary} in {ms:.2f} ms\")\n        print(\"\\n\".join(plan(conn, sql, params)))\n    conn.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          }
+        ],
+        "hints": [
+          "Run python plans.py --reset after every edit to indexes.sql, so old indexes don't linger.",
+          "In a composite index, the columns compared with = come first; the first column used for a range ends the part of the index that can be searched.",
+          "created_at is text like '2025-03-14 09:30:00', so created_at >= '2025-01-01' AND created_at < '2026-01-01' selects exactly the year 2025."
+        ]
+      }
+    },
+    {
+      "title": "Transactions, isolation and MVCC",
+      "summary": "Define what a transaction guarantees, name the anomalies weaker isolation allows, compare the isolation levels real databases implement, and see how multi-version concurrency control gives readers consistent snapshots without blocking writers.",
+      "instructor": "konstantini-papadopoulous",
+      "lessons": [
+        {
+          "title": "ACID and the anomalies",
+          "minutes": 13,
+          "objectives": [
+            "Define atomicity, consistency, isolation and durability precisely",
+            "Recognise dirty reads, non-repeatable reads, phantoms, lost updates, read skew and write skew",
+            "Decide which anomalies matter for a piece of application logic"
+          ],
+          "key_points": [
+            "Atomicity: a transaction's changes all happen or none do, even across a crash. Consistency: the application's invariants hold before and after, which depends on the application and its constraints. Isolation: concurrent transactions interfere only as the isolation level allows. Durability: committed data survives crashes.",
+            "A dirty read sees another transaction's uncommitted change, and a dirty write overwrites one. A non-repeatable read gets a different value when it reads the same row twice; a phantom is a row that appears or disappears when the same search runs again.",
+            "A lost update happens when two transactions read a value, both compute from it and both write back, so one change disappears: two clerks each adding stock to the same count.",
+            "Read skew: a transaction sees part of another's changes, such as one account after a transfer and the other before it. Write skew: two transactions read overlapping data, each makes a decision that is valid alone, and they write different rows, breaking an invariant together: the last two on-call doctors both going off call.",
+            "The SQL standard defines four isolation levels by which of three phenomena they forbid (dirty reads, non-repeatable reads, phantoms): READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ and SERIALIZABLE. Real databases differ from the standard's wording, so test the behaviour you rely on.",
+            "Serialisable execution means the outcome equals some serial execution of the transactions. At anything weaker, the application must handle the anomalies its level allows, with explicit locks or constraints."
+          ]
+        },
+        {
+          "title": "Isolation levels in real databases",
+          "minutes": 14,
+          "objectives": [
+            "Compare the isolation levels of PostgreSQL, InnoDB and SQLite",
+            "Predict which anomalies each PostgreSQL level allows",
+            "Handle serialisation failures by retrying"
+          ],
+          "key_points": [
+            "PostgreSQL's default is read committed: each statement sees a snapshot taken when the statement starts, so two reads in one transaction can differ. Read uncommitted is accepted but behaves as read committed.",
+            "PostgreSQL's repeatable read is snapshot isolation: the whole transaction sees the snapshot taken at its first statement, so neither non-repeatable reads nor phantoms occur. Updating a row changed by a transaction that committed after that snapshot fails with 'could not serialize access due to concurrent update'.",
+            "Snapshot isolation still allows write skew. PostgreSQL's SERIALIZABLE level (serialisable snapshot isolation, since 9.1) watches for the read-write dependency patterns that make it possible and aborts a transaction with SQLSTATE 40001, so the application must retry.",
+            "InnoDB defaults to repeatable read: plain SELECTs read a snapshot, but locking reads and UPDATEs see the latest committed rows and take next-key locks (a row plus the gap before it) against phantoms. SQL Server's default read committed takes shared locks unless read committed snapshot is enabled.",
+            "SQLite lets one writer at a time commit, so its transactions are serialisable. In WAL mode, readers keep the snapshot they started with while a writer commits, and a transaction that read an old snapshot and then tries to write gets SQLITE_BUSY at once.",
+            "At any level, write transactions can fail with serialisation or deadlock errors, so make them safe to retry: short, free of side effects outside the database, and wrapped in a retry loop with a limit."
+          ],
+          "walkthrough": {
+            "tool": "psql",
+            "title": "Watch isolation levels in two psql sessions",
+            "steps": [
+              {
+                "do": "Two psql sessions, A and B, on the same database: run docker exec -it pg psql -U postgres in two terminals (the first walkthrough in Module 1 starts the container). In A, create the on-call table.",
+                "code": "CREATE TABLE doctors (name text PRIMARY KEY, on_call boolean NOT NULL);\nINSERT INTO doctors VALUES ('ama', true), ('bo', true);",
+                "lang": "sql"
+              },
+              {
+                "do": "Read committed, the default: A reads Ama's row in a transaction, B changes it, A reads it again.",
+                "code": "-- A\nBEGIN;\nSELECT on_call FROM doctors WHERE name = 'ama';\n-- B\nUPDATE doctors SET on_call = false WHERE name = 'ama';\n-- A\nSELECT on_call FROM doctors WHERE name = 'ama';\nCOMMIT;",
+                "lang": "sql",
+                "see": "A reads t, then f: a non-repeatable read. Put it back with UPDATE doctors SET on_call = true;"
+              },
+              {
+                "do": "Write skew under repeatable read: each session checks that two doctors are on call, then takes a different doctor off call.",
+                "code": "-- A and B, each:\nBEGIN ISOLATION LEVEL REPEATABLE READ;\nSELECT count(*) FROM doctors WHERE on_call;\n-- A\nUPDATE doctors SET on_call = false WHERE name = 'ama';\nCOMMIT;\n-- B\nUPDATE doctors SET on_call = false WHERE name = 'bo';\nCOMMIT;",
+                "lang": "sql",
+                "see": "Both see 2 and both commit; SELECT count(*) FROM doctors WHERE on_call; now returns 0."
+              },
+              {
+                "do": "Reset with UPDATE doctors SET on_call = true; and repeat the previous step with BEGIN ISOLATION LEVEL SERIALIZABLE in both sessions.",
+                "see": "B's UPDATE (in other interleavings, its COMMIT) fails: ERROR: could not serialize access due to read/write dependencies among transactions, with HINT: The transaction might succeed if retried."
+              },
+              {
+                "do": "Concurrent update under repeatable read: both sessions read Ama's row, A updates it, then B tries.",
+                "code": "-- A and B, each:\nBEGIN ISOLATION LEVEL REPEATABLE READ;\nSELECT on_call FROM doctors WHERE name = 'ama';\n-- A\nUPDATE doctors SET on_call = false WHERE name = 'ama';\n-- B (it waits)\nUPDATE doctors SET on_call = false WHERE name = 'ama';\n-- A\nCOMMIT;",
+                "lang": "sql",
+                "see": "B waits for A, then fails with ERROR: could not serialize access due to concurrent update. End B with ROLLBACK."
+              },
+              {
+                "do": "Repeat the previous step with a plain BEGIN (read committed) in both sessions.",
+                "see": "B waits, then its UPDATE succeeds (UPDATE 1) once A commits: it re-checks the newest committed version of the row instead of failing."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Multi-version concurrency control",
+          "minutes": 14,
+          "objectives": [
+            "Explain how PostgreSQL decides which row versions a snapshot sees",
+            "Describe what VACUUM does and why long transactions hurt",
+            "Compare PostgreSQL's MVCC with undo-log designs"
+          ],
+          "key_points": [
+            "With MVCC, writers create new row versions instead of overwriting, and each transaction reads the versions its snapshot can see, so readers never block writers and writers never block readers; only writers of the same row wait for each other.",
+            "Each PostgreSQL row version records xmin, the transaction that created it, and xmax, the transaction that deleted or replaced it (0 if none). An UPDATE sets xmax on the old version and inserts a new one; a DELETE only sets xmax.",
+            "A snapshot records which transactions hadn't committed when it was taken. A version is visible if its xmin had committed by then (or is the reader's own transaction) and its xmax is 0, aborted, or not yet committed for that snapshot.",
+            "Versions no snapshot can see any more are dead. VACUUM (usually autovacuum) removes them, makes their space reusable, updates the visibility map and freezes old transaction IDs so the 32-bit counter can wrap round safely.",
+            "A long-running transaction, or a session left idle in transaction, holds back the oldest snapshot, so VACUUM can't remove anything that became dead after it began, and tables and indexes bloat. Watch xact_start in pg_stat_activity.",
+            "InnoDB and Oracle update rows in place and keep earlier versions in an undo log, rebuilding an old version for a snapshot that needs it: the table stays compact, but long transactions make the undo log grow and old reads slower."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Simulate MVCC, then see real snapshots in SQLite",
+        "tool": "Python 3, SQLite and pytest",
+        "minutes": 55,
+        "goal": "Implement PostgreSQL-style visibility and first-updater-wins in a small MVCC simulator, reproduce non-repeatable reads, lost updates and write skew at two isolation levels, then see snapshots and a lost update in a real SQLite database.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest); sqlite3 comes with Python",
+          "Download the lab files into a new folder: mvcc.py, scenarios.py, sqlite_snapshot.py and test_mvcc.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "5 failed"
+          },
+          {
+            "do": "Implement Database.visible: a version is visible if it was created by this transaction or by one committed for the snapshot, and not deleted by this transaction or by one committed for the snapshot.",
+            "code": "created = v.xmin == me or self.committed_for(v.xmin, snap)\ndeleted = v.xmax != 0 and (v.xmax == me or self.committed_for(v.xmax, snap))\nreturn created and not deleted",
+            "lang": "python"
+          },
+          {
+            "do": "Finish Transaction.write: under repeatable read, raise SerializationFailure if the current version isn't visible to this transaction's snapshot; then, if the current version's xmax is 0, set it to this transaction's xid."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "5 passed"
+          },
+          {
+            "do": "Run the scenarios.",
+            "code": "python scenarios.py",
+            "lang": "bash",
+            "see": "read committed: A reads 100, B commits 150, A reads again: 150; repeatable read: ... again: 100"
+          },
+          {
+            "do": "Compare the lost-update lines: read committed lets B overwrite A's addition (13 instead of 18); repeatable read refuses B's write, and the retry produces 18.",
+            "see": "repeatable read: A adds 5, B adds 3 to 10 -> B fails (could not serialize access due to concurrent update of 'stock') and is retried; final stock 18"
+          },
+          {
+            "do": "Read the write-skew line and explain why first-updater-wins can't stop it: A and B wrote different rows.",
+            "see": "write skew under snapshot isolation: both commit; doctors on call now: 0"
+          },
+          {
+            "do": "Read the VACUUM lines: while the old snapshot is open, none of the five dead versions can be removed, even those it could never see; once it ends, all five go. Relate this to long transactions in PostgreSQL.",
+            "see": "with an old snapshot open VACUUM removes 0 ... after it commits VACUUM removes 5, leaving 1 version"
+          },
+          {
+            "do": "Run the SQLite script: two connections to one file in WAL mode.",
+            "code": "python sqlite_snapshot.py",
+            "lang": "bash",
+            "see": "reader sees 100; writer commits 150; reader, same transaction, sees 100"
+          },
+          {
+            "do": "Read the next line: the reader's snapshot is out of date, so SQLite refuses its write at once instead of waiting out the timeout. Explain why waiting couldn't help.",
+            "see": "reader tries to write from its old snapshot: database is locked (after 0.0 s, despite a 5 s timeout)"
+          },
+          {
+            "do": "Read the last two lines: reading, adding and writing back in application code loses a deposit, while one UPDATE that does the arithmetic keeps both. Name two other fixes.",
+            "see": "read-modify-write: both read 150, add 10 and 20 -> 170 (one deposit lost); atomic UPDATE ... : 200 (both deposits kept)"
+          }
+        ],
+        "checks": [
+          {
+            "text": "Visibility and first-updater-wins pass their tests.",
+            "look_for": [
+              "5 passed"
+            ]
+          },
+          {
+            "text": "Read committed shows a non-repeatable read and repeatable read doesn't.",
+            "look_for": [
+              "A reads again: 150",
+              "A reads again: 100"
+            ]
+          },
+          {
+            "text": "Repeatable read turns the lost update into a serialisation failure and a retry.",
+            "look_for": [
+              "final stock 13",
+              "final stock 18"
+            ]
+          },
+          {
+            "text": "Snapshot isolation allows write skew, and an old snapshot holds back VACUUM.",
+            "look_for": [
+              "doctors on call now: 0",
+              "VACUUM removes 0",
+              "VACUUM removes 5"
+            ]
+          },
+          {
+            "text": "SQLite's WAL snapshot and the lost update in application code are shown.",
+            "look_for": [
+              "same transaction, sees 100",
+              "170 (one deposit lost)",
+              "200 (both deposits kept)"
+            ]
+          }
+        ],
+        "submit": "Paste mvcc.py, the pytest summary, the output of scenarios.py and sqlite_snapshot.py, and your explanations.",
+        "files": [
+          {
+            "path": "mvcc.py",
+            "content": "\"\"\"Multi-version concurrency control in miniature, following PostgreSQL's design.\n\nEvery write adds a row version. A version records xmin (the transaction that created it) and xmax (the\ntransaction that deleted or replaced it; 0 if none). A snapshot records which transactions it must treat\nas not yet committed. Read committed takes a new snapshot for every statement; repeatable read takes one\nwhen the transaction begins and keeps it (snapshot isolation).\n\"\"\"\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\nclass SerializationFailure(Exception):\n    \"\"\"Like PostgreSQL's 'could not serialize access due to concurrent update' (SQLSTATE 40001).\"\"\"\n\n\nclass WouldBlock(Exception):\n    \"\"\"Another open transaction is changing this row. A real database would wait for it to finish.\"\"\"\n\n\n@dataclass\nclass Version:\n    key: str\n    value: object\n    xmin: int\n    xmax: int = 0\n\n\n@dataclass(frozen=True)\nclass Snapshot:\n    next_xid: int             # transactions with this ID or higher hadn't started: invisible\n    running: frozenset        # transactions that had started but not finished: invisible\n\n\nclass Database:\n    def __init__(self) -> None:\n        self.versions: list[Version] = []           # in creation order, so a key's newest version is last\n        self.status: dict[int, str] = {}            # xid -> \"running\", \"committed\" or \"aborted\"\n        self.open: dict[int, \"Transaction\"] = {}\n        self.next_xid = 1\n\n    def begin(self, isolation: str = \"read committed\") -> \"Transaction\":\n        txn = Transaction(self, self.next_xid, isolation)\n        self.status[txn.xid] = \"running\"\n        self.open[txn.xid] = txn\n        self.next_xid += 1\n        if isolation == \"repeatable read\":\n            txn.snapshot = self.take_snapshot()\n        return txn\n\n    def take_snapshot(self) -> Snapshot:\n        return Snapshot(self.next_xid, frozenset(x for x, s in self.status.items() if s == \"running\"))\n\n    def committed_for(self, xid: int, snap: Snapshot) -> bool:\n        \"\"\"Did xid commit, as far as this snapshot is concerned?\"\"\"\n        return self.status.get(xid) == \"committed\" and xid < snap.next_xid and xid not in snap.running\n\n    def visible(self, v: Version, snap: Snapshot, me: int) -> bool:\n        \"\"\"Can transaction `me`, reading with `snap`, see version v?\n        It must have been created by `me` or by a transaction committed for the snapshot, and not deleted by\n        `me` or by a transaction committed for the snapshot.\"\"\"\n        raise NotImplementedError(\"TODO: two conditions, each using committed_for (or xid == me)\")\n\n    def current(self, key: str) -> Version | None:\n        \"\"\"The key's newest version that wasn't created by an aborted transaction.\"\"\"\n        for v in reversed(self.versions):\n            if v.key == key and self.status.get(v.xmin) != \"aborted\":\n                return v\n        return None\n\n    def vacuum(self) -> int:\n        \"\"\"Remove versions that no open snapshot can see any more; return how many were removed.\"\"\"\n        held = [t.snapshot for t in self.open.values() if t.snapshot is not None]\n\n        def needed(v: Version) -> bool:\n            if self.status.get(v.xmin) == \"aborted\":\n                return False\n            if v.xmax == 0 or self.status.get(v.xmax) != \"committed\":\n                return True\n            return any(not self.committed_for(v.xmax, s) for s in held)   # an old snapshot still sees it\n\n        before = len(self.versions)\n        self.versions = [v for v in self.versions if needed(v)]\n        return before - len(self.versions)\n\n\nclass Transaction:\n    def __init__(self, db: Database, xid: int, isolation: str) -> None:\n        self.db, self.xid, self.isolation = db, xid, isolation\n        self.snapshot: Snapshot | None = None\n\n    def _snap(self) -> Snapshot:\n        return self.snapshot if self.snapshot is not None else self.db.take_snapshot()\n\n    def read(self, key: str) -> object:\n        snap = self._snap()\n        for v in reversed(self.db.versions):\n            if v.key == key and self.db.visible(v, snap, self.xid):\n                return v.value\n        return None\n\n    def write(self, key: str, value: object) -> None:\n        \"\"\"Replace (or insert) the key's value: set xmax on the current version and add a new one.\n\n        If another open transaction created or replaced the current version, raise WouldBlock. Under repeatable\n        read, if the current version was created or replaced by a transaction this snapshot can't see as\n        committed (it committed after the snapshot), raise SerializationFailure: first updater wins.\n        Under read committed, carry on: the write lands on top of the newest committed version.\n        \"\"\"\n        cur = self.db.current(key)\n        if cur is not None:\n            others = [x for x in (cur.xmin, cur.xmax) if x not in (0, self.xid)]\n            if any(self.db.status.get(x) == \"running\" for x in others):\n                raise WouldBlock(f\"transaction {self.xid} would wait for another writer of {key!r}\")\n            raise NotImplementedError(\"TODO: under repeatable read, refuse if the current version isn't visible\")\n        self.db.versions.append(Version(key, value, self.xid))\n\n    def commit(self) -> None:\n        self.db.status[self.xid] = \"committed\"\n        del self.db.open[self.xid]\n\n    def abort(self) -> None:\n        self.db.status[self.xid] = \"aborted\"\n        for v in self.db.versions:\n            if v.xmax == self.xid:\n                v.xmax = 0                               # the replaced versions are current again\n        del self.db.open[self.xid]\n"
+          },
+          {
+            "path": "scenarios.py",
+            "content": "\"\"\"Interleave transactions step by step and see what each isolation level allows.\"\"\"\nfrom mvcc import Database, SerializationFailure\n\n\ndef fresh(**rows) -> Database:\n    db = Database()\n    setup = db.begin()\n    for k, v in rows.items():\n        setup.write(k, v)\n    setup.commit()\n    return db\n\n\ndef non_repeatable_read(isolation: str) -> None:\n    db = fresh(balance=100)\n    a, b = db.begin(isolation), db.begin()\n    first = a.read(\"balance\")\n    b.write(\"balance\", 150)\n    b.commit()\n    print(f\"{isolation:>15}: A reads {first}, B commits 150, A reads again: {a.read('balance')}\")\n\n\ndef lost_update(isolation: str) -> None:\n    db = fresh(stock=10)\n    a, b = db.begin(isolation), db.begin(isolation)\n    sa, sb = a.read(\"stock\"), b.read(\"stock\")       # both read 10\n    a.write(\"stock\", sa + 5)\n    a.commit()\n    try:\n        b.write(\"stock\", sb + 3)\n        b.commit()\n        outcome = \"B's write succeeds\"\n    except SerializationFailure as e:\n        b.abort()\n        retry = db.begin(isolation)                 # the application retries B from the start\n        retry.write(\"stock\", retry.read(\"stock\") + 3)\n        retry.commit()\n        outcome = f\"B fails ({e}) and is retried\"\n    print(f\"{isolation:>15}: A adds 5, B adds 3 to 10 -> {outcome}; final stock {db.begin().read('stock')}\")\n\n\ndef write_skew() -> None:\n    db = fresh(ama=True, bo=True)                   # who is on call\n    a, b = db.begin(\"repeatable read\"), db.begin(\"repeatable read\")\n    if [a.read(\"ama\"), a.read(\"bo\")].count(True) >= 2:\n        a.write(\"ama\", False)                       # A: someone else is on call, so Ama can go\n    if [b.read(\"ama\"), b.read(\"bo\")].count(True) >= 2:\n        b.write(\"bo\", False)                        # B decides the same about Bo, from its own snapshot\n    a.commit()\n    b.commit()\n    check = db.begin()\n    print(f\"write skew under snapshot isolation: both commit; doctors on call now: \"\n          f\"{[check.read('ama'), check.read('bo')].count(True)}\")\n\n\ndef vacuum() -> None:\n    db = fresh(x=0)\n    old = db.begin(\"repeatable read\")               # an old snapshot that stays open\n    for i in range(1, 6):\n        t = db.begin()\n        t.write(\"x\", i)\n        t.commit()\n    print(f\"vacuum: {len(db.versions)} versions of x; with an old snapshot open VACUUM removes {db.vacuum()}; \"\n          f\"the old snapshot still reads x = {old.read('x')}\")\n    old.commit()\n    print(f\"        after it commits VACUUM removes {db.vacuum()}, leaving {len(db.versions)} version\")\n\n\nif __name__ == \"__main__\":\n    for level in (\"read committed\", \"repeatable read\"):\n        non_repeatable_read(level)\n    for level in (\"read committed\", \"repeatable read\"):\n        lost_update(level)\n    write_skew()\n    vacuum()\n"
+          },
+          {
+            "path": "sqlite_snapshot.py",
+            "content": "\"\"\"Real snapshots in SQLite's WAL mode: two connections to one file.\"\"\"\nimport sqlite3\nimport time\nfrom pathlib import Path\n\nDB = \"bank.db\"\n\n\ndef connect(timeout: float = 5.0) -> sqlite3.Connection:\n    return sqlite3.connect(DB, timeout=timeout, isolation_level=None)   # we write BEGIN/COMMIT ourselves\n\n\ndef balance(conn: sqlite3.Connection) -> int:\n    return conn.execute(\"SELECT balance FROM accounts WHERE id = 1\").fetchone()[0]\n\n\ndef main() -> None:\n    for suffix in (\"\", \"-wal\", \"-shm\"):\n        Path(DB + suffix).unlink(missing_ok=True)\n    setup = connect()\n    print(\"journal mode:\", setup.execute(\"PRAGMA journal_mode = WAL\").fetchone()[0])\n    setup.execute(\"CREATE TABLE accounts (id INTEGER PRIMARY KEY, balance INTEGER NOT NULL)\")\n    setup.execute(\"INSERT INTO accounts VALUES (1, 100)\")\n    setup.close()\n\n    reader, writer = connect(), connect()\n    reader.execute(\"BEGIN\")\n    first = balance(reader)                              # the read starts the reader's snapshot\n    writer.execute(\"UPDATE accounts SET balance = 150 WHERE id = 1\")     # autocommit: committed now\n    print(f\"reader sees {first}; writer commits 150; reader, same transaction, sees {balance(reader)}\")\n    t0 = time.perf_counter()\n    try:\n        reader.execute(\"UPDATE accounts SET balance = balance + 1 WHERE id = 1\")\n    except sqlite3.OperationalError as e:\n        print(f\"reader tries to write from its old snapshot: {e} (after {time.perf_counter() - t0:.1f} s, \"\n              f\"despite a 5 s timeout)\")\n    reader.execute(\"ROLLBACK\")\n    print(f\"after ROLLBACK the reader sees {balance(reader)}\")\n\n    # A lost update in application code: read, compute, write back, in two connections.\n    a, b = connect(), connect()\n    seen_a, seen_b = balance(a), balance(b)\n    a.execute(\"UPDATE accounts SET balance = ? WHERE id = 1\", (seen_a + 10,))\n    b.execute(\"UPDATE accounts SET balance = ? WHERE id = 1\", (seen_b + 20,))\n    print(f\"read-modify-write: both read {seen_a}, add 10 and 20 -> {balance(a)} (one deposit lost)\")\n    a.execute(\"UPDATE accounts SET balance = balance + 10 WHERE id = 1\")\n    b.execute(\"UPDATE accounts SET balance = balance + 20 WHERE id = 1\")\n    print(f\"atomic UPDATE ... SET balance = balance + ?: {balance(a)} (both deposits kept)\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "test_mvcc.py",
+            "content": "import pytest\n\nfrom mvcc import Database, SerializationFailure, Snapshot, Version, WouldBlock\n\n\ndef test_visibility_rules():\n    db = Database()\n    db.status = {1: \"committed\", 2: \"running\", 3: \"aborted\", 4: \"committed\"}\n    snap = Snapshot(next_xid=4, running=frozenset({2}))\n    assert db.visible(Version(\"k\", \"a\", xmin=1), snap, me=9)\n    assert not db.visible(Version(\"k\", \"b\", xmin=2), snap, me=9)          # still running\n    assert db.visible(Version(\"k\", \"b\", xmin=2), snap, me=2)              # but its own write\n    assert not db.visible(Version(\"k\", \"c\", xmin=3), snap, me=9)          # aborted\n    assert not db.visible(Version(\"k\", \"d\", xmin=4), snap, me=9)          # committed after the snapshot\n    assert db.visible(Version(\"k\", \"a\", xmin=1, xmax=2), snap, me=9)      # deleter still running\n    assert not db.visible(Version(\"k\", \"a\", xmin=1, xmax=1), snap, me=9)  # deleted and committed\n\n\ndef test_snapshot_isolation_keeps_a_stable_view():\n    db = Database()\n    t = db.begin()\n    t.write(\"x\", 1)\n    t.commit()\n    rr, rc = db.begin(\"repeatable read\"), db.begin(\"read committed\")\n    w = db.begin()\n    w.write(\"x\", 2)\n    w.commit()\n    assert rr.read(\"x\") == 1 and rc.read(\"x\") == 2\n\n\ndef test_first_updater_wins_under_repeatable_read():\n    db = Database()\n    t = db.begin()\n    t.write(\"x\", 1)\n    t.commit()\n    a, b = db.begin(\"repeatable read\"), db.begin(\"repeatable read\")\n    a.write(\"x\", 2)\n    with pytest.raises(WouldBlock):\n        b.write(\"x\", 3)                    # a hasn't finished\n    a.commit()\n    with pytest.raises(SerializationFailure):\n        b.write(\"x\", 3)                    # a committed after b's snapshot\n\n\ndef test_read_committed_overwrites():\n    db = Database()\n    t = db.begin()\n    t.write(\"x\", 1)\n    t.commit()\n    a, b = db.begin(), db.begin()\n    a.write(\"x\", 2)\n    a.commit()\n    b.write(\"x\", 3)\n    b.commit()\n    assert db.begin().read(\"x\") == 3\n\n\ndef test_abort_restores_the_old_version():\n    db = Database()\n    t = db.begin()\n    t.write(\"x\", 1)\n    t.commit()\n    a = db.begin()\n    a.write(\"x\", 99)\n    a.abort()\n    assert db.begin().read(\"x\") == 1\n    b = db.begin(\"repeatable read\")\n    b.write(\"x\", 2)                        # no conflict: the aborted version doesn't count\n    b.commit()\n    assert db.begin().read(\"x\") == 2\n"
+          }
+        ],
+        "hints": [
+          "committed_for already covers 'committed after the snapshot': it checks the status, next_xid and the running set.",
+          "Under repeatable read, not self.db.visible(cur, self.snapshot, self.xid) means exactly 'someone committed a newer version after my snapshot was taken'.",
+          "Set xmax only when it's 0; a version created earlier in the same transaction is visible to it, so it can be replaced again."
+        ]
+      }
+    },
+    {
+      "title": "Locking, deadlocks and recovery",
+      "summary": "Use locks where MVCC isn't enough, see how deadlocks form and how databases detect or avoid them, and learn how the write-ahead log makes commits durable and lets a database recover from a crash.",
+      "instructor": "konstantini-papadopoulous",
+      "lessons": [
+        {
+          "title": "Locks and two-phase locking",
+          "minutes": 13,
+          "objectives": [
+            "Explain shared and exclusive locks and two-phase locking",
+            "Use row locks in PostgreSQL with FOR UPDATE, NOWAIT and SKIP LOCKED",
+            "Recognise statements that take heavy table locks"
+          ],
+          "key_points": [
+            "Shared locks let many transactions read an item; an exclusive lock lets one transaction change it and excludes everyone else. Two-phase locking (2PL) acquires locks as the transaction runs and releases none until it has all it needs; strict 2PL holds them until commit, which makes schedules serialisable.",
+            "Pure 2PL makes readers and writers block each other and needs range or predicate locks to stop phantoms; that cost is why MVCC databases use locks mainly between writers and for explicit requests.",
+            "In PostgreSQL, SELECT ... FOR UPDATE locks the selected rows against other updates and locking reads until the transaction ends, which makes a read-modify-write safe; FOR SHARE allows other shared lockers but blocks writers.",
+            "NOWAIT makes a locking read fail at once instead of waiting; SKIP LOCKED skips rows locked by others, which lets several workers take jobs from one queue table without blocking each other.",
+            "Table locks matter in production: most ALTER TABLE forms take an ACCESS EXCLUSIVE lock that blocks even reads, and a waiting ALTER queues every later query behind it. Set lock_timeout before schema changes, and build indexes with CREATE INDEX CONCURRENTLY.",
+            "Row locks allow more concurrency than table locks but cost bookkeeping; databases combine both safely with intention locks on tables, and PostgreSQL's pg_locks view shows who holds and who awaits each lock."
+          ],
+          "walkthrough": {
+            "tool": "psql",
+            "title": "Lock rows with FOR UPDATE, NOWAIT and SKIP LOCKED",
+            "steps": [
+              {
+                "do": "Two psql sessions, A and B, on the same database: run docker exec -it pg psql -U postgres in two terminals (the first walkthrough in Module 1 starts the container). In A, create a small job queue.",
+                "code": "CREATE TABLE jobs (id int PRIMARY KEY, status text NOT NULL DEFAULT 'queued');\nINSERT INTO jobs (id) SELECT generate_series(1, 5);",
+                "lang": "sql"
+              },
+              {
+                "do": "Worker A claims two jobs; the rows stay locked until A's transaction ends.",
+                "code": "BEGIN;\nSELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 2 FOR UPDATE SKIP LOCKED;",
+                "lang": "sql",
+                "see": "ids 1 and 2"
+              },
+              {
+                "do": "Worker B runs the same statements: SKIP LOCKED passes over A's rows instead of waiting for them.",
+                "code": "BEGIN;\nSELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 2 FOR UPDATE SKIP LOCKED;",
+                "lang": "sql",
+                "see": "ids 3 and 4"
+              },
+              {
+                "do": "In B, ask for job 1 without waiting, then end B's transaction.",
+                "code": "SELECT id FROM jobs WHERE id = 1 FOR UPDATE NOWAIT;\nROLLBACK;",
+                "lang": "sql",
+                "see": "ERROR: could not obtain lock on row in relation \"jobs\""
+              },
+              {
+                "do": "In A, list the locks it holds. Row locks aren't listed one by one: PostgreSQL marks them in the rows themselves.",
+                "code": "SELECT locktype, relation::regclass, mode, granted\nFROM pg_locks\nWHERE pid = pg_backend_pid() AND locktype IN ('relation', 'transactionid');",
+                "lang": "sql",
+                "see": "RowShareLock on jobs and on jobs_pkey, and an ExclusiveLock on A's own transactionid."
+              },
+              {
+                "do": "Cap lock waits: A updates job 5 inside its open transaction; B tries to change it with a 500 ms limit. Finish with ROLLBACK in A.",
+                "code": "-- A\nUPDATE jobs SET status = 'running' WHERE id = 5;\n-- B\nSET lock_timeout = '500ms';\nUPDATE jobs SET status = 'done' WHERE id = 5;",
+                "lang": "sql",
+                "see": "After half a second, B gets ERROR: canceling statement due to lock timeout."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Deadlocks",
+          "minutes": 12,
+          "objectives": [
+            "Explain how a deadlock forms in a waits-for graph",
+            "Describe how PostgreSQL and SQLite detect or avoid deadlocks",
+            "Prevent deadlocks with lock ordering and short transactions"
+          ],
+          "key_points": [
+            "A deadlock is a cycle of transactions, each waiting for a lock another one holds: A holds row 1 and wants row 2 while B holds row 2 and wants row 1. Neither can proceed, so the database must abort one.",
+            "Databases detect deadlocks as cycles in the waits-for graph, with an edge from each waiting transaction to each transaction it waits for. PostgreSQL checks once a lock wait has lasted deadlock_timeout (1 second by default) and aborts one transaction with 'deadlock detected' (SQLSTATE 40P01).",
+            "Prevent them: take locks in a consistent order (for a transfer, the lower account ID first), keep transactions short, lock everything needed up front with SELECT ... FOR UPDATE, and retry the transaction that was aborted.",
+            "Timeouts are the blunt alternative: PostgreSQL's lock_timeout and InnoDB's innodb_lock_wait_timeout abort a wait that lasts too long, whether or not there's a cycle.",
+            "SQLite allows one writer at a time, so its deadlock takes another form: two connections in deferred transactions that have both read can't both upgrade to writing, and the second gets SQLITE_BUSY at once rather than waiting in vain. BEGIN IMMEDIATE takes the write lock first and avoids it.",
+            "Deadlocks can involve the application too, such as a transaction that holds row locks while it waits for a slow HTTP call; never hold database locks across slow external calls."
+          ],
+          "walkthrough": {
+            "tool": "psql",
+            "title": "Cause a deadlock and read PostgreSQL's report",
+            "steps": [
+              {
+                "do": "Two psql sessions, A and B, on the same database: run docker exec -it pg psql -U postgres in two terminals (the first walkthrough in Module 1 starts the container). In A, create two accounts.",
+                "code": "CREATE TABLE accounts (id int PRIMARY KEY, balance int NOT NULL);\nINSERT INTO accounts VALUES (1, 100), (2, 100);",
+                "lang": "sql"
+              },
+              {
+                "do": "A starts a transfer from account 1 to 2, and B one from 2 to 1; each locks its first row.",
+                "code": "-- A\nBEGIN;\nUPDATE accounts SET balance = balance - 10 WHERE id = 1;\n-- B\nBEGIN;\nUPDATE accounts SET balance = balance - 10 WHERE id = 2;",
+                "lang": "sql",
+                "see": "UPDATE 1 in each session."
+              },
+              {
+                "do": "A now needs account 2, which B holds.",
+                "code": "-- A\nUPDATE accounts SET balance = balance + 10 WHERE id = 2;",
+                "lang": "sql",
+                "see": "No result: A is waiting for B."
+              },
+              {
+                "do": "B now needs account 1, which A holds. After deadlock_timeout (1 second by default) PostgreSQL finds the cycle and aborts one transaction.",
+                "code": "-- B\nUPDATE accounts SET balance = balance + 10 WHERE id = 1;",
+                "lang": "sql",
+                "see": "In B: ERROR: deadlock detected, with DETAIL lines 'Process ... waits for ShareLock on transaction ...; blocked by process ...' for each side. A's waiting UPDATE then completes."
+              },
+              {
+                "do": "Finish: COMMIT in A, ROLLBACK in B, and check the balances.",
+                "code": "-- A\nCOMMIT;\n-- B\nROLLBACK;\nSELECT * FROM accounts ORDER BY id;",
+                "lang": "sql",
+                "see": "1 | 90 and 2 | 110: only A's transfer happened; B's application must retry."
+              },
+              {
+                "do": "Fix the cause: make every transfer lock the lower account ID first. Redo the transfers with both sessions updating account 1 before account 2.",
+                "see": "No deadlock: B's first UPDATE simply waits until A commits."
+              }
+            ]
+          }
+        },
+        {
+          "title": "Write-ahead logging and crash recovery",
+          "minutes": 14,
+          "objectives": [
+            "State the write-ahead rule and what a commit must flush",
+            "Explain checkpoints, and the redo and undo of crash recovery",
+            "Compare PostgreSQL's WAL with SQLite's rollback journal and WAL modes"
+          ],
+          "key_points": [
+            "The write-ahead rule: a change's log record must reach stable storage before the changed page does, and a transaction commits once its commit record has been flushed (fsync) to the log. Data pages can then be written lazily, because the log can redo them.",
+            "Each log record has a log sequence number (LSN), and each page records the LSN of the last change applied to it, so recovery can tell whether a page already contains a change and apply each one exactly once.",
+            "A checkpoint writes all dirty pages and records the log position recovery must start from; frequent checkpoints shorten recovery but add writes. PostgreSQL also logs a full page image the first time a page changes after a checkpoint (full_page_writes), so a torn, half-written page can be repaired.",
+            "ARIES-style recovery, used with variations by many databases, has three passes: analysis (which transactions were active and which pages dirty), redo (repeat history from the checkpoint, uncommitted changes included) and undo (roll back transactions that never committed, logging compensation records).",
+            "PostgreSQL needs no undo pass: an aborted transaction's row versions just stay invisible under MVCC until VACUUM removes them. Its WAL also drives streaming replication and point-in-time recovery from a base backup plus archived WAL.",
+            "SQLite's default rollback journal copies original pages aside before changing the database file, and commits by deleting the journal; WAL mode appends changed pages to a -wal file, lets readers carry on during writes, and copies pages back at checkpoints (by default when the WAL reaches 1,000 pages)."
+          ]
+        }
+      ],
+      "lab": {
+        "title": "Deadlocks and a write-ahead log",
+        "tool": "Python 3, SQLite and pytest",
+        "minutes": 60,
+        "goal": "Detect deadlocks by finding cycles in a waits-for graph, see how SQLite avoids lock-upgrade deadlocks, then build a write-ahead log for a key-value store that recovers committed transactions and discards uncommitted ones and torn writes after a crash.",
+        "setup": [
+          "Python 3.10 or newer with pytest (python -m pip install pytest); sqlite3 comes with Python",
+          "Download the lab files into a new folder: locks.py, wal_kv.py, crash_test.py, sqlite_locks.py and test_lab5.py"
+        ],
+        "steps": [
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 failed"
+          },
+          {
+            "do": "Implement find_cycle with depth-first search: follow the edges from each transaction in sorted order, keeping the current path; reaching a transaction already on the path closes a cycle, which you return from that transaction round to itself."
+          },
+          {
+            "do": "Implement KV.recover: walk the log line by line. Stop at a line with no newline (torn) or whose checksum doesn't match its JSON (corrupt). Buffer each transaction's set records, apply them when its commit record arrives, count transactions left without one, and truncate the log after the last good record.",
+            "code": "text, _, crc = line.rpartition(\"\\t\")\nif not text or crc != f\"{zlib.crc32(text.encode()):08x}\":\n    break                    # corrupt: treat it as the end of the log",
+            "lang": "python"
+          },
+          {
+            "do": "Implement checkpoint: write data.json through a temporary file that you flush and fsync, os.replace it over the old file, then empty the log."
+          },
+          {
+            "do": "Run the tests.",
+            "code": "python -m pytest -q",
+            "lang": "bash",
+            "see": "6 passed"
+          },
+          {
+            "do": "Run the crash test.",
+            "code": "python crash_test.py",
+            "lang": "bash",
+            "see": "waits-for {'T1': ['T2'], 'T2': ['T1']}; deadlock ['T1', 'T2', 'T1']; abort T2: ['T1 gets row2']"
+          },
+          {
+            "do": "Read the first recovery line: the checkpoint held a and b, the log redid two committed transactions (c added, b deleted), ignored the one with no commit record (d), and cut off a 35-byte torn record.",
+            "see": "after the crash: {'a': 10, 'c': 3}, stats {'redone': 2, 'ignored': 1, 'discarded_bytes': 35}"
+          },
+          {
+            "do": "Read the last line: a corrupted record in the middle stops recovery there, so the committed transactions after it are lost as well. Explain why recovery can't skip the bad record and carry on.",
+            "see": "with record 2 corrupted: {'a': 10, 'b': 2}, stats {'redone': 0, 'ignored': 1, 'discarded_bytes': 543}"
+          },
+          {
+            "do": "Run the SQLite locking script, which uses the default rollback-journal mode.",
+            "code": "python sqlite_locks.py",
+            "lang": "bash",
+            "see": "deferred B tries to write: database is locked; returned at once despite a 5 s timeout: True"
+          },
+          {
+            "do": "Read the rest: with BEGIN IMMEDIATE, B asks for the write lock before reading, so it waits for A (up to its timeout) instead of failing, and succeeds once A commits.",
+            "see": "B's BEGIN IMMEDIATE waited for A's commit and succeeded: True"
+          },
+          {
+            "do": "Measure durability's cost: time 200 single-key transactions with KV('t1') and with KV('t2', sync=False). Report both times, and explain what fsync buys and what PostgreSQL's synchronous_commit = off gives up."
+          }
+        ],
+        "checks": [
+          {
+            "text": "The deadlock detector and the write-ahead log pass their tests.",
+            "look_for": [
+              "6 passed"
+            ]
+          },
+          {
+            "text": "The deadlock is found and a victim aborted.",
+            "look_for": [
+              "deadlock ['T1', 'T2', 'T1']",
+              "abort T2"
+            ]
+          },
+          {
+            "text": "Recovery redoes committed transactions and drops the uncommitted one and the torn record.",
+            "look_for": [
+              "'redone': 2, 'ignored': 1, 'discarded_bytes': 35"
+            ]
+          },
+          {
+            "text": "Recovery stops at a corrupt record.",
+            "look_for": [
+              "'discarded_bytes': 543"
+            ]
+          },
+          {
+            "text": "SQLite refuses the deferred upgrade at once, and BEGIN IMMEDIATE waits instead.",
+            "look_for": [
+              "returned at once despite a 5 s timeout: True",
+              "waited for A's commit and succeeded: True"
+            ]
+          },
+          {
+            "text": "The cost of fsync is measured and explained.",
+            "look_for": [
+              "sync=False"
+            ]
+          }
+        ],
+        "submit": "Paste locks.py and wal_kv.py, the pytest summary, the output of crash_test.py and sqlite_locks.py, your two timings and your explanations.",
+        "files": [
+          {
+            "path": "locks.py",
+            "content": "\"\"\"An exclusive-lock manager with a waits-for graph and deadlock detection.\"\"\"\nfrom __future__ import annotations\n\n\nclass LockManager:\n    def __init__(self) -> None:\n        self.holder: dict[str, str] = {}             # resource -> transaction holding it\n        self.waiting: dict[str, str] = {}            # transaction -> resource it waits for\n        self.started: dict[str, int] = {}            # transaction -> start order, for choosing a victim\n\n    def acquire(self, txn: str, resource: str) -> str:\n        self.started.setdefault(txn, len(self.started))\n        owner = self.holder.get(resource)\n        if owner is None or owner == txn:\n            self.holder[resource] = txn\n            return \"granted\"\n        self.waiting[txn] = resource\n        return \"waiting\"\n\n    def release_all(self, txn: str) -> list[str]:\n        \"\"\"End txn: free its locks and grant each to the first transaction waiting for it.\"\"\"\n        self.waiting.pop(txn, None)\n        granted = []\n        for resource in [r for r, t in self.holder.items() if t == txn]:\n            del self.holder[resource]\n            for waiter, wanted in list(self.waiting.items()):\n                if wanted == resource:\n                    del self.waiting[waiter]\n                    self.holder[resource] = waiter\n                    granted.append(f\"{waiter} gets {resource}\")\n                    break\n        return granted\n\n    def waits_for(self) -> dict[str, set[str]]:\n        \"\"\"An edge from each waiting transaction to the transaction holding what it wants.\"\"\"\n        return {t: {self.holder[r]} for t, r in self.waiting.items() if r in self.holder}\n\n    def victim(self, cycle: list[str]) -> str:\n        \"\"\"This manager's policy: abort the youngest transaction in the cycle (PostgreSQL instead aborts the\n        transaction whose deadlock check found the cycle).\"\"\"\n        return max(cycle[:-1], key=lambda t: self.started[t])\n\n\ndef find_cycle(graph: dict[str, set[str]]) -> list[str] | None:\n    \"\"\"Return one cycle as [t1, t2, ..., t1], or None if the graph has no cycle.\n    Depth-first search, tracking the transactions on the current path.\"\"\"\n    raise NotImplementedError(\"TODO: DFS from every node; a neighbour already on the path closes a cycle\")\n"
+          },
+          {
+            "path": "wal_kv.py",
+            "content": "\"\"\"A key-value store made durable by a write-ahead log.\n\nEach log record is one line: JSON, a tab, then the CRC-32 of the JSON as 8 hex digits. A transaction writes\na begin record, one set record per change (value null means delete) and a commit record; its changes reach\nmemory only after the commit record is safely on disk. data.json holds the state as of the last checkpoint.\n\"\"\"\nfrom __future__ import annotations\n\nimport json\nimport os\nimport zlib\nfrom pathlib import Path\n\n\nclass KV:\n    def __init__(self, directory: str, sync: bool = True) -> None:\n        self.dir = Path(directory)\n        self.dir.mkdir(parents=True, exist_ok=True)\n        self.log_path, self.data_path = self.dir / \"wal.log\", self.dir / \"data.json\"\n        self.sync = sync\n        self.data: dict[str, object] = {}\n        self.next_lsn = self.next_tx = 1\n        self.stats = self.recover()\n\n    def _append(self, record: dict) -> None:\n        \"\"\"Append one record with its checksum; with sync, force it to disk before returning.\"\"\"\n        record = {\"lsn\": self.next_lsn, **record}\n        self.next_lsn += 1\n        text = json.dumps(record, sort_keys=True)\n        with open(self.log_path, \"a\", encoding=\"utf-8\") as f:\n            f.write(f\"{text}\\t{zlib.crc32(text.encode()):08x}\\n\")\n            f.flush()\n            if self.sync:\n                os.fsync(f.fileno())\n\n    def transaction(self, changes: dict, commit: bool = True) -> None:\n        \"\"\"Apply {key: value} changes atomically (None deletes). commit=False stops before the commit\n        record, as if the process crashed at that moment.\"\"\"\n        tx = self.next_tx\n        self.next_tx += 1\n        self._append({\"tx\": tx, \"op\": \"begin\"})\n        for key, value in changes.items():\n            self._append({\"tx\": tx, \"op\": \"set\", \"key\": key, \"value\": value})\n        if not commit:\n            return\n        self._append({\"tx\": tx, \"op\": \"commit\"})\n        for key, value in changes.items():          # only now, with the commit durable, change memory\n            if value is None:\n                self.data.pop(key, None)\n            else:\n                self.data[key] = value\n\n    def recover(self) -> dict:\n        \"\"\"Load data.json if it exists, then redo the log in order. Apply a transaction's set records only if\n        its commit record appears. Stop at the first record that is torn (no tab or newline) or corrupt\n        (checksum mismatch, bad JSON), and truncate the log there. Set next_lsn and next_tx past everything\n        seen. Return {\"redone\": committed transactions applied, \"ignored\": transactions without a commit,\n        \"discarded_bytes\": bytes cut from the end of the log}.\"\"\"\n        if self.data_path.exists():\n            saved = json.loads(self.data_path.read_text())\n            self.data, self.next_lsn, self.next_tx = saved[\"data\"], saved[\"next_lsn\"], saved[\"next_tx\"]\n        if not self.log_path.exists():\n            return {\"redone\": 0, \"ignored\": 0, \"discarded_bytes\": 0}\n        raw = self.log_path.read_bytes()\n        raise NotImplementedError(\"TODO: parse line by line; buffer each tx's sets; apply on commit; truncate\")\n\n    def checkpoint(self) -> None:\n        \"\"\"Write the state to data.json atomically (a temporary file, fsync, then os.replace), and only then\n        empty the log. A crash at any point leaves either the old checkpoint plus the log, or the new one.\"\"\"\n        raise NotImplementedError(\"TODO\")\n"
+          },
+          {
+            "path": "crash_test.py",
+            "content": "\"\"\"Crash the store at awkward moments, then recover.\"\"\"\nimport shutil\nfrom pathlib import Path\n\nfrom locks import LockManager, find_cycle\nfrom wal_kv import KV\n\nD = \"kv_data\"\n\n\ndef deadlock() -> None:\n    lm = LockManager()\n    steps = [(\"T1\", \"row1\"), (\"T2\", \"row2\"), (\"T1\", \"row2\"), (\"T2\", \"row1\")]\n    for txn, row in steps:\n        print(f\"{txn} asks for {row}: {lm.acquire(txn, row)}\")\n    cycle = find_cycle(lm.waits_for())\n    victim = lm.victim(cycle)\n    print(f\"waits-for {dict(sorted((k, sorted(v)) for k, v in lm.waits_for().items()))}; deadlock {cycle}; \"\n          f\"abort {victim}: {lm.release_all(victim)}\")\n\n\ndef wal() -> None:\n    shutil.rmtree(D, ignore_errors=True)\n    kv = KV(D)\n    kv.transaction({\"a\": 1, \"b\": 2})\n    kv.transaction({\"a\": 10})\n    kv.checkpoint()\n    kv.transaction({\"c\": 3})\n    kv.transaction({\"b\": None})                       # delete b\n    kv.transaction({\"d\": 4}, commit=False)            # crash before the commit record\n    with open(Path(D) / \"wal.log\", \"a\") as f:\n        f.write('{\"lsn\": 99, \"op\": \"set\", \"key\": \"e\"')  # a torn write: half a record, no newline\n    recovered = KV(D)\n    print(f\"after the crash: {recovered.data}, stats {recovered.stats}\")\n    recovered.transaction({\"e\": 5})\n    again = KV(D)\n    print(f\"after another restart: {again.data}, stats {again.stats}\")\n    log = Path(D) / \"wal.log\"\n    lines = log.read_text().splitlines(keepends=True)\n    lines[1] = lines[1].replace('\"c\"', '\"x\"')          # flip a key without fixing the checksum\n    log.write_text(\"\".join(lines))\n    corrupt = KV(D)\n    print(f\"with record 2 corrupted: {corrupt.data}, stats {corrupt.stats}\")\n\n\nif __name__ == \"__main__\":\n    deadlock()\n    wal()\n"
+          },
+          {
+            "path": "sqlite_locks.py",
+            "content": "\"\"\"SQLite's locks in its default rollback-journal mode: why a deferred transaction can't upgrade, and how\nBEGIN IMMEDIATE avoids it.\"\"\"\nimport sqlite3\nimport threading\nimport time\nfrom pathlib import Path\n\nDB = \"locks.db\"\n\n\ndef connect(timeout: float) -> sqlite3.Connection:\n    return sqlite3.connect(DB, timeout=timeout, isolation_level=None, check_same_thread=False)\n\n\ndef main() -> None:\n    for suffix in (\"\", \"-journal\"):\n        Path(DB + suffix).unlink(missing_ok=True)\n    setup = connect(5)\n    setup.execute(\"CREATE TABLE stock (item TEXT PRIMARY KEY, qty INTEGER NOT NULL)\")\n    setup.execute(\"INSERT INTO stock VALUES ('widget', 10)\")\n    setup.close()\n\n    a, b = connect(5), connect(5)\n    a.execute(\"BEGIN\")\n    b.execute(\"BEGIN\")\n    a.execute(\"SELECT qty FROM stock\").fetchone()          # both hold SHARED locks\n    b.execute(\"SELECT qty FROM stock\").fetchone()\n    a.execute(\"UPDATE stock SET qty = qty - 1\")              # A takes the RESERVED lock\n    t0 = time.perf_counter()\n    try:\n        b.execute(\"UPDATE stock SET qty = qty - 1\")          # B can't: waiting could never help\n    except sqlite3.OperationalError as e:\n        waited = time.perf_counter() - t0\n        print(f\"deferred B tries to write: {e}; returned at once despite a 5 s timeout: {waited < 1}\")\n    b.execute(\"ROLLBACK\")                                     # B lets go of its SHARED lock...\n    a.execute(\"COMMIT\")                                       # ...so A can commit\n    print(\"A commits; qty is now\", a.execute(\"SELECT qty FROM stock\").fetchone()[0])\n\n    a.execute(\"BEGIN IMMEDIATE\")                              # take the write lock before reading\n    b_short = connect(0.3)\n    t0 = time.perf_counter()\n    try:\n        b_short.execute(\"BEGIN IMMEDIATE\")\n    except sqlite3.OperationalError as e:\n        print(f\"B's BEGIN IMMEDIATE while A holds the lock: {e} after waiting its 0.3 s timeout: \"\n              f\"{time.perf_counter() - t0 >= 0.3}\")\n    threading.Timer(0.2, lambda: a.execute(\"COMMIT\")).start()  # A commits in 0.2 s\n    t0 = time.perf_counter()\n    b.execute(\"BEGIN IMMEDIATE\")                              # B waits (5 s timeout) and then gets the lock\n    print(f\"B's BEGIN IMMEDIATE waited for A's commit and succeeded: {0.15 < time.perf_counter() - t0 < 5}\")\n    b.execute(\"UPDATE stock SET qty = qty - 1\")\n    b.execute(\"COMMIT\")\n    print(\"B commits; qty is now\", b.execute(\"SELECT qty FROM stock\").fetchone()[0])\n\n\nif __name__ == \"__main__\":\n    main()\n"
+          },
+          {
+            "path": "test_lab5.py",
+            "content": "from pathlib import Path\n\nfrom locks import LockManager, find_cycle\nfrom wal_kv import KV\n\n\ndef test_no_cycle():\n    assert find_cycle({\"T1\": {\"T2\"}, \"T2\": {\"T3\"}}) is None\n    assert find_cycle({}) is None\n\n\ndef test_two_and_three_way_cycles():\n    assert find_cycle({\"T1\": {\"T2\"}, \"T2\": {\"T1\"}}) == [\"T1\", \"T2\", \"T1\"]\n    cycle = find_cycle({\"T1\": {\"T2\"}, \"T2\": {\"T3\"}, \"T3\": {\"T1\"}, \"T4\": {\"T1\"}})\n    assert cycle[0] == cycle[-1] and set(cycle) == {\"T1\", \"T2\", \"T3\"}\n\n\ndef test_lock_manager_deadlock_and_victim():\n    lm = LockManager()\n    for txn, row in [(\"T1\", \"r1\"), (\"T2\", \"r2\"), (\"T1\", \"r2\"), (\"T2\", \"r1\")]:\n        lm.acquire(txn, row)\n    cycle = find_cycle(lm.waits_for())\n    assert lm.victim(cycle) == \"T2\"\n    assert lm.release_all(\"T2\") == [\"T1 gets r2\"]\n    assert find_cycle(lm.waits_for()) is None\n\n\ndef test_committed_transactions_survive_a_restart(tmp_path):\n    kv = KV(tmp_path)\n    kv.transaction({\"a\": 1})\n    kv.transaction({\"a\": None, \"b\": 2})\n    assert KV(tmp_path).data == {\"b\": 2}\n\n\ndef test_uncommitted_and_torn_records_are_dropped(tmp_path):\n    kv = KV(tmp_path)\n    kv.transaction({\"a\": 1})\n    kv.transaction({\"b\": 2}, commit=False)\n    with open(Path(tmp_path) / \"wal.log\", \"a\") as f:\n        f.write('{\"half\": ')\n    again = KV(tmp_path)\n    assert again.data == {\"a\": 1}\n    assert again.stats == {\"redone\": 1, \"ignored\": 1, \"discarded_bytes\": 9}\n    again.transaction({\"c\": 3})\n    assert KV(tmp_path).data == {\"a\": 1, \"c\": 3}\n\n\ndef test_checkpoint_empties_the_log_and_keeps_the_state(tmp_path):\n    kv = KV(tmp_path)\n    kv.transaction({\"a\": 1, \"b\": 2})\n    kv.checkpoint()\n    assert (Path(tmp_path) / \"wal.log\").read_text() == \"\"\n    kv.transaction({\"b\": 3})\n    again = KV(tmp_path)\n    assert again.data == {\"a\": 1, \"b\": 3} and again.stats[\"redone\"] == 1\n"
+          }
+        ],
+        "hints": [
+          "raw.find(b'\\n', pos) returns -1 when the last line never got its newline: that's the torn write.",
+          "Keep good_bytes, the offset just after the last valid record, and cut the file there with open(path, 'r+b').truncate(good_bytes).",
+          "In find_cycle, a set of finished transactions stops the search revisiting parts of the graph already known to have no cycle."
+        ]
+      }
+    }
+  ],
+  "study_plan": [
+    {
+      "week": 1,
+      "focus": "Learn how pages, slotted records and buffer pools work, and read an SQLite file byte by byte.",
+      "modules": [
+        1
+      ]
+    },
+    {
+      "week": 2,
+      "focus": "Compare B+trees, LSM trees and other index structures, and build an LSM tree with Bloom filters.",
+      "modules": [
+        2
+      ]
+    },
+    {
+      "week": 3,
+      "focus": "Design indexes and read query plans in SQLite and PostgreSQL, and fix the shop's slow queries.",
+      "modules": [
+        3
+      ]
+    },
+    {
+      "week": 4,
+      "focus": "Study isolation levels, anomalies and MVCC; reproduce them in the simulator and in two psql sessions.",
+      "modules": [
+        4
+      ]
+    },
+    {
+      "week": 5,
+      "focus": "Learn locking, deadlocks and write-ahead logging, and build a log that recovers from crashes.",
+      "modules": [
+        5
+      ]
+    },
+    {
+      "week": 6,
+      "focus": "Diagnose and tune the help-desk database for the capstone, then review with the mock exam and the flashcards.",
+      "modules": []
+    }
+  ],
+  "project": {
+    "title": "Diagnose and tune a slow help-desk database",
+    "minutes": 540,
+    "brief": "A help-desk application keeps its users, tickets and comments in SQLite. Agents say it's slow, and that two of them sometimes end up working on the same ticket. make_db.py builds a copy of the database (5,000 users, 80,000 tickets, 160,000 comments); workload.py runs the eight slowest endpoints, printing each one's median time and plan, then times a batch of inserts; workload.py --race reproduces the double assignment. Diagnose each endpoint from its plan. Design the smallest set of indexes that fixes them (composite, covering, partial or on an expression, as each needs), rewrite the queries no index can fix (a function on a column, a deep OFFSET), and find out what SQLite needs before a LIKE can use an index. Measure what your indexes cost the write benchmark. Fix the race so that two agents can never take the same ticket, and prove it with a concurrent test. Finally, plan the move to PostgreSQL: the same schema and indexes, the EXPLAIN (ANALYZE, BUFFERS) checks you would run, and what changes for isolation, locking (FOR UPDATE SKIP LOCKED for the ticket queue) and VACUUM. Write it up in report_template.md.",
+    "deliverables": [
+      "indexes.sql with every index you created, each commented with the endpoints it serves",
+      "Your changed workload.py, with the rewritten queries and the race fixed",
+      "workload.py's output before and after your changes, including both write benchmarks",
+      "A pytest test that runs two agents taking tickets concurrently and asserts they never get the same one",
+      "The completed report, including the plan for PostgreSQL"
+    ],
+    "rubric": [
+      {
+        "name": "Diagnosis from plans",
+        "points": 20,
+        "description": "Each endpoint's problem is named from its plan (scan, temporary B-tree, hidden column, LIKE and collation, deep OFFSET), with the plan as evidence."
+      },
+      {
+        "name": "Index design",
+        "points": 25,
+        "description": "Every endpoint becomes a search, with a small set of well-ordered indexes; covering, partial and expression indexes are used where they fit, and none is redundant."
+      },
+      {
+        "name": "Query rewrites",
+        "points": 15,
+        "description": "Rewritten queries return the same rows as the originals, shown by comparing results, and use the indexes."
+      },
+      {
+        "name": "Write cost",
+        "points": 10,
+        "description": "The write benchmark is measured before and after, and the trade-off is weighed sensibly."
+      },
+      {
+        "name": "Concurrency fix",
+        "points": 15,
+        "description": "The race is explained, fixed with an atomic claim (BEGIN IMMEDIATE, or an UPDATE ... RETURNING that claims the row), and a concurrent test proves it."
+      },
+      {
+        "name": "PostgreSQL plan",
+        "points": 15,
+        "description": "The notes give correct DDL and EXPLAIN (ANALYZE, BUFFERS) checks, and accurate points on isolation, SKIP LOCKED and VACUUM."
+      }
+    ],
+    "submit": "Paste your indexes.sql, the changed parts of workload.py, the before and after output, your test and its pytest summary, and your report.",
+    "files": [
+      {
+        "path": "make_db.py",
+        "content": "\"\"\"Create tickets.db for the capstone: 5,000 users, 80,000 tickets and 160,000 comments (fixed seed).\"\"\"\nimport random\nimport sqlite3\nfrom datetime import datetime, timedelta\nfrom pathlib import Path\n\nSUBJECTS = [\"Printer offline\", \"Password reset\", \"VPN drops\", \"Laptop slow\", \"Email bounce\", \"Invoice query\",\n            \"Access request\", \"Screen flicker\", \"Software licence\", \"Wi-Fi weak\"]\n\n\ndef main(path: str = \"tickets.db\") -> None:\n    Path(path).unlink(missing_ok=True)\n    rng = random.Random(77)\n    conn = sqlite3.connect(path)\n    conn.executescript(\"\"\"\n        CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, team TEXT NOT NULL);\n        CREATE TABLE tickets (\n            id INTEGER PRIMARY KEY,\n            requester_id INTEGER NOT NULL REFERENCES users (id),\n            assignee_id INTEGER REFERENCES users (id),          -- NULL until someone takes it\n            status TEXT NOT NULL CHECK (status IN ('open', 'pending', 'closed')),\n            priority INTEGER NOT NULL CHECK (priority BETWEEN 1 AND 4),\n            subject TEXT NOT NULL,\n            created_at TEXT NOT NULL,\n            updated_at TEXT NOT NULL\n        );\n        CREATE TABLE comments (\n            id INTEGER PRIMARY KEY,\n            ticket_id INTEGER NOT NULL REFERENCES tickets (id),\n            author_id INTEGER NOT NULL REFERENCES users (id),\n            created_at TEXT NOT NULL,\n            body TEXT NOT NULL\n        );\n    \"\"\")\n    teams = [\"support\"] * 1 + [\"staff\"] * 9\n    conn.executemany(\"INSERT INTO users VALUES (?, ?, ?)\",\n                     [(i, f\"user{i}@example.org\", rng.choice(teams)) for i in range(1, 5_001)])\n    agents = [i for (i,) in conn.execute(\"SELECT id FROM users WHERE team = 'support'\")]\n    start = datetime(2025, 1, 1)\n    tickets = []\n    for i in range(1, 80_001):\n        created = start + timedelta(minutes=rng.randrange(700 * 24 * 60))\n        status = rng.choices([\"open\", \"pending\", \"closed\"], [6, 9, 85])[0]\n        assignee = None if status == \"open\" and rng.random() < 0.5 else rng.choice(agents)\n        updated = created + timedelta(minutes=rng.randrange(20 * 24 * 60))\n        tickets.append((i, rng.randint(1, 5_000), assignee, status, rng.choice([1, 2, 2, 3, 3, 3, 4]),\n                        f\"{rng.choice(SUBJECTS)} #{i}\", created.strftime(\"%Y-%m-%d %H:%M\"),\n                        updated.strftime(\"%Y-%m-%d %H:%M\")))\n    conn.executemany(\"INSERT INTO tickets VALUES (?, ?, ?, ?, ?, ?, ?, ?)\", tickets)\n    conn.executemany(\"INSERT INTO comments VALUES (?, ?, ?, ?, ?)\",\n                     [(i, rng.randint(1, 80_000), rng.randint(1, 5_000), \"2025-01-01 00:00\",\n                       \"Comment text \" * rng.randint(3, 9)) for i in range(1, 160_001)])\n    conn.execute(\"UPDATE comments SET created_at = (SELECT updated_at FROM tickets WHERE id = ticket_id)\")\n    conn.commit()\n    counts = {s: n for s, n in conn.execute(\"SELECT status, count(*) FROM tickets GROUP BY status\")}\n    print(f\"tickets.db: 5,000 users ({len(agents)} support agents), 80,000 tickets {counts}, 160,000 comments\")\n    conn.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      {
+        "path": "workload.py",
+        "content": "\"\"\"The help desk's slow endpoints, a write benchmark and a race. Run it before and after each change.\n\npython workload.py           every endpoint's median time and plan, then the write benchmark\npython workload.py --race    two agents take 'the next unassigned ticket' at the same moment\n\"\"\"\nimport sqlite3\nimport statistics\nimport sys\nimport threading\nimport time\n\nENDPOINTS = {\n    \"agent queue\": (\"SELECT id, priority, subject FROM tickets WHERE assignee_id = ? AND status = 'open' \"\n                    \"ORDER BY priority, created_at LIMIT 50\", (715,)),\n    \"requester history\": (\"SELECT id, subject, status FROM tickets WHERE requester_id = ? \"\n                          \"ORDER BY created_at DESC LIMIT 20\", (1234,)),\n    \"ticket page comments\": (\"SELECT author_id, created_at, body FROM comments WHERE ticket_id = ? \"\n                             \"ORDER BY created_at\", (223,)),\n    \"unassigned open tickets\": (\"SELECT count(*) FROM tickets WHERE status = 'open' AND assignee_id IS NULL\", ()),\n    \"subject search\": (\"SELECT count(*) FROM tickets WHERE subject LIKE ?\", (\"Printer%\",)),\n    \"tickets per day, last 30 days\": (\"SELECT date(created_at) AS day, count(*) FROM tickets \"\n                                      \"WHERE date(created_at) >= '2026-11-01' GROUP BY day\", ()),\n    \"stale pending tickets\": (\"SELECT id FROM tickets WHERE status = 'pending' AND updated_at < ? \"\n                              \"ORDER BY updated_at LIMIT 100\", (\"2025-03-01\",)),\n    \"closed tickets, page 3,000\": (\"SELECT id, subject FROM tickets WHERE status = 'closed' ORDER BY id \"\n                                   \"LIMIT 20 OFFSET 59980\", ()),\n}\n\n\ndef show_plans(conn: sqlite3.Connection) -> None:\n    for name, (sql, params) in ENDPOINTS.items():\n        times = []\n        for _ in range(5):\n            t0 = time.perf_counter()\n            rows = conn.execute(sql, params).fetchall()\n            times.append(time.perf_counter() - t0)\n        plan = [r[3] for r in conn.execute(\"EXPLAIN QUERY PLAN \" + sql, params)]\n        print(f\"{name}: {len(rows)} rows, median {statistics.median(times) * 1000:.2f} ms | \" + \" / \".join(plan))\n\n\ndef write_benchmark(conn: sqlite3.Connection) -> None:\n    \"\"\"Insert 2,000 tickets and 4,000 comments in one transaction, time it, then roll it back.\"\"\"\n    t0 = time.perf_counter()\n    conn.execute(\"BEGIN\")\n    for i in range(2_000):\n        cur = conn.execute(\"INSERT INTO tickets (requester_id, assignee_id, status, priority, subject, created_at, \"\n                           \"updated_at) VALUES (?, NULL, 'open', 2, ?, '2026-12-01 09:00', '2026-12-01 09:00')\",\n                           (1 + i % 5_000, f\"Benchmark {i}\"))\n        for _ in range(2):\n            conn.execute(\"INSERT INTO comments (ticket_id, author_id, created_at, body) \"\n                         \"VALUES (?, 1, '2026-12-01 09:00', 'benchmark')\", (cur.lastrowid,))\n    elapsed = time.perf_counter() - t0\n    conn.execute(\"ROLLBACK\")\n    print(f\"write benchmark: 2,000 tickets and 4,000 comments in {elapsed * 1000:.0f} ms\")\n\n\ndef take_next_ticket(db: str, agent: int, results: list, barrier: threading.Barrier) -> None:\n    \"\"\"The help desk's current code: find the oldest unassigned open ticket, then assign it. Racy.\"\"\"\n    conn = sqlite3.connect(db, timeout=5, isolation_level=None)\n    ticket = conn.execute(\"SELECT id FROM tickets WHERE status = 'open' AND assignee_id IS NULL \"\n                          \"ORDER BY created_at LIMIT 1\").fetchone()[0]\n    barrier.wait()                                     # both agents have chosen before either writes\n    conn.execute(\"UPDATE tickets SET assignee_id = ? WHERE id = ?\", (agent, ticket))\n    results.append((agent, ticket))\n    conn.close()\n\n\ndef race(db: str = \"tickets.db\") -> None:\n    results: list = []\n    barrier = threading.Barrier(2)\n    threads = [threading.Thread(target=take_next_ticket, args=(db, agent, results, barrier)) for agent in (7, 8)]\n    for t in threads:\n        t.start()\n    for t in threads:\n        t.join()\n    tickets = sorted(t for _, t in results)\n    verdict = \"the SAME ticket: one agent's work is lost\" if tickets[0] == tickets[1] else \"different tickets\"\n    print(f\"race: agents 7 and 8 took tickets {tickets}: {verdict}\")\n\n\nif __name__ == \"__main__\":\n    if \"--race\" in sys.argv:\n        race()\n    else:\n        connection = sqlite3.connect(\"tickets.db\", isolation_level=None)\n        show_plans(connection)\n        write_benchmark(connection)\n"
+      },
+      {
+        "path": "report_template.md",
+        "content": "# Help desk database: performance and correctness report\n\n## 1. Baseline\nThe output of workload.py before any change, and the three endpoints you judged worst, with why.\n\n## 2. Diagnosis\nFor each slow endpoint: its plan, what the plan shows (full scan, temporary B-tree, function on a column,\nleading wildcard, deep OFFSET...) and the fix you chose.\n\n## 3. Indexes\nEvery index you created, with its exact definition, the endpoints it serves and why its columns are in\nthat order. Say which are covering, partial or on an expression.\n\n## 4. Query rewrites\nEach rewritten query, before and after, and why the rewrite returns the same rows.\n\n## 5. The cost of writes\nThe write benchmark before and after your indexes, and whether the trade-off is worth it.\n\n## 6. The race\nWhat goes wrong in take_next_ticket, your fix, and the evidence that it works.\n\n## 7. Moving to PostgreSQL\nThe same schema and indexes in PostgreSQL, the EXPLAIN (ANALYZE, BUFFERS) commands you would run, what you\nwould look for in their output, and what changes (isolation, locking, VACUUM).\n"
+      }
+    ]
+  }
+}

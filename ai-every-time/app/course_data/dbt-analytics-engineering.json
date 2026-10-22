@@ -1,0 +1,957 @@
+{
+ "slug": "dbt-analytics-engineering",
+ "title": "Analytics Engineering with dbt and DuckDB",
+ "subtitle": "Turn raw data into tested, documented models with dbt Core and DuckDB: sources, staging, marts, tests, snapshots, incremental models and CI.",
+ "category": "Data Engineering",
+ "kind": "course",
+ "level": "intermediate",
+ "instructors": [
+  "valentina-lopez",
+  "marisolo-garcia"
+ ],
+ "skills": [
+  "dbt",
+  "Analytics engineering",
+  "SQL modelling",
+  "Data testing",
+  "Jinja and macros",
+  "Snapshots",
+  "Incremental models",
+  "CI for data",
+  "Data documentation"
+ ],
+ "tools": [
+  "dbt Core",
+  "dbt-duckdb",
+  "DuckDB",
+  "Python 3",
+  "GitHub Actions"
+ ],
+ "outcomes": [
+  "Set up a dbt project on DuckDB, and build models that depend on each other with ref",
+  "Declare sources with freshness checks, load seeds, and write staging, intermediate and mart models",
+  "Write reusable SQL with Jinja and macros, and select parts of the graph to build",
+  "Test models with generic, singular and unit tests, and document them with a lineage graph",
+  "Keep history with snapshots and build large tables incrementally, safely",
+  "Run dbt in CI with targets, state selection and a GitHub Actions workflow"
+ ],
+ "prerequisites": "SQL as in SQL for Data Analysis with DataGrip (joins, GROUP BY, CTEs and window functions) and Data Engineering Foundations: Batch and Streaming Pipelines (ELT and idempotent loads), or the same skills. Install Python 3.10 or later and, in a virtual environment, python -m pip install dbt-core dbt-duckdb (tested with dbt-core 1.12.6 and dbt-duckdb 1.11.0). Git and a GitHub account help with the CI lab.",
+ "description": "Analytics engineers turn raw tables into the clean, trusted models that dashboards, analysts and machine learning depend on, and dbt is the tool most of them use to do it. In this course you'll build a dbt project for a city bike-share scheme on DuckDB, a free database that runs on your laptop: load raw trips and members, declare them as sources with freshness checks, add stations as a seed, and layer staging, intermediate and mart models with ref, Jinja and macros.\n\nThen you'll make the project trustworthy and ready for production: generic, singular and unit tests that catch the duplicated trip, the trip that ends before it starts and the vehicle type no one expected; documentation with a lineage graph; snapshots that keep members' history; an incremental fact table that picks up late data; and CI with separate targets, state selection and a GitHub Actions workflow. Every lab uses real output from dbt Core 1.12, and the capstone models a football club's ticket sales from scratch. Data Warehousing and Dimensional Modelling covers the design of marts in depth, and Orchestrating Data Pipelines with Apache Airflow shows how to schedule dbt alongside other jobs.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Analytics engineering and your first dbt project",
+   "summary": "What analytics engineering is and where dbt fits, how a dbt project and its profile are set up, and how models, ref and materialisations work.",
+   "instructor": "valentina-lopez",
+   "lessons": [
+    {
+     "title": "What analytics engineering is",
+     "minutes": 10,
+     "objectives": [
+      "Explain what analytics engineers do, and how dbt fits into ELT",
+      "Install dbt Core with the DuckDB adapter"
+     ],
+     "key_points": [
+      "Analytics engineering turns raw data in the warehouse into clean, tested, documented tables that analysts and dashboards can trust, with software practices: version control, code review, automated tests and CI.",
+      "dbt handles the T in ELT: each model is a SELECT statement in a .sql file, and dbt wraps it in the SQL that creates a view or table, builds models in dependency order, and tests and documents them.",
+      "dbt Core is the open-source command-line tool; it talks to a warehouse through an adapter, such as dbt-duckdb, dbt-postgres, dbt-snowflake or dbt-bigquery, and dbt Labs also sells a hosted platform for developing and scheduling projects.",
+      "pip install dbt-core dbt-duckdb installs dbt Core 1.x (1.12 in this course). The separate dbt package on PyPI is dbt v2, which dbt's installer now offers by default for new installations, with an upgrade guide for v1 projects.",
+      "dbt doesn't extract or load data: an ingestion tool or script lands the raw tables first (here load_raw.py), and dbt transforms them inside the warehouse."
+     ]
+    },
+    {
+     "title": "Projects, profiles and targets",
+     "minutes": 12,
+     "objectives": [
+      "Describe the files of a dbt project and its profile",
+      "Check a project's set-up with dbt debug"
+     ],
+     "key_points": [
+      "A dbt project is a folder with dbt_project.yml (the project's name, the profile it uses, its folder paths and default configs) and folders for models, seeds, tests, macros and snapshots.",
+      "profiles.yml says where to build: a profile has targets such as dev and ci, each with an adapter type and connection settings; for dbt-duckdb, that's the path of the database file and a number of threads.",
+      "dbt looks for profiles.yml in the current folder first and then in ~/.dbt/, unless --profiles-dir or DBT_PROFILES_DIR points elsewhere; read secrets with {{ env_var('NAME') }} instead of writing them in.",
+      "dbt debug checks the project file, the profile and the connection and ends with All checks passed!; dbt init creates a new project and helps write its profile.",
+      "Folder-level configs in dbt_project.yml, such as +materialized: view under staging, apply to every model in that folder; a config() block or a properties file can override them for one model."
+     ],
+     "walkthrough": {
+      "tool": "Terminal",
+      "title": "Set up dbt with DuckDB and check the connection",
+      "steps": [
+       {
+        "do": "Create a folder for the project and a virtual environment in it, then install dbt Core and the DuckDB adapter.",
+        "code": "mkdir bikeshare && cd bikeshare\npython -m venv .venv\nsource .venv/bin/activate\npython -m pip install dbt-core dbt-duckdb",
+        "lang": "bash",
+        "see": "On Windows, activate with .venv\\Scripts\\activate instead."
+       },
+       {
+        "do": "Check the versions.",
+        "code": "dbt --version",
+        "lang": "bash",
+        "see": "Core installed 1.12.x and the duckdb plugin; dbt may also mention dbt v2."
+       },
+       {
+        "do": "With the module 1 lab's files in the folder, load the raw data.",
+        "code": "python load_raw.py",
+        "lang": "bash",
+        "see": "Batch 1: loaded 1473 trips (1473 in raw.trips) and 150 members into bikeshare.duckdb"
+       },
+       {
+        "do": "Check the project, the profile and the connection.",
+        "code": "dbt debug",
+        "lang": "bash",
+        "see": "Using profiles.yml file at .../bikeshare/profiles.yml, then Connection test: [OK connection ok] and All checks passed!"
+       },
+       {
+        "do": "After a dbt run, open the compiled SQL to see what dbt sent to DuckDB.",
+        "code": "cat target/compiled/bikeshare/models/marts/daily_trips.sql",
+        "lang": "bash",
+        "see": "The model's SELECT, with ref('stg_trips') replaced by \"bikeshare\".\"main\".\"stg_trips\"."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Models, ref and materialisations",
+     "minutes": 12,
+     "objectives": [
+      "Write models that build on each other with ref",
+      "Choose a materialisation for each model"
+     ],
+     "key_points": [
+      "A model is a .sql file holding one SELECT, named after the file; {{ ref('stg_trips') }} refers to another model, and dbt swaps in the right relation name and uses every ref to build the dependency graph (DAG).",
+      "Materialisations decide what dbt builds: view (the default), table, incremental (adds or updates rows instead of rebuilding) and ephemeral (inlined into other models as a CTE); set them in dbt_project.yml or with {{ config(materialized='table') }}.",
+      "dbt run builds models in dependency order, running independent ones in parallel threads; dbt build also loads seeds, takes snapshots and runs tests, each test straight after the model it checks.",
+      "dbt compiles Jinja into plain SQL first: target/compiled holds the SELECT each model became and target/run the statements dbt ran, which is where to look when a model fails.",
+      "dbt show --select model, or --inline \"select ...\", previews query results without building anything, and dbt ls lists the project's resources, both handy for checking work."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build your first models on DuckDB",
+    "tool": "dbt",
+    "minutes": 40,
+    "goal": "Load a week of synthetic bike-share trips into DuckDB, connect dbt to it, and build a staging model and a first table on top of it with ref.",
+    "setup": [
+     "Python 3.10 or later with dbt in a virtual environment: python -m pip install dbt-core dbt-duckdb (tested with dbt-core 1.12.6 and dbt-duckdb 1.11.0)",
+     "Download the starter files into a new folder called bikeshare, keeping the models folder"
+    ],
+    "steps": [
+     {
+      "do": "Load the raw data: a script stands in for the ingestion tool and writes raw.trips and raw.members into bikeshare.duckdb.",
+      "code": "python load_raw.py",
+      "lang": "bash",
+      "see": "Batch 1: loaded 1473 trips (1473 in raw.trips) and 150 members into bikeshare.duckdb"
+     },
+     {
+      "do": "Check the set-up.",
+      "code": "dbt debug",
+      "lang": "bash",
+      "see": "All checks passed!"
+     },
+     {
+      "do": "Complete models/staging/stg_trips.sql: cast started_at and ended_at to timestamp and lower-case bike_type."
+     },
+     {
+      "do": "Complete models/marts/daily_trips.sql: trips per day, selecting from stg_trips with ref."
+     },
+     {
+      "do": "Build both models.",
+      "code": "dbt run",
+      "lang": "bash",
+      "see": "OK created sql view model main.stg_trips, OK created sql table model main.daily_trips, then Done. PASS=2 WARN=0 ERROR=0."
+     },
+     {
+      "do": "Preview the result in order.",
+      "code": "dbt show --inline \"select * from {{ ref('daily_trips') }} order by trip_date\" --limit 7",
+      "lang": "bash",
+      "see": "Seven days, from 2024-05-01 with 204 trips to 2024-05-07 with 223."
+     },
+     {
+      "do": "List the project's resources, then read the compiled SQL of daily_trips.",
+      "code": "dbt ls\ncat target/compiled/bikeshare/models/marts/daily_trips.sql",
+      "lang": "bash",
+      "see": "Two models and the source, then your SELECT with ref() replaced by the view's full name."
+     }
+    ],
+    "checks": [
+     {
+      "text": "dbt can reach the DuckDB database.",
+      "look_for": [
+       "All checks passed!"
+      ]
+     },
+     {
+      "text": "Both models built.",
+      "look_for": [
+       "OK created sql view model main.stg_trips",
+       "Done. PASS=2 WARN=0 ERROR=0"
+      ]
+     },
+     {
+      "text": "daily_trips counts the trips per day.",
+      "look_for": [
+       "| 2024-05-01 |   204 |",
+       "| 2024-05-07 |   223 |"
+      ]
+     },
+     {
+      "text": "ref() compiled to the staging view's full name.",
+      "look_for": [
+       "from \"bikeshare\".\"main\".\"stg_trips\""
+      ]
+     }
+    ],
+    "submit": "Paste your two models, and the output of dbt run, the dbt show preview and the compiled SQL of daily_trips.",
+    "files": [
+     {
+      "path": "dbt_project.yml",
+      "content": "name: bikeshare\nversion: \"1.0.0\"\nprofile: bikeshare  # the profile in profiles.yml that says where to build\n\nmodel-paths: [\"models\"]\nseed-paths: [\"seeds\"]\ntest-paths: [\"tests\"]\nmacro-paths: [\"macros\"]\nsnapshot-paths: [\"snapshots\"]\nclean-targets: [\"target\", \"dbt_packages\"]\n\nmodels:\n  bikeshare:\n    staging:\n      +materialized: view\n    marts:\n      +materialized: table\n"
+     },
+     {
+      "path": "profiles.yml",
+      "content": "# dbt looks for profiles.yml in the current folder first, then in ~/.dbt/.\nbikeshare:\n  target: dev\n  outputs:\n    dev:\n      type: duckdb\n      path: bikeshare.duckdb  # the same file load_raw.py writes to\n      threads: 4\n"
+     },
+     {
+      "path": "load_raw.py",
+      "content": "\"\"\"Load synthetic bike-share data into the raw schema of a DuckDB database, as an ingestion tool would.\n\n    python load_raw.py               batch 1: trips for 1-7 May 2024, and the members table as it is on 7 May\n    python load_raw.py --batch 2     batch 2: trips for 8 May (and one late trip from the 7th), updated members\n    python load_raw.py --db ci.duckdb   load into another database file\n\nraw.trips is appended to; raw.members is replaced with the source's current state. Every row gets _loaded_at,\nthe time it was loaded. Only random.random() is used, so the data is the same on every computer.\n\"\"\"\n\nimport argparse\nimport math\nimport random\nfrom datetime import date, datetime, timedelta\n\nimport duckdb\n\nSTATIONS = [f\"S{i:02d}\" for i in range(1, 13)]\nWEIGHTS = [4, 4, 3, 3, 2, 2, 2, 2, 1, 1, 2, 1]  # the centre is busiest\n\n\ndef pick(rng, items, weights=None):\n    weights = weights or [1] * len(items)\n    x = rng.random() * sum(weights)\n    for item, w in zip(items, weights):\n        x -= w\n        if x < 0:\n            return item\n    return items[-1]\n\n\ndef members(rng, batch):\n    rows = []\n    for i in range(1, 151):\n        joined = date(2023, 1, 1) + timedelta(days=int(rng.random() * 485))\n        plan = pick(rng, [\"annual\", \"monthly\", \"student\"], [50, 35, 15])\n        rows.append([f\"M{i:03d}\", str(joined), plan, f\"{joined} 00:00:00\"])\n    if batch == 2:\n        for r in rows[6::17]:  # nine members change plan on 8 May\n            r[2] = {\"monthly\": \"annual\", \"student\": \"monthly\", \"annual\": \"monthly\"}[r[2]]\n            r[3] = \"2024-05-08 06:00:00\"\n        rows.append([\"M151\", \"2024-05-08\", \"monthly\", \"2024-05-08 09:30:00\"])\n    return rows\n\n\ndef trips(rng, days, first_id):\n    rows, n = [], first_id\n    for day in days:\n        for _ in range(180 + int(rng.random() * 50)):\n            start = datetime(day.year, day.month, day.day, 6) + timedelta(seconds=int(rng.random() * 61200))\n            minutes = 3 + min(-math.log(1 - rng.random()) * 11, 60)\n            member = f\"M{int(rng.random() * 150) + 1:03d}\" if rng.random() < 0.8 else None\n            rows.append([f\"T{n:06d}\", member, pick(rng, STATIONS, WEIGHTS), pick(rng, STATIONS, WEIGHTS),\n                         f\"{start:%Y-%m-%d %H:%M:%S}\", f\"{start + timedelta(seconds=int(minutes * 60)):%Y-%m-%d %H:%M:%S}\",\n                         \"electric\" if rng.random() < 0.35 else \"classic\"])\n            n += 1\n    return rows\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--batch\", type=int, choices=[1, 2], default=1)\n    parser.add_argument(\"--db\", default=\"bikeshare.duckdb\")\n    args = parser.parse_args()\n    rng = random.Random(2024)\n    batch1 = trips(rng, [date(2024, 5, d) for d in range(1, 8)], 1)\n    batch1.append(batch1[122][:])  # T000123 is delivered twice\n    batch1[455][5] = batch1[455][4][:11] + \"07:00:00\"  # T000456 ends before it starts\n    batch1[455][4] = batch1[455][4][:11] + \"07:05:00\"\n    batch1[788][6] = \"Scooter\"  # T000789: a vehicle type the source has just started sending\n    if args.batch == 1:\n        new_trips, member_rows = batch1, members(random.Random(7), 1)\n    else:\n        new_trips = trips(random.Random(8), [date(2024, 5, 8)], len(batch1) + 1)\n        new_trips.append([f\"T{len(batch1) + len(new_trips) + 1:06d}\", \"M042\", \"S03\", \"S01\", \"2024-05-07 23:52:10\",\n                          \"2024-05-08 00:04:40\", \"classic\"])  # a trip from the 7th that arrived late\n        member_rows = members(random.Random(7), 2)\n    loaded_at = datetime.now().replace(microsecond=0)  # one load time for the whole batch\n    con = duckdb.connect(args.db)\n    con.execute(\"CREATE SCHEMA IF NOT EXISTS raw\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS raw.trips (trip_id VARCHAR, member_id VARCHAR, start_station_id VARCHAR,\n                   end_station_id VARCHAR, started_at VARCHAR, ended_at VARCHAR, bike_type VARCHAR,\n                   _loaded_at TIMESTAMP)\"\"\")\n    if args.batch == 1:\n        con.execute(\"DELETE FROM raw.trips\")\n    con.executemany(\"INSERT INTO raw.trips VALUES (?, ?, ?, ?, ?, ?, ?, ?)\", [r + [loaded_at] for r in new_trips])\n    con.execute(\"\"\"CREATE OR REPLACE TABLE raw.members (member_id VARCHAR, joined_on VARCHAR, plan VARCHAR,\n                   updated_at TIMESTAMP, _loaded_at TIMESTAMP)\"\"\")\n    con.executemany(\"INSERT INTO raw.members VALUES (?, ?, ?, ?, ?)\", [r + [loaded_at] for r in member_rows])\n    total = con.execute(\"SELECT COUNT(*) FROM raw.trips\").fetchone()[0]\n    con.close()\n    print(f\"Batch {args.batch}: loaded {len(new_trips)} trips ({total} in raw.trips) and {len(member_rows)} members \"\n          f\"into {args.db}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "models/staging/_sources.yml",
+      "content": "sources:\n  - name: raw\n    description: Tables copied from the bike-share operator's systems by load_raw.py, unchanged.\n    schema: raw\n    tables:\n      - name: trips\n        description: One row per trip as the operator sent it, appended by every load.\n"
+     },
+     {
+      "path": "models/staging/stg_trips.sql",
+      "content": "-- One row per trip from the raw table, with clean names and types. Staging models only rename, cast and tidy.\nwith source as (\n    select * from {{ source('raw', 'trips') }}\n),\n\nrenamed as (\n    select\n        trip_id,\n        member_id,\n        start_station_id,\n        end_station_id,\n        -- TODO: cast started_at and ended_at to timestamp, keeping their names, and\n        --   lower-case bike_type; then keep _loaded_at as it is\n        started_at,\n        ended_at,\n        bike_type,\n        _loaded_at\n    from source\n)\n\nselect * from renamed\n"
+     },
+     {
+      "path": "models/marts/daily_trips.sql",
+      "content": "-- Trips per day: a first model built on another model with ref().\n-- TODO: select the date part of started_at as trip_date and count(*) as trips from the\n--   stg_trips model (use ref, with double curly braces), grouped by trip_date\nselect 1 as placeholder\n"
+     }
+    ],
+    "hints": [
+     "cast(started_at as date) gives the day a trip started on.",
+     "dbt reads Jinja even inside SQL comments, so a {{ ref(...) }} in a comment still adds a dependency.",
+     "If dbt debug can't find the profile, run it from the folder that holds profiles.yml."
+    ]
+   }
+  },
+  {
+   "title": "Sources, seeds and staging models",
+   "summary": "Declare raw tables as sources and check how fresh they are, load reference data as seeds, and write staging models that give everything downstream a clean start.",
+   "instructor": "marisolo-garcia",
+   "lessons": [
+    {
+     "title": "Sources and freshness",
+     "minutes": 12,
+     "objectives": [
+      "Declare sources and select from them with source()",
+      "Check source freshness"
+     ],
+     "key_points": [
+      "Sources declare the raw tables a project reads, in a YAML file under models, with a name, a schema and tables; models select from them with {{ source('raw', 'trips') }}, so lineage starts at the raw data and raw names live in one place.",
+      "Source freshness compares the newest value of a loaded_at_field, such as _loaded_at, with the current time: dbt source freshness reports PASS, WARN (after warn_after) or ERROR (after error_after) for each table.",
+      "Recent dbt versions take loaded_at_field and freshness under a source's or table's config, as in this course; older projects set them as top-level properties, and a table's setting overrides its source's.",
+      "Freshness checks catch the commonest data problem, a load that quietly stopped, before anyone reads yesterday's figures as today's; scheduled jobs run them before the build.",
+      "Describe sources, tables and columns in YAML: the descriptions appear in the generated documentation, and tests can be attached to source columns too."
+     ]
+    },
+    {
+     "title": "Seeds",
+     "minutes": 10,
+     "objectives": [
+      "Load small reference data with seeds",
+      "Decide what should and shouldn't be a seed"
+     ],
+     "key_points": [
+      "A seed is a CSV file in the seeds folder that dbt seed loads into a table, for small, static reference data that belongs in version control, such as a list of stations or country codes.",
+      "Seeds aren't for raw data or anything large or changing often: that arrives through the ingestion tool, while a seed changes only when someone edits the file in git.",
+      "Models refer to a seed with ref('stations'), just like a model, so the seed joins the dependency graph and dbt build loads it before the models that use it.",
+      "dbt infers each seed column's type; set column_types in a properties file or dbt_project.yml where the guess matters, such as IDs with leading zeros or codes that look like numbers.",
+      "dbt seed reloads the CSV on every run (INSERT 12 for twelve rows); --full-refresh drops and recreates the table, which is needed when the CSV's columns change."
+     ]
+    },
+    {
+     "title": "Staging models",
+     "minutes": 12,
+     "objectives": [
+      "Write a staging model for each source table",
+      "Keep staging models simple, consistent and safe for what's downstream"
+     ],
+     "key_points": [
+      "A staging model sits one-to-one on a source table: it renames columns, casts types, tidies values (lower-casing codes, trimming text) and converts units, and it's the only model that selects from that source.",
+      "Staging models don't join or aggregate; they give every later model the same clean starting point, so a change in the raw data is dealt with in one place.",
+      "Name them stg_<table> and materialise them as views, which are cheap and always current; write them as an import CTE (with source as (...)), then the changes, then a final select.",
+      "Keep raw columns that later models need, such as _loaded_at for incremental loads, and only drop rows that are never valid, such as exact duplicates.",
+      "List the columns explicitly rather than ending with select *, so a new or renamed raw column doesn't silently change every model downstream."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Add sources, a seed and staging models",
+    "tool": "dbt",
+    "minutes": 40,
+    "goal": "Declare both raw tables with freshness checks, load the stations seed, and build staging models for trips, members and stations.",
+    "setup": [
+     "your bikeshare project folder from the previous lab, with its virtual environment active",
+     "Download this lab's starter files into the project folder, keeping their folders (some replace files you have)."
+    ],
+    "steps": [
+     {
+      "do": "Load the stations seed.",
+      "code": "dbt seed",
+      "lang": "bash",
+      "see": "OK loaded seed file main.stations ... [INSERT 12 ...]"
+     },
+     {
+      "do": "In models/staging/_sources.yml, declare the members table under the raw source, with a description."
+     },
+     {
+      "do": "Check how fresh the two raw tables are.",
+      "code": "dbt source freshness",
+      "lang": "bash",
+      "see": "PASS freshness of raw.members and PASS freshness of raw.trips, because load_raw.py ran in the last 12 hours (run it again if it didn't)."
+     },
+     {
+      "do": "Complete models/staging/stg_members.sql from the members source: member_id, joined_on as a date, plan in lower case and updated_at as a timestamp."
+     },
+     {
+      "do": "Build just the staging models.",
+      "code": "dbt build --select staging",
+      "lang": "bash",
+      "see": "Three views, then Done. PASS=3 WARN=0 ERROR=0."
+     },
+     {
+      "do": "Check the members and the stations.",
+      "code": "dbt show --inline \"select plan, count(*) as members from {{ ref('stg_members') }} group by plan order by plan\"\ndbt show --inline \"select zone, count(*) as stations, sum(capacity) as docks from {{ ref('stg_stations') }} group by zone order by zone\"",
+      "lang": "bash",
+      "see": "74 annual, 51 monthly and 25 student members; four zones, with 109 docks in the Centre."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The seed loaded its twelve stations.",
+      "look_for": [
+       "OK loaded seed file main.stations",
+       "INSERT 12"
+      ]
+     },
+     {
+      "text": "Both sources are declared and fresh.",
+      "look_for": [
+       "PASS freshness of raw.members",
+       "PASS freshness of raw.trips"
+      ]
+     },
+     {
+      "text": "The staging models built.",
+      "look_for": [
+       "OK created sql view model main.stg_members",
+       "Done. PASS=3 WARN=0 ERROR=0"
+      ]
+     },
+     {
+      "text": "The staging data is right.",
+      "look_for": [
+       "| annual  |      74 |",
+       "| student |      25 |",
+       "| Centre    |        4 |   109 |"
+      ]
+     }
+    ],
+    "submit": "Paste your _sources.yml and stg_members.sql, and the output of dbt source freshness, dbt build --select staging and the two previews.",
+    "files": [
+     {
+      "path": "seeds/stations.csv",
+      "content": "station_id,station_name,zone,capacity\nS01,Central Square,Centre,30\nS02,Market Hall,Centre,24\nS03,Old Town,Centre,20\nS04,University,Centre,35\nS05,North Station,North,28\nS06,Library,North,16\nS07,Hospital,North,18\nS08,Stadium,South,26\nS09,Botanical Garden,South,15\nS10,Tech Park,South,22\nS11,River Park,Riverside,20\nS12,Harbour,Riverside,18\n"
+     },
+     {
+      "path": "seeds/_seeds.yml",
+      "content": "seeds:\n  - name: stations\n    description: The scheme's docking stations. Small, rarely changing reference data, kept in git as a seed.\n    config:\n      column_types:\n        capacity: integer\n"
+     },
+     {
+      "path": "models/staging/_sources.yml",
+      "content": "sources:\n  - name: raw\n    description: Tables copied from the bike-share operator's systems by load_raw.py, unchanged.\n    schema: raw\n    config:\n      loaded_at_field: _loaded_at\n      freshness:  # how recent the newest load must be\n        warn_after: {count: 12, period: hour}\n        error_after: {count: 24, period: hour}\n    tables:\n      - name: trips\n        description: One row per trip as the operator sent it, appended by every load.\n      # TODO: declare the members table too, with a description\n"
+     },
+     {
+      "path": "models/staging/stg_members.sql",
+      "content": "-- One row per member, with types and tidy values.\n-- TODO: select member_id, joined_on cast to date, plan in lower case, and updated_at cast to timestamp,\n--   from the members table of the raw source\nselect 1 as placeholder\n"
+     },
+     {
+      "path": "models/staging/stg_stations.sql",
+      "content": "-- One row per docking station, from the stations seed.\nselect\n    station_id,\n    station_name,\n    zone,\n    capacity\nfrom {{ ref('stations') }}\n"
+     }
+    ],
+    "hints": [
+     "--select staging selects every model in the models/staging folder.",
+     "A YAML list item for the new table starts with - name: members, indented like trips.",
+     "If freshness shows WARN or ERROR, the newest _loaded_at is too old: run python load_raw.py again."
+    ]
+   }
+  },
+  {
+   "title": "Intermediate models, marts and Jinja",
+   "summary": "Layer business logic into intermediate models and marts, write reusable SQL with Jinja and macros, and select parts of the graph to build.",
+   "instructor": "valentina-lopez",
+   "lessons": [
+    {
+     "title": "Layers: staging, intermediate and marts",
+     "minutes": 12,
+     "objectives": [
+      "Organise a project into staging, intermediate and mart layers",
+      "Give every model a clear grain"
+     ],
+     "key_points": [
+      "Projects are layered: staging models clean sources, intermediate models combine and reshape them with business logic, and marts present results for a use, such as a fact table of trips or a dashboard's daily table.",
+      "Intermediate models (int_) join, de-duplicate, pivot or compute logic that several marts reuse, such as a trip's duration and zones, so each rule is written once; they're usually views or ephemeral, and not shown to users.",
+      "Marts are what people query: facts (fct_), one row per event or transaction, and dimensions (dim_), one row per thing that describes events; build them as tables or incremental models so they're quick to read.",
+      "Every model should have one grain, what one row means, stated in its description and checked with a unique test on its key.",
+      "Which facts and dimensions a mart needs is a dimensional-modelling question, covered in depth in Data Warehousing and Dimensional Modelling; dbt is how such designs are usually built."
+     ]
+    },
+    {
+     "title": "Jinja and macros",
+     "minutes": 12,
+     "objectives": [
+      "Use Jinja expressions, statements and context in models",
+      "Write a macro and call it from a model"
+     ],
+     "key_points": [
+      "Jinja is the template language dbt renders before the SQL runs: {{ ... }} outputs a value, {% ... %} runs logic such as if and for, and {# ... #} is a comment; dbt renders Jinja even inside SQL comments.",
+      "A macro is reusable Jinja in the macros folder, defined with {% macro name(args) %} ... {% endmacro %} and called like a function, such as {{ minutes_between('started_at', 'ended_at') }}.",
+      "dbt comes with cross-database macros such as dbt.datediff, dbt.dateadd and dbt.concat, which compile to each warehouse's own SQL, so macros built on them work with any adapter.",
+      "Useful context includes var('name') for project variables, target.name for the current target, env_var('NAME') for environment variables and this for the relation being built.",
+      "Packages such as dbt_utils add tested macros and generic tests: list them in packages.yml and install them with dbt deps."
+     ]
+    },
+    {
+     "title": "Selecting and running parts of the graph",
+     "minutes": 12,
+     "objectives": [
+      "Select models with graph operators, paths, tags and state",
+      "Build safely with dbt build, --full-refresh and dbt retry"
+     ],
+     "key_points": [
+      "--select chooses what to run: a model name, +model (it and everything upstream), model+ (it and everything downstream), path:models/marts, tag:daily or test_type:unit; --exclude takes things out.",
+      "dbt ls --select ... lists what a selection matches without running anything, the safe way to check a selector before a big build.",
+      "dbt build runs seeds, models, snapshots and tests in DAG order, tests each model before the models that depend on it, and skips everything downstream of a failure.",
+      "state:modified, with --state pointing at an earlier run's manifest.json, selects only what has changed, which is how CI builds just the models a pull request touches.",
+      "--full-refresh rebuilds incremental models and seeds from scratch, and dbt retry reruns only what failed in the previous command."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Build the intermediate model and the marts",
+    "tool": "dbt",
+    "minutes": 45,
+    "goal": "Write a duration macro on a cross-database macro, an intermediate model that enriches trips with stations, and a daily mart per station, then build and inspect the whole graph.",
+    "setup": [
+     "your bikeshare project folder from the previous lab, with its virtual environment active",
+     "Download this lab's starter files into the project folder, keeping their folders (some replace files you have)."
+    ],
+    "steps": [
+     {
+      "do": "Complete macros/minutes_between.sql: the seconds between the columns from dbt.datediff, divided by 60.0 and rounded to one place."
+     },
+     {
+      "do": "Complete duration_minutes in models/intermediate/int_trips_enriched.sql with your macro."
+     },
+     {
+      "do": "Complete models/marts/mart_station_daily.sql: trips, avg_minutes and member_share per day and start station, from fct_trips."
+     },
+     {
+      "do": "Build everything.",
+      "code": "dbt build",
+      "lang": "bash",
+      "see": "The seed, four views and four tables, then Done. PASS=9 WARN=0 ERROR=0."
+     },
+     {
+      "do": "See everything the daily mart depends on.",
+      "code": "dbt ls --select +mart_station_daily",
+      "lang": "bash",
+      "see": "The mart, fct_trips, the intermediate and staging models, the seed and the source."
+     },
+     {
+      "do": "Preview the busiest station-days and the trips by zone.",
+      "code": "dbt show --inline \"select * from {{ ref('mart_station_daily') }} order by trips desc, trip_date, station_id\" --limit 3\ndbt show --inline \"select zone, sum(trips_started) as trips_started from {{ ref('dim_stations') }} group by zone order by zone\"",
+      "lang": "bash",
+      "see": "S02 on 2024-05-06 with 41 trips first; 771 trips started in the Centre."
+     },
+     {
+      "do": "Read the compiled intermediate model, and find what dbt.datediff became for DuckDB.",
+      "code": "cat target/compiled/bikeshare/models/intermediate/int_trips_enriched.sql",
+      "lang": "bash"
+     }
+    ],
+    "checks": [
+     {
+      "text": "The whole project builds.",
+      "look_for": [
+       "Done. PASS=9 WARN=0 ERROR=0"
+      ]
+     },
+     {
+      "text": "The graph runs from the source and the seed to the mart.",
+      "look_for": [
+       "bikeshare.intermediate.int_trips_enriched",
+       "source:bikeshare.raw.trips"
+      ]
+     },
+     {
+      "text": "The mart's figures are right.",
+      "look_for": [
+       "| 2024-05-06 | S02        |    41 |        15.2 |         0.78 |",
+       "| Centre    |           771 |"
+      ]
+     },
+     {
+      "text": "The cross-database macro compiled to DuckDB's date_diff.",
+      "look_for": [
+       "date_diff('second'"
+      ]
+     }
+    ],
+    "submit": "Paste your macro, int_trips_enriched.sql and mart_station_daily.sql, and the output of dbt build, dbt ls and the two previews.",
+    "files": [
+     {
+      "path": "macros/minutes_between.sql",
+      "content": "{#- The minutes from start_column to end_column, to one decimal place.\n    dbt.datediff is a cross-database macro: dbt compiles it to the right SQL for each warehouse. -#}\n{% macro minutes_between(start_column, end_column) %}\n    {#- TODO: return round(<the seconds between the two columns> / 60.0, 1), getting the seconds from\n        dbt.datediff(start_column, end_column, 'second') -#}\n    null\n{% endmacro %}\n"
+     },
+     {
+      "path": "models/intermediate/int_trips_enriched.sql",
+      "content": "-- Trips joined to their start and end stations, with each trip's duration. Intermediate models hold\n-- reusable business logic; nothing outside the project reads them directly.\nwith trips as (\n    select * from {{ ref('stg_trips') }}\n),\n\nstations as (\n    select * from {{ ref('stg_stations') }}\n)\n\nselect\n    trips.trip_id,\n    trips.member_id,\n    trips.member_id is not null as is_member,\n    trips.bike_type,\n    trips.started_at,\n    trips.ended_at,\n    cast(trips.started_at as date) as trip_date,\n    trips.start_station_id,\n    start_station.zone as start_zone,\n    trips.end_station_id,\n    end_station.zone as end_zone,\n    -- TODO: the trip's duration_minutes, using the minutes_between macro on started_at and ended_at\n    null as duration_minutes,\n    trips._loaded_at\nfrom trips\nleft join stations as start_station on trips.start_station_id = start_station.station_id\nleft join stations as end_station on trips.end_station_id = end_station.station_id\n"
+     },
+     {
+      "path": "models/marts/fct_trips.sql",
+      "content": "-- The trips fact table: one row per trip, for dashboards and analysts.\nselect\n    trip_id,\n    trip_date,\n    member_id,\n    is_member,\n    bike_type,\n    start_station_id,\n    end_station_id,\n    start_zone,\n    end_zone,\n    started_at,\n    ended_at,\n    duration_minutes,\n    _loaded_at\nfrom {{ ref('int_trips_enriched') }}\n"
+     },
+     {
+      "path": "models/marts/dim_stations.sql",
+      "content": "-- One row per station, with how many trips have started there.\nwith trips_started as (\n    select start_station_id as station_id, count(*) as trips_started\n    from {{ ref('fct_trips') }}\n    group by start_station_id\n)\n\nselect\n    stations.station_id,\n    stations.station_name,\n    stations.zone,\n    stations.capacity,\n    coalesce(trips_started.trips_started, 0) as trips_started\nfrom {{ ref('stg_stations') }} as stations\nleft join trips_started on stations.station_id = trips_started.station_id\n"
+     },
+     {
+      "path": "models/marts/mart_station_daily.sql",
+      "content": "-- Usage per station and day, for the operations team's dashboard.\n-- TODO: from fct_trips, one row per trip_date and start_station_id with trips (count),\n--   avg_minutes (the mean duration_minutes, rounded to 1 place) and member_share (the share of\n--   trips by members, rounded to 2 places)\nselect 1 as placeholder\n"
+     }
+    ],
+    "hints": [
+     "Inside a macro, call another macro with {{ ... }} just as in a model: {{ dbt.datediff(start_column, end_column, 'second') }}.",
+     "avg(case when is_member then 1.0 else 0.0 end) is the share of trips made by members.",
+     "The zone totals include a duplicated trip and one that ends before it starts: module 4's tests find them."
+    ]
+   }
+  },
+  {
+   "title": "Testing and documenting",
+   "summary": "Catch bad data with generic and singular tests, check SQL logic with unit tests, and document the project with descriptions and a lineage graph.",
+   "instructor": "marisolo-garcia",
+   "lessons": [
+    {
+     "title": "Generic data tests",
+     "minutes": 12,
+     "objectives": [
+      "Attach generic tests to columns in YAML",
+      "Choose a test's severity, and read its failures"
+     ],
+     "key_points": [
+      "Data tests are SELECT queries that return the rows breaking a rule, and a test passes when it returns none; generic tests are attached to columns in YAML under data_tests (called tests before dbt 1.8).",
+      "dbt has four built-in generic tests: unique, not_null, accepted_values with a list of values, and relationships, which checks that every value exists in a column of another model, like a foreign key.",
+      "Recent dbt versions take a test's settings under arguments (such as values, or to and field) and options under config; severity: warn reports failures as a warning without failing the build.",
+      "Put unique and not_null on every model's key, accepted_values on codes and relationships on foreign keys; tests on staging catch problems early, and tests on marts guard what users see.",
+      "dbt test runs the tests; dbt build runs each model's tests straight after building it and skips its children when one fails; store_failures: true keeps the failing rows in a table to inspect."
+     ]
+    },
+    {
+     "title": "Singular tests and unit tests",
+     "minutes": 12,
+     "objectives": [
+      "Write a singular test for a rule that generic tests can't express",
+      "Test a model's logic with a unit test on fixed inputs"
+     ],
+     "key_points": [
+      "A singular test is a .sql file in the tests folder with a query that returns bad rows, for rules that don't fit a generic test, such as no trip ending before it starts.",
+      "A custom generic test is a macro written with {% test name(model, column_name) %} ... {% endtest %}, which can then be attached to any column in YAML like the built-in tests.",
+      "Unit tests (dbt 1.8 and later) check a model's SQL on fixed inputs: under unit_tests in YAML, given lists mock rows for each ref or source, and expect lists the rows the model must return, with only the columns that matter.",
+      "Data tests check the data that arrived; unit tests check the code before any real data is involved, so they suit tricky logic such as durations, time zones and case expressions.",
+      "Give tests clear names and descriptions, so a failure in a CI log says which rule broke; a test's compiled SQL in target/compiled shows exactly what it checked."
+     ]
+    },
+    {
+     "title": "Documentation and lineage",
+     "minutes": 12,
+     "objectives": [
+      "Document models and columns, and generate the documentation site",
+      "Use lineage, exposures and contracts to protect consumers"
+     ],
+     "key_points": [
+      "Descriptions of models, columns, sources and seeds go in YAML; a {% docs name %} block in a .md file holds longer text, used as description: '{{ doc(\"name\") }}'.",
+      "dbt docs generate writes manifest.json (the project) and catalog.json (the warehouse's columns and types) to target/, and dbt docs serve opens a local site with every model's description, columns, SQL and tests.",
+      "The site's lineage graph shows how sources, seeds and models connect, so you can see what a change affects and where a number comes from.",
+      "Exposures declare what uses the project, such as a dashboard or a machine learning pipeline, with an owner; they appear in the lineage graph and can be selected, as in dbt build --select +exposure:station_dashboard.",
+      "A model contract (contract: enforced: true, with a data_type for each column) makes dbt check the model's columns and types when it builds; Data Quality, Testing and Data Contracts goes further."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Test and document the project",
+    "tool": "dbt",
+    "minutes": 50,
+    "goal": "Add generic, singular and unit tests, find the bad data they catch, fix the models, and generate the documentation site.",
+    "setup": [
+     "your bikeshare project folder from the previous lab, with its virtual environment active",
+     "Download this lab's starter files into the project folder, keeping their folders (some replace files you have)."
+    ],
+    "steps": [
+     {
+      "do": "Complete the two TODOs in models/staging/_staging.yml: a relationships test on start_station_id and accepted_values on plan."
+     },
+     {
+      "do": "Run the tests.",
+      "code": "dbt test",
+      "lang": "bash",
+      "see": "FAIL 1 for unique_stg_trips_trip_id, unique_fct_trips_trip_id and assert_trip_durations_positive, WARN 1 for the bike_type values, and Done. PASS=10 WARN=1 ERROR=3."
+     },
+     {
+      "do": "Find the duplicate.",
+      "code": "dbt show --inline \"select trip_id, count(*) as copies from {{ ref('stg_trips') }} group by trip_id having count(*) > 1\"",
+      "lang": "bash",
+      "see": "T000123, delivered twice."
+     },
+     {
+      "do": "Fix the models: in stg_trips.sql keep one row per trip_id with qualify, and in int_trips_enriched.sql leave out trips that end before they start."
+     },
+     {
+      "do": "Build and test everything.",
+      "code": "dbt build",
+      "lang": "bash",
+      "see": "Done. PASS=22 WARN=1 ERROR=0. The warning is the bike_type Scooter."
+     },
+     {
+      "do": "Decide what to do about the new vehicle type: add scooter to accepted_values, or keep the warning and ask the source's owners. Write down your choice and why."
+     },
+     {
+      "do": "Run only the unit test, then build the documentation and open it.",
+      "code": "dbt test --select test_type:unit\ndbt docs generate\ndbt docs serve --port 8081",
+      "lang": "bash",
+      "see": "PASS for the unit test, Catalog written to .../target/catalog.json, and a site at http://localhost:8081 with each model's columns and the lineage graph; Ctrl+C stops it."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The tests catch the duplicate, the backwards trip and the new bike type.",
+      "look_for": [
+       "FAIL 1 unique_stg_trips_trip_id",
+       "FAIL 1 assert_trip_durations_positive",
+       "WARN 1 accepted_values_stg_trips_bike_type__classic__electric"
+      ]
+     },
+     {
+      "text": "After the fixes, everything passes except the warning.",
+      "look_for": [
+       "Done. PASS=22 WARN=1 ERROR=0"
+      ]
+     },
+     {
+      "text": "The unit test passes.",
+      "look_for": [
+       "PASS int_trips_enriched::duration_and_stations_are_worked_out"
+      ]
+     },
+     {
+      "text": "The documentation was generated.",
+      "look_for": [
+       "Catalog written to"
+      ]
+     }
+    ],
+    "submit": "Paste your _staging.yml, the qualify and where clauses you added, the output of dbt test before the fixes and dbt build after them, and your decision about scooters.",
+    "files": [
+     {
+      "path": "models/staging/_staging.yml",
+      "content": "models:\n  - name: stg_trips\n    description: One row per trip, with clean names and types.\n    columns:\n      - name: trip_id\n        description: The operator's ID for the trip.\n        data_tests:\n          - unique\n          - not_null\n      - name: bike_type\n        data_tests:\n          - accepted_values:\n              arguments:\n                values: [\"classic\", \"electric\"]\n              config:\n                severity: warn  # a new type is worth a look, not a stopped build\n      - name: start_station_id\n        data_tests:\n          - not_null\n          # TODO: a relationships test: every start_station_id must exist as station_id in stg_stations\n\n  - name: stg_members\n    description: One row per member, as the membership system shows them now.\n    columns:\n      - name: member_id\n        data_tests:\n          - unique\n          - not_null\n      - name: plan\n        # TODO: accepted_values for plan: annual, monthly and student\n\n  - name: stg_stations\n    columns:\n      - name: station_id\n        data_tests:\n          - unique\n          - not_null\n"
+     },
+     {
+      "path": "models/marts/_marts.yml",
+      "content": "models:\n  - name: fct_trips\n    description: >\n      One row per completed trip. Trips with an end time before their start time are excluded;\n      see the assert_trip_durations_positive test.\n    columns:\n      - name: trip_id\n        description: The operator's ID for the trip.\n        data_tests:\n          - unique\n          - not_null\n      - name: duration_minutes\n        description: Minutes from unlocking the bike to docking it, to one decimal place.\n      - name: is_member\n        description: True when a member made the trip, false for a casual rider.\n\n  - name: mart_station_daily\n    description: Trips started per station and day, with the average duration and the share made by members.\n\nunit_tests:\n  - name: duration_and_stations_are_worked_out\n    description: A 12.5-minute trip between two stations gets its duration and both zones.\n    model: int_trips_enriched\n    given:\n      - input: ref('stg_trips')\n        rows:\n          - {trip_id: T1, member_id: M001, start_station_id: S01, end_station_id: S05, started_at: \"2024-05-01 08:00:00\", ended_at: \"2024-05-01 08:12:30\", bike_type: classic}\n      - input: ref('stg_stations')\n        rows:\n          - {station_id: S01, station_name: Central Square, zone: Centre, capacity: 30}\n          - {station_id: S05, station_name: North Station, zone: North, capacity: 28}\n    expect:\n      rows:\n        - {trip_id: T1, is_member: true, start_zone: Centre, end_zone: North, duration_minutes: 12.5}\n"
+     },
+     {
+      "path": "tests/assert_trip_durations_positive.sql",
+      "content": "-- A singular test: it fails if this query returns any rows, here trips that end before they start.\nselect trip_id, started_at, ended_at, duration_minutes\nfrom {{ ref('fct_trips') }}\nwhere duration_minutes < 0\n"
+     },
+     {
+      "path": "models/staging/stg_trips.sql",
+      "content": "-- One row per trip from the raw table, with clean names and types. Staging models only rename, cast and tidy.\nwith source as (\n    select * from {{ source('raw', 'trips') }}\n),\n\nrenamed as (\n    select\n        trip_id,\n        member_id,\n        start_station_id,\n        end_station_id,\n        cast(started_at as timestamp) as started_at,\n        cast(ended_at as timestamp) as ended_at,\n        lower(bike_type) as bike_type,\n        _loaded_at\n    from source\n    -- TODO: keep one row per trip_id, the most recently loaded, with a qualify clause:\n    --   row_number() over (partition by trip_id order by _loaded_at desc) = 1\n)\n\nselect * from renamed\n"
+     },
+     {
+      "path": "models/intermediate/int_trips_enriched.sql",
+      "content": "-- Trips joined to their start and end stations, with each trip's duration. Intermediate models hold\n-- reusable business logic; nothing outside the project reads them directly.\nwith trips as (\n    select * from {{ ref('stg_trips') }}\n),\n\nstations as (\n    select * from {{ ref('stg_stations') }}\n)\n\nselect\n    trips.trip_id,\n    trips.member_id,\n    trips.member_id is not null as is_member,\n    trips.bike_type,\n    trips.started_at,\n    trips.ended_at,\n    cast(trips.started_at as date) as trip_date,\n    trips.start_station_id,\n    start_station.zone as start_zone,\n    trips.end_station_id,\n    end_station.zone as end_zone,\n    {{ minutes_between('trips.started_at', 'trips.ended_at') }} as duration_minutes,\n    trips._loaded_at\nfrom trips\nleft join stations as start_station on trips.start_station_id = start_station.station_id\nleft join stations as end_station on trips.end_station_id = end_station.station_id\n-- TODO: leave out trips that end before they start (ended_at earlier than started_at)\n"
+     }
+    ],
+    "hints": [
+     "qualify row_number() over (partition by trip_id order by _loaded_at desc) = 1 keeps the latest copy of each trip.",
+     "A failing test's compiled SQL is in target/compiled; run it with dbt show --inline to see the rows.",
+     "dbt docs serve uses port 8080 unless --port says otherwise."
+    ]
+   }
+  },
+  {
+   "title": "Snapshots, incremental models and CI",
+   "summary": "Keep the history of changing rows with snapshots, build large tables incrementally, and run dbt in CI and production.",
+   "instructor": "valentina-lopez",
+   "lessons": [
+    {
+     "title": "Snapshots",
+     "minutes": 12,
+     "objectives": [
+      "Explain how snapshots record changes over time",
+      "Configure a snapshot with the timestamp strategy"
+     ],
+     "key_points": [
+      "A snapshot records how mutable rows change: each run compares the source with the snapshot table and, for a changed row, closes the old version (sets dbt_valid_to) and inserts the new one, a type 2 slowly changing dimension.",
+      "Snapshot tables add dbt_valid_from, dbt_valid_to (null for the current version), dbt_scd_id and dbt_updated_at; a row's current version is the one whose dbt_valid_to is null.",
+      "The timestamp strategy spots changes from an updated_at column and is the most reliable; the check strategy compares the values of chosen columns (check_cols) when there's no trustworthy timestamp.",
+      "Since dbt 1.9, snapshots can be defined in YAML with a relation, such as source('raw', 'members'), and a config with unique_key, strategy and updated_at; older projects use {% snapshot %} blocks in .sql files.",
+      "A snapshot only sees changes when it runs, so run dbt snapshot at least as often as the source changes; a value that changes and changes back between runs is never recorded, and lost history can't be rebuilt."
+     ]
+    },
+    {
+     "title": "Incremental models",
+     "minutes": 14,
+     "objectives": [
+      "Build a large table incrementally, safely",
+      "Handle late-arriving rows and changes to the model"
+     ],
+     "key_points": [
+      "An incremental model builds the whole table on its first run, then on later runs processes only new or changed rows and adds them, which saves time and money on large event tables.",
+      "In the model, {% if is_incremental() %} wraps the filter for new rows and compares with the existing table through {{ this }}, such as where _loaded_at > (select max(_loaded_at) from {{ this }}).",
+      "unique_key makes reruns safe: with the delete+insert or merge strategies, rows whose key is already in the table are replaced rather than duplicated, while append just adds rows; which strategies exist depends on the adapter.",
+      "Filter on when rows were loaded, or re-read a lookback window, rather than on when events happened: a trip from yesterday that arrives late is missed by where trip_date > (select max(trip_date) ...).",
+      "dbt build --full-refresh rebuilds an incremental model from scratch, as needed after its logic changes; on_schema_change sets what happens when columns change (ignore, fail, append_new_columns or sync_all_columns).",
+      "dbt 1.9 added the microbatch strategy, which processes time-series data in batches of an event_time column and can reprocess a chosen range of batches."
+     ]
+    },
+    {
+     "title": "Running dbt in CI and production",
+     "minutes": 12,
+     "objectives": [
+      "Set up targets and a CI job for a dbt project",
+      "Build only what changed with state selection"
+     ],
+     "key_points": [
+      "Use separate targets: developers build into their own schema or file, CI into a throwaway one, and production jobs with --target prod, so testing never touches what users read.",
+      "Run dbt build in CI on every pull request, with pinned versions of dbt-core and the adapter, so broken SQL, failing tests and invalid YAML are caught before merging.",
+      "Slim CI builds only what changed: keep production's manifest.json and run dbt build --select state:modified+ --state path/to/prod-artifacts, with --defer so unchanged parents are read from production.",
+      "Every run writes artifacts to target/: manifest.json (the project and its graph), run_results.json (what ran, for how long and how it ended) and, after docs generate, catalog.json; tools and later runs read them.",
+      "Production runs are scheduled by an orchestrator such as Airflow or Dagster, or by dbt's hosted platform, typically dbt source freshness, then dbt build, then dbt docs generate, with alerts on failure."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Track changes, load incrementally and add CI",
+    "tool": "dbt",
+    "minutes": 50,
+    "goal": "Snapshot the members table, turn fct_trips into an incremental model, load a second batch of data, and prepare the project for CI with a ci target, state selection and a GitHub Actions workflow.",
+    "setup": [
+     "your bikeshare project folder from the previous lab, with its virtual environment active",
+     "Download this lab's starter files into the project folder, keeping their folders (some replace files you have)."
+    ],
+    "steps": [
+     {
+      "do": "Complete snapshots/members_snapshot.yml with the timestamp strategy, then take the first snapshot.",
+      "code": "dbt snapshot",
+      "lang": "bash",
+      "see": "OK snapshotted main.members_snapshot"
+     },
+     {
+      "do": "Complete the incremental filter in models/marts/fct_trips.sql, then rebuild everything from scratch.",
+      "code": "dbt build --full-refresh\ndbt show --inline \"select count(*) as trips, max(trip_date) as last_day from {{ ref('fct_trips') }}\"",
+      "lang": "bash",
+      "see": "OK created sql incremental model main.fct_trips, and 1471 trips up to 2024-05-07."
+     },
+     {
+      "do": "Load the second batch: 8 May's trips, one late trip from the 7th, and nine members who changed plan.",
+      "code": "python load_raw.py --batch 2",
+      "lang": "bash",
+      "see": "Batch 2: loaded 192 trips (1665 in raw.trips) and 151 members into bikeshare.duckdb"
+     },
+     {
+      "do": "Snapshot and build again, then count the trips.",
+      "code": "dbt snapshot\ndbt build\ndbt show --inline \"select count(*) as trips, max(trip_date) as last_day from {{ ref('fct_trips') }}\"",
+      "lang": "bash",
+      "see": "1663 trips up to 2024-05-08: the 192 new ones, including the late trip."
+     },
+     {
+      "do": "Read one member's history, then count the versions.",
+      "code": "dbt show --inline \"select member_id, plan, dbt_valid_from, dbt_valid_to from {{ ref('members_snapshot') }} where member_id = 'M007' order by dbt_valid_from\"\ndbt show --inline \"select count(*) as versions, count(dbt_valid_to) as closed from {{ ref('members_snapshot') }}\"",
+      "lang": "bash",
+      "see": "M007 was monthly until 2024-05-08 06:00:00 and annual since; 160 versions, 9 closed."
+     },
+     {
+      "do": "Check that a full rebuild gives the same table.",
+      "code": "dbt build --full-refresh --select fct_trips",
+      "lang": "bash",
+      "see": "The same 1663 trips when you count again."
+     },
+     {
+      "do": "Try state selection: save this run's manifest, change the rounding in mart_station_daily.sql, and list what changed.",
+      "code": "mkdir prod_state && cp target/manifest.json prod_state/\ndbt ls --select state:modified+ --state prod_state",
+      "lang": "bash",
+      "see": "bikeshare.marts.mart_station_daily"
+     },
+     {
+      "do": "Build into a throwaway CI database, as the workflow in ci/dbt-ci.yml does. To use the workflow, put it in .github/workflows/ in a GitHub repository.",
+      "code": "python load_raw.py --db ci.duckdb\ndbt build --target ci",
+      "lang": "bash",
+      "see": "Done. PASS=23 WARN=1 ERROR=0, in ci.duckdb."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The snapshot runs and keeps history.",
+      "look_for": [
+       "OK snapshotted main.members_snapshot",
+       "| M007      | monthly | 2023-07-25 00:00:00 | 2024-05-08 06:00:00 |",
+       "|      160 |      9 |"
+      ]
+     },
+     {
+      "text": "fct_trips is incremental and picks up the second batch, including the late trip.",
+      "look_for": [
+       "OK created sql incremental model main.fct_trips",
+       "|  1471 | 2024-05-07 |",
+       "|  1663 | 2024-05-08 |"
+      ]
+     },
+     {
+      "text": "State selection finds only the changed model.",
+      "look_for": [
+       "bikeshare.marts.mart_station_daily"
+      ]
+     },
+     {
+      "text": "The project builds cleanly on the ci target.",
+      "look_for": [
+       "Done. PASS=23 WARN=1 ERROR=0"
+      ]
+     }
+    ],
+    "submit": "Paste your snapshot YAML and incremental filter, and the output of the counts, the history query, dbt ls with state:modified+ and the ci build.",
+    "files": [
+     {
+      "path": "snapshots/members_snapshot.yml",
+      "content": "snapshots:\n  - name: members_snapshot\n    description: >\n      Every version of every member's row: when a member changes plan, the old row is closed\n      (dbt_valid_to is set) and a new one added, so history survives the source overwriting it.\n    relation: source('raw', 'members')\n    config:\n      unique_key: member_id\n      # TODO: use the timestamp strategy, with updated_at as the column that shows a row has changed\n"
+     },
+     {
+      "path": "models/marts/fct_trips.sql",
+      "content": "-- The trips fact table, built incrementally: after the first build, each run processes only the trips\n-- loaded since the last run, and replaces any trip_id it has seen before.\n{{ config(materialized='incremental', unique_key='trip_id', incremental_strategy='delete+insert') }}\n\nselect\n    trip_id,\n    trip_date,\n    member_id,\n    is_member,\n    bike_type,\n    start_station_id,\n    end_station_id,\n    start_zone,\n    end_zone,\n    started_at,\n    ended_at,\n    duration_minutes,\n    _loaded_at\nfrom {{ ref('int_trips_enriched') }}\n\n{% if is_incremental() %}\n-- TODO: keep only rows whose _loaded_at is later than the latest _loaded_at already in the table\n--   that dbt is adding to, which a model refers to as this (in double curly braces)\n{% endif %}\n"
+     },
+     {
+      "path": "profiles.yml",
+      "content": "# dbt looks for profiles.yml in the current folder first, then in ~/.dbt/.\nbikeshare:\n  target: dev\n  outputs:\n    dev:\n      type: duckdb\n      path: bikeshare.duckdb\n      threads: 4\n    ci:  # a throwaway database for automated builds: dbt build --target ci\n      type: duckdb\n      path: \"{{ env_var('DBT_DUCKDB_PATH', 'ci.duckdb') }}\"\n      threads: 4\n"
+     },
+     {
+      "path": "ci/dbt-ci.yml",
+      "content": "# GitHub Actions: build and test the whole project on every pull request and every push to main.\n# Copy this file to .github/workflows/dbt-ci.yml in your repository.\nname: dbt CI\n\non:\n  pull_request:\n  push:\n    branches: [main]\n\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-python@v5\n        with:\n          python-version: \"3.12\"\n      - name: Install dbt\n        run: pip install \"dbt-core==1.12.6\" \"dbt-duckdb==1.11.0\"\n      - name: Load the raw data into a fresh database\n        run: python load_raw.py --db ci.duckdb\n      - name: Build, test and snapshot everything\n        run: dbt build --target ci\n"
+     }
+    ],
+    "hints": [
+     "In the snapshot's config, strategy: timestamp needs updated_at: updated_at as well.",
+     "The incremental filter goes inside {% if is_incremental() %} ... {% endif %}, so the first build reads every row.",
+     "If the count after batch 2 is still 1471, the snapshot or build ran before python load_raw.py --batch 2."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Analytics engineering, dbt projects and profiles; build your first models.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Sources, freshness, seeds and staging models.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Intermediate models, marts, Jinja and macros; build the whole graph.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Generic, singular and unit tests, and documentation; fix what the tests find.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Snapshots, incremental models and CI; load the second batch.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Build and submit the capstone, then review with the mock exam and flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Model a football club's ticket sales",
+  "minutes": 480,
+  "brief": "A football club wants trustworthy figures on ticket sales, attendance and its fans for each home match. Load its synthetic data with make_club_data.py (raw.matches, raw.ticket_sales and raw.fans in club.duckdb, plus a sections.csv seed), then build a dbt project from scratch: sources with freshness checks, the seed, staging models, an intermediate model for sales, and marts including an incremental fct_ticket_sales, dim_matches, dim_fans built on a snapshot of the fans, and a match-attendance mart with revenue net of refunds and the share of each section's capacity sold. The raw data has the usual problems: a sale delivered twice, a negative price, and refunds that arrive later as new rows. Load batch 2 to prove that the incremental model and the snapshot handle new sales, late refunds and fans changing tier, and add a CI workflow.",
+  "deliverables": [
+   "The dbt project: dbt_project.yml, profiles.yml with dev and ci targets, sources, seed, models, macros, tests and snapshot",
+   "Tests: unique and not_null keys, accepted_values and relationships where they fit, at least one singular test (for example, no section sold beyond its capacity) and at least one unit test",
+   "Model and column descriptions, an exposure for the club's attendance dashboard, and the output of dbt docs generate",
+   "The output of dbt build after batch 1, and of dbt snapshot and dbt build after batch 2, with counts showing the incremental model and snapshot are right",
+   "A GitHub Actions workflow that builds the project on the ci target",
+   "A README explaining the layers, the grain of each mart, and how to run the project"
+  ],
+  "rubric": [
+   {
+    "name": "Correct marts",
+    "points": 25,
+    "description": "Duplicates and invalid prices are handled, refunds reduce revenue, and attendance and capacity shares match the data."
+   },
+   {
+    "name": "Project structure",
+    "points": 20,
+    "description": "Sources, staging, intermediate and marts are layered cleanly, with ref and source used throughout, sensible materialisations and a macro where logic repeats."
+   },
+   {
+    "name": "Tests",
+    "points": 20,
+    "description": "Generic tests on keys and codes, meaningful singular and unit tests, and severities chosen deliberately; dbt build passes."
+   },
+   {
+    "name": "History and incremental loads",
+    "points": 15,
+    "description": "The fans snapshot keeps tier changes, and fct_ticket_sales picks up new sales and late refunds without duplicates; a full refresh gives the same result."
+   },
+   {
+    "name": "Documentation and CI",
+    "points": 20,
+    "description": "Models and columns are described, the exposure appears in the lineage, the workflow builds on the ci target, and the README is clear."
+   }
+  ],
+  "submit": "Paste your project files (each with its path), the dbt build, snapshot and count outputs for both batches, your workflow and your README. A link to a repository is welcome too.",
+  "files": [
+   {
+    "path": "make_club_data.py",
+    "content": "\"\"\"Load a football club's synthetic ticketing data into the raw schema of club.duckdb, in two batches.\n\n    python make_club_data.py             batch 1: five home matches, their ticket sales, and the fans table\n    python make_club_data.py --batch 2   batch 2: the sixth match's sales, refunds for earlier ones, tier changes\n\nraw.matches and raw.fans are replaced with the source's current state; raw.ticket_sales is appended to. Every\nrow has _loaded_at. Only random.random() is used, so every computer gets the same data.\n\"\"\"\n\nimport argparse\nimport random\nfrom datetime import datetime, timedelta\n\nimport duckdb\n\nSECTIONS = [\"N1\", \"N2\", \"E1\", \"E2\", \"S1\", \"S2\", \"W1\", \"W2\"]\nMATCHES = [(\"H01\", \"2024-08-17 19:00:00\", \"League\", \"Riverside Rovers\"), (\"H02\", \"2024-08-31 16:00:00\", \"League\", \"Northgate Town\"),\n           (\"H03\", \"2024-09-14 19:00:00\", \"Cup\", \"Harbour City\"), (\"H04\", \"2024-09-28 16:00:00\", \"League\", \"Valley United\"),\n           (\"H05\", \"2024-10-19 19:00:00\", \"League\", \"Old Mill Athletic\"), (\"H06\", \"2024-11-02 16:00:00\", \"League\", \"Castle Park\")]\n\n\ndef fans(rng, batch):\n    rows = []\n    for i in range(1, 801):\n        tier = \"season\" if rng.random() < 0.3 else \"member\" if rng.random() < 0.6 else \"casual\"\n        joined = datetime(2019, 1, 1) + timedelta(days=int(rng.random() * 2000))\n        rows.append([f\"F{i:04d}\", f\"{joined:%Y-%m-%d}\", tier, f\"{joined:%Y-%m-%d} 00:00:00\"])\n    if batch == 2:\n        for r in rows[10::40]:  # some fans move tier after the October match\n            r[2] = {\"casual\": \"member\", \"member\": \"season\", \"season\": \"member\"}[r[2]]\n            r[3] = \"2024-10-25 10:00:00\"\n    return rows\n\n\ndef sales(rng, matches, first_id):\n    rows, n = [], first_id\n    for match_id, kick_off, competition, _opponent in matches:\n        ko = datetime.fromisoformat(kick_off)\n        for _ in range(900 + int(rng.random() * 400) + (300 if competition == \"Cup\" else 0)):\n            sold = ko - timedelta(minutes=int(rng.random() * 30 * 24 * 60))\n            section = SECTIONS[int(rng.random() * len(SECTIONS))]\n            price = {\"N\": 28, \"E\": 35, \"S\": 28, \"W\": 45}[section[0]] - (6 if section[1] == \"2\" else 0)\n            rows.append([f\"K{n:07d}\", match_id, f\"F{int(rng.random() * 800) + 1:04d}\", section, f\"{price:.2f}\",\n                         f\"{sold:%Y-%m-%d %H:%M:%S}\", \"online\" if rng.random() < 0.7 else \"box office\", \"sold\"])\n            n += 1\n    return rows\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--batch\", type=int, choices=[1, 2], default=1)\n    parser.add_argument(\"--db\", default=\"club.duckdb\")\n    args = parser.parse_args()\n    batch1 = sales(random.Random(11), MATCHES[:5], 1)\n    batch1.append(batch1[40][:])  # one sale delivered twice\n    batch1[99][4] = \"-28.00\"  # a negative price from a till error\n    if args.batch == 1:\n        new_sales = batch1  # the sixth match is already in the fixture list, with no sales yet\n    else:\n        new_sales = sales(random.Random(12), MATCHES[5:], len(batch1) + 1)\n        for row in batch1[200:215]:  # refunds for an earlier match arrive as new rows with status refunded\n            new_sales.append(row[:7] + [\"refunded\"])\n    loaded_at = datetime.now().replace(microsecond=0)\n    con = duckdb.connect(args.db)\n    con.execute(\"CREATE SCHEMA IF NOT EXISTS raw\")\n    con.execute(\"\"\"CREATE TABLE IF NOT EXISTS raw.ticket_sales (ticket_id VARCHAR, match_id VARCHAR, fan_id VARCHAR,\n                   section_id VARCHAR, price VARCHAR, sold_at VARCHAR, channel VARCHAR, status VARCHAR,\n                   _loaded_at TIMESTAMP)\"\"\")\n    if args.batch == 1:\n        con.execute(\"DELETE FROM raw.ticket_sales\")\n    con.executemany(\"INSERT INTO raw.ticket_sales VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\", [r + [loaded_at] for r in new_sales])\n    con.execute(\"\"\"CREATE OR REPLACE TABLE raw.matches (match_id VARCHAR, kick_off TIMESTAMP, competition VARCHAR,\n                   opponent VARCHAR, _loaded_at TIMESTAMP)\"\"\")\n    con.executemany(\"INSERT INTO raw.matches VALUES (?, ?, ?, ?, ?)\", [list(m) + [loaded_at] for m in MATCHES])\n    con.execute(\"\"\"CREATE OR REPLACE TABLE raw.fans (fan_id VARCHAR, joined_on VARCHAR, tier VARCHAR,\n                   updated_at TIMESTAMP, _loaded_at TIMESTAMP)\"\"\")\n    con.executemany(\"INSERT INTO raw.fans VALUES (?, ?, ?, ?, ?)\", [r + [loaded_at] for r in fans(random.Random(13), args.batch)])\n    total = con.execute(\"SELECT COUNT(*) FROM raw.ticket_sales\").fetchone()[0]\n    con.close()\n    print(f\"Batch {args.batch}: loaded {len(new_sales)} ticket rows ({total} in raw.ticket_sales) into {args.db}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+   },
+   {
+    "path": "sections.csv",
+    "content": "section_id,stand,tier,capacity\nN1,North Stand,lower,1800\nN2,North Stand,upper,1500\nE1,East Stand,lower,2200\nE2,East Stand,upper,1900\nS1,South Stand,lower,1800\nS2,South Stand,upper,1500\nW1,West Stand,lower,2400\nW2,West Stand,upper,2000\n"
+   }
+  ]
+ }
+}

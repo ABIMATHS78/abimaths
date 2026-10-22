@@ -1,0 +1,997 @@
+{
+ "slug": "fine-tuning-open-llms",
+ "title": "Fine-Tuning Open Language Models with LoRA",
+ "subtitle": "Decide when fine-tuning pays, prepare chat data properly, and fine-tune open models with LoRA and QLoRA, from the maths and a LoRA layer of your own to transformers, peft, evaluation and serving.",
+ "category": "Generative AI",
+ "kind": "course",
+ "level": "advanced",
+ "instructors": [
+  "mei-ling-zhang",
+  "chloe-tremblay"
+ ],
+ "skills": [
+  "Fine-tuning language models",
+  "LoRA",
+  "QLoRA",
+  "Parameter-efficient fine-tuning",
+  "Training data preparation",
+  "Chat templates",
+  "Hugging Face Transformers",
+  "PEFT",
+  "Model evaluation",
+  "Serving adapters"
+ ],
+ "tools": [
+  "Python 3",
+  "PyTorch",
+  "Hugging Face Transformers",
+  "PEFT",
+  "Hugging Face Hub",
+  "bitsandbytes",
+  "vLLM"
+ ],
+ "outcomes": [
+  "Decide when fine-tuning beats prompting or retrieval, and set a metric, a target and a baseline first",
+  "Prepare clean, de-duplicated, leak-free chat data with the model's template and completion-only labels",
+  "Explain LoRA's update, parameter count and scaling, and implement, train and merge a LoRA layer in PyTorch",
+  "Fine-tune open models with transformers and peft, and configure QLoRA's 4-bit loading",
+  "Evaluate fine-tuned models against baselines, catch overfitting and forgetting, and serve adapters merged or side by side"
+ ],
+ "prerequisites": "Transformers and Large Language Models and Deep Learning with PyTorch, or the same skills: PyTorch training loops and optimisers, and the basics of Hugging Face transformers; Engineering with Foundation Models helps with evaluation. Install Python 3.10 or later with PyTorch 2, transformers and peft (tested with PyTorch 2.14, transformers 5.20 and peft 0.21). Every lab runs on a laptop CPU and downloads two tiny checkpoints, about 50 MB; only the optional QLoRA and vLLM steps need a GPU.",
+ "description": "Fine-tuning is the most powerful way to change what an open language model does, and the easiest to waste money on. This course starts with the decision: when prompting or retrieval is enough, what fine-tuning reliably teaches (behaviour and format, more than facts), and how to set a target and a baseline before training. Then it gets the data right: JSON Lines formats, chat templates and their surprises, completion-only labels with the prompt masked, sequence lengths, de-duplication and group splits that keep validation honest. You'll compare full fine-tuning with partial and parameter-efficient methods on a tiny GPT you pretrain yourself, measuring the memory each needs and the catastrophic forgetting each causes.\n\nThe core is LoRA: its low-rank update, parameter count, initialisation, merging and scaling, rank and alpha, target modules, rsLoRA and DoRA. You'll implement a LoRA layer in PyTorch, then fine-tune a real open model with Hugging Face transformers and peft on a CPU: configure and inspect the adapter, train it, save it, reload it and merge it, with QLoRA's 4-bit recipe for when a GPU is available. The last module evaluates fine-tuned models against fair baselines, catches overfitting with early stopping, and serves several adapters from one base model. Every lab prints exact, checkable output, and the capstone takes a task of your choice from data to a documented, served adapter. Efficient Inference: Quantisation, Distillation and Batching and Operationalising LLMs on Kubernetes are the natural next steps.",
+ "aligned_with": "",
+ "modules": [
+  {
+   "title": "Decide, then prepare the data",
+   "summary": "Decide whether fine-tuning is the right tool, then turn raw examples into clean, de-duplicated, leak-free training data in the model's own chat format, with the prompt masked out of the loss.",
+   "instructor": "mei-ling-zhang",
+   "lessons": [
+    {
+     "title": "When fine-tuning is the right tool",
+     "minutes": 12,
+     "objectives": [
+      "Decide between prompting, retrieval and fine-tuning for a given problem",
+      "Define a metric, a target and a baseline before training",
+      "Choose a starting checkpoint and check its licence"
+     ],
+     "key_points": [
+      "Fine-tuning changes a model's weights so a behaviour becomes reliable without a long prompt: a fixed output format, a house style, a narrow classification or extraction task, or a small model doing a job that needed a large one with prompting.",
+      "Try the cheaper fixes first: a clear prompt with a few examples often closes the gap, and knowledge that changes or must be cited belongs in retrieval, which can be updated without retraining. Fine-tune when those plateau below your target on held-out cases.",
+      "Fine-tuning teaches behaviour more reliably than facts: a model trained on new facts tends to learn the form of the answers before their content, and facts stored in weights are hard to update, check or remove.",
+      "Before training, write down the task, the metric and the target, and measure a baseline: the model with your best prompt on the same held-out set. A fine-tuned model is worth its cost only if it beats that baseline clearly.",
+      "Pick the starting checkpoint deliberately: an instruct model already follows a chat format and needs less data for assistant-style tasks, a base model is a cleaner start for other formats, and its licence (Apache 2.0, MIT or a custom licence with conditions) must allow your use."
+     ]
+    },
+    {
+     "title": "Data formats and chat templates",
+     "minutes": 12,
+     "objectives": [
+      "Describe the completion, instruction and conversational formats for training data",
+      "Apply a model's chat template with apply_chat_template",
+      "Explain why training and serving must use the same template"
+     ],
+     "key_points": [
+      "Supervised fine-tuning (SFT) data is usually JSON Lines, one example per line, in a completion format (prompt and completion), an instruction format (instruction, optional input, output) or a conversational format: a list of messages, each with a role (system, user or assistant) and content.",
+      "A chat template turns a list of messages into the single string the model was trained on, with special tokens marking each turn, such as <|im_start|> and <|im_end|> in the ChatML format Qwen models use; tokenizer.apply_chat_template applies the template stored with the tokeniser.",
+      "Templates can add text you didn't write: the Qwen2.5 template inserts a default system prompt when a conversation has none. Print the formatted text of a few examples before training, and serve with exactly the same template, system prompt and special tokens.",
+      "add_generation_prompt=True appends the opening of an assistant turn (for ChatML, <|im_start|>assistant and a newline): use it for inference and to build the prompt part of a training example, but not for the full training text.",
+      "The end-of-turn token (here <|im_end|>) must be part of what's trained, or the model won't learn to stop. A base model has no template, so choose a simple format, document it and use it for training and inference alike."
+     ],
+     "walkthrough": {
+      "tool": "Python 3 and Hugging Face Transformers",
+      "title": "See exactly what a chat template produces",
+      "steps": [
+       {
+        "do": "Load a tokeniser that carries a chat template, and format a two-message conversation without tokenising it.",
+        "code": "from transformers import AutoTokenizer\n\ntok = AutoTokenizer.from_pretrained(\"trl-internal-testing/tiny-Qwen2ForCausalLM-2.5\",\n                                    revision=\"ce8d0bf270b28c8fab026ced69fe8aa14b0f0eda\")\nmessages = [{\"role\": \"user\", \"content\": \"Order 4417 arrived damaged.\"},\n            {\"role\": \"assistant\", \"content\": '{\"category\": \"delivery\"}'}]\nprint(tok.apply_chat_template(messages, tokenize=False))",
+        "lang": "python",
+        "see": "The ChatML text: <|im_start|>system with a default 'You are Qwen ...' system prompt you never wrote, then the user and assistant turns, each closed by <|im_end|>."
+       },
+       {
+        "do": "Build the prompt part only: the conversation without the reply, plus the generation prompt.",
+        "code": "prompt = tok.apply_chat_template(messages[:1], tokenize=False, add_generation_prompt=True)\nprint(repr(prompt[-60:]))",
+        "lang": "python",
+        "see": "It ends with '<|im_end|>\\n<|im_start|>assistant\\n': the opening the model completes."
+       },
+       {
+        "do": "Tokenise the whole conversation and look at the first and last tokens. In transformers 5, tokenize=True returns a dictionary, so ask for input_ids.",
+        "code": "ids = tok.apply_chat_template(messages, tokenize=True, return_dict=True)[\"input_ids\"]\nprint(len(ids), tok.convert_ids_to_tokens(ids[:4]), tok.convert_ids_to_tokens(ids[-2:]))",
+        "lang": "python",
+        "see": "46 tokens; <|im_start|> is one token, not a dozen characters, and the sequence ends with <|im_end|> and a newline (shown as Ċ)."
+       },
+       {
+        "do": "Check the end-of-turn, padding and padding-side settings you'll rely on when batching.",
+        "code": "print(tok.eos_token, tok.pad_token, tok.padding_side)",
+        "lang": "python",
+        "see": "<|im_end|> <|endoftext|> right: the end-of-turn token is the EOS token, and padding uses a different token, on the right."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Labels, masking and sequence length",
+     "minutes": 12,
+     "objectives": [
+      "Build input_ids and labels for completion-only training",
+      "Verify that the prompt's tokens are a prefix of the full example",
+      "Choose a maximum length, and handle padding and truncation"
+     ],
+     "key_points": [
+      "A causal language model is trained with labels equal to its input_ids: the model shifts them by one position internally so each position predicts the next token, and any position labelled -100 is ignored by the cross-entropy loss.",
+      "Completion-only training sets the labels of the system and user tokens to -100 and keeps the ids of the assistant's reply and its end-of-turn token, so the model learns to answer instead of learning to write questions.",
+      "To build the labels, format the conversation without the reply using add_generation_prompt=True, tokenise both texts with add_special_tokens=False and check the prompt's ids are an exact prefix of the full ids. Tokenising the formatted text yourself behaves the same in transformers 4 and 5.",
+      "Measure token lengths before choosing a maximum: cover nearly every example and count what would be cut, because a truncated example loses its end-of-turn token and teaches the model to run on.",
+      "Batches are padded to their longest example, and padding gets attention_mask 0 and label -100. Packing several short examples into one sequence wastes less compute, but unless attention is reset at each boundary, examples can attend to one another."
+     ]
+    },
+    {
+     "title": "Data quality, leakage and how much you need",
+     "minutes": 10,
+     "objectives": [
+      "Remove invalid rows and duplicates before splitting",
+      "Split data so related examples can't leak between training and validation",
+      "Plan how much data to collect with a learning curve"
+     ],
+     "key_points": [
+      "The model learns whatever the data shows, mistakes included: inconsistent labels, formats or styles are learned as faithfully as good ones, so a few hundred clean, consistent, representative examples are often worth more than thousands of noisy ones.",
+      "Validate every row against the schema and drop or fix failures, then remove exact and near-duplicates, after normalising case and whitespace, before splitting, so the same example can't sit on both sides.",
+      "Split by group, such as customer, document or conversation, not by row: related examples share wording, and a leak makes validation scores look better than real use. Hash the group ID with a stable function such as SHA-256, not Python's hash(), which changes between runs.",
+      "Freeze the test set before the first run and check training data for overlap with it and with any benchmark you report; remove personal data and secrets you don't need, and record each example's source and licence or terms of use.",
+      "Find out how much data you need with a learning curve: train on a quarter, a half and all of the data, and keep collecting only while the validation metric is still clearly rising."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Prepare a chat dataset for supervised fine-tuning",
+    "tool": "Python 3 and Hugging Face Transformers",
+    "minutes": 60,
+    "goal": "Turn 180 raw support tickets into training and validation files ready for fine-tuning: drop unusable rows and duplicates, split by customer with a stable hash, apply a real chat template and mask the prompt so only the reply is learned.",
+    "setup": [
+     "Python 3.10 or later with transformers: pip install transformers (tested with transformers 5.20; 4.46 and later work)",
+     "The first run downloads only the tokeniser files of trl-internal-testing/tiny-Qwen2ForCausalLM-2.5, a tiny test checkpoint with the Qwen2.5 chat template (about 16 MB); the code pins its revision, so token counts match exactly",
+     "The starter files make_tickets.py and prepare.py in one folder; keep the folder, because the module 4 lab uses the files this one writes"
+    ],
+    "steps": [
+     {
+      "do": "Create the raw data, then open tickets.jsonl and read a dozen rows: each has an id, a customer, the ticket text, a category and a priority. Note anything that would hurt training.",
+      "code": "python make_tickets.py",
+      "lang": "bash",
+      "see": "Wrote 180 tickets to tickets.jsonl: the same file on every machine."
+     },
+     {
+      "do": "Complete TODO 1 in prepare.py: problem() says why a row can't be used (empty text, or a category or priority that isn't exactly one of the allowed values)."
+     },
+     {
+      "do": "Complete TODO 2 (normalise) so tickets that differ only in case and spacing compare equal, and TODO 3 (in_validation), which puts about 15% of customers in validation by hashing their ID with SHA-256."
+     },
+     {
+      "do": "Complete TODO 4 in tokenise(): raise an error unless the prompt's ids are an exact prefix of the full conversation's ids, then label the prompt tokens -100 and keep the rest."
+     },
+     {
+      "do": "Run the script.",
+      "code": "python prepare.py",
+      "lang": "bash",
+      "see": "Loaded 180 rows; 6 unusable: {'bad category': 3, 'bad priority': 2, 'empty text': 1}, Removed 20 duplicates; 154 unique tickets, and Train: 120 tickets from 39 customers; validation: 34 from 9; customers in both: 0"
+     },
+     {
+      "do": "Read the token statistics and the learned part of the first example.",
+      "see": "Tokens per example: min 68, median 77, max 98; over 96: 1, and Tokens with a label: 1680 of 9238 (18.2%). The learned part is the JSON reply followed by <|im_end|> and a newline; the prompt ends with <|im_start|>assistant."
+     },
+     {
+      "do": "Set VAL_PERCENT to 20 and run again, then set it back to 15.",
+      "see": "Validation jumps to 59 tickets from 16 customers: a group split moves whole customers, so its share is only roughly the percentage you ask for."
+     },
+     {
+      "do": "Write two or three sentences starting Data: on what you'd do about the example over 96 tokens, and why a split by row would have flattered the validation scores here."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Unusable rows are found and counted by reason.",
+      "look_for": [
+       "6 unusable",
+       "'bad category': 3"
+      ]
+     },
+     {
+      "text": "Exact and near-duplicates are removed before the split.",
+      "look_for": [
+       "Removed 20 duplicates",
+       "154 unique tickets"
+      ]
+     },
+     {
+      "text": "The split is by customer, and no customer is on both sides.",
+      "look_for": [
+       "Train: 120 tickets from 39 customers",
+       "customers in both: 0"
+      ]
+     },
+     {
+      "text": "Only the reply and its end-of-turn token carry labels.",
+      "look_for": [
+       "Tokens with a label: 1680 of 9238",
+       "<|im_end|>"
+      ]
+     },
+     {
+      "text": "The long example and the split are explained.",
+      "look_for": [
+       "Data:"
+      ]
+     }
+    ],
+    "submit": "Paste your four completed functions, everything prepare.py printed, and your Data: answer.",
+    "files": [
+     {
+      "path": "make_tickets.py",
+      "content": "\"\"\"Write tickets.jsonl: 180 synthetic support tickets, the same on every machine (the random generator is seeded).\n\nLike a real export, it contains exact duplicates, near-duplicates that differ in case and spacing, and a few\nunusable rows. Run it once: python make_tickets.py\n\"\"\"\nimport json\nimport random\n\nrng = random.Random(7)\nTEXTS = {\n    \"billing\": [\"I was charged twice for my subscription this month.\", \"Can I get a refund for order {o}?\",\n                \"My invoice for order {o} shows the wrong company name.\", \"The card payment failed but the money left my account.\",\n                \"Why did my plan price go up?\", \"I need a VAT receipt for order {o}.\", \"You billed me after I cancelled.\"],\n    \"technical\": [\"The app crashes when I open the camera.\", \"I get error 500 when I upload a file.\",\n                  \"Sync stopped working after the update.\", \"The dashboard is blank in Firefox.\",\n                  \"Notifications don't arrive on my phone.\", \"Exports to CSV are empty.\", \"The search box returns nothing.\"],\n    \"account\": [\"I can't reset my password.\", \"Please change the email address on my account.\",\n                \"My account is locked after too many login attempts.\", \"How do I delete my account?\",\n                \"I want to add a second user to our team.\", \"Two-factor codes are not accepted.\", \"I can't log in with Google any more.\"],\n    \"delivery\": [\"My parcel for order {o} is three days late.\", \"The courier left order {o} at the wrong address.\",\n                 \"Order {o} arrived damaged.\", \"Can I change the delivery date for order {o}?\",\n                 \"Tracking for order {o} hasn't updated since Monday.\", \"Only half of order {o} arrived.\", \"I was charged for delivery on order {o} but chose collection.\"],\n}\nCUES = {\"high\": [\"This is urgent.\", \"Please fix this today.\", \"We can't work until this is sorted.\", \"Urgent: customers are waiting.\"],\n        \"normal\": [\"Thanks.\", \"Thank you for your help.\", \"\", \"Could you take a look?\"],\n        \"low\": [\"No rush.\", \"Whenever you have time.\", \"Not urgent, just curious.\", \"Low priority.\"]}\nOPEN = [\"Hi,\", \"Hello team,\", \"\", \"Good morning,\", \"Hey,\"]\nrows = []\nfor i in range(160):\n    cat = rng.choice(list(TEXTS))\n    pri = rng.choices([\"high\", \"normal\", \"low\"], weights=[3, 4, 3])[0]\n    order = str(rng.randint(10000, 99999))\n    body = rng.choice(TEXTS[cat]).format(o=order)\n    text = \" \".join(s for s in [rng.choice(OPEN), body, rng.choice(CUES[pri])] if s)\n    rows.append({\"id\": f\"T{i + 1:04d}\", \"customer\": f\"C{rng.randint(1, 48):03d}\", \"text\": text,\n                 \"category\": cat, \"priority\": pri})\n\n\ndef copy_of_earlier_row():\n    row = dict(rng.choice(rows[:150]))\n    row[\"id\"] = f\"T{len(rows) + 1:04d}\"\n    return row\n\n\nfor _ in range(8):  # exact duplicates\n    rows.append(copy_of_earlier_row())\nfor _ in range(6):  # near-duplicates: different case and spacing\n    row = copy_of_earlier_row()\n    row[\"text\"] = \"  \" + row[\"text\"].upper().replace(\" \", \"  \") + \" \"\n    rows.append(row)\nfor change in [{\"category\": \"other\"}, {\"priority\": \"critical\"}, {\"category\": None}, {\"text\": \"\"},\n               {\"priority\": None}, {\"category\": \"Billing \"}]:  # unusable rows\n    row = copy_of_earlier_row()\n    row.update(change)\n    rows.append(row)\nrng.shuffle(rows)\nwith open(\"tickets.jsonl\", \"w\", encoding=\"utf-8\") as f:\n    for row in rows:\n        f.write(json.dumps(row, ensure_ascii=False) + \"\\n\")\nprint(f\"Wrote {len(rows)} tickets to tickets.jsonl\")\n"
+     },
+     {
+      "path": "prepare.py",
+      "content": "\"\"\"Prepare support tickets for supervised fine-tuning.\n\nValidate the rows, remove exact and near-duplicates, split by customer, apply the model's chat template and mask\nthe prompt tokens so only the assistant's reply is learned. Writes train.jsonl and val.jsonl (messages format).\n\"\"\"\n\nimport hashlib\nimport json\nimport statistics\nfrom collections import Counter\n\nfrom transformers import AutoTokenizer\n\n# A tiny test checkpoint whose tokenizer and chat template match the Qwen2.5 family (ChatML); only the tokenizer\n# files (about 16 MB) are downloaded. The revision pins the exact files, so the token counts below don't change.\nCHECKPOINT = \"trl-internal-testing/tiny-Qwen2ForCausalLM-2.5\"\nREVISION = \"ce8d0bf270b28c8fab026ced69fe8aa14b0f0eda\"\nCATEGORIES = {\"billing\", \"technical\", \"account\", \"delivery\"}\nPRIORITIES = {\"low\", \"normal\", \"high\"}\nSYSTEM = (\"Classify the support ticket. Reply with JSON only, with keys category \"\n          \"(billing, technical, account or delivery) and priority (low, normal or high).\")\nMAX_TOKENS = 96\nVAL_PERCENT = 15\n\n\ndef load(path):\n    with open(path, encoding=\"utf-8\") as f:\n        return [json.loads(line) for line in f if line.strip()]\n\n\ndef problem(row):\n    \"\"\"Why a row can't be used, or None if it's fine.\"\"\"\n    # TODO 1: return \"empty text\" if the text is missing or blank, \"bad category\" if the category isn't\n    #          exactly one of CATEGORIES, \"bad priority\" likewise for PRIORITIES; otherwise None\n    return None\n\n\ndef normalise(text):\n    # TODO 2: lower-case the text and collapse every run of whitespace to one space, trimming both ends\n    return text\n\n\ndef dedupe(rows):\n    seen, out = set(), []\n    for row in rows:\n        key = normalise(row[\"text\"])\n        if key not in seen:\n            seen.add(key)\n            out.append(row)\n    return out\n\n\ndef in_validation(customer):\n    \"\"\"A stable split: the same customer always lands on the same side, on every run and every machine.\"\"\"\n    # TODO 3: hash the customer ID with hashlib.sha256 (not Python's hash(), which changes between runs),\n    #          read the hex digest as an integer, and return True if it modulo 100 is below VAL_PERCENT\n    return False\n\n\ndef to_messages(row):\n    reply = json.dumps({\"category\": row[\"category\"], \"priority\": row[\"priority\"]})\n    return [{\"role\": \"system\", \"content\": SYSTEM},\n            {\"role\": \"user\", \"content\": row[\"text\"].strip()},\n            {\"role\": \"assistant\", \"content\": reply}]\n\n\ndef tokenise(tok, messages):\n    full = tok.apply_chat_template(messages, tokenize=False)\n    prompt = tok.apply_chat_template(messages[:-1], tokenize=False, add_generation_prompt=True)\n    full_ids = tok(full, add_special_tokens=False)[\"input_ids\"]\n    prompt_ids = tok(prompt, add_special_tokens=False)[\"input_ids\"]\n    # TODO 4: check that prompt_ids is exactly the start of full_ids (raise ValueError if not), then build\n    #          labels: -100 for every prompt token, followed by the remaining ids of full_ids unchanged\n    labels = list(full_ids)\n    return {\"input_ids\": full_ids, \"labels\": labels}\n\n\ndef main():\n    tok = AutoTokenizer.from_pretrained(CHECKPOINT, revision=REVISION)\n    rows = load(\"tickets.jsonl\")\n    problems = Counter(p for p in map(problem, rows) if p)\n    good = [r for r in rows if problem(r) is None]\n    unique = dedupe(good)\n    print(f\"Loaded {len(rows)} rows; {sum(problems.values())} unusable: {dict(sorted(problems.items()))}\")\n    print(f\"Removed {len(good) - len(unique)} duplicates; {len(unique)} unique tickets\")\n\n    train = [r for r in unique if not in_validation(r[\"customer\"])]\n    val = [r for r in unique if in_validation(r[\"customer\"])]\n    shared = {r[\"customer\"] for r in train} & {r[\"customer\"] for r in val}\n    print(f\"Train: {len(train)} tickets from {len({r['customer'] for r in train})} customers; \"\n          f\"validation: {len(val)} from {len({r['customer'] for r in val})}; customers in both: {len(shared)}\")\n    print(\"Train labels:\", dict(sorted(Counter(r[\"category\"] for r in train).items())))\n\n    encoded = [tokenise(tok, to_messages(r)) for r in train]\n    lengths = [len(e[\"input_ids\"]) for e in encoded]\n    trained = sum(sum(1 for t in e[\"labels\"] if t != -100) for e in encoded)\n    print(f\"Tokens per example: min {min(lengths)}, median {statistics.median(lengths):g}, max {max(lengths)}; \"\n          f\"over {MAX_TOKENS}: {sum(n > MAX_TOKENS for n in lengths)}\")\n    print(f\"Tokens with a label: {trained} of {sum(lengths)} ({trained / sum(lengths):.1%})\")\n\n    first = encoded[0]\n    shown = [t for t, label in zip(first[\"input_ids\"], first[\"labels\"]) if label != -100]\n    print(\"Learned part of the first example:\", repr(tok.decode(shown)))\n    print(\"Its prompt ends with:\", repr(tok.decode(first[\"input_ids\"][-len(shown) - 3: -len(shown)])))\n\n    for name, part in ((\"train.jsonl\", train), (\"val.jsonl\", val)):\n        with open(name, \"w\", encoding=\"utf-8\") as f:\n            for r in part:\n                f.write(json.dumps({\"id\": r[\"id\"], \"messages\": to_messages(r)}) + \"\\n\")\n    print(\"Wrote train.jsonl and val.jsonl\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "Compare categories with the allowed set exactly: 'Billing ' with a capital and a trailing space is a bad category, not a billing ticket.",
+     "Python's hash() of a string changes in every new process unless PYTHONHASHSEED is set, so a split built on it would differ between runs; hashlib.sha256 doesn't.",
+     "If the prefix check fails, print the two id lists side by side: the first difference shows where the prompt and the reply were tokenised together."
+    ]
+   }
+  },
+  {
+   "title": "Full fine-tuning and parameter-efficient methods",
+   "summary": "Work out what full fine-tuning costs, compare it with partial and parameter-efficient methods, and measure learning and forgetting on a tiny GPT you pretrain yourself.",
+   "instructor": "chloe-tremblay",
+   "lessons": [
+    {
+     "title": "What full fine-tuning costs",
+     "minutes": 12,
+     "objectives": [
+      "Estimate the training memory of full fine-tuning from a parameter count",
+      "Explain how gradient checkpointing and sharding reduce memory"
+     ],
+     "key_points": [
+      "Full fine-tuning updates every weight, so training memory holds the weights, a gradient for each, the optimiser's state and the activations saved for the backward pass.",
+      "With AdamW in mixed precision, a common accounting is 16 bytes per parameter before activations: 2 for bf16 weights, 2 for gradients, 4 for an fp32 master copy and 4 for each of Adam's two moment estimates, so an 8-billion-parameter model needs about 128 GB.",
+      "Activation memory grows with batch size, sequence length, hidden size and depth. Gradient checkpointing keeps only some activations and recomputes the rest during the backward pass: roughly one extra forward pass, about a third more compute, for much less memory.",
+      "Sharding with DeepSpeed ZeRO or PyTorch FSDP splits weights, gradients and optimiser state across GPUs, so a model too big for one can be trained, and every full fine-tune produces a complete new copy of the model to store and serve.",
+      "Full fine-tuning has the most capacity to change a model, which pays off for large shifts such as a new language or domain with plenty of data; it also has the most capacity to overwrite what the model already knew."
+     ]
+    },
+    {
+     "title": "The parameter-efficient family",
+     "minutes": 12,
+     "objectives": [
+      "Compare partial fine-tuning, adapters, prompt tuning and LoRA",
+      "Explain why parameter-efficient methods save memory and storage"
+     ],
+     "key_points": [
+      "Parameter-efficient fine-tuning (PEFT) freezes the pretrained weights and trains a small set of parameters, so gradients and optimiser state exist only for those, and the result is a small file applied on top of an unchanged base model.",
+      "Partial fine-tuning trains a chosen subset, such as the last blocks and the output head, or only the bias terms (BitFit). It is simple, but what it can change is limited by where those parameters sit: in the lab, biases alone couldn't learn the new date format at all.",
+      "Adapters insert small bottleneck layers (a down-projection, a nonlinearity and an up-projection) inside each block; they train well, but they add layers that run in sequence at inference time.",
+      "Prompt tuning and prefix tuning learn continuous 'virtual tokens' added to the input or to each layer's keys and values. They are tiny, but prompt tuning's original study found it matched full fine-tuning only for very large models.",
+      "LoRA learns a low-rank update to chosen weight matrices. Because the update can be merged into the weights after training it adds no latency once merged, and its quality and small files have made it the default PEFT method."
+     ]
+    },
+    {
+     "title": "Forgetting, and choosing a method",
+     "minutes": 10,
+     "objectives": [
+      "Measure catastrophic forgetting on held-out tasks",
+      "Reduce forgetting with rehearsal and conservative settings",
+      "Choose between full fine-tuning, LoRA and QLoRA for a project"
+     ],
+     "key_points": [
+      "Catastrophic forgetting is the loss of earlier abilities after training on new data. Measure it by evaluating the fine-tuned model on held-out tasks the base model did well, not only on the new task.",
+      "In 'LoRA Learns Less and Forgets Less' (Biderman and colleagues, 2024), LoRA learned less than full fine-tuning on large new domains such as code and mathematics, but kept more of the base model's abilities outside them.",
+      "Any method can forget when the training data covers only the new task: in the lab, every method that learned the ISO format also lost the two old formats, until a slice of old-task examples (rehearsal) was mixed in.",
+      "Rehearsal with general or earlier-task data, a lower learning rate, fewer epochs and a smaller rank all reduce forgetting; check what the model must keep doing on every candidate, not just the new task.",
+      "Choose by budget and shift: LoRA, or QLoRA when memory is tight, for most task adaptation on one GPU; full fine-tuning when the shift is large, data is plentiful and you can afford to store and serve a whole model per task."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Full fine-tuning against freezing: cost, learning and forgetting",
+    "tool": "Python 3 and PyTorch",
+    "minutes": 60,
+    "goal": "Pretrain a tiny GPT on two date formats, then teach it a third (ISO 8601) three ways: full fine-tuning, training only the last block, and training only the biases. Compare what each trains, what its optimiser stores, what it learns and what it forgets, then work out what fine-tuning an 8-billion-parameter model needs.",
+    "setup": [
+     "Python 3.10 or later with PyTorch 2 (the CPU build is fine): pip install torch",
+     "The starter files tinygpt.py, dates.py, pretrain.py, compare.py and memory.py in one folder; keep it for the module 3 lab"
+    ],
+    "steps": [
+     {
+      "do": "Read dates.py: each example is a prompt such as 'uk 25 Dec 2023 >' and an answer such as ' 25/12/2023'. batch() labels only the answer, as the module 1 lab did, and accuracy() scores greedy answers by exact match."
+     },
+     {
+      "do": "Pretrain the model on the uk and us tasks; it takes about a minute.",
+      "code": "python pretrain.py",
+      "lang": "bash",
+      "see": "Parameters: 107,392 and Pretrained accuracy: uk 1.000, us 1.000, iso 0.000: the iso task is new."
+     },
+     {
+      "do": "Complete TODO 1 (choose) and TODO 2 (state_bytes) in compare.py, then run it.",
+      "code": "python compare.py",
+      "lang": "bash",
+      "see": "full: trainable 107,392, Adam state 859,136 bytes; last block: 52,736 and 421,888; bias only: 1,472 and 11,776. Full and last-block training learn iso (roughly 0.7 to 1.0, depending on your machine), bias only doesn't, and uk and us fall to 0.000 for every method."
+     },
+     {
+      "do": "Read what the fully fine-tuned model now answers for a uk prompt.",
+      "see": "An ISO-shaped date such as '1970-07-03' for 'uk 13 Jul 1975 >': the new format has overwritten the old ones, and even its digits are wrong."
+     },
+     {
+      "do": "Run it again with rehearsal: 50 uk and 50 us examples mixed in with the 200 iso ones.",
+      "code": "python compare.py --rehearsal",
+      "lang": "bash",
+      "see": "Fine-tuning on 300 examples (200 iso + 100 rehearsal). Full and last-block training keep uk and us well above 0.5 while still learning iso; bias only keeps them partly and still can't learn iso."
+     },
+     {
+      "do": "Complete TODO 1 and TODO 2 in memory.py and run it.",
+      "code": "python memory.py",
+      "lang": "bash",
+      "see": "Model parameters: 8,030,261,248; LoRA r=16 on all linear layers: 41,943,040 trainable (0.52%); Full fine-tuning: 128.5 GB, LoRA with a bf16 base: 16.7 GB, QLoRA with a 4-bit base: 4.8 GB, before activations."
+     },
+     {
+      "do": "Write two or three sentences starting Forgetting: on why every method lost the uk and us tasks, and what you'd mix into a real fine-tuning run to prevent it."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Trainable parameters and optimiser state are measured for each method.",
+      "look_for": [
+       "859,136",
+       "421,888",
+       "11,776"
+      ]
+     },
+     {
+      "text": "Without rehearsal the old tasks are forgotten.",
+      "look_for": [
+       "(iso only)",
+       "uk 0.000, us 0.000"
+      ]
+     },
+     {
+      "text": "The rehearsal run is compared.",
+      "look_for": [
+       "(200 iso + 100 rehearsal)"
+      ]
+     },
+     {
+      "text": "The memory of fine-tuning an 8-billion-parameter model is worked out.",
+      "look_for": [
+       "8,030,261,248",
+       "41,943,040",
+       "128.5 GB"
+      ]
+     },
+     {
+      "text": "Forgetting is explained, with a way to prevent it.",
+      "look_for": [
+       "Forgetting:"
+      ]
+     }
+    ],
+    "submit": "Paste your choose(), state_bytes(), lora_params() and full_gb() functions, everything the four runs printed, and your Forgetting: answer.",
+    "files": [
+     {
+      "path": "tinygpt.py",
+      "content": "\"\"\"A tiny GPT-style language model over characters, small enough to train on a laptop CPU in about a minute.\n\nIts layer names follow Llama-style models (q_proj, k_proj, v_proj, o_proj, up_proj, down_proj), so the same\ntarget-module names you'd give peft work here too.\n\"\"\"\n\nimport torch\nimport torch.nn as nn\nimport torch.nn.functional as F\n\n\nclass Attention(nn.Module):\n    def __init__(self, d, heads):\n        super().__init__()\n        self.heads = heads\n        self.q_proj = nn.Linear(d, d)\n        self.k_proj = nn.Linear(d, d)\n        self.v_proj = nn.Linear(d, d)\n        self.o_proj = nn.Linear(d, d)\n\n    def forward(self, x):\n        b, t, d = x.shape\n        split = lambda y: y.view(b, t, self.heads, d // self.heads).transpose(1, 2)\n        y = F.scaled_dot_product_attention(split(self.q_proj(x)), split(self.k_proj(x)), split(self.v_proj(x)),\n                                           is_causal=True)\n        return self.o_proj(y.transpose(1, 2).reshape(b, t, d))\n\n\nclass Block(nn.Module):\n    def __init__(self, d, heads):\n        super().__init__()\n        self.norm1 = nn.LayerNorm(d)\n        self.attn = Attention(d, heads)\n        self.norm2 = nn.LayerNorm(d)\n        self.up_proj = nn.Linear(d, 4 * d)\n        self.down_proj = nn.Linear(4 * d, d)\n\n    def forward(self, x):\n        x = x + self.attn(self.norm1(x))\n        return x + self.down_proj(F.gelu(self.up_proj(self.norm2(x))))\n\n\nclass TinyGPT(nn.Module):\n    def __init__(self, vocab, d=64, heads=4, layers=2, ctx=32):\n        super().__init__()\n        self.tok = nn.Embedding(vocab, d)\n        self.pos = nn.Embedding(ctx, d)\n        self.blocks = nn.ModuleList(Block(d, heads) for _ in range(layers))\n        self.norm = nn.LayerNorm(d)\n        self.lm_head = nn.Linear(d, vocab, bias=False)\n\n    def forward(self, idx):\n        x = self.tok(idx) + self.pos(torch.arange(idx.shape[1], device=idx.device))\n        for block in self.blocks:\n            x = block(x)\n        return self.lm_head(self.norm(x))\n"
+     },
+     {
+      "path": "dates.py",
+      "content": "\"\"\"Date-format tasks for the tiny GPT, with training and evaluation helpers.\n\nEach example is a prompt and an answer, such as 'uk 25 Dec 2023 >' and ' 25/12/2023'. The model is pretrained on\nthe 'uk' (day/month/year) and 'us' (month/day/year) tasks; 'iso' (year-month-day) is the new task to fine-tune.\n\"\"\"\n\nimport random\n\nimport torch\nimport torch.nn.functional as F\n\nMONTHS = [\"Jan\", \"Feb\", \"Mar\", \"Apr\", \"May\", \"Jun\", \"Jul\", \"Aug\", \"Sep\", \"Oct\", \"Nov\", \"Dec\"]\nPAD = \".\"\nCHARS = sorted(set(\"0123456789 >/-\\n\" + \"ukusio\" + \"\".join(MONTHS) + PAD))\nSTOI = {c: i for i, c in enumerate(CHARS)}\nVOCAB, CTX = len(CHARS), 32\n\n\ndef answer(task, d, m, y):\n    return {\"uk\": f\"{d:02d}/{m:02d}/{y}\", \"us\": f\"{m:02d}/{d:02d}/{y}\", \"iso\": f\"{y}-{m:02d}-{d:02d}\"}[task]\n\n\ndef random_date(rng):\n    return rng.randint(1, 28), rng.randint(1, 12), rng.randint(1950, 2049)\n\n\ndef example(task, date):\n    d, m, y = date\n    return f\"{task} {d} {MONTHS[m - 1]} {y} >\", \" \" + answer(task, d, m, y) + \"\\n\"\n\n\ndef dataset(task, n, seed, exclude=()):\n    \"\"\"n distinct examples of a task, none of whose dates are in exclude.\"\"\"\n    rng, seen, out = random.Random(seed), set(exclude), []\n    while len(out) < n:\n        date = random_date(rng)\n        if date not in seen:\n            seen.add(date)\n            out.append((date, example(task, date)))\n    return out\n\n\ndef finetune_set():\n    \"\"\"The 200 'iso' examples to fine-tune on.\"\"\"\n    return [pair for _, pair in dataset(\"iso\", 200, seed=5)]\n\n\ndef rehearsal_set():\n    \"\"\"50 'uk' and 50 'us' examples from the pretraining tasks, to mix into fine-tuning.\"\"\"\n    return [pair for _, pair in dataset(\"uk\", 50, seed=11)] + [pair for _, pair in dataset(\"us\", 50, seed=12)]\n\n\ndef test_sets():\n    \"\"\"300 held-out examples per task; the 'iso' test dates never appear in the fine-tuning set.\"\"\"\n    tuned = {date for date, _ in dataset(\"iso\", 200, seed=5)}\n    return {\"uk\": [pair for _, pair in dataset(\"uk\", 300, seed=99)],\n            \"us\": [pair for _, pair in dataset(\"us\", 300, seed=98)],\n            \"iso\": [pair for _, pair in dataset(\"iso\", 300, seed=97, exclude=tuned)]}\n\n\ndef batch(pairs):\n    \"\"\"Token ids and targets; targets are -100 except on the answer, so only the answer is learned.\"\"\"\n    x = torch.full((len(pairs), CTX), STOI[PAD])\n    y = torch.full((len(pairs), CTX), -100)\n    for i, (prompt, ans) in enumerate(pairs):\n        ids = [STOI[c] for c in prompt + ans]\n        x[i, : len(ids)] = torch.tensor(ids)\n        y[i, len(prompt) - 1 : len(ids) - 1] = torch.tensor(ids[len(prompt):])\n    return x, y\n\n\ndef train(model, pairs, steps, lr, params=None, batch_size=64, seed=0):\n    \"\"\"AdamW on the given parameters (default: all that require grad); returns the optimiser.\"\"\"\n    params = [p for p in (params or model.parameters()) if p.requires_grad]\n    opt = torch.optim.AdamW(params, lr=lr, weight_decay=0.0)\n    gen = torch.Generator().manual_seed(seed)\n    model.train()\n    for _ in range(steps):\n        idx = torch.randint(len(pairs), (batch_size,), generator=gen)\n        x, y = batch([pairs[i] for i in idx.tolist()])\n        loss = F.cross_entropy(model(x).reshape(-1, VOCAB), y.reshape(-1), ignore_index=-100)\n        opt.zero_grad()\n        loss.backward()\n        opt.step()\n    return opt\n\n\n@torch.no_grad()\ndef accuracy(model, pairs):\n    \"\"\"Exact-match accuracy of greedy answers, decoding all examples in parallel.\"\"\"\n    model.eval()\n    x = torch.full((len(pairs), CTX), STOI[PAD])\n    lengths = []\n    for i, (prompt, _) in enumerate(pairs):\n        x[i, : len(prompt)] = torch.tensor([STOI[c] for c in prompt])\n        lengths.append(len(prompt))\n    longest = max(len(p) + len(a) for p, a in pairs)\n    pos = torch.tensor(lengths)\n    rows = torch.arange(len(pairs))\n    for _ in range(longest - min(lengths)):\n        nxt = model(x)[rows, (pos - 1).clamp(max=CTX - 1)].argmax(-1)\n        ok = pos < CTX\n        x[rows[ok], pos[ok]] = nxt[ok]\n        pos = pos + 1\n    right = 0\n    for i, (prompt, ans) in enumerate(pairs):\n        out = \"\".join(CHARS[t] for t in x[i, len(prompt): len(prompt) + len(ans)].tolist())\n        right += out == ans\n    model.train()\n    return right / len(pairs)\n"
+     },
+     {
+      "path": "pretrain.py",
+      "content": "\"\"\"Pretrain the tiny GPT on the 'uk' and 'us' date tasks and save it as base.pt (about a minute on a laptop).\"\"\"\n\nimport torch\n\nfrom dates import CTX, VOCAB, accuracy, dataset, test_sets, train\nfrom tinygpt import TinyGPT\n\n\ndef main():\n    torch.manual_seed(0)\n    model = TinyGPT(VOCAB, ctx=CTX)\n    pretraining = [pair for _, pair in dataset(\"uk\", 4000, seed=1)] + [pair for _, pair in dataset(\"us\", 4000, seed=2)]\n    train(model, pretraining, steps=500, lr=3e-3)\n    torch.save(model.state_dict(), \"base.pt\")\n    print(f\"Parameters: {sum(p.numel() for p in model.parameters()):,}\")\n    print(\"Pretrained accuracy:\", \", \".join(f\"{t} {accuracy(model, s):.3f}\" for t, s in test_sets().items()))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "compare.py",
+      "content": "\"\"\"Fine-tune the pretrained tiny GPT on the new 'iso' task three ways, and measure cost, learning and forgetting.\n\nRun pretrain.py first (it writes base.pt). Add --rehearsal to mix some 'uk' and 'us' examples into fine-tuning.\n\"\"\"\n\nimport argparse\n\nimport torch\n\nfrom dates import CHARS, CTX, PAD, STOI, VOCAB, accuracy, finetune_set, rehearsal_set, test_sets, train\nfrom tinygpt import TinyGPT\n\nMETHODS = {\"full\": 3e-3, \"last block\": 3e-3, \"bias only\": 1e-2}  # method: learning rate\n\n\ndef load_base():\n    model = TinyGPT(VOCAB, ctx=CTX)\n    model.load_state_dict(torch.load(\"base.pt\"))\n    return model\n\n\ndef choose(model, method):\n    \"\"\"Freeze everything, then unfreeze what the method trains; return the trainable parameters.\"\"\"\n    for p in model.parameters():\n        p.requires_grad_(False)\n    # TODO 1: \"full\" trains every parameter; \"last block\" trains model.blocks[-1], model.norm and\n    #          model.lm_head; \"bias only\" (BitFit) trains the parameters whose name ends with \"bias\"\n    chosen = list(model.parameters())\n    for p in chosen:\n        p.requires_grad_(True)\n    return chosen\n\n\ndef state_bytes(optimiser):\n    \"\"\"Bytes held by AdamW's two moment estimates, exp_avg and exp_avg_sq, for every trained parameter.\"\"\"\n    # TODO 2: add up numel() * element_size() of state[\"exp_avg\"] and state[\"exp_avg_sq\"] over\n    #          optimiser.state.values()\n    return 0\n\n\n@torch.no_grad()\ndef reply(model, prompt):\n    model.eval()\n    x = torch.full((1, CTX), STOI[PAD])\n    x[0, : len(prompt)] = torch.tensor([STOI[c] for c in prompt])\n    for pos in range(len(prompt), CTX):\n        x[0, pos] = model(x)[0, pos - 1].argmax()\n        if CHARS[x[0, pos]] == \"\\n\":\n            break\n    return \"\".join(CHARS[t] for t in x[0, len(prompt): pos]).strip()\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--rehearsal\", action=\"store_true\", help=\"mix 50 uk and 50 us examples into the data\")\n    args = parser.parse_args()\n    data = finetune_set() + (rehearsal_set() if args.rehearsal else [])\n    tests = test_sets()\n    print(f\"Fine-tuning on {len(data)} examples\" + (\" (200 iso + 100 rehearsal)\" if args.rehearsal else \" (iso only)\"))\n    for method, lr in METHODS.items():\n        torch.manual_seed(0)\n        model = load_base()\n        params = choose(model, method)\n        optimiser = train(model, data, steps=300, lr=lr, params=params)\n        scores = \", \".join(f\"{t} {accuracy(model, s):.3f}\" for t, s in tests.items())\n        print(f\"{method:>10}: trainable {sum(p.numel() for p in params):7,}, Adam state {state_bytes(optimiser):7,} \"\n              f\"bytes; accuracy {scores}\")\n        if method == \"full\":\n            print(f\"            'uk 13 Jul 1975 >' now gets {reply(model, 'uk 13 Jul 1975 >')!r}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "memory.py",
+      "content": "\"\"\"Training memory for weights, gradients and optimiser state (activations not included).\n\nThe configuration is an 8-billion-parameter Llama-style model: change it to see any other.\n\"\"\"\n\nCONFIG = {\"vocab\": 128_256, \"hidden\": 4_096, \"mlp\": 14_336, \"layers\": 32, \"heads\": 32, \"kv_heads\": 8, \"head_dim\": 128}\n\n\ndef linear_shapes(c):\n    \"\"\"(d_in, d_out) of every linear layer in one transformer block.\"\"\"\n    q, kv = c[\"heads\"] * c[\"head_dim\"], c[\"kv_heads\"] * c[\"head_dim\"]\n    return {\"q_proj\": (c[\"hidden\"], q), \"k_proj\": (c[\"hidden\"], kv), \"v_proj\": (c[\"hidden\"], kv),\n            \"o_proj\": (q, c[\"hidden\"]), \"gate_proj\": (c[\"hidden\"], c[\"mlp\"]), \"up_proj\": (c[\"hidden\"], c[\"mlp\"]),\n            \"down_proj\": (c[\"mlp\"], c[\"hidden\"])}\n\n\ndef total_params(c):\n    per_block = sum(i * o for i, o in linear_shapes(c).values()) + 2 * c[\"hidden\"]  # plus two norm weights\n    return c[\"layers\"] * per_block + 2 * c[\"vocab\"] * c[\"hidden\"] + c[\"hidden\"]   # untied embeddings and head\n\n\ndef lora_params(c, r, targets):\n    # TODO 1: each targeted layer adds r * (d_in + d_out) parameters, in every one of the c[\"layers\"] blocks\n    return 0\n\n\ndef full_gb(params):\n    # TODO 2: mixed-precision AdamW keeps 16 bytes per parameter: bf16 weights (2) and gradients (2),\n    #          an fp32 master copy (4) and two fp32 moments (4 + 4)\n    return 0\n\n\ndef lora_gb(params, trainable, base_bytes=2.0):\n    \"\"\"A frozen base (2 bytes per parameter in bf16) plus 16 bytes per trainable LoRA parameter.\"\"\"\n    return (params * base_bytes + trainable * 16) / 1e9\n\n\ndef qlora_gb(params, trainable):\n    \"\"\"Module 4: NF4 weights are 4 bits plus about 0.127 bits of double-quantised constants per parameter.\"\"\"\n    return lora_gb(params, trainable, base_bytes=(4 + 0.127) / 8)\n\n\ndef main():\n    n = total_params(CONFIG)\n    everything = list(linear_shapes(CONFIG))\n    print(f\"Model parameters: {n:,}\")\n    for r, targets in ((16, [\"q_proj\", \"v_proj\"]), (16, everything), (64, everything)):\n        t = lora_params(CONFIG, r, targets)\n        label = \"all linear layers\" if targets == everything else \" and \".join(targets)\n        print(f\"LoRA r={r} on {label}: {t:,} trainable ({t / n:.2%})\")\n    t = lora_params(CONFIG, 16, everything)\n    print(f\"Full fine-tuning:  {full_gb(n):6.1f} GB\")\n    print(f\"LoRA, bf16 base:   {lora_gb(n, t):6.1f} GB\")\n    print(f\"QLoRA, 4-bit base: {qlora_gb(n, t):6.1f} GB\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "Optimiser state appears only after the first step, and only for parameters that were passed to the optimiser, which is why state_bytes() is called after training.",
+     "If bias only reports more than 1,472 trainable parameters, check that you select names ending in 'bias' after freezing everything; the LayerNorm weights don't count.",
+     "Accuracy figures vary a little between machines and thread counts, because floating-point sums are done in different orders; parameter and byte counts don't."
+    ]
+   }
+  },
+  {
+   "title": "LoRA from the inside",
+   "summary": "Derive LoRA's update, parameter count and scaling, choose rank, alpha and target modules for good reasons, and implement a LoRA layer in PyTorch that trains, merges and matches.",
+   "instructor": "mei-ling-zhang",
+   "lessons": [
+    {
+     "title": "The low-rank update",
+     "minutes": 12,
+     "objectives": [
+      "Write LoRA's forward pass and its parameter count",
+      "Explain why the update starts at zero and how merging works"
+     ],
+     "key_points": [
+      "LoRA (Hu and colleagues, 2021) keeps a pretrained weight W of shape d_out × d_in frozen and learns its update as a product B A, with A of shape r × d_in and B of shape d_out × r, so the layer computes W x + (α / r) B A x.",
+      "The update has r × (d_in + d_out) parameters instead of d_out × d_in: for a 4,096 × 4,096 projection at r = 16 that is 131,072 instead of 16,777,216 (0.78%), and the update's rank can't exceed r.",
+      "A starts random and B starts at zero, so B A = 0 and the adapted model begins exactly where the pretrained one was; the first gradients reach B, and training moves the product away from zero.",
+      "After training, W' = W + (α / r) B A can be merged into the weight, giving a model with the original shape and speed; left unmerged, each adapted layer does two extra small matrix multiplications.",
+      "LoRA rests on the observation that fine-tuning needs few dimensions: Aghajanyan and colleagues (2020) fine-tuned models well inside small random subspaces, and the LoRA paper found small ranks matched full fine-tuning on the tasks it tested."
+     ],
+     "walkthrough": {
+      "tool": "Python 3 and PyTorch",
+      "title": "Count, check and merge a low-rank update",
+      "steps": [
+       {
+        "do": "Compare a full update of a 4,096 × 4,096 projection with a rank-16 LoRA update.",
+        "code": "import torch\n\nd_in, d_out, r, alpha = 4096, 4096, 16, 32\nprint(f\"Full update: {d_out * d_in:,} parameters; LoRA: {r * (d_in + d_out):,} \"\n      f\"({r * (d_in + d_out) / (d_out * d_in):.2%})\")",
+        "lang": "python",
+        "see": "Full update: 16,777,216 parameters; LoRA: 131,072 (0.78%)"
+       },
+       {
+        "do": "Make a frozen weight W and LoRA factors with B at zero, as LoRA initialises them, and compare outputs.",
+        "code": "torch.manual_seed(0)\nW = torch.randn(64, 32)                      # a frozen 32 -> 64 weight\nA = torch.randn(4, 32) * 0.1                 # r = 4\nB = torch.zeros(64, 4)\nx = torch.randn(5, 32)\nprint(torch.equal(x @ W.T + (alpha / r) * (x @ A.T @ B.T), x @ W.T))",
+        "lang": "python",
+        "see": "True: with B = 0 the adapted layer is exactly the original."
+       },
+       {
+        "do": "Give B some values, as training would, and look at the update's shape and rank.",
+        "code": "B = torch.randn(64, 4) * 0.1                 # as if training had moved B\ndelta = (alpha / r) * B @ A\nprint(delta.shape, torch.linalg.matrix_rank(delta).item())",
+        "lang": "python",
+        "see": "torch.Size([64, 32]) 4: a full-size matrix whose rank is at most r."
+       },
+       {
+        "do": "Merge the update into W and check the merged layer computes the same outputs.",
+        "code": "merged = W + delta\nprint(torch.allclose(x @ merged.T, x @ W.T + (alpha / r) * (x @ A.T @ B.T), atol=1e-5))",
+        "lang": "python",
+        "see": "True: W + (α / r) B A in one matrix gives the adapter's outputs with no extra multiplications."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Rank, alpha and the learning rate",
+     "minutes": 12,
+     "objectives": [
+      "Explain how rank and alpha set the size of the update",
+      "Choose a starting rank, alpha and learning rate, and know when to change them"
+     ],
+     "key_points": [
+      "The scale α / r multiplies the update: with α fixed, raising r shrinks the scale, so many recipes tie α to r (α = r or α = 2r) and tune the learning rate rather than α.",
+      "rsLoRA (Kalajdzievski, 2023) scales by α / √r instead, which keeps the update's size stable as the rank grows and lets higher ranks learn more; peft turns it on with use_rslora=True.",
+      "Ranks such as 8 or 16 suit many narrow tasks; higher ranks help when the task is far from what the model knows, at the cost of memory and, on small datasets, overfitting. In the lab, rank 1 learned the new format only partly, while ranks 4 and 16 learned it almost fully.",
+      "LoRA usually wants a larger learning rate than full fine-tuning, often 1e-4 to 2e-4 with AdamW on large models against around 1e-5 for full fine-tuning, because only the small matrices move; the labs' tiny models use larger rates still, so trust the loss curve over defaults.",
+      "lora_dropout applies dropout to the input of the LoRA path only (0.05 to 0.1 is common for small datasets), and bias='none' keeps the layers' biases frozen."
+     ]
+    },
+    {
+     "title": "Target modules and LoRA's variants",
+     "minutes": 12,
+     "objectives": [
+      "Choose target modules by name for a given architecture",
+      "Decide when to train embeddings, and when to try DoRA or another initialisation"
+     ],
+     "key_points": [
+      "target_modules lists the layers that get adapters, matched by name. Llama-style models use q_proj, k_proj, v_proj and o_proj in attention and gate_proj, up_proj and down_proj in the MLP; GPT-NeoX uses query_key_value, dense, dense_h_to_4h and dense_4h_to_h. Print named_modules() first.",
+      "Adapting every linear layer, not only q_proj and v_proj, usually closes most of the gap to full fine-tuning, as the QLoRA paper found; peft's target_modules='all-linear' selects every linear layer except the output head.",
+      "The embeddings and output head usually stay frozen. If you add special tokens, their new embedding rows must be trained too, with modules_to_save for whole layers or trainable_token_indices for just those rows.",
+      "DoRA (use_dora=True) splits each weight into a magnitude and a direction and applies LoRA to the direction, which can help at low ranks for some extra compute; init_lora_weights offers other starts, such as PiSSA, which builds A and B from the weight's principal singular vectors.",
+      "Layers can have different settings: rank_pattern and alpha_pattern in LoraConfig override r and lora_alpha for matching module names, and layers_to_transform limits adapters to chosen layers."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Implement a LoRA layer and fine-tune a tiny model",
+    "tool": "Python 3 and PyTorch",
+    "minutes": 60,
+    "goal": "Write LoRA yourself: a layer that wraps a frozen nn.Linear with a zero-initialised low-rank update, and a merge that folds the update back into the weight. Then add it to every attention and MLP projection of the tiny GPT from module 2, fine-tune at ranks 1, 4 and 16, and check that the base stays frozen and merging changes nothing.",
+    "setup": [
+     "Python 3.10 or later with PyTorch 2",
+     "Your module 2 lab folder, with tinygpt.py, dates.py and base.pt (or run pretrain.py from that lab to make base.pt); add lora.py and lora_lab.py to it"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 and TODO 2 in lora.py: A with nn.Linear's default initialisation, B of zeros, the scale α / r, and the forward pass."
+     },
+     {
+      "do": "Complete TODO 3: merged() returns an nn.Linear whose weight is W + (α / r) B A."
+     },
+     {
+      "do": "Run the lab script.",
+      "code": "python lora_lab.py",
+      "lang": "bash",
+      "see": "At initialisation the LoRA layer equals its base layer: True; LoRA parameters for a 64 -> 256 layer at r=4: 1280 = 4 x (64 + 256); Trainable in the LoRA layer: ['A', 'B']"
+     },
+     {
+      "do": "Read the rank sweep (with rehearsal data mixed in, as module 2 showed is needed).",
+      "see": "r= 1: trainable 2,304; r= 4: 9,216; r=16: 36,864. Rank 1 learns iso only partly (around 0.3), ranks 4 and 16 almost fully, and uk and us stay high."
+     },
+     {
+      "do": "Read the last checks.",
+      "see": "Base weights unchanged by training: True, Merged model gives the same logits: True (a largest difference around 1e-5), and the merged model has the original 107,392 parameters."
+     },
+     {
+      "do": "Try rsLoRA: in LoRALinear, set the scale to alpha / math.sqrt(r) and run again; compare rank 16 with your first run."
+     },
+     {
+      "do": "Write two or three sentences starting Rank: comparing rank 4 with full fine-tuning from module 2 (trainable parameters, optimiser state and results), and why rank 16 is a third of this model but under 1% of a large one."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The LoRA layer starts equal to its base and has r × (d_in + d_out) parameters.",
+      "look_for": [
+       "layer equals its base layer: True",
+       "1280 = 4 x (64 + 256)"
+      ]
+     },
+     {
+      "text": "Only A and B are trainable.",
+      "look_for": [
+       "Trainable in the LoRA layer: ['A', 'B']"
+      ]
+     },
+     {
+      "text": "Ranks 1, 4 and 16 are compared.",
+      "look_for": [
+       "2,304",
+       "9,216",
+       "36,864"
+      ]
+     },
+     {
+      "text": "Training leaves the base weights alone and merging preserves the outputs.",
+      "look_for": [
+       "Base weights unchanged by training: True",
+       "Merged model gives the same logits: True"
+      ]
+     },
+     {
+      "text": "The rank comparison is explained.",
+      "look_for": [
+       "Rank:"
+      ]
+     }
+    ],
+    "submit": "Paste your LoRALinear class, everything lora_lab.py printed (both runs), and your Rank: answer.",
+    "files": [
+     {
+      "path": "lora.py",
+      "content": "\"\"\"LoRA from scratch: a frozen nn.Linear plus a trainable low-rank update, scaled by alpha / r.\"\"\"\n\nimport math\n\nimport torch\nimport torch.nn as nn\n\nTARGETS = (\"q_proj\", \"k_proj\", \"v_proj\", \"o_proj\", \"up_proj\", \"down_proj\")\n\n\nclass LoRALinear(nn.Module):\n    def __init__(self, base: nn.Linear, r: int, alpha: float, dropout: float = 0.0):\n        super().__init__()\n        self.base = base\n        for p in self.base.parameters():\n            p.requires_grad_(False)\n        # TODO 1: create self.A, an nn.Parameter of shape (r, in_features) initialised with\n        #          nn.init.kaiming_uniform_(..., a=math.sqrt(5)) as nn.Linear does; self.B, an nn.Parameter of\n        #          zeros of shape (out_features, r); and self.scale = alpha / r\n        self.A = self.B = None\n        self.scale = 1.0\n        self.dropout = nn.Dropout(dropout)\n\n    def forward(self, x):\n        # TODO 2: the base layer's output plus scale * (dropout(x) @ A^T @ B^T)\n        return self.base(x)\n\n    @torch.no_grad()\n    def merged(self) -> nn.Linear:\n        \"\"\"A plain nn.Linear whose weight is W + scale * B @ A: the same outputs, at no extra cost.\"\"\"\n        out = nn.Linear(self.base.in_features, self.base.out_features, bias=self.base.bias is not None)\n        # TODO 3: copy the merged weight into out.weight, and the base bias (if any) into out.bias\n        pass\n        return out\n\n\ndef add_lora(model, r, alpha, targets=TARGETS):\n    \"\"\"Freeze the model, wrap every targeted nn.Linear in a LoRALinear, and return the new trainable parameters.\"\"\"\n    for p in model.parameters():\n        p.requires_grad_(False)\n    params = []\n    for module in list(model.modules()):\n        for name, child in list(module.named_children()):\n            if name in targets and isinstance(child, nn.Linear):\n                wrapped = LoRALinear(child, r, alpha)\n                setattr(module, name, wrapped)\n                params += [wrapped.A, wrapped.B]\n    return params\n\n\ndef merge_lora(model):\n    \"\"\"Replace every LoRALinear with its merged nn.Linear.\"\"\"\n    for module in list(model.modules()):\n        for name, child in list(module.named_children()):\n            if isinstance(child, LoRALinear):\n                setattr(module, name, child.merged())\n    return model\n"
+     },
+     {
+      "path": "lora_lab.py",
+      "content": "\"\"\"Check the LoRA layer, then fine-tune the pretrained tiny GPT on the 'iso' task at three ranks and merge.\n\nNeeds base.pt from pretrain.py (copy it from the module 2 lab, or run pretrain.py here).\n\"\"\"\n\nimport torch\n\nfrom dates import CTX, VOCAB, accuracy, batch, finetune_set, rehearsal_set, test_sets, train\nfrom lora import LoRALinear, add_lora, merge_lora\nfrom tinygpt import TinyGPT\n\n\ndef load_base():\n    model = TinyGPT(VOCAB, ctx=CTX)\n    model.load_state_dict(torch.load(\"base.pt\"))\n    return model\n\n\ndef main():\n    torch.manual_seed(0)\n    layer = torch.nn.Linear(64, 256)\n    lora = LoRALinear(layer, r=4, alpha=8)\n    x = torch.randn(3, 64)\n    print(\"At initialisation the LoRA layer equals its base layer:\", torch.equal(lora(x), layer(x)))\n    print(f\"LoRA parameters for a 64 -> 256 layer at r=4: {lora.A.numel() + lora.B.numel()} = 4 x (64 + 256)\")\n    print(\"Trainable in the LoRA layer:\", [n for n, p in lora.named_parameters() if p.requires_grad])\n\n    data, tests = finetune_set() + rehearsal_set(), test_sets()\n    total = sum(p.numel() for p in load_base().parameters())\n    for r in (1, 4, 16):\n        torch.manual_seed(0)\n        model = load_base()\n        before = {k: v.clone() for k, v in model.state_dict().items()}\n        params = add_lora(model, r=r, alpha=2 * r)\n        train(model, data, steps=300, lr=1e-2, params=params)\n        n = sum(p.numel() for p in params)\n        scores = \", \".join(f\"{t} {accuracy(model, s):.3f}\" for t, s in tests.items())\n        print(f\"r={r:2d}: trainable {n:6,} ({n / total:.1%} of {total:,}); accuracy {scores}\")\n\n    after = {k.replace(\".base.\", \".\"): v for k, v in model.state_dict().items() if not k.endswith((\".A\", \".B\"))}\n    print(\"Base weights unchanged by training:\", all(torch.equal(before[k], after[k]) for k in before))\n    x, _ = batch(tests[\"iso\"][:50])\n    model.eval()\n    with torch.no_grad():\n        unmerged = model(x)\n        merge_lora(model)\n        merged = model(x)\n    gap = (merged - unmerged).abs().max().item()\n    print(f\"Merged model gives the same logits: {gap < 1e-4} (largest difference {gap:.1e})\")\n    print(f\"Merged model has the original {sum(p.numel() for p in model.parameters()):,} parameters, \"\n          f\"and no LoRALinear left: {not any(isinstance(m, LoRALinear) for m in model.modules())}\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "x @ A.T has shape (..., r) and then @ B.T gives (..., d_out), the same as the base layer's output.",
+     "If the first check prints False, B isn't all zeros or the scale multiplies the base output too.",
+     "Merging with B @ A, not A @ B: the update must have the weight's shape, out_features × in_features."
+    ]
+   }
+  },
+  {
+   "title": "LoRA and QLoRA with Hugging Face",
+   "summary": "Fine-tune a real open model with transformers and peft: configure and inspect the adapter, train with sound settings, save, reload and merge it, and see how QLoRA fits a 4-bit base on one GPU.",
+   "instructor": "chloe-tremblay",
+   "lessons": [
+    {
+     "title": "The peft workflow",
+     "minutes": 12,
+     "objectives": [
+      "Wrap a transformers model with a LoraConfig and inspect what changed",
+      "Save, reload and merge an adapter"
+     ],
+     "key_points": [
+      "The workflow: load the base model and tokeniser with from_pretrained, pinning a revision; describe the adapter with LoraConfig(r, lora_alpha, lora_dropout, target_modules, task_type='CAUSAL_LM'); wrap the model with get_peft_model; then train with your own loop, the Trainer or TRL's SFTTrainer.",
+      "print_trainable_parameters() reports the trainable and total counts. Check them before training: target names that match nothing raise a ValueError, and names that match the wrong layers adapt the wrong part of the model.",
+      "save_pretrained on a peft model writes only the adapter: adapter_config.json (rank, alpha, targets and the base model's name) and adapter_model.safetensors, megabytes where the base model is gigabytes.",
+      "PeftModel.from_pretrained(base, path) loads an adapter onto a freshly loaded base, merge_and_unload() folds it into the weights and returns a plain transformers model, and inside with model.disable_adapter(): the base model runs unchanged.",
+      "TRL's SFTTrainer wraps this workflow for supervised fine-tuning: it applies the chat template to a dataset of messages, can compute the loss on completions only and accepts a peft_config, but its option names change between releases, so check them against the version you install."
+     ],
+     "walkthrough": {
+      "tool": "Python 3, Transformers and PEFT",
+      "title": "Inspect what peft adds to a model",
+      "steps": [
+       {
+        "do": "Load EleutherAI/pythia-14m (about 30 MB, downloaded once) and list the names of its linear layers.",
+        "code": "import torch\nfrom peft import LoraConfig, get_peft_model\nfrom transformers import AutoModelForCausalLM\n\nmodel = AutoModelForCausalLM.from_pretrained(\"EleutherAI/pythia-14m\", dtype=torch.float32,\n                                             revision=\"cf967c0a9a04383db6f7b1108d86b2962634b4ac\")\nprint(sorted({n.split(\".\")[-1] for n, m in model.named_modules() if isinstance(m, torch.nn.Linear)}))",
+        "lang": "python",
+        "see": "['dense', 'dense_4h_to_h', 'dense_h_to_4h', 'lm_head', 'query_key_value']: GPT-NeoX names, not the q_proj and v_proj of Llama-style models."
+       },
+       {
+        "do": "Try Llama-style target names on this model.",
+        "code": "try:\n    get_peft_model(model, LoraConfig(target_modules=[\"q_proj\", \"v_proj\"], task_type=\"CAUSAL_LM\"))\nexcept ValueError as err:\n    print(\"ValueError:\", \"not found in the base model\" in str(err))",
+        "lang": "python",
+        "see": "ValueError: True: peft refuses targets that match nothing."
+       },
+       {
+        "do": "Wrap the model with a rank-16 adapter on every linear layer and count what's trainable.",
+        "code": "config = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05, target_modules=\"all-linear\",\n                    task_type=\"CAUSAL_LM\")\npeft_model = get_peft_model(model, config)\npeft_model.print_trainable_parameters()\nprint(sorted(peft_model.peft_config[\"default\"].target_modules))",
+        "lang": "python",
+        "see": "trainable params: 196,608 || all params: 14,264,320 || trainable%: 1.3783, and the targets found by 'all-linear', which leaves lm_head out."
+       },
+       {
+        "do": "Look inside one adapted layer.",
+        "code": "layer = peft_model.base_model.model.gpt_neox.layers[0].attention.query_key_value\nprint(f\"{type(layer).__module__}.{type(layer).__name__}\", layer.scaling)\nprint(layer.lora_A[\"default\"], layer.lora_B[\"default\"], sep=\"\\n\")",
+        "lang": "python",
+        "see": "A peft LoRA Linear with scaling {'default': 2.0} (α / r = 32 / 16), lora_A from 128 to 16 features and lora_B from 16 to 384 (the fused query, key and value projection)."
+       }
+      ]
+     }
+    },
+    {
+     "title": "Training settings that matter",
+     "minutes": 12,
+     "objectives": [
+      "Set the batch size, learning-rate schedule and epochs for a LoRA run",
+      "Read training and validation loss curves to diagnose a run"
+     ],
+     "key_points": [
+      "The effective batch size is the per-device batch × gradient accumulation steps × number of devices; accumulation gives a large effective batch on a small GPU, at the cost of time.",
+      "A short warm-up and then a linear or cosine decay keeps early updates from destabilising training. Large SFT datasets are usually trained for 1 to 3 epochs because more overfits; small, narrow tasks like the lab's need more, so watch validation rather than fixing a number.",
+      "Load weights in bf16 on GPUs that support it, and turn on gradient checkpointing for long sequences; on a CPU, float32 is the safe choice, which is why the labs pass dtype=torch.float32.",
+      "Fix the seed, log training and validation loss at regular intervals, save adapters at checkpoints, and record the base model's revision, the data version and the LoraConfig, so a run can be repeated.",
+      "Read the curves: training loss falling while validation loss rises is overfitting; a loss that barely moves suggests too low a learning rate or adapters on the wrong layers; NaN can mean every label was masked; spikes suggest too high a learning rate."
+     ]
+    },
+    {
+     "title": "QLoRA: fine-tuning on a 4-bit base",
+     "minutes": 12,
+     "objectives": [
+      "Explain how QLoRA trains adapters on a quantised base model",
+      "Configure 4-bit loading with BitsAndBytesConfig, and estimate the memory it saves"
+     ],
+     "key_points": [
+      "QLoRA (Dettmers and colleagues, 2023) loads the frozen base model with 4-bit weights and trains 16-bit LoRA adapters on top: each 4-bit block is dequantised to the compute dtype on the fly, and gradients flow through it into the adapters.",
+      "It introduced NF4, a 4-bit type whose 16 levels suit normally distributed weights; double quantisation, which quantises the per-block scales too, cutting their cost from 0.5 to about 0.127 bits per parameter; and paged optimisers, which move optimiser state to CPU memory during spikes.",
+      "The base then needs about half a byte per parameter: the module 2 lab's 8-billion-parameter model falls from about 16 GB of bf16 weights to about 4 GB, so one 24 GB GPU can fine-tune it with room for activations.",
+      "In transformers, BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type='nf4', bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16) goes to from_pretrained as quantization_config, and peft's prepare_model_for_kbit_training readies the model for get_peft_model.",
+      "bitsandbytes' 4-bit training needs a supported GPU, in practice usually an NVIDIA GPU with CUDA, and 4-bit weights cost some quality, so compare against a 16-bit LoRA run on the same evaluation when you can."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Fine-tune a small open model with transformers and peft",
+    "tool": "Python 3, Transformers and PEFT",
+    "minutes": 75,
+    "goal": "Fine-tune EleutherAI/pythia-14m with LoRA to label support tickets as JSON: measure the base model first, train an adapter on every linear layer on a CPU, then save it, reload it as a server would and merge it into the weights.",
+    "setup": [
+     "Python 3.10 or later with PyTorch, transformers and peft: pip install torch transformers peft (tested with PyTorch 2.14, transformers 5.20 and peft 0.21)",
+     "The first run downloads EleutherAI/pythia-14m (Apache 2.0, about 30 MB); the code pins its revision",
+     "finetune.py, in your module 1 lab folder next to the train.jsonl and val.jsonl that prepare.py wrote",
+     "The optional QLoRA step needs an NVIDIA GPU with CUDA and bitsandbytes; everything else runs on a CPU"
+    ],
+    "steps": [
+     {
+      "do": "Read finetune.py: pythia-14m is a base model without a chat template, so prompt_text() defines a plain format; encode() masks the prompt and collate() pads with label -100."
+     },
+     {
+      "do": "Complete TODO 1: a LoraConfig with r=16, lora_alpha=32, lora_dropout=0.05 and every linear layer (TARGETS), applied with get_peft_model."
+     },
+     {
+      "do": "Complete TODO 2: the training step (forward, backward, optimiser step, schedule step, zero the gradients)."
+     },
+     {
+      "do": "Run it; it takes about a minute on a laptop.",
+      "code": "python finetune.py",
+      "lang": "bash",
+      "see": "120 training and 34 validation tickets, Base model: exact 0.00, valid JSON 0.00 (it just continues the text), and trainable params: 196,608 || all params: 14,264,320 || trainable%: 1.3783"
+     },
+     {
+      "do": "Watch the losses, then read the evaluation and the adapter's files.",
+      "see": "Training and validation loss fall over the 10 epochs; Fine-tuned: exact around 0.9 with valid JSON 1.00. adapter_model.safetensors is under 1 MB, against about 56 MB for the model in fp32."
+     },
+     {
+      "do": "Read the reload and merge checks.",
+      "see": "Reloaded adapter matches the trained model: True, Adapter changes the output: True and Merged model (GPTNeoXForCausalLM) matches the adapter: True."
+     },
+     {
+      "do": "Optional, on an NVIDIA GPU: load a bigger open model in 4-bit for QLoRA and wrap it the same way; pick any causal language model you may use, and set TARGETS to its layer names (all-linear works too). Not run here: it needs CUDA.",
+      "code": "import torch\nfrom peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training\nfrom transformers import AutoModelForCausalLM, BitsAndBytesConfig\n\nbnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type=\"nf4\",\n                         bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16)\nmodel = AutoModelForCausalLM.from_pretrained(\"<an open model on the Hub>\", quantization_config=bnb,\n                                             device_map=\"auto\")\nmodel = prepare_model_for_kbit_training(model)\nmodel = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, target_modules=\"all-linear\",\n                                         task_type=\"CAUSAL_LM\"))\nmodel.print_trainable_parameters()",
+      "lang": "python",
+      "see": "The 4-bit model loads in about a quarter of its bf16 memory, and the adapter trains as before."
+     },
+     {
+      "do": "Write two or three sentences starting Fine-tuning: on what the base model's score and the fine-tuned score tell you, and which errors remain."
+     }
+    ],
+    "checks": [
+     {
+      "text": "The base model is measured before training.",
+      "look_for": [
+       "120 training and 34 validation tickets",
+       "Base model: exact 0.00"
+      ]
+     },
+     {
+      "text": "LoRA adapts every linear layer at rank 16.",
+      "look_for": [
+       "trainable params: 196,608 || all params: 14,264,320"
+      ]
+     },
+     {
+      "text": "The fine-tuned model is evaluated on validation.",
+      "look_for": [
+       "Fine-tuned: exact",
+       "valid JSON 1.00"
+      ]
+     },
+     {
+      "text": "The adapter is saved as a small separate file.",
+      "look_for": [
+       "adapter_model.safetensors"
+      ]
+     },
+     {
+      "text": "Reloading and merging are verified.",
+      "look_for": [
+       "Reloaded adapter matches the trained model: True",
+       "matches the adapter: True"
+      ]
+     },
+     {
+      "text": "The results are interpreted.",
+      "look_for": [
+       "Fine-tuning:"
+      ]
+     }
+    ],
+    "submit": "Paste your LoraConfig and training step, everything finetune.py printed, and your Fine-tuning: answer.",
+    "files": [
+     {
+      "path": "finetune.py",
+      "content": "\"\"\"LoRA fine-tuning of a small open model with transformers and peft, on a CPU.\n\nEleutherAI/pythia-14m (Apache 2.0, about 30 MB) is a base model with no chat template, so the script uses a plain\nprompt format and trains on the answer only. The same code works for bigger models: change CHECKPOINT and TARGETS.\n\"\"\"\n\nimport json\nimport os\nimport random\n\nimport torch\nfrom peft import LoraConfig, PeftModel, get_peft_model\nfrom transformers import AutoModelForCausalLM, AutoTokenizer, get_linear_schedule_with_warmup\n\nCHECKPOINT = \"EleutherAI/pythia-14m\"\nREVISION = \"cf967c0a9a04383db6f7b1108d86b2962634b4ac\"\nTARGETS = [\"query_key_value\", \"dense\", \"dense_h_to_4h\", \"dense_4h_to_h\"]  # GPT-NeoX names for every linear layer\nEPOCHS, BATCH, LR = 10, 8, 2e-3\n\n\ndef load_split(path):\n    \"\"\"(ticket, reply) pairs from the messages files the module 1 lab wrote.\"\"\"\n    with open(path, encoding=\"utf-8\") as f:\n        rows = [json.loads(line)[\"messages\"] for line in f]\n    return [(m[1][\"content\"], m[2][\"content\"]) for m in rows]\n\n\ndef prompt_text(ticket):\n    return f\"### Ticket\\n{ticket}\\n### Labels\\n\"\n\n\ndef encode(tok, ticket, reply):\n    prompt = tok(prompt_text(ticket))[\"input_ids\"]\n    answer = tok(reply)[\"input_ids\"] + [tok.eos_token_id]\n    return prompt + answer, [-100] * len(prompt) + answer\n\n\ndef collate(tok, examples):\n    \"\"\"Pad on the right; padding gets attention_mask 0 and label -100, so it's ignored.\"\"\"\n    width = max(len(ids) for ids, _ in examples)\n    ids = [x + [tok.eos_token_id] * (width - len(x)) for x, _ in examples]\n    mask = [[1] * len(x) + [0] * (width - len(x)) for x, _ in examples]\n    labels = [y + [-100] * (width - len(y)) for _, y in examples]\n    return {\"input_ids\": torch.tensor(ids), \"attention_mask\": torch.tensor(mask), \"labels\": torch.tensor(labels)}\n\n\n@torch.no_grad()\ndef mean_loss(model, tok, pairs):\n    model.eval()\n    losses = [model(**collate(tok, [encode(tok, t, r)])).loss.item() for t, r in pairs]\n    model.train()\n    return sum(losses) / len(losses)\n\n\n@torch.no_grad()\ndef evaluate(model, tok, pairs):\n    \"\"\"Greedy answers scored for exact match, valid JSON and each field.\"\"\"\n    model.eval()\n    scores = {\"exact\": 0, \"valid JSON\": 0, \"category\": 0, \"priority\": 0}\n    for ticket, reply in pairs:\n        inputs = tok(prompt_text(ticket), return_tensors=\"pt\")\n        out = model.generate(**inputs, max_new_tokens=24, do_sample=False, pad_token_id=tok.eos_token_id)\n        text = tok.decode(out[0, inputs[\"input_ids\"].shape[1]:], skip_special_tokens=True).strip()\n        want = json.loads(reply)\n        scores[\"exact\"] += text == reply\n        try:\n            got = json.loads(text)\n        except json.JSONDecodeError:\n            continue\n        scores[\"valid JSON\"] += 1\n        if isinstance(got, dict):\n            scores[\"category\"] += got.get(\"category\") == want[\"category\"]\n            scores[\"priority\"] += got.get(\"priority\") == want[\"priority\"]\n    model.train()\n    return \", \".join(f\"{k} {v / len(pairs):.2f}\" for k, v in scores.items())\n\n\ndef main():\n    torch.manual_seed(0)\n    tok = AutoTokenizer.from_pretrained(CHECKPOINT, revision=REVISION)\n    model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32)\n    train, val = load_split(\"train.jsonl\"), load_split(\"val.jsonl\")\n    print(f\"{len(train)} training and {len(val)} validation tickets\")\n    print(\"Base model:\", evaluate(model, tok, val))\n\n    # TODO 1: describe the adapter with LoraConfig (r=16, lora_alpha=32, lora_dropout=0.05,\n    #          target_modules=TARGETS, task_type=\"CAUSAL_LM\") and wrap the model with get_peft_model\n    config = None\n    model.print_trainable_parameters()\n\n    examples = [encode(tok, t, r) for t, r in train]\n    steps = EPOCHS * ((len(examples) + BATCH - 1) // BATCH)\n    optimiser = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=LR)\n    schedule = get_linear_schedule_with_warmup(optimiser, num_warmup_steps=steps // 10, num_training_steps=steps)\n    rng = random.Random(0)\n    model.train()\n    for epoch in range(1, EPOCHS + 1):\n        rng.shuffle(examples)\n        total = 0.0\n        for i in range(0, len(examples), BATCH):\n            # TODO 2: one training step: forward pass on the collated batch, backward, optimiser step,\n            #          schedule step, zero the gradients; add the loss to total\n            pass\n        batches = (len(examples) + BATCH - 1) // BATCH\n        print(f\"Epoch {epoch}: train loss {total / batches:.3f}, validation loss {mean_loss(model, tok, val):.3f}\")\n\n    print(\"Fine-tuned:\", evaluate(model, tok, val))\n    model.save_pretrained(\"adapter-tickets\")\n    for name in sorted(os.listdir(\"adapter-tickets\")):\n        print(f\"  adapter-tickets/{name}: {os.path.getsize(os.path.join('adapter-tickets', name)):,} bytes\")\n\n    # Load the adapter the way a server would, check it matches, then merge it into the weights.\n    model.eval()\n    probe = tok(prompt_text(val[0][0]), return_tensors=\"pt\")\n    with torch.no_grad():\n        trained_logits = model(**probe).logits\n        base = AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32)\n        # TODO 3: load the saved adapter onto the fresh base model with PeftModel.from_pretrained\n        reloaded = model\n        reloaded.eval()\n        reloaded_logits = reloaded(**probe).logits\n        with reloaded.disable_adapter():\n            base_logits = reloaded(**probe).logits\n        merged = reloaded.merge_and_unload()\n        merged_logits = merged(**probe).logits\n    print(f\"Reloaded adapter matches the trained model: {torch.allclose(trained_logits, reloaded_logits, atol=1e-5)}\")\n    print(f\"Adapter changes the output: {not torch.allclose(base_logits, reloaded_logits, atol=1e-3)}\")\n    # Merging changes the order of floating-point operations, so compare relative to the logits' size.\n    gap = (merged_logits - reloaded_logits).abs().max().item() / reloaded_logits.abs().max().item()\n    same = torch.equal(merged_logits.argmax(-1), reloaded_logits.argmax(-1))\n    print(f\"Merged model ({type(merged).__name__}) matches the adapter: {gap < 1e-3 and same} \"\n          f\"(largest difference {gap:.0e} of the largest logit; same top token everywhere: {same})\")\n    print(f\"Example: {val[0][0]!r} -> {evaluate_one(merged, tok, val[0][0])}\")\n\n\n@torch.no_grad()\ndef evaluate_one(model, tok, ticket):\n    inputs = tok(prompt_text(ticket), return_tensors=\"pt\")\n    out = model.generate(**inputs, max_new_tokens=24, do_sample=False, pad_token_id=tok.eos_token_id)\n    return tok.decode(out[0, inputs[\"input_ids\"].shape[1]:], skip_special_tokens=True).strip()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "If print_trainable_parameters() shows 0 trainable parameters, the optimiser was built before get_peft_model, or from a model whose parameters were all frozen.",
+     "Call schedule.step() after optimiser.step(), once per batch.",
+     "Exact numbers after training vary a little with the machine and thread count; the counts and the True checks don't."
+    ]
+   }
+  },
+  {
+   "title": "Evaluate, avoid overfitting and serve adapters",
+   "summary": "Judge a fine-tuned model against the right baselines, catch overfitting and keep the best checkpoint, then serve adapters merged or side by side from one base model.",
+   "instructor": "chloe-tremblay",
+   "lessons": [
+    {
+     "title": "Evaluating a fine-tuned model",
+     "minutes": 12,
+     "objectives": [
+      "Design a held-out evaluation with task metrics and baselines",
+      "Check a candidate for regressions before release"
+     ],
+     "key_points": [
+      "Evaluate on a held-out test set drawn like real use and frozen before training, with the task's own metrics: exact match and per-field accuracy for extraction, the share of valid JSON for structured output, accuracy or F1 for classification.",
+      "Compare like with like: the base model with your best prompt, the fine-tuned model with its serving prompt, and any larger model it replaces, all on the same examples with the same decoding settings, greedy for reproducibility.",
+      "Validation loss tracks training, not usefulness: checkpoints with similar loss can differ in task accuracy, and a model can produce valid JSON every time while still getting fields wrong, as in the module 4 lab, so report each metric separately.",
+      "Keep a small, fixed regression suite of what the model must still do, such as following other instructions, refusing unsafe requests and handling unusual inputs, and run it on every candidate.",
+      "For open-ended outputs, read samples and use rubric-based human or model-graded evaluation, as in Engineering with Foundation Models, and on small test sets report the uncertainty: one example in 34 is about 3 percentage points."
+     ]
+    },
+    {
+     "title": "Spotting and preventing overfitting",
+     "minutes": 10,
+     "objectives": [
+      "Recognise overfitting in loss curves and outputs",
+      "Use early stopping to keep the best checkpoint"
+     ],
+     "key_points": [
+      "Overfitting shows as training loss still falling while validation loss rises, and as outputs that copy training examples or ignore how a new input differs from them.",
+      "Evaluate at least once per epoch and keep the checkpoint with the best validation score, not the last one; in transformers, load_best_model_at_end=True with metric_for_best_model and EarlyStoppingCallback(early_stopping_patience=...) does both.",
+      "Fewer epochs, a lower learning rate, a smaller rank, LoRA dropout and more varied data all reduce overfitting; more epochs on the same small dataset rarely help.",
+      "A model can overfit to the surface of its data: if every training prompt looks alike, test with paraphrases, longer inputs and edge cases before trusting a good validation score."
+     ]
+    },
+    {
+     "title": "Serving and managing adapters",
+     "minutes": 12,
+     "objectives": [
+      "Choose between merging an adapter and serving it separately",
+      "Serve several adapters from one base model"
+     ],
+     "key_points": [
+      "Merging with merge_and_unload gives a standalone model with no adapter overhead, the simplest to deploy and to quantise further, but every task then needs its own full copy of the weights.",
+      "Keeping adapters separate lets one base serve many tasks: peft adds adapters with load_adapter(path, adapter_name=...) and switches with set_adapter, and vLLM serves many LoRA adapters on one base (--enable-lora with --lora-modules name=path), chosen per request by name.",
+      "An adapter only fits the exact base model it was trained on: record the base's name and revision (adapter_config.json stores the name), and version adapters with their data and evaluation results like any model artefact.",
+      "Merge a QLoRA adapter into a 16-bit copy of the base rather than the 4-bit one, then quantise the merged model if you need to, and check it against the unmerged adapter on your test set.",
+      "Publish a model card with the adapter: the base model and its licence, the training data and its sources, the settings, the evaluation results and the known limitations."
+     ]
+    }
+   ],
+   "lab": {
+    "title": "Catch overfitting, keep the best checkpoint and serve two adapters",
+    "tool": "Python 3, Transformers and PEFT",
+    "minutes": 75,
+    "goal": "Use the Trainer's per-epoch evaluation, checkpoints and early stopping on a deliberately small training set, then train a second adapter that extracts order numbers and serve both adapters from one copy of the base model, alongside a merged single-task model.",
+    "setup": [
+     "The module 4 lab folder, with finetune.py, train.jsonl, val.jsonl and the adapter-tickets folder it saved",
+     "overfit.py and adapters.py from this lab, added to that folder (they import from finetune.py)",
+     "The optional vLLM step needs a Linux machine with a supported GPU"
+    ],
+    "steps": [
+     {
+      "do": "Complete TODO 1 in overfit.py: evaluate and save every epoch, keep two checkpoints and reload the best by eval_loss at the end. Complete TODO 2: EarlyStoppingCallback with a patience of 3."
+     },
+     {
+      "do": "Run it (a minute or two).",
+      "code": "python overfit.py",
+      "lang": "bash",
+      "see": "The Trainer prints its own log lines, then the summary: training loss falls towards zero while validation loss bottoms out around epoch 10 and climbs after it, so training stops a few epochs later and the best checkpoint is reloaded. Trained on only 24 tickets, it scores well below the module 4 adapter: early stopping picks the best of what the data allows."
+     },
+     {
+      "do": "Complete TODO 1 and TODO 2 in adapters.py: load both adapters onto one base model and switch to the orders adapter before answering."
+     },
+     {
+      "do": "Run it; the first run also trains adapter-orders (about a minute).",
+      "code": "python adapters.py",
+      "lang": "bash",
+      "see": "Adapters loaded: ['orders', 'tickets'] and around 32 of 34 order numbers right. For the first ticket the tickets adapter gives its labels, the orders adapter {\"order\": 76262}, and the base model only repeats the ticket. Each adapter is about 0.8 MB; the merged model is about 56 MB."
+     },
+     {
+      "do": "Optional, on a GPU server with vLLM installed: serve a base model with two adapters and choose one per request by name. Use a base model and adapters that vLLM supports for LoRA; not run here.",
+      "code": "vllm serve <base model> --enable-lora \\\n    --lora-modules tickets=./adapter-tickets orders=./adapter-orders\n\ncurl http://localhost:8000/v1/completions -H \"Content-Type: application/json\" \\\n  -d '{\"model\": \"tickets\", \"prompt\": \"### Ticket\\nOrder 4417 arrived damaged.\\n### Labels\\n\", \"max_tokens\": 24, \"temperature\": 0}'",
+      "lang": "bash",
+      "see": "The same server answers with either adapter, or with the base model under its own name."
+     },
+     {
+      "do": "Write two or three sentences starting Serving: on whether you'd merge or serve adapters separately for ten customer-specific variants of the ticket labeller, and why."
+     }
+    ],
+    "checks": [
+     {
+      "text": "Validation loss is tracked every epoch and training stops early.",
+      "look_for": [
+       "Stopped after epoch",
+       "best validation loss"
+      ]
+     },
+     {
+      "text": "The best checkpoint, not the last, is evaluated.",
+      "look_for": [
+       "Best checkpoint on validation:"
+      ]
+     },
+     {
+      "text": "Two adapters are served from one copy of the base model.",
+      "look_for": [
+       "Adapters loaded: ['orders', 'tickets']",
+       "Order numbers right on validation:"
+      ]
+     },
+     {
+      "text": "The same ticket is answered by each adapter and by the base model.",
+      "look_for": [
+       "tickets adapter ->",
+       "base model"
+      ]
+     },
+     {
+      "text": "Adapter and merged-model sizes are compared.",
+      "look_for": [
+       "merged-tickets"
+      ]
+     },
+     {
+      "text": "The serving choice is justified.",
+      "look_for": [
+       "Serving:"
+      ]
+     }
+    ],
+    "submit": "Paste your TrainingArguments and callback, the code that loads and switches adapters, everything both scripts printed, and your Serving: answer.",
+    "files": [
+     {
+      "path": "overfit.py",
+      "content": "\"\"\"Watch a LoRA run overfit a small training set, and let the Trainer keep the best checkpoint.\n\nUses the module 4 lab's finetune.py (same folder) for the model name, prompt format and evaluation.\n\"\"\"\n\nimport torch\nfrom peft import LoraConfig, get_peft_model\nfrom transformers import (AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq, EarlyStoppingCallback,\n                          Trainer, TrainingArguments)\n\nfrom finetune import CHECKPOINT, REVISION, TARGETS, encode, evaluate, load_split\n\nSMALL = 24  # a deliberately small training set, so overfitting arrives within a few epochs\n\n\ndef features(tok, pairs):\n    rows = []\n    for ticket, reply in pairs:\n        ids, labels = encode(tok, ticket, reply)\n        rows.append({\"input_ids\": ids, \"attention_mask\": [1] * len(ids), \"labels\": labels})\n    return rows\n\n\ndef main():\n    torch.manual_seed(0)\n    tok = AutoTokenizer.from_pretrained(CHECKPOINT, revision=REVISION)\n    tok.pad_token = tok.eos_token  # Pythia has no padding token; padded labels are -100 anyway\n    model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32)\n    model = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.0, target_modules=TARGETS,\n                                             task_type=\"CAUSAL_LM\"))\n    train, val = load_split(\"train.jsonl\")[:SMALL], load_split(\"val.jsonl\")\n\n    # TODO 1: evaluate on the validation set and save a checkpoint every epoch, keep only the best two,\n    #          and reload the checkpoint with the lowest eval_loss at the end\n    args = TrainingArguments(\n        output_dir=\"runs/overfit\", num_train_epochs=30, per_device_train_batch_size=8, learning_rate=5e-4,\n        lr_scheduler_type=\"constant\", logging_strategy=\"epoch\", report_to=\"none\", seed=0, use_cpu=True,\n        disable_tqdm=True)\n    trainer = Trainer(model=model, args=args, train_dataset=features(tok, train), eval_dataset=features(tok, val),\n                      data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100),\n                      # TODO 2: stop when eval_loss hasn't improved for 3 evaluations in a row\n                      callbacks=[])\n    trainer.train()\n\n    train_loss = {round(h[\"epoch\"]): h[\"loss\"] for h in trainer.state.log_history if \"loss\" in h}\n    for h in trainer.state.log_history:\n        if \"eval_loss\" in h:\n            e = round(h[\"epoch\"])\n            print(f\"Epoch {e:2d}: train loss {train_loss[e]:.3f}, validation loss {h['eval_loss']:.3f}\")\n    best = trainer.state.best_model_checkpoint\n    print(f\"Stopped after epoch {round(trainer.state.epoch)}; best validation loss {trainer.state.best_metric:.3f} \"\n          f\"at {best.split('/')[-1] if best else None}\")\n    print(\"Best checkpoint on validation:\", evaluate(trainer.model, tok, val))\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     },
+     {
+      "path": "adapters.py",
+      "content": "\"\"\"Train a second adapter on the same base model, then serve both from one copy of the base.\"\"\"\n\nimport json\nimport os\nimport re\n\nimport torch\nfrom peft import LoraConfig, PeftModel, get_peft_model\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nfrom finetune import CHECKPOINT, REVISION, TARGETS, collate, load_split\n\nORDER = re.compile(r\"order (\\d{5})\", re.IGNORECASE)\n\n\ndef order_prompt(ticket):\n    return f\"### Ticket\\n{ticket}\\n### Order\\n\"\n\n\ndef order_reply(ticket):\n    found = ORDER.search(ticket)\n    return json.dumps({\"order\": int(found.group(1)) if found else None})\n\n\ndef encode_order(tok, ticket):\n    prompt = tok(order_prompt(ticket))[\"input_ids\"]\n    answer = tok(order_reply(ticket))[\"input_ids\"] + [tok.eos_token_id]\n    return prompt + answer, [-100] * len(prompt) + answer\n\n\n@torch.no_grad()\ndef answer(model, tok, prompt):\n    inputs = tok(prompt, return_tensors=\"pt\")\n    out = model.generate(**inputs, max_new_tokens=16, do_sample=False, pad_token_id=tok.eos_token_id)\n    return tok.decode(out[0, inputs[\"input_ids\"].shape[1]:], skip_special_tokens=True).strip()\n\n\ndef train_orders(tok, train):\n    torch.manual_seed(0)\n    model = AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32)\n    model = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, target_modules=TARGETS, task_type=\"CAUSAL_LM\"))\n    optimiser = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=2e-3)\n    examples = [encode_order(tok, t) for t, _ in train]\n    model.train()\n    for _ in range(12):\n        for i in range(0, len(examples), 8):\n            loss = model(**collate(tok, examples[i: i + 8])).loss\n            loss.backward()\n            optimiser.step()\n            optimiser.zero_grad()\n    model.save_pretrained(\"adapter-orders\")\n\n\ndef main():\n    tok = AutoTokenizer.from_pretrained(CHECKPOINT, revision=REVISION)\n    train, val = load_split(\"train.jsonl\"), load_split(\"val.jsonl\")\n    if not os.path.isdir(\"adapter-orders\"):\n        train_orders(tok, train)\n\n    base = AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32)\n    # TODO 1: load adapter-tickets onto the base as \"tickets\", then load adapter-orders as a second adapter\n    #          named \"orders\" on the same model\n    model = PeftModel.from_pretrained(base, \"adapter-tickets\", adapter_name=\"tickets\")\n    model.eval()\n    print(\"Adapters loaded:\", sorted(model.peft_config))\n\n    right = 0\n    for ticket, _ in val:\n        # TODO 2: switch to the \"orders\" adapter before answering\n        pass\n        right += answer(model, tok, order_prompt(ticket)) == order_reply(ticket)\n    print(f\"Order numbers right on validation: {right} of {len(val)}\")\n\n    ticket = val[0][0]\n    print(\"Ticket:\", ticket)\n    model.set_adapter(\"tickets\")\n    print(\"  tickets adapter ->\", answer(model, tok, f\"### Ticket\\n{ticket}\\n### Labels\\n\"))\n    model.set_adapter(\"orders\")\n    print(\"  orders adapter  ->\", answer(model, tok, order_prompt(ticket)))\n    with model.disable_adapter():\n        print(\"  base model      ->\", repr(answer(model, tok, order_prompt(ticket))[:40]))\n\n    # For a single-task deployment, merge one adapter into a fresh copy of the base and save a plain model.\n    single = PeftModel.from_pretrained(\n        AutoModelForCausalLM.from_pretrained(CHECKPOINT, revision=REVISION, dtype=torch.float32), \"adapter-tickets\")\n    single.merge_and_unload().save_pretrained(\"merged-tickets\")\n    size = lambda folder: sum(os.path.getsize(os.path.join(folder, f)) for f in os.listdir(folder))\n    print(f\"Sizes: adapter-tickets {size('adapter-tickets'):,} bytes, adapter-orders {size('adapter-orders'):,} bytes, \"\n          f\"merged-tickets {size('merged-tickets'):,} bytes\")\n\n\nif __name__ == \"__main__\":\n    main()\n"
+     }
+    ],
+    "hints": [
+     "load_best_model_at_end needs save_strategy to match eval_strategy, or the Trainer refuses to start.",
+     "early_stopping_patience counts evaluations without improvement, so with one evaluation per epoch, 3 means three epochs.",
+     "set_adapter changes which adapter is active for every later call, so set it before each request in a loop that mixes tasks.",
+     "The orders adapter replies with the number unquoted, {\"order\": 76262}, so its tokens match the ticket's ' 76262'; with quotes the tokeniser splits the digits differently and copying them is much harder for a small model."
+    ]
+   }
+  }
+ ],
+ "study_plan": [
+  {
+   "week": 1,
+   "focus": "Decide whether to fine-tune, then validate, de-duplicate, split, template and mask the ticket data in the module 1 lab.",
+   "modules": [
+    1
+   ]
+  },
+  {
+   "week": 2,
+   "focus": "Work out what full fine-tuning costs, then pretrain the tiny GPT and measure learning and forgetting for three methods.",
+   "modules": [
+    2
+   ]
+  },
+  {
+   "week": 3,
+   "focus": "Derive LoRA's update and scaling, then implement a LoRA layer and compare ranks.",
+   "modules": [
+    3
+   ]
+  },
+  {
+   "week": 4,
+   "focus": "Fine-tune pythia-14m with transformers and peft, save, reload and merge the adapter, and study QLoRA.",
+   "modules": [
+    4
+   ]
+  },
+  {
+   "week": 5,
+   "focus": "Catch overfitting with early stopping and serve two adapters from one base; start the capstone's data and baseline.",
+   "modules": [
+    5
+   ]
+  },
+  {
+   "week": 6,
+   "focus": "Finish the capstone's training, evaluation and model card, then review with the mock exam and the flashcards.",
+   "modules": []
+  }
+ ],
+ "project": {
+  "title": "Fine-tune, evaluate and ship a task adapter",
+  "minutes": 600,
+  "brief": "Pick a narrow task where a small open model should beat its prompted self, such as turning support emails into JSON fields, tagging product reviews or rewriting notes in a house style, and take it from data to a served adapter. Build a dataset of at least 300 examples from data you are allowed to use (your own, a public dataset whose licence permits it, or carefully generated examples, labelled as such), clean, de-duplicate and split it by group as in module 1, and freeze a test set. Measure a baseline first: an instruct model with your best prompt. Then fine-tune with LoRA using transformers and peft. On a laptop CPU, a model of up to a few hundred million parameters is practical (for example a small Pythia or SmolLM2 checkpoint); with a GPU, try QLoRA on a model of a few billion. Compare at least two ranks or learning rates using validation curves, keep the best checkpoint, check for overfitting and for regressions on a small general suite, and finish with a merged-versus-adapter parity check, a serving recommendation and a model card.",
+  "deliverables": [
+   "A data card and the prepared splits: sources and licences, cleaning, de-duplication, the group split and token-length statistics",
+   "A baseline: the prompted model's scores on the frozen test set, with the exact prompt",
+   "Your training script and LoraConfig, with a sweep of at least two settings and their training and validation curves",
+   "An evaluation report: task metrics on the test set for the baseline and the best adapter, a regression suite, and ten annotated errors",
+   "The adapter folder, a parity check between the merged model and the adapter, and a one-paragraph serving recommendation (merged or multi-adapter, and why)",
+   "A model card covering the base model and its licence, the data, the settings, the results and the limitations"
+  ],
+  "rubric": [
+   {
+    "name": "Data preparation",
+    "points": 20,
+    "description": "The data is valid, de-duplicated and split by group with no leakage, the prompt is masked, lengths are measured, and sources and licences are recorded."
+   },
+   {
+    "name": "Baseline and evaluation design",
+    "points": 15,
+    "description": "A fair prompted baseline is scored on a frozen test set with task-specific metrics and the same decoding settings as the adapter."
+   },
+   {
+    "name": "Training and sweep",
+    "points": 20,
+    "description": "LoRA is configured for the architecture, runs are reproducible, and at least two settings are compared on validation curves with the best checkpoint kept."
+   },
+   {
+    "name": "Results and error analysis",
+    "points": 20,
+    "description": "Test results are reported per metric with their uncertainty, and the annotated errors show what the adapter still gets wrong and why."
+   },
+   {
+    "name": "Overfitting and regressions",
+    "points": 10,
+    "description": "Overfitting is checked from the curves and with harder inputs, and a regression suite shows what the model kept or lost."
+   },
+   {
+    "name": "Packaging, serving and model card",
+    "points": 15,
+    "description": "The adapter loads onto the pinned base, merged and unmerged outputs agree, the serving choice is justified, and the model card is complete and honest."
+   }
+  ],
+  "submit": "Paste your data card, the baseline and test results tables, the LoraConfig and training settings of your best run, the validation curves (as numbers or an image link), the ten annotated errors, the parity check output, your serving recommendation and the model card."
+ }
+}
