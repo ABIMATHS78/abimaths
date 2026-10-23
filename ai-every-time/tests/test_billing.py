@@ -622,6 +622,21 @@ def test_admins_set_up_stripe_from_the_setup_page(client, stripe_fake, admin_ema
     assert client.get("/api/staff/stripe").status_code == 403 and client.post("/api/staff/stripe/setup").status_code == 403
 
 
+def test_on_render_the_site_address_is_its_own_until_one_is_set(monkeypatch):
+    """Render gives each web service its onrender.com address. A site address left blank when the Blueprint asked
+    for it mustn't make the links in emails, Stripe's return pages and the webhook address relative."""
+    from app.config import Settings
+
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://ai-every-time.onrender.com")
+    monkeypatch.setenv("AIET_PUBLIC_URL", "")
+    assert Settings().public_url == "https://ai-every-time.onrender.com"
+    monkeypatch.setenv("AIET_PUBLIC_URL", "https://www.aieverytime.org/")
+    assert Settings().public_url == "https://www.aieverytime.org"
+    monkeypatch.delenv("RENDER_EXTERNAL_URL")
+    monkeypatch.setenv("AIET_PUBLIC_URL", " ")
+    assert Settings().public_url == "http://127.0.0.1:8000"
+
+
 # --------------------------------------------------------- what the review found
 
 

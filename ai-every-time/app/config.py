@@ -83,8 +83,11 @@ class Settings:
     smtp_password: str = field(default_factory=lambda: os.environ.get("AIET_SMTP_PASSWORD", ""))
     smtp_starttls: bool = field(default_factory=lambda: os.environ.get("AIET_SMTP_STARTTLS", "1") == "1")
     mail_from: str = field(default_factory=lambda: os.environ.get("AIET_MAIL_FROM", ""))
-    # Public address of the site, used for links in emails.
-    public_url: str = field(default_factory=lambda: os.environ.get("AIET_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/"))
+    # Public address of the site, used for links in emails and Stripe's return pages. On Render it's the service's
+    # onrender.com address until AIET_PUBLIC_URL is set (left blank, it counts as not set).
+    public_url: str = field(default_factory=lambda: (
+        os.environ.get("AIET_PUBLIC_URL", "").strip() or os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+        or "http://127.0.0.1:8000").rstrip("/"))
     # Default hour for the daily reminder (email and notifications) in each learner's own time zone,
     # or UTC until it's known. Learners can choose another hour. AIET_DIGEST_HOUR_UTC is the old name.
     reminder_hour: int = field(default_factory=lambda: _int("AIET_REMINDER_HOUR", _int("AIET_DIGEST_HOUR_UTC", 7)))

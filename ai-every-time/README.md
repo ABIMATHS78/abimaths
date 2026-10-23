@@ -101,7 +101,7 @@ Notifications need two things. First, a contact address that browsers' push serv
 | `AIET_ADMIN_EMAILS` | — | Comma-separated emails that are always admins (once confirmed, while email is set up) |
 | `AIET_SMTP_HOST`, `AIET_SMTP_PORT`, `AIET_SMTP_USER`, `AIET_SMTP_PASSWORD`, `AIET_SMTP_STARTTLS` | — / 587 / — / — / on | SMTP server for reminder, confirmation and password-reset emails; email is off while `AIET_SMTP_HOST` is unset |
 | `AIET_MAIL_FROM` | — | Sender address for emails (required for email) |
-| `AIET_PUBLIC_URL` | `http://127.0.0.1:8000` | The site's public address, used for links in emails |
+| `AIET_PUBLIC_URL` | on Render, its `onrender.com` address; else `http://127.0.0.1:8000` | The site's public address, used for links in emails and Stripe's return pages |
 | `AIET_REMINDER_HOUR` | `7` | Default hour of the daily reminder in each learner's own time zone (UTC until it's known); learners can change it. `AIET_DIGEST_HOUR_UTC` still works as the old name |
 | `AIET_PUSH_CONTACT` | from `AIET_MAIL_FROM` or an https `AIET_PUBLIC_URL` | `mailto:` address or `https://` site that push services can contact you at; notifications are off without one |
 | `AIET_AI_ALLOWANCE` | `100` | AI requests each learner can make in any 24 hours (mock exams and custom paths count two); `0` for no limit. It applies in demo mode too |
@@ -189,7 +189,7 @@ When switching over: import, run `reconcile`, point the Stripe webhook at this s
 
 **Upgrading from the first eight starter companions** (Adaeze, Haruto, Camila, Arjun, Lena, Wanjiru, Maya and Sofía): the first start of this version retires them, as above. Learners who talked to one keep it, and their chats; nobody loses any data.
 
-**On Render**, `render.yaml` at the repository's root sets everything up: in Render's dashboard choose **New → Blueprint**, pick this repository, and fill in the values it asks for (the site's address, your admin email, the Claude, Stripe and email settings; leave any you don't have yet empty and add them later under Environment). It makes a Docker web service in Frankfurt with a 5 GB disk for the database, on a paid instance (disks need one), and deploys again whenever the app changes on the branch it follows. Then:
+**On Render**, `render.yaml` at the repository's root sets everything up: in Render's dashboard choose **New → Blueprint**, pick this repository, and fill in the values it asks for (your admin email, the Claude, Stripe and email settings; leave any you don't have yet empty and add them later under Environment). The site's address can stay empty until you add your domain: until then the site uses its `onrender.com` address. It makes a Docker web service in Frankfurt with a 5 GB disk for the database, on a paid instance (disks need one), and deploys again whenever the app changes on the branch it follows. Then:
 1. Open the `onrender.com` address it gives, sign up with your admin email and confirm it.
 2. On **Staff → Setup**: **Make the plans in Stripe**, then add the webhook it shows in Stripe and put its signing secret in `STRIPE_WEBHOOK_SECRET` (Render restarts the app with it).
 3. Still on Setup: choose the old site's two exports and **Check**, then **Import**, then **Check subscriptions against Stripe** and bring them up to date. The files are read on the server and not kept.
