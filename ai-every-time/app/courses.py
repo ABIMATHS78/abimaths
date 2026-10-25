@@ -10,19 +10,24 @@ certificate is then theirs for the asking, and one for a track once they have ev
 
 from __future__ import annotations
 
+import html
 import io
 import json
 import re
 import secrets
 import zipfile
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app import auth, billing, catalog, companions, db, learning, tutor, usage
 from app.catalog import Course, Track
+from app.config import settings
 
 router = APIRouter(prefix="/api")
+links = APIRouter()  # certificates' short links, outside /api
 User = Depends(auth.current_user)
 
 PASS_MARK = learning.PASS_MARK
@@ -517,7 +522,10 @@ def certificate(code: str):
         if c is None:
             raise HTTPException(404, "There's no certificate with that code.")
         slugs, what = c.instructors, {"title": c.title, "slug": c.slug, "hours": c.hours, "level": c.level,
-                                      "skills": c.skills, "kind": "Guided project" if c.kind == "guided-project" else "Course"}
+                                      "skills": c.skills, "kind": "Guided project" if c.kind == "guided-project" else "Course",
+                                      # what finishing it took: every one of these
+                                      "lessons": sum(len(m.lessons) for m in c.modules), "quizzes": len(c.modules),
+                                      "labs": sum(m.lab is not None for m in c.modules), "project": c.project is not None}
     else:
         t = catalog.data().tracks_by_slug.get(row["ref"])
         if t is None:
@@ -528,7 +536,41 @@ def certificate(code: str):
                 "courses": [c.title for c in courses], "skills": list(dict.fromkeys(k for c in courses for k in c.skills))[:12]}
     people = _instructors(set(slugs))
     return {"code": row["code"], "kind": row["kind"], "name": row["learner_name"], "issued_at": row["issued_at"],
+            "url": f"{settings.public_url}/c/{row['code']}",  # the address printed on it, for checking it
             "for": what, "instructors": [_brief_instructor(people[s]) for s in slugs if s in people][:6]}
+
+
+@links.get("/c/{code}", include_in_schema=False)
+def certificate_link(code: str):
+    """A certificate's short link, the one printed on it: opens its page. The page this sends first carries the
+    certificate's own title and description, so a shared link shows who earned what (LinkedIn reads them)."""
+    code = re.sub(r"[^A-Za-z0-9]", "", code)[:24].upper()
+    page = f"/#/certificate/{code}"
+    try:
+        cert = certificate(code)
+    except HTTPException:
+        return HTMLResponse(_link_page(page, "There's no certificate with that code · AI Every Time"), status_code=404)
+    f = cert["for"]
+    title = (f"{cert['name']} earned the {f['title']} {f['kind']}" if cert["kind"] == "track"
+             else f"{cert['name']} completed {f['title']}")
+    issued = datetime.fromisoformat(cert["issued_at"])
+    description = (f"A certificate from AI Every Time, issued on {issued.day} {issued:%B %Y}. "
+                   f"Check it at {cert['url'].split('://', 1)[-1]}")
+    tags = {"og:type": "website", "og:site_name": "AI Every Time", "og:title": title, "og:description": description,
+            "og:url": cert["url"], "og:image": f"{settings.public_url}/static/icons/certificate-card.png",
+            "og:image:width": "1200", "og:image:height": "630"}
+    head = (f'<meta name="description" content="{html.escape(description)}">'
+            f'<link rel="canonical" href="{html.escape(cert["url"])}">'
+            + "".join(f'<meta property="{k}" content="{html.escape(v)}">' for k, v in tags.items())
+            + '<meta name="twitter:card" content="summary_large_image">')
+    return HTMLResponse(_link_page(page, f"{title} · AI Every Time", head), headers={"Cache-Control": "no-cache"})
+
+
+def _link_page(page: str, title: str, head: str = "") -> str:
+    """A page that goes straight on to the certificate's own page in the app."""
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{html.escape(title)}</title>{head}'
+            f'<meta http-equiv="refresh" content="0; url={html.escape(page)}"></head>'
+            f'<body><p><a href="{html.escape(page)}">See the certificate</a></p></body></html>')
 
 
 # ---------------------------------------------------------------------- tracks

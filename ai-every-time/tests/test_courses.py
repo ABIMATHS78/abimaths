@@ -208,6 +208,27 @@ def test_certificate_once_the_course_is_finished(client):
     assert client.get("/api/certificates/NOPE").status_code == 404
 
 
+def test_a_certificate_says_what_finishing_took_and_its_short_link_shows_who_earned_what(client):
+    from app import catalog
+    from app.config import settings
+
+    onboard(client)
+    _finish(client)
+    cert = client.post(f"/api/courses/{SLUG}/certificate", json={"name": 'Ada "<b>" Lovelace'}).json()
+    c = catalog.course(SLUG)
+    assert cert["url"] == f"{settings.public_url}/c/{cert['code']}"  # the address printed on it
+    assert cert["for"]["lessons"] == sum(len(m.lessons) for m in c.modules) and cert["for"]["quizzes"] == len(c.modules)
+    assert cert["for"]["labs"] == sum(m.lab is not None for m in c.modules) and cert["for"]["project"] is True
+
+    client.post("/api/auth/logout")
+    page = client.get(f"/c/{cert['code'].lower()}")
+    assert page.status_code == 200 and f"url=/#/certificate/{cert['code']}" in page.text  # on to its page in the app
+    assert ('<meta property="og:title" content="Ada &quot;&lt;b&gt;&quot; Lovelace completed Python Programming with PyCharm">'
+            in page.text) and "<b>" not in page.text
+    assert f'<meta property="og:url" content="{cert["url"]}">' in page.text
+    assert client.get("/c/NOPE").status_code == 404
+
+
 def test_rating_and_leaving_a_course(client):
     onboard(client)
     assert client.put(f"/api/courses/{SLUG}/rating", json={"stars": 5}).status_code == 409
