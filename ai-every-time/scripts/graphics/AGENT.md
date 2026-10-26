@@ -47,7 +47,10 @@ impossible to redraw cleanly (curved, on a busy picture, tiny inside an icon): l
 
 Read box rows and columns from `crop.py`'s ruler ticks, not from where the crop starts: a box a few rows off
 leaves specks of the old letters. In tiny text with tight gaps between words, redraw the whole line or the single
-word instead of using `replace` (the word count can split the wrong words).
+word instead of using `replace` (the word count can split the wrong words). In tightly stacked lines, give the box
+just the line's own rows and `"pad": 1`: words that `replace` moves along take whatever else is in their rows with
+them. Keep every old letter whole inside the box, dots too: a mark the box's top or bottom edge cuts is taken for
+part of the next line and left behind.
 
 ## The corrections file
 
