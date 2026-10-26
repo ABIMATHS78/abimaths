@@ -85,7 +85,11 @@ One edit per line of text (box):
   dash), or per style on one of its edits. `family` (`sans`, `condensed`, `serif`, `mono`) narrows the choice;
   `font` (a file name) forces one.
 - `room`: the widest the new text may be, in pixels (lower it if new text would hit an icon or border). `pad`
-  (default 3): 1 for tightly stacked lines. Rarely: `size`, `squeeze` (0.9 = 10% narrower), `dy` (pixels down).
+  (default 3): 1 for tightly stacked lines. Rarely: `size`, `squeeze` (0.9 = 10% narrower), `dy` (pixels down),
+  `slant` (0.2 leans the new letters about 11 degrees, for italic lettering no font matches: a rounded hand-lettered
+  italic is close to `"font": "Nunito-800.woff", "slant": 0.2`).
 
 The tool erases whatever touches the old letters: if a letter touches an outline or icon, start the box after that
-letter (redraw the rest of the word) so the outline stays whole. Changing only `"skipped"` needs no rerun.
+letter (redraw the rest of the word) so the outline stays whole. Or correct just the wrong letter: box only it,
+one pixel clear of it on each side, with `"pad": 0` (`{"box": [910, 683, 917, 697], "was": "a", "text": "e",
+"pad": 0}`); a box no wider than the letter finds nothing. Changing only `"skipped"` needs no rerun.

@@ -14,6 +14,7 @@ spec.json maps an image id to its edits, or to {"family": ..., "edits": [...]}. 
     "family": sans|condensed|serif|mono   the fonts to choose from (default: the image's, else sans and condensed)
     "typeface": "Roboto"       choose among this typeface's weights only (also for the whole image)
     "squeeze": 0.9             draw the new text this much narrower (or wider, above 1); default: as the old text
+    "slant": 0.2               lean the new letters right (0.2 is about 11 degrees): italic text in a font without one
     "ref": true                a line that's right as it is, only there to show its style's font (it isn't changed)
     "font", "size", "color", "pad", "threshold", "room", "dy"   overrides
 
@@ -251,15 +252,19 @@ SHORTLIST = 30  # fonts looked at closely, of those that pass a first rough look
 SUPER = 4  # text is drawn this many times larger, then scaled down: letters land between pixels, as in a photo
 
 
-def draw_mask(text: str, path: str, size: float, squeeze: float = 1.0, blur: float = 0.0) -> tuple[np.ndarray, int, int]:
+def draw_mask(text: str, path: str, size: float, squeeze: float = 1.0, blur: float = 0.0,
+              slant: float = 0.0) -> tuple[np.ndarray, int, int]:
     """The text as coverage (0..1), with the position of its left edge and baseline in the array."""
     f = font(path, max(4, round(size * SUPER)))
     l, t, r, b = f.getbbox(text, anchor="ls")
-    pad = (4 + int(blur * 3)) * SUPER
+    pad = (4 + int(blur * 3)) * SUPER + round(abs(slant) * (b - t))  # with room for leaning letters
     w, h = r - l + 2 * pad, b - t + 2 * pad
     w, h = w + (-w) % SUPER, h + (-h) % SUPER
     img = Image.new("L", (max(SUPER, w), max(SUPER, h)), 0)
     ImageDraw.Draw(img).text((pad - l, pad - t), text, font=f, fill=255, anchor="ls")
+    if slant:
+        # Leaning letters, for an italic the font lacks: each row moves right by its height above the baseline.
+        img = img.transform(img.size, Image.AFFINE, (1, slant, -slant * (pad - t), 0, 1, 0), resample=Image.BICUBIC)
     big = np.asarray(img, dtype=np.float32) / 255
     a = cv2.resize(big, (max(1, round(big.shape[1] / SUPER * squeeze)), big.shape[0] // SUPER),
                    interpolation=cv2.INTER_AREA).astype(float)
@@ -710,10 +715,11 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
         full[Y0:Y1, X0:X1] = gone
         out = fill(out, full, (X0, Y0, X1, Y1), L["bg"], L["spread"])
         text = e["text"]
+        slant = e.get("slant", 0.0)
         cover, p, width, left = None, None, 0, X0 + old_left
         align = e.get("align", "left")
         if text:
-            cover = match_tone(draw_mask(text, path, size, squeeze=base, blur=blur)[0], L["letters"])
+            cover = match_tone(draw_mask(text, path, size, squeeze=base, blur=blur, slant=slant)[0], L["letters"])
             p = profile(cover >= 0.5) or profile(cover >= 0.3)
             width = p["right"] - p["left"]
             # Room to grow: into the plain background beside the line, short of any border or box edge (on both
@@ -735,7 +741,8 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
                 if width * fit > room:
                     size = quarter(size * room / (width * fit) - 0.125)
                 squeeze = base * fit
-                cover = match_tone(draw_mask(text, path, size, squeeze=squeeze, blur=blur)[0], L["letters"])
+                cover = match_tone(draw_mask(text, path, size, squeeze=squeeze, blur=blur, slant=slant)[0],
+                                   L["letters"])
                 p = profile(cover >= 0.5) or profile(cover >= 0.3)
                 width = p["right"] - p["left"]
             if align == "center":

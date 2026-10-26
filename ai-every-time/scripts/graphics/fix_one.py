@@ -23,7 +23,7 @@ from PIL import Image  # noqa: E402
 from paths import WORK  # noqa: E402
 ft.CACHE_DIR = os.path.join(WORK, "cache")
 KEYS = {"box", "was", "text", "replace", "words", "align", "style", "family", "typeface", "ref", "font", "size", "pad",
-        "threshold", "room", "dy", "color", "blur", "squeeze", "note"}
+        "threshold", "room", "dy", "color", "blur", "squeeze", "slant", "note"}
 FAMILIES = set(ft.FAMILY_PREFIXES)
 
 
