@@ -45,6 +45,10 @@ British or American spelling, missing hyphens ("SELF HEALING": add one only in a
 missing commas, logos, icons, and lettering that is part of a picture (screens, badges, curved or 3D text). Wrong but
 impossible to redraw cleanly (curved, on a busy picture, tiny inside an icon): list in `"skipped"`.
 
+Read box rows and columns from `crop.py`'s ruler ticks, not from where the crop starts: a box a few rows off
+leaves specks of the old letters. In tiny text with tight gaps between words, redraw the whole line or the single
+word instead of using `replace` (the word count can split the wrong words).
+
 ## The corrections file
 
 ```json
