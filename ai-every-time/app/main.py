@@ -65,6 +65,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
 app.include_router(learning.router)
 app.include_router(courses.router)
+app.include_router(courses.links)
 app.include_router(reminders.router)
 app.include_router(staff.router)
 app.include_router(insights.router)

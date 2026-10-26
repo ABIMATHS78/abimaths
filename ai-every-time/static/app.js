@@ -3523,6 +3523,211 @@ async function viewTrack(m) {
 
 /* --------------------------------------------------------------- certificate */
 
+/* A certificate is one picture the shape of an A4 page (sized in CSS pixels), so it's the same on a phone, on paper
+   and as a downloaded image: classic type, a fine double rule, the logo as it is, and a small gold seal. Its type,
+   Cormorant Garamond and Inter, is served from /static/fonts (see styles.css). */
+const CERT = { w: 1123, h: 794, ink: "#1b1835", muted: "#5f5a77", accent: "#35289f", gold: "#b48c3c", red: "#9e0c0c",
+  paper: "#fffdf8", serif: "'Cormorant Garamond', Garamond, 'Times New Roman', serif",
+  sans: "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" };
+const certSerif = (weight, italic = false) => [italic ? "italic" : "normal", weight, CERT.serif];
+const certSans = (weight) => ["normal", weight, CERT.sans];
+const certCanvas = document.createElement("canvas").getContext("2d");
+const andList = (xs) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs.join(""));
+
+/* How wide text is in a font ([style, weight, family]) at a size, with letter-spacing in ems. */
+function certWidth(text, [style, weight, family], size, spacing = 0) {
+  certCanvas.font = `${style} ${weight} ${size}px ${family}`;
+  return certCanvas.measureText(text).width + spacing * size * [...text].length;
+}
+/* The size, up to max, at which text fits on one line of width. */
+const certSize = (text, font, width, max, spacing = 0) => Math.min(max, (width * 100) / certWidth(text, font, 100, spacing));
+/* The size at which text fits width: on one line (up to max) while that's at least min, else on two (up to max2),
+   broken where the longer line is shortest, or after a colon or comma if that's nearly as big. */
+function certFit(text, font, width, max, min, max2 = max) {
+  const one = certSize(text, font, width, max);
+  const words = text.split(" ");
+  if (one >= min || words.length < 2) return { size: one, lines: [text] };
+  const breaks = words.slice(1).map((_, i) => {
+    const lines = [words.slice(0, i + 1).join(" "), words.slice(i + 1).join(" ")];
+    return { size: Math.min(...lines.map((l) => certSize(l, font, width, max2))), lines, pause: /[:;,–—]$/.test(words[i]) };
+  });
+  const biggest = breaks.reduce((a, b) => (b.size > a.size ? b : a));
+  const pauses = breaks.filter((b) => b.pause && b.size >= biggest.size * 0.9);
+  return pauses.length ? pauses.reduce((a, b) => (b.size > a.size ? b : a)) : biggest;
+}
+/* A line of text centred on x, or ending there with anchor "end"; letter-spacing in ems. */
+function certText(x, y, text, [style, weight, family], size, fill, spacing = 0, anchor = "middle") {
+  const shift = spacing * size * (anchor === "middle" ? 0.5 : anchor === "end" ? 1 : 0);  // the space after the last letter
+  return `<text x="${(x + shift).toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}" font-family="${family}" font-style="${style}"
+    font-weight="${weight}" font-size="${size.toFixed(2)}"${spacing ? ` letter-spacing="${(spacing * size).toFixed(2)}"` : ""} fill="${fill}">${esc(text)}</text>`;
+}
+
+/* The seal: AI Every Time's name over the top, "Verified certificate" along the bottom, and a laurel round the year. */
+function certSeal(cx, cy, r, year) {
+  const dark = "#4f3a0c", size = r * 0.126, cap = size * 0.72, top = r * 0.8 - cap / 2, bottom = r * 0.8 + cap / 2;
+  const ring = (k) => `<circle cx="${cx}" cy="${cy}" r="${(r * k).toFixed(2)}" fill="none" stroke="#7a5b1e" stroke-width=".9"/>`;
+  const arc = (id, rad, sweep) => `<path id="${id}" d="M${(cx - rad).toFixed(2)} ${cy}A${rad.toFixed(2)} ${rad.toFixed(2)} 0 0 ${sweep} ${(cx + rad).toFixed(2)} ${cy}"/>`;
+  const onArc = (id, text) => `<text font-family="${CERT.sans}" font-weight="700" font-size="${size.toFixed(2)}" letter-spacing="${(size * 0.2).toFixed(2)}"
+    fill="${dark}" text-anchor="middle"><textPath href="#${id}" startOffset="50%">${text}</textPath></text>`;
+  // the laurel's left branch, growing from the bottom up the left side; the right one is its mirror image
+  const R = r * 0.47, at = (deg) => [cx + R * Math.cos(deg * Math.PI / 180), cy + R * Math.sin(deg * Math.PI / 180)];
+  const [x1, y1] = at(98), [x2, y2] = at(226);
+  let branch = `<path d="M${x1.toFixed(2)} ${y1.toFixed(2)}A${R.toFixed(2)} ${R.toFixed(2)} 0 0 1 ${x2.toFixed(2)} ${y2.toFixed(2)}"
+    fill="none" stroke="#6b5018" stroke-width="${(r * 0.018).toFixed(2)}"/>`;
+  for (let i = 0; i < 7; i++) {
+    const deg = 106 + i * 19, [sx, sy] = at(deg), len = r * (0.105 - i * 0.006);
+    for (const side of [1, -1]) {
+      const lean = deg + 90 + side * 38, a = lean * Math.PI / 180;
+      const lx = sx + Math.cos(a) * len, ly = sy + Math.sin(a) * len;
+      branch += `<ellipse cx="${lx.toFixed(2)}" cy="${ly.toFixed(2)}" rx="${len.toFixed(2)}" ry="${(len * 0.38).toFixed(2)}"
+        transform="rotate(${lean.toFixed(1)} ${lx.toFixed(2)} ${ly.toFixed(2)})"/>`;
+    }
+  }
+  return `<g aria-hidden="true">
+    <defs>
+      <radialGradient id="certGold" cx="36%" cy="30%" r="80%"><stop offset="0" stop-color="#f6e6b0"/>
+        <stop offset=".45" stop-color="#dcb965"/><stop offset=".8" stop-color="#bf9643"/><stop offset="1" stop-color="#a07a30"/></radialGradient>
+      <filter id="certShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#5a4210" flood-opacity=".28"/></filter>
+      ${arc("certSealTop", top, 1)}${arc("certSealBottom", bottom, 0)}
+    </defs>
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#certGold)" stroke="#8a6a26" stroke-width="1" filter="url(#certShadow)"/>
+    <circle cx="${cx}" cy="${cy}" r="${r - 2.5}" fill="none" stroke="#fff6dc" stroke-opacity=".6" stroke-width=".8"/>
+    ${ring(0.93)}${ring(0.67)}
+    ${onArc("certSealTop", "AI EVERY TIME")}${onArc("certSealBottom", "VERIFIED CERTIFICATE")}
+    <circle cx="${cx - r * 0.8}" cy="${cy}" r="${(r * 0.024).toFixed(2)}" fill="${dark}"/><circle cx="${cx + r * 0.8}" cy="${cy}" r="${(r * 0.024).toFixed(2)}" fill="${dark}"/>
+    <g fill="#6b5018">${branch}<g transform="translate(${2 * cx} 0) scale(-1 1)">${branch}</g></g>
+    ${certText(cx, cy + r * 0.12, year, certSerif(700), r * 0.33, dark)}
+  </g>`;
+}
+
+/* The certificate as SVG. Its fonts must have loaded first: the name and title are fitted to the page. */
+function certificateSvg(cert) {
+  const { w, h } = CERT, cx = w / 2, f = cert.for, track = cert.kind === "track";
+  const issued = new Date(cert.issued_at);
+  const day = issued.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const heading = track ? (/certificate$/i.test(f.kind) ? f.kind : `${f.kind} certificate`) : "Certificate of completion";
+  const what = track ? `the ${f.courses.length}-course ${f.kind}` : `the ${lengthOf(f.hours).replace(/^an? /, "")} ${f.level} ${f.kind.toLowerCase()}`;
+  const some = (n, one, many) => (n === 1 ? `a ${one}` : plural2(n, one, many));
+  const done = track ? `Completed in full: all ${f.courses.length} courses, with every lesson, graded quiz, lab and project`
+    : `Completed in full: ${andList([some(f.lessons, "lesson"), some(f.quizzes, "graded quiz", "graded quizzes"),
+      f.labs ? some(f.labs, "hands-on lab") : "", f.project ? "a capstone project" : ""].filter(Boolean))}`;
+  const shown = f.kind === "Guided project" ? f.title.replace(/^guided project:\s*/i, "") : f.title;  // the line above says what it is
+  const names = cert.instructors.map((i) => i.name);
+  const taught = names.length > 2 ? `${names.slice(0, 2).join(", ")} & ${names.length - 2} more` : names.join(" & ");
+
+  // The issuer: the logo as it is, beside its name as the app shows it.
+  const ws = 23, lw = 48, tw = certWidth("AI Every Time", certSans(800), ws, -0.02), x0 = cx - (lw + 12 + tw) / 2;
+  const top = `<image href="/static/icons/logo-256.webp" x="${x0.toFixed(1)}" y="${100 - lw / 2}" width="${lw}" height="${lw}"/>
+    <text x="${(x0 + lw + 12).toFixed(1)}" y="${(100 + ws * 0.36).toFixed(1)}" font-family="${CERT.sans}" font-weight="800" font-size="${ws}"
+      letter-spacing="${(-0.02 * ws).toFixed(2)}" fill="${CERT.ink}">AI <tspan fill="${CERT.red}">Every</tspan> Time</text>
+    ${certText(cx, 190, heading.toUpperCase(), certSerif(600), certSize(heading.toUpperCase(), certSerif(600), 820, 30, 0.22), CERT.ink, 0.22)}
+    <line x1="${cx - 26}" x2="${cx + 26}" y1="212" y2="212" stroke="${CERT.gold}" stroke-width="1.2"/>`;
+
+  // Who earned it, and for what, centred between the heading and the signatures (y counts from the first line's
+  // baseline); scaled down a little if a long name and title take two lines each.
+  const mid = [], line = certSerif(500, true), nameFont = certSerif(600), titleFont = certSerif(600);
+  let y = 0;
+  mid.push(certText(cx, y, "This is to certify that", line, 21, CERT.muted));
+  const name = certFit(cert.name, nameFont, 860, 66, 44, 50);
+  y += 22 + name.size * 0.88;
+  name.lines.forEach((l, i) => mid.push(certText(cx, y + i * name.size * 1.04, l, nameFont, name.size, CERT.ink)));
+  y += (name.lines.length - 1) * name.size * 1.04 + Math.max(18, name.size * 0.3);
+  const rule = Math.min(800, Math.max(360, ...name.lines.map((l) => certWidth(l, nameFont, name.size) + 90)));
+  mid.push(`<line x1="${(cx - rule / 2).toFixed(1)}" x2="${(cx + rule / 2).toFixed(1)}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="${CERT.gold}" stroke-width=".8"/>`);
+  y += 40;
+  mid.push(certText(cx, y, `has successfully completed ${what}`, line, 21, CERT.muted));
+  const title = certFit(shown, titleFont, 900, 40, 30, 36);
+  y += 14 + title.size * 0.92;
+  title.lines.forEach((l, i) => mid.push(certText(cx, y + i * title.size * 1.08, l, titleFont, title.size, CERT.accent)));
+  y += (title.lines.length - 1) * title.size * 1.08 + 34;
+  mid.push(certText(cx, y, done, certSans(400), certSize(done, certSans(400), 900, 13.5), CERT.muted));
+  const [from, to] = [236, 556], height = 16 + y + 5;  // with the first line's ascent and the last one's descent
+  const k = Math.min(1, (to - from) / height), at = from + (to - from - height * k) / 2 + 16 * k;
+  const middle = `<g transform="translate(${cx} ${at.toFixed(1)}) scale(${k.toFixed(4)}) translate(${-cx} 0)">${mid.join("")}</g>`;
+
+  // Signed off: the instructors and the date on either side of the seal, and how to check it underneath.
+  const fy = 642, caption = certSans(600), sideRule = (x) =>
+    `<line x1="${x - 150}" x2="${x + 150}" y1="${fy + 13}" y2="${fy + 13}" stroke="${CERT.ink}" stroke-width=".7"/>`;
+  const left = 262, right = w - 262, verify = `Credential ID ${cert.code} · Verify at ${cert.url.replace(/^https?:\/\//, "")}`;
+  const foot = `${names.length ? `${certText(left, fy, taught, line, certSize(taught, line, 300, 25), CERT.ink)}${sideRule(left)}
+    ${certText(left, fy + 31, names.length === 1 ? "INSTRUCTOR · AI LEARNING COMPANION" : "INSTRUCTORS · AI LEARNING COMPANIONS", caption, 9.5, CERT.muted, 0.16)}` : ""}
+    ${certText(right, fy, day, certSerif(600), 24, CERT.ink)}${sideRule(right)}
+    ${certText(right, fy + 31, "DATE OF ISSUE", caption, 9.5, CERT.muted, 0.16)}
+    ${certSeal(cx, fy - 2, 62, String(issued.getUTCFullYear()))}
+    ${certText(cx, 734, verify, certSans(500), certSize(verify, certSans(500), 860, 10.5, 0.04), CERT.muted, 0.04)}`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" role="img" aria-labelledby="certSvgTitle">
+    <title id="certSvgTitle">${esc(`${heading}: ${cert.name} has successfully completed ${shown}. Issued by AI Every Time on ${day}.`)}</title>
+    <rect width="${w}" height="${h}" fill="${CERT.paper}"/>
+    <rect x="22" y="22" width="${w - 44}" height="${h - 44}" fill="none" stroke="${CERT.ink}" stroke-width="2"/>
+    <rect x="30" y="30" width="${w - 60}" height="${h - 60}" fill="none" stroke="${CERT.gold}" stroke-width=".8"/>
+    ${top}${middle}${foot}
+  </svg>`;
+}
+
+/* Load the certificate's fonts for the text on it: each font file covers some alphabets, and only those used are
+   fetched. If they're slow to come, the fallbacks in CERT do. */
+async function certFonts(text) {
+  const loads = [["normal", 600], ["italic", 500]].map(([style, weight]) => document.fonts.load(`${style} ${weight} 40px "Cormorant Garamond"`, text))
+    .concat([500, 600, 800].map((weight) => document.fonts.load(`${weight} 20px Inter`, text)));
+  await Promise.race([Promise.allSettled(loads), new Promise((done) => setTimeout(done, 4000))]);
+}
+
+const asDataUrl = async (url) => {
+  const blob = await (await fetch(url)).blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+/* Whether a character is in a font file's unicode-range ("U+0-FF, U+131, …"). */
+const inUnicodeRange = (cp, ranges) => ranges.split(",").some((part) => {
+  const [a, b] = part.trim().replace(/^U\+/i, "").split("-").map((n) => parseInt(n, 16));
+  return cp >= a && cp <= (b ?? a);
+});
+/* The @font-face rules the certificate's text needs, with each font file inside them, for a picture of it that
+   can't fetch anything. */
+async function certFontFaces(text) {
+  const codes = [...new Set(text)].map((ch) => ch.codePointAt(0)), rules = [];
+  for (const sheet of document.styleSheets) {
+    let list;
+    try { list = sheet.cssRules; } catch { continue; }
+    for (const rule of list) {
+      if (!(rule instanceof CSSFontFaceRule)) continue;
+      const s = rule.style, family = s.getPropertyValue("font-family").replace(/["']/g, "").trim();
+      const range = s.getPropertyValue("unicode-range"), src = /url\(["']?([^"')]+)/.exec(s.getPropertyValue("src"));
+      if (!["Cormorant Garamond", "Inter"].includes(family) || !src || (range && !codes.some((cp) => inUnicodeRange(cp, range)))) continue;
+      rules.push(`@font-face{font-family:"${family}";font-style:${s.getPropertyValue("font-style") || "normal"};font-weight:${s.getPropertyValue("font-weight") || "400"};src:url(${await asDataUrl(src[1])}) format("woff2")}`);
+    }
+  }
+  return rules.join("");
+}
+/* The certificate as a PNG three times its size (A4 at nearly 300 dpi), drawn from the SVG with its fonts and the
+   logo inside it. */
+async function certificatePng(svg) {
+  const copy = svg.cloneNode(true), scale = 3;
+  const style = document.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent = await certFontFaces(svg.textContent);
+  copy.prepend(style);
+  for (const image of copy.querySelectorAll("image")) image.setAttribute("href", await asDataUrl(image.getAttribute("href")));
+  copy.setAttribute("width", CERT.w * scale);
+  copy.setAttribute("height", CERT.h * scale);
+  const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml" }));
+  try {
+    const picture = new Image();
+    picture.src = url;
+    await picture.decode();
+    const canvas = Object.assign(document.createElement("canvas"), { width: CERT.w * scale, height: CERT.h * scale });
+    canvas.getContext("2d").drawImage(picture, 0, 0, canvas.width, canvas.height);
+    return await new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("No image"))), "image/png"));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 /* A certificate's own page, open to anyone with its link, so learners can share it and others can check it. */
 async function viewCertificate(m) {
   let cert;
@@ -3533,46 +3738,78 @@ async function viewCertificate(m) {
     app.innerHTML = `<div class="narrow-card card stack">${logo()}<p>${esc(err.message)}</p><div><a class="btn" href="#/feed">Go to AI Every Time</a></div></div>`;
     return;
   }
-  const issued = new Date(cert.issued_at);
-  const day = issued.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
-  const url = `${location.origin}/#/certificate/${cert.code}`;
-  const f = cert.for, track = cert.kind === "track";
-  const heading = track ? f.kind : f.kind === "Guided project" ? "Guided Project Certificate" : "Course Certificate";
-  const what = track ? `a ${f.courses.length}-course ${f.kind} of about ${hoursText(f.hours)}`
-    : `${lengthOf(f.hours)} ${f.level} ${f.kind.toLowerCase()}`;
+  const f = cert.for, track = cert.kind === "track", issued = new Date(cert.issued_at);
+  const day = issued.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+  const short = cert.url.replace(/^https?:\/\//, ""), touch = matchMedia("(pointer: coarse)").matches && navigator.share;
   const linkedIn = new URLSearchParams({ startTask: "CERTIFICATION_NAME", name: f.title, organizationName: "AI Every Time",
-    issueYear: String(issued.getFullYear()), issueMonth: String(issued.getMonth() + 1), certUrl: url, certId: cert.code });
+    issueYear: String(issued.getUTCFullYear()), issueMonth: String(issued.getUTCMonth() + 1), certUrl: cert.url, certId: cert.code });
+  const about = track ? [f.kind, plural2(f.courses.length, "course"), hoursText(f.hours)] : [f.kind, label(f.level), hoursText(f.hours)];
   app.innerHTML = `
     <div class="cert-page">
-      <div class="cert-bar">${logo(30)}${state.me ? `<a class="btn" href="#/courses">Back to courses</a>` : `<a class="btn primary" href="#/welcome">Learn with AI Every Time</a>`}</div>
-      <article class="cert" aria-label="Certificate">
-        <div class="cert-top"><img src="/static/icons/logo-256.webp" width="56" height="56" alt="">
-          <div><div class="cert-brand">AI <span>Every</span> Time</div><div class="cert-kind">${esc(heading)}</div></div></div>
-        <div class="cert-main">
-          <div class="cert-date">${esc(day)}</div>
-          <div class="cert-name">${esc(cert.name)}</div>
-          <div class="cert-has">has successfully completed</div>
-          <div class="cert-course">${esc(f.title)}</div>
-          <div class="cert-desc">${esc(what)}, taught by AI Learning Companions on AI Every Time</div>
-        </div>
-        <div class="cert-foot">
-          <div class="cert-signs">${cert.instructors.map((i) => `<div class="sign"><img class="avatar" src="${faceUrl(i)}" width="38" height="38" alt="">
-            <div><b>${esc(i.name)}</b><div>Instructor · AI Learning Companion</div></div></div>`).join("")}</div>
-          <div class="cert-verify">Check this certificate at<br><b>${esc(url.replace(/^https?:\/\//, ""))}</b></div>
-        </div>
-      </article>
+      <div class="cert-bar">${logo(30)}${state.me ? `<a class="btn" href="#/courses">Back to courses</a>` : `<a class="btn primary" href="#/welcome">Start learning</a>`}</div>
+      <figure class="cert-sheet" id="certSheet" aria-busy="true"></figure>
       <div class="row cert-actions">
-        <button class="btn primary" id="printCert">🖨️ Print or save as PDF</button>
-        <button class="btn" id="copyCert">🔗 Copy the link</button>
+        <button class="btn primary" id="saveCert">⬇️ Download image</button>
+        <button class="btn" id="printCert">🖨️ Print or save as PDF</button>
         <a class="btn" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/profile/add?${linkedIn}">Add to LinkedIn</a>
+        <a class="btn" target="_blank" rel="noopener noreferrer" href="https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(cert.url)}">Share on LinkedIn</a>
+        <button class="btn" id="copyCert">🔗 ${touch ? "Share" : "Copy the link"}</button>
       </div>
-      <p class="muted small cert-note">This certificate shows that ${esc(cert.name)} completed every lesson, graded quiz, lab and project in this
-        ${track ? "series" : f.kind.toLowerCase()} on AI Every Time, reviewed by its AI instructors. It isn't an academic credit, or a certification from any company whose products it teaches.</p>
+      <section class="card cert-details" aria-labelledby="certCheck">
+        <h2 id="certCheck"><span class="cert-tick" aria-hidden="true">✓</span> Verified certificate</h2>
+        <p>AI Every Time issued this certificate to <b>${esc(cert.name)}</b> on ${esc(day)}. It shows they completed every lesson,
+          graded quiz, lab and project in this ${track ? "series" : f.kind.toLowerCase()}, reviewed by its AI instructors.</p>
+        <dl class="cert-facts">
+          <div><dt>Certificate for</dt><dd><b>${esc(f.title)}</b><div class="muted small">${esc(about.join(" · "))}</div></dd></div>
+          ${cert.instructors.length ? `<div><dt>Taught by</dt><dd class="row">${faces(cert.instructors, 26)}<span>${esc(andList(cert.instructors.map((i) => i.name)))},
+            AI Learning ${cert.instructors.length === 1 ? "Companion" : "Companions"}</span></dd></div>` : ""}
+          <div><dt>Skills</dt><dd class="chips-row">${f.skills.map((s) => `<span class="chip">${esc(s)}</span>`).join("")}</dd></div>
+          <div><dt>Credential ID</dt><dd><code>${esc(cert.code)}</code></dd></div>
+          <div><dt>Check it at</dt><dd><a href="${esc(cert.url)}">${esc(short)}</a></dd></div>
+        </dl>
+        <p class="muted small" style="margin:0">It isn't an academic credit, or a certification from any company whose products it teaches.</p>
+      </section>
     </div>`;
   document.title = `${cert.name}: ${f.title} · AI Every Time`;
+  const mark = new Image();  // the logo, ready before the certificate shows
+  mark.src = "/static/icons/logo-256.webp";
+  await Promise.all([certFonts(`${cert.name}${f.title}${cert.instructors.map((i) => i.name).join("")}${day}`), mark.decode().catch(() => {})]);
+  const sheet = $("#certSheet");
+  if (!sheet) return;  // gone to another page meanwhile
+  sheet.innerHTML = certificateSvg(cert);
+  sheet.removeAttribute("aria-busy");
   $("#printCert").addEventListener("click", () => print());
+  $("#saveCert").addEventListener("click", async (e) => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try {
+      const blob = await certificatePng(sheet.querySelector("svg"));
+      const file = new File([blob], `AI-Every-Time-certificate-${cert.code}.png`, { type: "image/png" });
+      if (touch && navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: f.title });
+          return;
+        } catch (err) {
+          if (err.name === "AbortError") return;  // closed; any other refusal (too long after the tap, say): download it
+        }
+      }
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: file.name });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    } catch {
+      toast("Couldn't make the image here. Print or save as PDF instead.");
+    } finally {
+      button.disabled = false;
+    }
+  });
   $("#copyCert").addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { prompt("Copy this link:", url); }
+    if (touch) {
+      try { await navigator.share({ title: `${cert.name}: ${f.title}`, url: cert.url }); } catch { /* closed */ }
+      return;
+    }
+    try { await navigator.clipboard.writeText(cert.url); toast("Link copied"); } catch { prompt("Copy this link:", cert.url); }
   });
 }
 
