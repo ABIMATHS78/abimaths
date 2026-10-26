@@ -29,7 +29,7 @@ changed since its WebP was made is left as it is; delete the WebP to make it aga
 
 1. `download.py` fetches the originals, and `ocr_all.py` finds every line of text in them and where it is
    (RapidOCR).
-2. `show.py <id>` shows a graphic, enlarged in quarters with its lines numbered, and lists the words that aren't
+2. `show.py <id>` shows a graphic, enlarged in two halves with its lines numbered, and lists the words that aren't
    words (`suspects.py`: not English, not used anywhere in the guides, and not the text reader's own usual
    misreadings), each with corrections suggested from the guide's own words.
 3. Someone (or Claude, following `AGENT.md`) reads the graphic against its guide and writes its corrections.

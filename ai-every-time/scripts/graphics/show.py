@@ -4,8 +4,8 @@ Writes, in work/view/<id>/:
   full.png          the graphic as it is (1024 x 1024)
   suspects.png      (and suspects_2.png, ... if there are many) the lines with likely mistakes, enlarged, each
                     labelled with its line number
-  tile_RC.png       the graphic enlarged 2x, in four quarters (row R, column C), every line the text reader found
-                    outlined in magenta with its number
+  top.png, bottom.png  the graphic enlarged 1.5x in two halves, every line the text reader found outlined in
+                    magenta with its number
 and prints every line the reader found (number, box [x0, y0, x1, y1] in the graphic's own pixels, what the reader
 made of it, how sure it was), then the likely mistakes with corrections suggested from the guide's own words.
 The reader's text is often wrong (that's why the graphic needs correcting): read the picture itself.
@@ -25,19 +25,20 @@ FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 SHEET_W, SHEET_H = 1400, 1500
 
 
-def tiles(img: Image.Image, lines: list, out: str) -> None:
-    scale = 2
-    big = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
+def halves(img: Image.Image, lines: list, out: str) -> None:
+    """The graphic enlarged 1.5x in two halves, top.png and bottom.png (overlapping a little), every line the
+    reader found boxed in magenta with its number."""
+    scale = 1.5
+    big = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
     draw = ImageDraw.Draw(big)
-    f = ImageFont.truetype(FONT, 15)
+    f = ImageFont.truetype(FONT, 14)
     for i, line in enumerate(lines):
-        x0, y0, x1, y1 = [v * scale for v in line["box"]]
+        x0, y0, x1, y1 = [round(v * scale) for v in line["box"]]
         draw.rectangle((x0 - 2, y0 - 2, x1 + 2, y1 + 2), outline=(255, 0, 200), width=1)
-        draw.text((x0 - 2, y0 - 19), str(i), font=f, fill=(255, 0, 200), stroke_width=2, stroke_fill="white")
-    half = big.width // 2
-    for r in range(2):
-        for c in range(2):
-            big.crop((c * half, r * half, (c + 1) * half, (r + 1) * half)).save(os.path.join(out, f"tile_{r}{c}.png"))
+        draw.text((x0 - 2, y0 - 17), str(i), font=f, fill=(255, 0, 200), stroke_width=2, stroke_fill="white")
+    h = big.height
+    big.crop((0, 0, big.width, h // 2 + 40)).save(os.path.join(out, "top.png"))
+    big.crop((0, h // 2 - 40, big.width, h)).save(os.path.join(out, "bottom.png"))
 
 
 def sheets(img: Image.Image, found: list, out: str) -> list[str]:
@@ -85,18 +86,15 @@ def main(gid: str) -> None:
     out = os.path.join(WORK, "view", gid)
     os.makedirs(out, exist_ok=True)
     for f in os.listdir(out):
-        if f.startswith("suspects"):
+        if f.startswith(("suspects", "tile_")):
             os.remove(os.path.join(out, f))
     img = Image.open(src).convert("RGB")
     img.save(os.path.join(out, "full.png"))
-    tiles(img, lines, out)
+    halves(img, lines, out)
     found = sus.find(gid, lines)
     sheet_paths = sheets(img, found, out)
-    print(f"Graphic: {out}/full.png")
-    print(f"Enlarged quarters, lines numbered: {out}/tile_00.png (top left), tile_01.png (top right), "
-          "tile_10.png (bottom left), tile_11.png (bottom right)")
-    if sheet_paths:
-        print("Lines with likely mistakes, enlarged: " + ", ".join(sheet_paths))
+    print(f"View these: {out}/top.png and {out}/bottom.png (the graphic enlarged 1.5x, lines numbered)"
+          + (", and the lines with likely mistakes enlarged: " + ", ".join(sheet_paths) if sheet_paths else ""))
     guide = os.path.join(WORK, "guide", gid + ".md")
     print(f"Guide text: {guide}")
     if os.path.exists(guide):
