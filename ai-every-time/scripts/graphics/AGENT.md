@@ -77,9 +77,9 @@ One edit per line of text (box):
 - `replace`: for one or two wrong words in a longer line, the wrong word(s) exactly as in `was`; `text` is then just
   the new word(s). Only those are redrawn; the rest keeps its pixels and moves along if needed (on a shaded or patterned
   background, give the new word the old one's width with `squeeze`: the words after it then stay put, and nothing is
-  refilled behind them). Or `words: [first,
-  last]` by position from 0 (`-1` is the last). Prefer these to redrawing a whole line. In a centred line whose new
-  words are much longer or shorter, redraw the whole line with `"align": "center"` instead.
+  refilled behind them). Or `words: [first, last]` by position from 0 (`-1` is the last). Prefer these to redrawing
+  a whole line. In a centred line whose new words are much longer or shorter, redraw the whole line with
+  `"align": "center"` instead.
 - `align`: `"center"` for centred text (labels in pills, captions under icons), `"right"`; default left.
 - `style`: lines that look alike (font, size, colour) get the same name. Add one or two **correctly spelled** lines of
   each style as references (`"ref": true`, no `text`): the font match is much better with them.
