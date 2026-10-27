@@ -98,6 +98,8 @@ One edit per line of text (box):
   italic is close to `"font": "Nunito-800.woff", "slant": 0.2`).
 
 The tool erases whatever touches the old letters: if a letter touches an outline or icon, start the box after that
-letter (redraw the rest of the word) so the outline stays whole. Or correct just the wrong letter: box only it,
+letter (redraw the rest of the word) so the outline stays whole. Letters across two background colours or on a
+pattern come back on a flat patch of the main colour: add `"fill": "inpaint"` to rebuild what was under them from
+every colour around. Or correct just the wrong letter: box only it,
 one pixel clear of it on each side, with `"pad": 0` (`{"box": [910, 683, 917, 697], "was": "a", "text": "e",
 "pad": 0}`); a box no wider than the letter finds nothing. Changing only `"skipped"` needs no rerun.

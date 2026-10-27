@@ -15,6 +15,8 @@ spec.json maps an image id to its edits, or to {"family": ..., "edits": [...]}. 
     "typeface": "Roboto"       choose among this typeface's weights only (also for the whole image)
     "squeeze": 0.9             draw the new text this much narrower (or wider, above 1); default: as the old text
     "slant": 0.2               lean the new letters right (0.2 is about 11 degrees): italic text in a font without one
+    "fill": "inpaint"          rebuild what was under the old letters from every colour around them (letters across
+                               two backgrounds, or on a pattern); default: from the background's own colour
     "ref": true                a line that's right as it is, only there to show its style's font (it isn't changed)
     "font", "size", "color", "pad", "threshold", "room", "dy"   overrides
 
@@ -397,11 +399,20 @@ def judge(path: str, sample: str, old: dict, letters: np.ndarray, old_words: lis
 
 # --- Rebuilding the background ----------------------------------------------------------------------------------------
 
-def fill(out: np.ndarray, mask: np.ndarray, box: tuple[int, int, int, int], bg: np.ndarray, spread: float) -> np.ndarray:
+def fill(out: np.ndarray, mask: np.ndarray, box: tuple[int, int, int, int], bg: np.ndarray, spread: float,
+         how: str | None = None) -> np.ndarray:
     """Paint over the masked pixels with what's behind them: the background's colour where it is flat, otherwise a
     smooth blend of the nearby background pixels (only those of about its colour, so a box's border or an icon
-    next to the letters doesn't bleed into the gap they leave)."""
+    next to the letters doesn't bleed into the gap they leave). With how="inpaint", every colour around the gap
+    is carried into it instead: for letters across two backgrounds or on a pattern, which one colour can't rebuild."""
     if not mask.any():
+        return out
+    if how == "inpaint":
+        X0, Y0, X1, Y1 = box
+        m = 12
+        x0, y0, x1, y1 = max(0, X0 - m), max(0, Y0 - m), min(out.shape[1], X1 + m), min(out.shape[0], Y1 + m)
+        hole = cv2.dilate(mask[y0:y1, x0:x1].astype(np.uint8), np.ones((3, 3), np.uint8))
+        out[y0:y1, x0:x1] = cv2.inpaint(np.ascontiguousarray(out[y0:y1, x0:x1]), hole, 5, cv2.INPAINT_TELEA)
         return out
     if spread < 4:
         out[mask] = bg
@@ -713,7 +724,7 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
         gone = cv2.dilate(gone.astype(np.uint8), np.ones((3, 3), np.uint8), iterations=2).astype(bool) & cols[None, :]
         full = np.zeros(out.shape[:2], bool)
         full[Y0:Y1, X0:X1] = gone
-        out = fill(out, full, (X0, Y0, X1, Y1), L["bg"], L["spread"])
+        out = fill(out, full, (X0, Y0, X1, Y1), L["bg"], L["spread"], e.get("fill"))
         text = e["text"]
         slant = e.get("slant", 0.0)
         cover, p, width, left = None, None, 0, X0 + old_left
@@ -764,7 +775,8 @@ def apply(image: Image.Image, edits: list[dict], default_family: str | None = No
             src = img[Y0 + r0:Y0 + r1, X0 + c0:X0 + c1]
             clear = np.zeros(out.shape[:2], bool)
             clear[Y0 + r0:Y0 + r1, X0 + c0:X0 + c1] = keep
-            out = fill(out, clear, (X0, Y0, min(out.shape[1], X1 + max(0, shift)), Y1), L["bg"], L["spread"])
+            out = fill(out, clear, (X0, Y0, min(out.shape[1], X1 + max(0, shift)), Y1), L["bg"], L["spread"],
+                       e.get("fill"))
             d0 = X0 + c0 + shift
             w = min(c1 - c0, out.shape[1] - d0)
             dst = out[Y0 + r0:Y0 + r1, d0:d0 + w]
