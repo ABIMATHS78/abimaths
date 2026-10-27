@@ -1,55 +1,66 @@
-# Correcting a guide graphic
+# Correcting guide graphics
 
 Each education guide on aieverytime.org has a graphic (a 1024 x 1024 infographic) made by an AI image generator,
-which misspells and garbles words. Your job: correct every mistake in the graphic's text **in place**, so it looks
-exactly as before except that its words are right. The owner approved this from a trial; keep to that standard.
+which misspells and garbles words. Correct every mistake in a graphic's text **in place**, so it looks exactly as
+before except that its words are right. The owner approved this from a trial; keep to that standard.
 
-Tools: `python scripts/graphics/<tool>.py`; `$W/work` is the work folder (see `paths.py`). Work only on your graphic's files.
-Be efficient: view several images in one turn (several Read calls at once), and don't view images you don't need.
+Run tools as `python scripts/graphics/<tool>.py`; `$W/work` is the work folder (see `paths.py`). Work only on your
+graphics' files.
 
-## Steps
+## Be economical: this job is 1,100 graphics, paid for in usage
 
-1. **Look.** `show.py <id>` prints every line of text the reader found (number, box, reading) and a list of
-   **likely mistakes** with suggested corrections. View `full.png` and the `suspects*.png` sheets (the suspect lines
-   enlarged) in one turn. Then view the enlarged quarters (`tile_00.png` top left, `tile_01.png` top right,
-   `tile_10.png` bottom left, `tile_11.png` bottom right; lines boxed and numbered) for any part with small text, to
-   find mistakes the list missed (it misses about one in ten). For a closer look at a spot:
-   `crop.py <id> x0 y0 x1 y1` (graphic pixels, with a ruler); add `--both` after a correction to see the original
-   above the corrected version, or `--fixed` for the corrected one alone.
-2. **Check the words against the guide** (`work/guide/<id>.md`: title, summary, then the guide), e.g.
-   `grep -n -i -m3 "orchestr" $W/work/guide/<id>.md`, to know what a garbled word should be.
-3. **Write the corrections** to `$W/work/spec/<id>.json` (format below). No mistakes: `{"edits": []}`.
-4. **Apply and check.** `fix_one.py <id>` writes the corrected graphic and `check.png` (with `check_2.png` if
-   there are many): every changed area, original above, corrected below. **View the check sheets.** Each new word
-   must be spelled right; match its neighbours in size, weight, colour and style; sit on the line; stay inside its
-   box or column; and leave no trace of the old letters. For a closer look at one area, view its `pair_N.png` or
-   use `crop.py ... --both`. Fix the spec and rerun until right (reruns are quick). A correction that still looks
-   wrong after two or three tries: take it out and list it in `"skipped"` with the reason.
-5. **Finish.** `mark_done.py <id> "short note"`, then go on to your next graphic, if you have several. At the end,
-   reply with one line per graphic: id, number of corrections, what was skipped and why.
+Every tool call and every image costs. Follow this sequence; about 6 tool calls per graphic is the aim, 12 the most.
+Several Read calls in one turn count once. Chain commands with `&&` in one Bash call where you can.
+
+1. `show.py <id>`: prints the likely mistakes (with corrections suggested from the guide's own words), the guide's
+   title and summary, and every line of text found (number, box, the reader's reading).
+2. **One turn:** view `top.png`, `bottom.png` (the graphic enlarged 1.5x, lines numbered) and `suspects*.png` (the
+   suspect lines enlarged). Read the whole graphic: the list misses about one mistake in ten. Only if some text is too
+   small to read there: `crop.py <id> x0 y0 x1 y1` (graphic pixels, with a ruler). Check a word against the guide
+   only if you can't tell what it should be: `grep -n -i -m3 "word" $W/work/guide/<id>.md`.
+3. **One Bash call:** write the corrections file with a heredoc, then apply them:
+   `cat > $W/work/spec/<id>.json <<'EOF' ... EOF` `&& python scripts/graphics/fix_one.py <id>`.
+   No mistakes: `{"edits": []}`.
+4. **One turn:** view `check.png` (and `check_2.png`, `check_3.png` if it says so): each changed area, original
+   above, corrected below. Each new word must be spelled right; match its neighbours in size, weight, colour and
+   style; sit on the line; stay inside its box; and leave no trace of the old letters.
+5. If something is wrong, fix the spec and rerun (one Bash call), then view the check again. **Two rounds at most:**
+   a correction that still looks wrong is taken out and listed in `"skipped"` with the reason.
+6. **One Bash call:** `mark_done.py <id> "short note" && show.py <next id>`, then go on from step 2.
+
+At the end, reply with one line per graphic: id, number of corrections, what was skipped and why.
 
 ## What to correct
 
 - Misspelled, garbled or nonsense words; wrong names of tools and terms ("TensorFow", "httx", "Linkedin", "SaAs",
   "IOT" in a mixed-case line → "IoT"); doubled words ("scalable scalable"); broken code (make it valid, as the guide
   writes it); obvious wrong numbers in a sequence.
-- A word or label that is unreadable gibberish: replace it with wording from the guide that fits the slot (about
-  the same length). Keep such rewordings few and faithful to the guide.
+- Unreadable gibberish: replace with wording from the guide that fits the slot (about the same length). Keep such
+  rewordings few and faithful to the guide, and of the guide's names choose the one the garbled letters resemble
+  ("APIJOUSEE URL" is the guide's `API_SOURCE_URL`, not its `DATABASE_URL`).
+- Never coin a name, field or term that isn't real (not "Product_Name_Phone" for a garbled "Preduct_Name_Ifone"):
+  use the guide's own term, even if it's shorter than the slot, and keep brackets and lists balanced across lines.
 
 Leave alone: text that is already right (no rewording or restyling), the graphic's capitalisation style, correct
-British or American spelling, missing hyphens ("SELF HEALING", "AI POWERED": not spelling; add one only in a line
-you are redrawing anyway), logos, icons, and lettering that is part of a picture (screens, badges, curved or 3D
-text). Wrong but impossible to redraw cleanly (curved, on a busy picture, tiny inside an icon): list in `"skipped"`.
+British or American spelling, missing hyphens ("SELF HEALING": add one only in a line you are redrawing anyway),
+missing commas, logos, icons, and lettering that is part of a picture (screens, badges, curved or 3D text). Wrong but
+impossible to redraw cleanly (curved, on a busy picture, tiny inside an icon): list in `"skipped"`.
+
+Read box rows and columns from `crop.py`'s ruler ticks, not from where the crop starts: a box a few rows off
+leaves specks of the old letters. In tiny text with tight gaps between words, redraw the whole line or the single
+word instead of using `replace` (the word count can split the wrong words). In tightly stacked lines, give the box
+just the line's own rows and `"pad": 1`: words that `replace` moves along take whatever else is in their rows with
+them. Keep every old letter whole inside the box, dots too: a mark the box's top or bottom edge cuts is taken for
+part of the next line and left behind.
 
 ## The corrections file
 
 ```json
-{"family": "serif",
- "edits": [
+{"edits": [
   {"box": [96, 168, 915, 197], "was": "Learn how to build full-stack web applications instanty using Bolt.new with",
    "replace": "instanty", "text": "instantly", "style": "sub"},
   {"box": [156, 198, 854, 231], "was": "precise prompt engineering strategies, templates, and workflows", "ref": true, "style": "sub"},
-  {"box": [311, 390, 469, 409], "was": "PREQUISITES & SETUP", "text": "PREREQUISITES & SETUP", "style": "pill", "align": "center", "family": "sans"},
+  {"box": [311, 390, 469, 409], "was": "PREQUISITES & SETUP", "text": "PREREQUISITES & SETUP", "style": "pill", "align": "center"},
   {"box": [101, 391, 213, 408], "was": "CORE CONCEPTS", "ref": true, "style": "pill"},
   {"box": [43, 149, 808, 190], "was": "Snowflake Cloud Data Warewarusing for", "words": [3, 3], "text": "Warehousing", "style": "title"},
   {"box": [372, 454, 419, 473], "was": "pip thrall", "text": ""}
@@ -57,34 +68,38 @@ text). Wrong but impossible to redraw cleanly (curved, on a busy picture, tiny i
  "skipped": ["'Rse AI' on the trophy: curved lettering"]}
 ```
 
-One edit per line of text (box). Keys:
-- `box` `[x0, y0, x1, y1]`: the line, from the reader's list. If the reader missed a line or its box is wrong
+One edit per line of text (box):
+- `box` `[x0, y0, x1, y1]`: the line's box from the reader's list. If the reader missed a line or its box is wrong
   (joins two lines, cuts letters), measure one with `crop.py`: just around the letters, a few pixels of margin.
-- `was`: the line as the picture shows it, mistakes and all. It must have **the same number of words (spaces)
-  as the picture**; the letters roughly right (the tool matches the font from it). Don't copy the reader's text
-  blindly: it reads "AI" as "Al" and runs words together ("SecureRollbacks"); count the words in the picture.
+- `was`: the line as the picture shows it, mistakes and all, with **the same number of words (spaces) as the
+  picture**. Don't copy the reader's text blindly: it reads "AI" as "Al" and runs words together; "Bolt.new",
+  "full-stack" and "2.x" are one word each.
 - `text`: what it should say (`""` removes the line).
 - `replace`: for one or two wrong words in a longer line, the wrong word(s) exactly as in `was`; `text` is then just
-  the new word(s). Only those are redrawn; the rest keeps its original pixels and moves along if needed. Or
-  `words: [first, last]` by position from 0 (`-1` is the last word). Prefer these over redrawing a whole line.
+  the new word(s). Only those are redrawn; the rest keeps its pixels and moves along if needed (on a shaded or patterned
+  background, give the new word the old one's width with `squeeze`, not below 0.9: the words after it then stay put,
+  and nothing is refilled behind them; on a flat one, let them move). Give such an edit the whole line's box: a box
+  around one word can't move its neighbours. Or `words: [first, last]` by position from 0 (`-1` is the last).
+  Prefer these to redrawing a whole line. In a centred line whose new words are much longer or shorter, redraw the
+  whole line with `"align": "center"` instead.
 - `align`: `"center"` for centred text (labels in pills, captions under icons), `"right"`; default left.
-- `style`: give lines that look alike (font, size, colour) the same name. Add one to three **correctly spelled**
-  lines of that style as references (`"ref": true`, no `text`): the font match is much better with them.
-- `family`: `sans` (default with `condensed`), `condensed` (tall narrow), `serif`, `mono` (code), or joined with `+`.
-  At the top for the whole graphic, or on any edit of a style.
-- The tool picks one main typeface for the graphic (it prints it) and the right weight of it for each style. If the
-  new letters' shapes look wrong, name another for the whole graphic at the top: `"typeface": "Roboto"` (or
-  `Inter`, `OpenSans`, `Montserrat`, `Poppins`, `Lato`, `SourceSans3`, `RobotoCondensed`, `Oswald`,
-  `PlayfairDisplay`, `Merriweather`, ...: a font file's name before the dash). Also per style, on any of its edits.
-  It draws a font narrower or wider (`squeeze`) to match a condensed or wide original; set `"squeeze": 0.9` on an
-  edit to choose yourself.
-- `room`: the widest the new text may be, in pixels (lower it if new text would hit an icon or border).
-- `pad` (default 3): use 1 for tightly stacked lines. Rarely: `font`, `size`, `dy` (pixels down; negative is up).
+- `style`: lines that look alike (font, size, colour) get the same name. Add one or two **correctly spelled** lines of
+  each style as references (`"ref": true`, no `text`): the font match is much better with them.
+- Fonts: the tool picks one main typeface for the graphic (it prints it) and the weight of it for each style, drawn
+  narrower or wider if the original is condensed or wide. If the new letters look wrong, set another at the top for
+  the whole graphic, `"typeface": "Roboto"` (or `Inter`, `OpenSans`, `Montserrat`, `Poppins`, `Lato`,
+  `SourceSans3`, `RobotoCondensed`, `Oswald`, `PlayfairDisplay`, `Merriweather`, ...: a font file's name before the
+  dash), or per style on one of its edits. `family` (`sans`, `condensed`, `serif`, `mono`) narrows the choice;
+  `font` (a file name) forces one. A new word too heavy or too light: first give its style a correctly spelled
+  reference line (most weight mismatches are a style without one), before trying weights by hand.
+- `room`: the widest the new text may be, in pixels (lower it if new text would hit an icon or border). `pad`
+  (default 3): 1 for tightly stacked lines. Rarely: `size`, `squeeze` (0.9 = 10% narrower), `dy` (pixels down),
+  `slant` (0.2 leans the new letters about 11 degrees, for italic lettering no font matches: a rounded hand-lettered
+  italic is close to `"font": "Nunito-800.woff", "slant": 0.2`).
 
-If `fix_one.py` reports a word-count mismatch, count the spaces in the picture again (`crop.py`): "Bolt.new",
-"full-stack" and "2.x" are one word each. A `replace` keeps the words before it in place and moves those after it:
-in a centred line where the new words are much longer or shorter, redraw the whole line with `"align": "center"`.
 The tool erases whatever touches the old letters: if a letter touches an outline or icon, start the box after that
-letter (redraw the rest of the word) so the outline stays whole. Changing only `"skipped"` or notes needs no rerun. If new text looks too bold, too light or the wrong shape, add references
-or change `family`. A leftover mark beside new text: widen the box on that side. Finished examples:
-`$W/work/spec/19560003.json`, `23160009.json`, `20070002.json`.
+letter (redraw the rest of the word) so the outline stays whole. Letters across two background colours or on a
+pattern come back on a flat patch of the main colour: add `"fill": "inpaint"` to rebuild what was under them from
+every colour around. Or correct just the wrong letter: box only it,
+one pixel clear of it on each side, with `"pad": 0` (`{"box": [910, 683, 917, 697], "was": "a", "text": "e",
+"pad": 0}`); a box no wider than the letter finds nothing. Changing only `"skipped"` needs no rerun.
