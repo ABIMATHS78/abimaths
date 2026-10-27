@@ -36,7 +36,8 @@ At the end, reply with one line per graphic: id, number of corrections, what was
   "IOT" in a mixed-case line → "IoT"); doubled words ("scalable scalable"); broken code (make it valid, as the guide
   writes it); obvious wrong numbers in a sequence.
 - Unreadable gibberish: replace with wording from the guide that fits the slot (about the same length). Keep such
-  rewordings few and faithful to the guide.
+  rewordings few and faithful to the guide, and of the guide's names choose the one the garbled letters resemble
+  ("APIJOUSEE URL" is the guide's `API_SOURCE_URL`, not its `DATABASE_URL`).
 - Never coin a name, field or term that isn't real (not "Product_Name_Phone" for a garbled "Preduct_Name_Ifone"):
   use the guide's own term, even if it's shorter than the slot, and keep brackets and lists balanced across lines.
 
