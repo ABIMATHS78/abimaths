@@ -89,7 +89,8 @@ One edit per line of text (box):
   the whole graphic, `"typeface": "Roboto"` (or `Inter`, `OpenSans`, `Montserrat`, `Poppins`, `Lato`,
   `SourceSans3`, `RobotoCondensed`, `Oswald`, `PlayfairDisplay`, `Merriweather`, ...: a font file's name before the
   dash), or per style on one of its edits. `family` (`sans`, `condensed`, `serif`, `mono`) narrows the choice;
-  `font` (a file name) forces one.
+  `font` (a file name) forces one. A new word too heavy or too light: first give its style a correctly spelled
+  reference line (most weight mismatches are a style without one), before trying weights by hand.
 - `room`: the widest the new text may be, in pixels (lower it if new text would hit an icon or border). `pad`
   (default 3): 1 for tightly stacked lines. Rarely: `size`, `squeeze` (0.9 = 10% narrower), `dy` (pixels down),
   `slant` (0.2 leans the new letters about 11 degrees, for italic lettering no font matches: a rounded hand-lettered
