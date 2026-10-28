@@ -207,6 +207,7 @@ def _load_user(user_id: int) -> dict:
 def me(user: dict = User):
     return auth.public_user(user) | {
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
+        "app_push_available": push.app_available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
         "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
         "ai_problem": _ai_problem(user), "marketing_emails": bool(user.get("marketing_emails")), "plan": billing.view(user),

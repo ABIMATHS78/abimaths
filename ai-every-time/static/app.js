@@ -324,9 +324,23 @@ async function savedExchange(companionId, sentId, userEl, replyEl, ctx) {
 /* The server takes the companion's reaction off the start of its reply; one anywhere else isn't shown either. */
 const withoutReactionTags = (text) => text.replace(/<reaction>[^<]{0,16}<\/reaction>\s*/gu, "");
 
+/* ----------------------------------------------------------- the iPhone app */
+
+/* The iPhone app shows these same pages, and adds its name to the user agent. Pages ask it for what only it can do
+   (notifications through Apple, the share sheet, its settings) through its message handler, which answers with a
+   promise. See ios/README.md. */
+const inApp = /\bAIEveryTimeApp\//.test(navigator.userAgent);
+const appBridge = inApp ? window.webkit?.messageHandlers?.aiet || null : null;
+const askApp = (action, data = {}) => appBridge.postMessage({ action, ...data });
+if (inApp) document.documentElement.classList.add("in-app");
+// Sharing a link opens the app's share sheet where the web view has no Web Share of its own.
+if (appBridge && !navigator.share) navigator.share = ({ title, text, url } = {}) => askApp("share", { title, text, url });
+/* Plans aren't sold in the app, as Apple's rules for apps ask: prices, upgrade buttons and billing links stay out. */
+const forSale = (html) => (inApp ? "" : html);
+
 /* ----------------------------------------------------------- notifications */
 
-const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const pushSupported = !!appBridge || ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window);
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const installedApp = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const deviceZone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })();
@@ -352,14 +366,29 @@ window.addEventListener("beforeinstallprompt", (e) => {
 const keyBytes = (b64) => Uint8Array.from(atob(b64.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
 const sameBytes = (buf, bytes) => !!buf && new Uint8Array(buf).length === bytes.length && new Uint8Array(buf).every((v, i) => v === bytes[i]);
 
+/* The app's address for notifications on this device, once they're on: apns:<environment>:<token>. */
+const APP_DEVICE = "aiet-app-device";
+const appDevice = () => { try { return localStorage.getItem(APP_DEVICE); } catch { return null; } };
+const setAppDevice = (address) => {
+  try { if (address) localStorage.setItem(APP_DEVICE, address); else localStorage.removeItem(APP_DEVICE); } catch {}
+};
+
 async function pushSubscription() {
+  if (appBridge) { const endpoint = appDevice(); return endpoint ? { endpoint } : null; }
   if (!pushSupported) return null;
   const reg = await navigator.serviceWorker.getRegistration("/");
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
-/* Turn notifications on for this device: ask permission, subscribe at the browser's push service, tell the server. */
+/* Turn notifications on for this device: ask permission, subscribe at the browser's push service, tell the server.
+   In the app, the app asks permission and registers with Apple's push service, and the page passes its token on. */
 async function enablePush() {
+  if (appBridge) {
+    const { token, environment } = await askApp("enablePush");
+    await api("/api/push/apns", { method: "POST", body: { token, environment, replaces: appDevice() } });
+    setAppDevice(`apns:${environment}:${token.toLowerCase()}`);
+    return;
+  }
   const permission = await Notification.requestPermission();
   if (permission !== "granted") {
     throw new Error(permission === "denied" ? "Notifications are blocked for this site in your browser's settings." : "Notifications weren't allowed.");
@@ -383,7 +412,26 @@ async function disablePush() {
   const sub = await pushSubscription().catch(() => null);
   if (!sub) return;
   await api("/api/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } }).catch(() => {});
-  await sub.unsubscribe().catch(() => {});
+  await forgetDevice();
+}
+
+/* This device stops listening, once the server has forgotten it: the browser ends its subscription, the app its address. */
+async function forgetDevice() {
+  if (appBridge) { setAppDevice(null); return; }
+  const sub = await pushSubscription().catch(() => null);
+  if (sub) await sub.unsubscribe().catch(() => {});
+}
+
+/* Apple changes an app's token now and then: the app gives the new one, and the page passes it on in place of the old. */
+async function syncAppDevice() {
+  const known = appDevice();
+  if (!appBridge || !known || !state.me?.app_push_available) return;
+  const app = await askApp("pushStatus").catch(() => null);
+  if (!app?.token || app.permission !== "granted") return;
+  const now = `apns:${app.environment}:${app.token.toLowerCase()}`;
+  if (now === known) return;
+  await api("/api/push/apns", { method: "POST", body: { token: app.token, environment: app.environment, replaces: known } })
+    .then(() => setAppDevice(now)).catch(() => {});
 }
 
 /* ------------------------------------------------------------------- router */
@@ -437,6 +485,7 @@ async function router() {
     state.zoneSentFor = state.me.id;
     api("/api/me", { method: "PATCH", body: { timezone: deviceZone } }).then((me) => { state.me = me; }).catch(() => {});
   }
+  if (state.me && appBridge && state.appSyncedFor !== state.me.id) { state.appSyncedFor = state.me.id; syncAppDevice(); }
   // A problem with the site's Claude account comes first; then demo mode.
   $("#banner").hidden = !(state.me?.ai_problem || state.me?.offline_mode);
   $("#banner").textContent = state.me?.ai_problem
@@ -575,7 +624,7 @@ async function viewWelcome(m) {
         <p class="muted" style="font-size:18px">Follow, chat with and learn from always-available AI Learning Companions from around the world, each with their own face, voice and expertise. Or design your own companion, exactly the way you want it.</p>
         <div class="faces" id="faces"></div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
-        <p><a class="btn ghost" href="#/pricing">See plans and pricing</a></p>
+        ${forSale(`<p><a class="btn ghost" href="#/pricing">See plans and pricing</a></p>`)}
       </div>
       <div class="card">
         <div class="tabs">
@@ -1046,7 +1095,7 @@ const skillCard = (post, d, i, showJob = true) => {
   </article>`;
 };
 const libraryLocked = (post) => post.locked ? `<div class="card stack paywall-card"><strong>🔒 These skills come with reading this guide in full.</strong>
-  <div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div></div>` : "";
+  ${forSale(`<div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div>`)}</div>` : "";
 const libraryInstall = (post) => {
   const first = skillsOf(post)[0]?.command || "/skill-name";
   return `<details class="lib-install"><summary>How to install a skill</summary><ol>
@@ -1174,10 +1223,10 @@ async function viewPost(m) {
       </div>
       ${post.download_groups ? libraryTeaser(post) : ""}
       <div class="prose guide-body${post.locked ? " faded" : ""}">${md(post.body)}</div>
-      ${post.locked ? `<div class="card stack paywall-card"><h3 style="margin:0">Keep reading with Digital</h3>
-        <p style="margin:0">You've read your ${post.guides.limit} free guides this month. Read every guide in full, and more, from ${esc(dollars(199))} a month.</p>
-        <div class="row"><a class="btn primary" href="#/pricing">See the plans</a><span class="muted small">Your free guides start again next month.</span></div></div>`
-      : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`} <a href="#/pricing">Read them all with Digital</a>.</p>` : ""}
+      ${post.locked ? `<div class="card stack paywall-card"><h3 style="margin:0">${inApp ? "You've read this month's free guides" : "Keep reading with Digital"}</h3>
+        <p style="margin:0">You've read your ${post.guides.limit} free guides this month.${forSale(` Read every guide in full, and more, from ${esc(dollars(199))} a month.`)}</p>
+        <div class="row">${forSale(`<a class="btn primary" href="#/pricing">See the plans</a>`)}<span class="muted small">Your free guides start again next month.</span></div></div>`
+      : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`}${forSale(` <a href="#/pricing">Read them all with Digital</a>.`)}</p>` : ""}
       ${post.download_groups ? skillLibrary(post) : post.downloads?.length ? downloadList(post) : ""}
       <div class="card study" data-post="${post.id}"${post.locked ? " hidden" : ""}>
         <h3 style="margin:0">Study this ${post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post"}</h3>
@@ -2001,8 +2050,8 @@ async function viewProfile() {
   const plan = me.plan;
   $("#planCard").innerHTML = `<div><h2 style="margin:0">Your plan: ${esc(plan.name)}</h2>
       <div class="muted small">${plan.subscription?.live ? `${esc(STATUS_TEXT[plan.subscription.status])}${plan.subscription.period_end ? ` · ${plan.subscription.cancel_at_period_end ? "ends" : "renews"} ${esc(longDate(plan.subscription.period_end))}` : ""}`
-        : plan.grant ? `Given to you${plan.grant.until ? ` until ${esc(longDate(plan.grant.until))}` : ""}` : plan.paywall ? "Upgrade for every guide, full courses and more AI requests." : "Everything is open while plans are being set up."}</div></div>
-    <a class="btn" href="#/billing">Plan and billing</a>`;
+        : plan.grant ? `Given to you${plan.grant.until ? ` until ${esc(longDate(plan.grant.until))}` : ""}` : plan.paywall ? forSale("Upgrade for every guide, full courses and more AI requests.") : "Everything is open while plans are being set up."}</div></div>
+    ${forSale(`<a class="btn" href="#/billing">Plan and billing</a>`)}`;
   main.addEventListener("click", async (e) => {  // both "send a confirmation link" buttons
     const b = e.target.closest("[data-confirm]");
     if (!b) return;
@@ -2051,10 +2100,10 @@ async function viewProfile() {
       if (b.dataset.push === "on") { await enablePush(); toast("Notifications are on for this device"); }
       else if (b.dataset.push === "off") { await disablePush(); toast("Notifications are off for this device"); }
       else if (b.dataset.push === "test") { await api("/api/push/test", { method: "POST" }); toast("Sent. It should appear in a few seconds."); }
+      else if (b.dataset.push === "settings") await askApp("openSettings");
       else if (b.dataset.push === "all-off") {
         await api("/api/push/devices", { method: "DELETE" });
-        const sub = await pushSubscription().catch(() => null);
-        if (sub) await sub.unsubscribe().catch(() => {});
+        await forgetDevice();
         toast("Notifications are off on all your devices");
       }
     } catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
@@ -2107,8 +2156,7 @@ function showDeleteAccount() {
     e.preventDefault();
     try {
       await api("/api/me", { method: "DELETE", body: { password: e.target.password.value } });
-      const sub = await pushSubscription().catch(() => null);
-      if (sub) await sub.unsubscribe().catch(() => {});
+      await forgetDevice();
       state.me = null;
       $("#dialog").close();
       toast("Your account was deleted.");
@@ -2117,16 +2165,25 @@ function showDeleteAccount() {
   });
 }
 
-/* Whether this device gets notifications, and how to turn them on where the browser allows it. */
+/* Whether this device gets notifications, and how to turn them on where the browser (or the app) allows it. */
 async function renderPushBox(box) {
-  const [devices, sub] = await Promise.all([api("/api/push/devices"), pushSubscription().catch(() => null)]);
+  const [devices, sub, app] = await Promise.all([api("/api/push/devices"), pushSubscription().catch(() => null),
+    appBridge ? askApp("pushStatus").catch(() => ({})) : null]);
   if (!document.body.contains(box)) return;
   const here = sub && devices.find((d) => d.endpoint === sub.endpoint);
   const others = devices.filter((d) => d !== here);
   const note = (html) => `<p class="small" style="margin:0">${html}</p>`;
   let status;
-  if (!state.me.push_available) status = note(`<span class="muted">Notifications aren't set up on this server yet.</span>`);
-  else if (!pushSupported) {
+  if (!(app ? state.me.app_push_available : state.me.push_available)) {
+    status = note(`<span class="muted">Notifications aren't set up on this server yet.</span>`);
+  } else if (app?.permission === "denied") {
+    status = note("Notifications are off for AI Every Time in this phone's Settings.")
+      + `<div class="row"><button type="button" class="btn" data-push="settings">Open Settings</button></div>`;
+  } else if (app) {
+    status = here ? note(`✅ On for this device (${esc(here.device)}).`)
+      + `<div class="row"><button type="button" class="btn" data-push="test">Send a test</button><button type="button" class="btn ghost" data-push="off">Turn off on this device</button></div>`
+      : `<div class="row"><button type="button" class="btn primary" data-push="on">🔔 Turn on notifications on this device</button></div>`;
+  } else if (!pushSupported) {
     status = note(isIOS && !installedApp
       ? "On iPhone and iPad, notifications come through the Home Screen app: tap <b>Share</b>, then <b>Add to Home Screen</b>, open AI Every Time from there and turn them on here."
       : `<span class="muted">This browser can't show notifications.</span>`);
@@ -3112,7 +3169,7 @@ async function viewCourses(m) {
         <input type="search" name="q" value="${esc(params.get("q") || "")}" placeholder="What do you want to learn? Try PyCharm, subnetting or RAG" aria-label="Search courses">
         <button class="btn primary">Search</button>
       </form>
-      ${cat.full_access ? "" : `<p class="small" style="margin:12px 0 0">The first module of every course is free. <a href="#/pricing">Plus</a> opens every module, lab and project, and the certificates.</p>`}
+      ${cat.full_access ? "" : `<p class="small" style="margin:12px 0 0">The first module of every course is free.${forSale(` <a href="#/pricing">Plus</a> opens every module, lab and project, and the certificates.`)}</p>`}
     </div>
     ${!filtering && going.length ? `<h2 class="section">Continue learning</h2><div class="course-grid">${going.map(courseCard).join("")}</div>` : ""}
     ${!filtering && cat.tracks.length ? `<h2 class="section">Professional Certificates and Specializations</h2>
@@ -3292,7 +3349,7 @@ async function viewCourse(m) {
       <h2 class="section">There ${c.syllabus.length === 1 ? "is 1 module" : `are ${c.syllabus.length} modules`} in this ${kind}</h2>
       ${c.access && !c.access.full ? `<div class="card row spread access-note"><div><b>The first module is free.</b>
         <div class="small muted">Every module, lab and project, and the certificate, come with ${esc(c.access.plan)} and the plans above it.</div></div>
-        <a class="btn primary" href="#/pricing">See the plans</a></div>` : ""}
+        ${forSale(`<a class="btn primary" href="#/pricing">See the plans</a>`)}</div>` : ""}
       ${c.syllabus.map((mod, i) => moduleBlock(c, mod, i === 0)).join("")}
       ${c.project ? `<div class="card stack project-block"><div class="muted small">Capstone project · ${duration(c.project.minutes)}</div>
         <h3 style="margin:0">🏗️ ${esc(c.project.title)}</h3><div class="small muted">Put the whole ${kind} to work on a project of your own, scored by your instructor against a rubric.</div>
@@ -3499,7 +3556,7 @@ async function viewCoursePlayer(m) {
       <h2 style="margin:0">${esc(item.title)}</h2>
       <p style="margin:0">The first module of every course is free. This ${item.type === "project" ? "capstone project" : "part of the course"}, and every
         module, lab and project after it, and the certificate, come with ${esc(c.access.plan)} and the plans above it.</p>
-      <div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div>${nav}</div>`;
+      ${forSale(`<div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div>`)}${nav}</div>`;
     return;
   }
   await { lesson: playerLesson, lab: playerLab, quiz: playerQuiz, project: playerProject }[item.type](ctx);
@@ -4038,8 +4095,8 @@ const longDate = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "nu
 function offerPlan(message, plan) {
   toast.quiet = message;  // the dialog says it; a toast saying it again is noise
   setTimeout(() => { toast.quiet = null; }, 1500);
-  showDialog(`<h2>${plan in PLAN_NAMES ? `Unlock it with ${PLAN_NAMES[plan]}` : "Unlock more with a plan"}</h2><p>${esc(message)}</p>
-    <p><a class="btn primary" href="#/pricing" data-close>See the plans</a></p>`);
+  showDialog(`<h2>${inApp ? "Not in your plan" : plan in PLAN_NAMES ? `Unlock it with ${PLAN_NAMES[plan]}` : "Unlock more with a plan"}</h2><p>${esc(message)}</p>
+    ${forSale(`<p><a class="btn primary" href="#/pricing" data-close>See the plans</a></p>`)}`);
 }
 
 /* A plan chosen before signing in, to carry on to checkout with afterwards. */
@@ -4055,6 +4112,7 @@ function takeCheckout() {
 
 /* Start paying for a plan, or switch to it from the one paid for. True once the page is on its way to checkout. */
 async function choosePlan(tier, interval, button) {
+  if (inApp) return false;
   if (!state.me) {
     rememberCheckout(tier, interval);
     toast(`Create your account or sign in, then we'll take you to checkout for ${PLAN_NAMES[tier]}.`);
@@ -4100,13 +4158,14 @@ function confirmChange(tier, interval) {
 function planPill() {
   const p = state.me?.plan;
   if (!p?.paywall || state.me.role === "admin") return "";  // admins can use everything
+  if (inApp) return `<span class="plan-pill">${esc(p.name)} plan</span>`;
   return `<a class="plan-pill" href="${p.tier === "free" ? "#/pricing" : "#/billing"}">${esc(p.name)} plan${p.tier === "free" ? " · Upgrade" : ""}</a>`;
 }
 
 const INTENT_HIDDEN = "aiet-upgrade-hidden";
 function upgradeBanner(main) {
   const p = state.me?.plan, intent = p?.intended;
-  if (!intent || !p.payments || /^#\/(pricing|billing)/.test(location.hash)) return;
+  if (inApp || !intent || !p.payments || /^#\/(pricing|billing)/.test(location.hash)) return;
   try { if (+localStorage.getItem(INTENT_HIDDEN) > Date.now()) return; } catch {}
   const el = document.createElement("div");
   el.className = "card upgrade-banner";
@@ -4134,6 +4193,7 @@ const PRICING_FAQ = (d) => [
 ];
 
 async function viewPricing(m) {
+  if (inApp) { location.hash = state.me ? "#/profile" : "#/welcome"; return; }
   const q = new URLSearchParams(m[1] || "");
   if (q.get("checkout") === "cancelled") toast("Checkout cancelled. Nothing has changed.");
   const d = await api("/api/plans");
@@ -4222,6 +4282,7 @@ async function viewPricing(m) {
 /* ------------------------------------------------------------------ billing */
 
 async function viewBilling(m) {
+  if (inApp) { location.hash = "#/profile"; return; }
   const q = new URLSearchParams(m[1] || "");
   const session = q.get("checkout");
   const main = shell("billing", `<h1>Plan and billing</h1><div class="stack" id="billing" style="max-width:720px"><div class="card empty">Loading…</div></div>`);

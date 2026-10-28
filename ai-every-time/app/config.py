@@ -94,6 +94,13 @@ class Settings:
     # How push services can reach whoever runs this server: a mailto: address or an https:// address.
     # Defaults to the AIET_MAIL_FROM address, then an https AIET_PUBLIC_URL. Notifications are off without one.
     push_contact: str = field(default_factory=lambda: os.environ.get("AIET_PUSH_CONTACT", ""))
+    # Notifications for the iPhone app, through Apple's push service: the text of the APNs key (the AuthKey .p8
+    # file, line breaks or "\n"), its key ID, the Apple team's ID, and the app's bundle ID. The app can't turn
+    # notifications on until the first three are set.
+    apns_key: str = field(default_factory=lambda: os.environ.get("AIET_APNS_KEY", ""))
+    apns_key_id: str = field(default_factory=lambda: os.environ.get("AIET_APNS_KEY_ID", "").strip())
+    apns_team_id: str = field(default_factory=lambda: os.environ.get("AIET_APNS_TEAM_ID", "").strip())
+    apns_bundle_id: str = field(default_factory=lambda: os.environ.get("AIET_APNS_BUNDLE_ID", "").strip() or "org.aieverytime.app")
     # AI requests each learner can make in any 24 hours (a chat message counts 1; see app/usage.py). 0: no limit.
     ai_allowance: int = field(default_factory=lambda: _int("AIET_AI_ALLOWANCE", 100))
     # The allowance until a learner confirms their email address (only while email is set up).
