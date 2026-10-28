@@ -1,0 +1,46 @@
+# Builds the iPhone and iPad app (ai-every-time/ios) on one of GitHub's Macs whenever it changes, to check it
+# compiles. The build isn't signed, so it needs no Apple account. Releasing to TestFlight and the App Store is done
+# from Xcode on a Mac, or with Codemagic without one: see ai-every-time/ios/README.md.
+name: iOS app
+
+on:
+  push:
+    paths:
+      - "ai-every-time/ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ai-every-time/ios/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build for iPhone and iPad
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use the newest Xcode on the Mac
+        run: |
+          xcode=$(ls -d /Applications/Xcode_*.app | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -1)
+          echo "Using $xcode"
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - name: Build
+        working-directory: ai-every-time/ios
+        run: |
+          xcodebuild build -quiet \
+            -project AIEveryTime.xcodeproj \
+            -scheme AIEveryTime \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/build" \
+            CODE_SIGNING_ALLOWED=NO
+          echo "Built $(ls -d "$RUNNER_TEMP"/build/Build/Products/Release-iphoneos/*.app)"
