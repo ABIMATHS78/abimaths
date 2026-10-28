@@ -782,7 +782,7 @@ def test_chat_and_other_sites_dont_open_guides(client, paywall, tmp_path, monkey
 
     given = []
 
-    async def reply(persona, user, memories, history, post, *rest):
+    async def reply(persona, user, memories, history, post, *rest, **kw):
         given.append(post["body"])
         yield "Here's the gist."
 

@@ -82,8 +82,9 @@ def test_claude_writes_the_opening_and_it_stays_in_the_conversation(claude, clie
     assert r.text == first and conversation(client, amahle["id"]) == [("assistant", first)]
     asked = claude.streamed
     assert asked["messages"] == [{"role": "user", "content": "(Ada has opened a chat with you.)"}]
-    stable, learner = asked["system"]
+    shared, stable, learner = asked["system"]
     assert stable["cache_control"] == {"type": "ephemeral"} and "Amahlé" in stable["text"]  # the prefix chat caches
+    assert shared["cache_control"] == {"type": "ephemeral"} and "# Every course, by subject" in shared["text"]
     assert "Interests (draw examples from them when it helps): football, cooking" in learner["text"]
     assert "# Start the conversation" in learner["text"] and "Start from their interests" in learner["text"]
     (rec,) = [r for r in records() if r["kind"] == "opening"]
@@ -98,7 +99,7 @@ def test_claude_writes_the_opening_and_it_stays_in_the_conversation(claude, clie
         {"role": "assistant", "content": first},
         {"role": "user", "content": "Arsenal! How do the models work?"},
     ]
-    assert claude.streamed["system"][0] == stable
+    assert claude.streamed["system"][:2] == [shared, stable]  # the same cached prefix as the opening's
 
     # When Claude can't be reached, the companion still starts the chat, from the template.
     claude.answers["stream"] = anthropic.APIConnectionError(request=None)

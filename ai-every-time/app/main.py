@@ -17,8 +17,9 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, courses, db, digest, guides,
-                 insights, learning, legacy, llm, photos, push, reactions, referrals, reminders, staff, usage)
+from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, course_guide, courses, db,
+                 digest, guides, insights, learning, legacy, llm, photos, push, reactions, referrals, reminders, staff,
+                 usage)
 from app import plans
 from app.avatar import render_initials, render_svg
 from app.config import settings
@@ -710,7 +711,9 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
         # Tokens for the reply, and for the memories taken from it, go on this message's record.
         with usage.recording(row):
             parts: list[str] = []
-            async for chunk in llm.stream_reply(persona, user, memories, history, post, reacted, react):
+            async for chunk in llm.stream_reply(persona, user, memories, history, post, reacted, react,
+                                                taught=course_guide.taught(c), access=course_guide.access(user),
+                                                companion_id=companion_id):
                 parts.append(chunk)
                 yield chunk
             reply = reactions.strip("".join(parts)).strip()
@@ -761,7 +764,8 @@ async def opening(companion_id: int, body: OpeningIn, user: dict = User):
         try:
             with usage.recording(row):
                 parts: list[str] = []
-                async for chunk in llm.stream_opening(persona, user, memories, post, c["real_person"], row is not None):
+                async for chunk in llm.stream_opening(persona, user, memories, post, c["real_person"], row is not None,
+                                                      taught=course_guide.taught(c), access=course_guide.access(user)):
                     parts.append(chunk)
                     yield chunk
             text = "".join(parts).strip()

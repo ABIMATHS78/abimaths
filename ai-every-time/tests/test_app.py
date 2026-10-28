@@ -166,11 +166,13 @@ def test_system_prompt_reflects_persona():
 
     system = build_system(Persona.model_validate(persona()), {"display_name": "Ada", "level": "beginner", "goals": "x"},
                           ["Works in finance"], None)
-    stable, learner = system[0]["text"], system[1]["text"]
+    shared, stable, learner = (block["text"] for block in system)
     assert "Zara" in stable and "Ghana" in stable and "Ayekoo!" in stable
     assert "guiding questions" in stable and "Quiz me" in stable
     assert "very warm" in stable and "very casual" in stable
     assert "Works in finance" in learner and "Ada" in learner
+    assert "Zara" not in shared  # the rules and courses every companion shares come first, cached once for all of them
+    assert [("cache_control" in block) for block in system] == [True, True, False]
 
 
 def test_every_setting_reaches_the_system_prompt():

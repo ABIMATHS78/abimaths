@@ -15,7 +15,7 @@ from typing import AsyncIterator, Callable, TypeVar
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
-from app import reactions, usage
+from app import course_guide, reactions, usage
 from app.config import settings
 from app.persona import (
     EMOJI_TEXT,
@@ -70,7 +70,8 @@ def persona_prompt(p: Persona) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacted: str | None = None) -> str:
+def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacted: str | None = None,
+                   access: str = "") -> str:
     parts = [
         "# About this learner",
         f"Name: {learner['display_name']}",
@@ -79,6 +80,8 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacte
         f"Interests (draw examples from them when it helps): {learner['interests']}" if learner.get("interests")
         else "Interests: not shared yet; ask about them when it fits",
     ]
+    if access:
+        parts.append(access)
     if memories:
         parts.append("\n# What you remember about them\n" + "\n".join(f"- {m}" for m in memories))
     if reacted:
@@ -108,13 +111,16 @@ def learner_prompt(learner: dict, memories: list[str], post: dict | None, reacte
 
 
 def build_system(persona: Persona, learner: dict, memories: list[str], post: dict | None,
-                 reacted: str | None = None) -> list[dict]:
-    """The system prompt for chat. Stable prefix (rules, persona, how to react) first so it can be cached;
-    volatile learner data after."""
+                 reacted: str | None = None, taught: str = "", access: str = "") -> list[dict]:
+    """The system prompt for chat, most stable first so as much as possible is cached: the rules and the course
+    catalogue (the same for every companion), then the persona, the courses it teaches (course_guide.taught) and how
+    to react, then the learner, with what their plan opens (course_guide.access)."""
     return [
-        {"type": "text", "text": PLATFORM_RULES + "\n\n" + persona_prompt(persona) + "\n\n" + reactions.RULES,
+        {"type": "text", "text": PLATFORM_RULES + "\n\n" + course_guide.RULES + "\n\n" + course_guide.index(),
          "cache_control": {"type": "ephemeral"}},
-        {"type": "text", "text": learner_prompt(learner, memories, post, reacted)},
+        {"type": "text", "text": "\n\n".join(filter(None, [persona_prompt(persona), taught, reactions.RULES])),
+         "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": learner_prompt(learner, memories, post, reacted, access)},
     ]
 
 
@@ -217,15 +223,18 @@ async def ask(schema: type[T], effort: str, **request) -> T | None:
 
 async def stream_reply(
     persona: Persona, learner: dict, memories: list[str], history: list[dict], post: dict | None,
-    reacted: str | None = None, react: Callable[[str], None] = lambda emoji: None,
+    reacted: str | None = None, react: Callable[[str], None] = lambda emoji: None, *, taught: str = "",
+    access: str = "", companion_id: int | None = None,
 ) -> AsyncIterator[str]:
     """Yield the companion's reply as text chunks. `history` ends with the learner's message. `reacted` is the
     learner's reaction to the companion's last message, if any; the companion's own reaction to the learner's
-    message, if it makes one, goes to `react` before the reply starts."""
+    message, if it makes one, goes to `react` before the reply starts. `taught` and `access` are what the
+    companion knows about its courses and the learner's plan (app.course_guide); demo mode links a path for the
+    companion `companion_id` to design."""
     if settings.offline:
         if emoji := reactions.offline(history[-1]["content"]):
             react(emoji)
-        for chunk in _offline_reply(persona, learner, history[-1]["content"], post):
+        for chunk in _offline_reply(persona, learner, history[-1]["content"], post, companion_id):
             yield chunk
         return
 
@@ -233,7 +242,7 @@ async def stream_reply(
         async with client().beta.messages.stream(
             model=settings.model,
             max_tokens=8000,
-            system=build_system(persona, learner, memories, post, reacted),
+            system=build_system(persona, learner, memories, post, reacted, taught, access),
             messages=history,
             output_config={"effort": "medium"},
             betas=[FALLBACK_BETA],
@@ -264,7 +273,29 @@ async def stream_reply(
         yield "I couldn't connect just now. Please try again in a moment."
 
 
-def _offline_reply(persona: Persona, learner: dict, message: str, post: dict | None) -> list[str]:
+# A learner asking what courses there are, which demo mode answers from the catalogue.
+COURSE_QUESTION = re.compile(r"\b(?:courses?|class(?:es)?|certificates?|certifications?|speciali[sz]ations?|"
+                             r"programmes?|programs?|tracks?)\b", re.I)
+
+
+def _offline_courses(persona: Persona, learner: dict, message: str, companion_id: int | None) -> str:
+    """Demo mode's answer to a question about courses: the ones that match it, or a path to design on it."""
+    found = course_guide.search(message)
+    if found:
+        listed = "; ".join(f"[{c.title}](#/course/{c.slug}) ({c.level}, about {c.hours:g} h)" for c in found)
+        return (f"Hi {learner['display_name']}, it's {persona.name}. These courses fit what you asked: {listed}. "
+                "(Demo mode: set ANTHROPIC_API_KEY for real answers.)")
+    words = course_guide.topic(message) or "your-topic"
+    link = f"#/learn?design={words}" + (f"&with={companion_id}" if companion_id else "")
+    return (f"Hi {learner['display_name']}, it's {persona.name}. There's no course on that yet, but I can design a "
+            f"learning path on it for you: [Design a path on {words.replace('-', ' ')} with me]({link}). "
+            "(Demo mode: set ANTHROPIC_API_KEY for real answers.)")
+
+
+def _offline_reply(persona: Persona, learner: dict, message: str, post: dict | None,
+                   companion_id: int | None = None) -> list[str]:
+    if not post and COURSE_QUESTION.search(message):
+        return [w + " " for w in _offline_courses(persona, learner, message, companion_id).split(" ")]
     ws = persona.writing_style
     topic = post["title"] if post else (persona.expertise[0] if persona.expertise else "AI")
     text = (
@@ -318,13 +349,14 @@ def opening_template(persona: Persona, learner: dict, real_person: bool = False,
 
 
 async def stream_opening(persona: Persona, learner: dict, memories: list[str], post: dict | None,
-                         real_person: bool = False, use_ai: bool = True) -> AsyncIterator[str]:
+                         real_person: bool = False, use_ai: bool = True, *, taught: str = "",
+                         access: str = "") -> AsyncIterator[str]:
     """Yield the companion's first message in a chat the learner hasn't started, as text chunks: written by Claude
     from the learner's interests, or from the template when Claude isn't to be used or can't be reached."""
     if settings.offline or not use_ai:
         yield opening_template(persona, learner, real_person, post)
         return
-    system = build_system(persona, learner, memories, None)
+    system = build_system(persona, learner, memories, None, taught=taught, access=access)
     # After the cached part of the system prompt, which chat shares.
     system[-1] = system[-1] | {"text": system[-1]["text"] + "\n\n" + opening_prompt(learner, post)}
     said = False
