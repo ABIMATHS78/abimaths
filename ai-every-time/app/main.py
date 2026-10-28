@@ -548,7 +548,25 @@ def get_post(post_id: int, request: Request, user: dict = User):
         if not access["full"]:
             post |= {"body": billing.preview(post["body"]), "locked": True, "plan_needed": plans.lowest_with("guides").slug}
         post["guides"] = access
+        if offered := guides.downloads(post):  # listed even when locked, to show what reading it in full brings
+            post["downloads"] = offered
     return post
+
+
+@app.get("/api/posts/{post_id}/downloads/{name}")
+def guide_download(post_id: int, name: str, request: Request, user: dict = User):
+    """One of a written guide's downloads, for learners who can read the guide in full."""
+    post = _visible_post(post_id, user["id"])
+    item = guides.download(post, name)
+    if item is None:
+        raise HTTPException(404, "Download not found")
+    # Like opening the guide: from the app it can use up a free guide, from a link on another site it can't.
+    ours = request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
+    if not billing.guide_access(user, post, record=ours)["full"]:
+        raise billing.locked("guides")
+    return Response(item.data, media_type=item.media_type, headers={
+        "Content-Disposition": f'attachment; filename="{item.name}"', "Cache-Control": "private, no-cache",
+        "X-Content-Type-Options": "nosniff"})
 
 
 @app.get("/api/guides")

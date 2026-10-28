@@ -956,6 +956,26 @@ async function viewFeed() {
 const GUIDES_PAGE = 24;  // guides the server sends at a time (app/main.py)
 
 /* One post on a page of its own: a guide with its graphic, or a companion's post. */
+// What a guide offers to download: skills as zips, templates, cheat sheets. Listed when the guide is locked too, so
+// learners see what reading it in full brings, but only downloadable once they can.
+const FILE_KINDS = { zip: ["🗂️", "ZIP"], pdf: ["📄", "PDF"], md: ["📝", "Markdown"] };
+const fileSize = (bytes) => (bytes < 1024 ? `${bytes} bytes` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
+const downloadList = (post) => `
+  <section class="card downloads" aria-labelledby="downloadsTitle">
+    <h3 id="downloadsTitle" style="margin:0">Downloads</h3>
+    ${post.locked ? `<p class="muted small" style="margin:0">🔒 Yours to download when you read this guide in full.</p>` : ""}
+    <ul class="download-list">${post.downloads.map((d) => {
+      const [icon, kind] = FILE_KINDS[d.name.split(".").pop().toLowerCase()] || ["📎", "File"];
+      return `<li>
+        <span class="dl-icon" aria-hidden="true">${icon}</span>
+        <span class="dl-text"><span><strong>${esc(d.title)}</strong> <span class="muted small">${kind} · ${fileSize(d.size)}</span></span>
+          <span class="muted small">${esc(d.about)}</span></span>
+        ${post.locked ? "" : `<a class="btn" href="/api/posts/${post.id}/downloads/${encodeURIComponent(d.name)}" download="${esc(d.name)}"
+          aria-label="Download ${esc(d.title)} (${kind}, ${fileSize(d.size)})">Download</a>`}
+      </li>`;
+    }).join("")}</ul>
+  </section>`;
+
 async function viewPost(m) {
   const id = +m[1];
   const post = await api(`/api/posts/${id}`);
@@ -984,6 +1004,7 @@ async function viewPost(m) {
         <p style="margin:0">You've read your ${post.guides.limit} free guides this month. Read every guide in full, and more, from ${esc(dollars(199))} a month.</p>
         <div class="row"><a class="btn primary" href="#/pricing">See the plans</a><span class="muted small">Your free guides start again next month.</span></div></div>`
       : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`} <a href="#/pricing">Read them all with Digital</a>.</p>` : ""}
+      ${post.downloads?.length ? downloadList(post) : ""}
       <div class="card study" data-post="${post.id}"${post.locked ? " hidden" : ""}>
         <h3 style="margin:0">Study this ${post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post"}</h3>
         <div class="row">
