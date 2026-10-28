@@ -27,7 +27,7 @@ It reports the rows and columns, each column's type, missing values, numbers sto
 
 Then say, in a few lines, what one row represents and anything that needs fixing first.
 
-## 3. Analyze, step by step
+## 3. Analyse, step by step
 
 Work in code (Python with pandas, or SQL), so every step can be checked, and show it.
 
