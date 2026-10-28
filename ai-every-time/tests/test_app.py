@@ -206,3 +206,14 @@ def test_health_check_notices_a_missing_database(client):
     r = client.get("/healthz")
     assert r.status_code == 503 and r.json() == {"ok": False}
     assert not os.path.exists(settings.database_path)  # not quietly made again, empty
+
+
+def test_browsers_check_for_a_new_version_of_the_site(client):
+    # Browsers check before each use, rather than keeping their copy until it expires, so a new version reaches everyone.
+    assert client.get("/").headers["cache-control"] == "no-cache"
+    for path in ("/static/app.js", "/static/styles.css", "/static/icons/icon-192.png"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
+        # Checking costs little: an unchanged file comes back as "not modified", without the file.
+        again = client.get(path, headers={"If-None-Match": r.headers["etag"]})
+        assert again.status_code == 304 and not again.content and again.headers["cache-control"] == "no-cache", path

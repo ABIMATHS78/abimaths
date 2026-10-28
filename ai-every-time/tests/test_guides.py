@@ -4,10 +4,12 @@ when the file changes, and browsed in the feed, the library and on a page of the
 import gzip
 import json
 import unicodedata
+from pathlib import Path
 
 import pytest
 
 from tests.test_app import signup
+from tests.test_billing import paywall, pays_for  # noqa: F401  (paywall is a fixture)
 
 
 def two_starters():
@@ -36,12 +38,15 @@ def write(path, guides):
         json.dump({"since": "2026-09-01", "source": "test.csv", "guides": guides}, f)
 
 
-def load(monkeypatch, path, images=None):
+def load(monkeypatch, path, images=None, written=None):
+    """Loads the guides in the file at `path`, with only the corrected graphics in `images` and the guides written
+    here in `written` (none unless given)."""
     from app import guides
     from app.config import settings
 
     monkeypatch.setattr(settings, "guides", str(path))
     monkeypatch.setattr(guides, "IMAGES", images or path.parent / "no-corrected-graphics")
+    monkeypatch.setattr(guides, "WRITTEN", written or path.parent / "no-written-guides")
     return guides.seed()
 
 
@@ -215,3 +220,184 @@ def test_where_the_guides_come_from(monkeypatch, value):
 
     monkeypatch.setattr(settings, "guides", value)
     assert guides.path() == (None if value == "0" else guides.GUIDES_PATH)
+
+
+# ------------------------------------------------------------------ guides written here, and their downloads
+
+APP_DIR = Path(__file__).resolve().parent.parent / "app"
+KIT = "claude-skills-starter-kit"  # Mojeed Abisiga's guide to Claude skills, with skills to download
+
+
+def load_the_kit(client, tmp_path, monkeypatch) -> tuple[int, int]:
+    """Loads the guides written here, the starter kit among them, beside one from the site, and signs a learner up:
+    the kit's id and the other guide's."""
+    from app import guides
+
+    a, _ = two_starters()
+    path = tmp_path / "guides.json.gz"
+    write(path, [guide("61", a.slug, "2026-09-01T10:00:00Z")])
+    load(monkeypatch, path, images=guides.IMAGES, written=APP_DIR / "guide_data")
+    signup(client)
+    listed = {g["title"]: g["id"] for g in client.get("/api/guides").json()}
+    kit = next(i for t, i in listed.items() if t.startswith("The Claude Skills Starter Kit"))
+    return kit, listed["Guide 61"]
+
+
+def written_guide(folder, name="a-written-guide", **meta):
+    """A small guide written here, in folder/name, with a file to download."""
+    d = folder / name
+    (d / "downloads").mkdir(parents=True)
+    (d / "downloads" / "notes.txt").write_text("Some notes.")
+    (d / "guide.md").write_text("## Start\n\nThe text.\n")
+    (d / "guide.json").write_text(json.dumps({
+        "companion": "nobody", "title": "A written guide", "summary": "A summary.", "kind": "cheat_sheet",
+        "level": "intermediate", "topic": "Prompt Engineering", "published": "2026-10-01T08:00:00Z",
+        "downloads": [{"file": "notes.txt", "title": "Notes", "about": "Some notes."}]} | meta))
+    return d
+
+
+def test_guides_written_here_load_with_the_others(client, tmp_path, monkeypatch):
+    kit, other = load_the_kit(client, tmp_path, monkeypatch)
+    post = client.get(f"/api/posts/{kit}").json()
+    assert post["companion_id"] == companion_id(client, "mojeed-abisiga")
+    assert (post["kind"], post["level"], post["topic"]) == ("tutorial", "beginner", "AI Tools & Tutorials")
+    assert post["created_at"] == "2026-10-28T09:00:00+00:00" and post["minutes"] >= 10
+    assert post["graphic"] == f"/static/guides/{KIT}.webp" and client.get(post["graphic"]).status_code == 200
+    assert post["body"].startswith("## Teach Claude a job once")
+    # What it offers to download, in its own order, each with its size: listed on its page.
+    names = [d["name"] for d in post["downloads"]]
+    assert names[0] == f"{KIT}.zip" and "learn-anything.zip" in names and names[-1] == "claude-skills-cheat-sheet.pdf"
+    assert len(names) == 13 and all(d["title"] and d["about"] and d["size"] > 0 for d in post["downloads"])
+    # The guides from the site offer none.
+    assert "downloads" not in client.get(f"/api/posts/{other}").json()
+    assert client.get(f"/api/posts/{other}/downloads/{KIT}.zip").status_code == 404
+
+
+def test_a_guide_sends_its_downloads(client, tmp_path, monkeypatch):
+    import io
+    import stat
+    import zipfile
+
+    kit, _ = load_the_kit(client, tmp_path, monkeypatch)
+    url = f"/api/posts/{kit}/downloads"
+    skills = APP_DIR / "guide_data" / KIT / "downloads" / "skills"
+    # A skill is a zip with its folder at the top, the way Claude takes skills.
+    r = client.get(f"{url}/learn-anything.zip")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
+    assert r.headers["content-disposition"] == 'attachment; filename="learn-anything.zip"'
+    z = zipfile.ZipFile(io.BytesIO(r.content))
+    assert z.namelist() == ["learn-anything/SKILL.md"]
+    assert z.read("learn-anything/SKILL.md") == (skills / "learn-anything" / "SKILL.md").read_bytes()
+    # All ten: each skill's folder at the top, ready to unzip into ~/.claude/skills/, with scripts still runnable.
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"{url}/{KIT}.zip").content))
+    tops = {n.split("/")[0] for n in z.namelist()}
+    assert tops == {p.name for p in skills.iterdir() if p.is_dir()} and len(tops) == 10
+    assert all(f"{t}/SKILL.md" in z.namelist() for t in tops)
+    assert z.getinfo("check-the-numbers/scripts/profile_data.py").external_attr >> 16 & stat.S_IXUSR
+    assert not any("__pycache__" in n or n.endswith(".pyc") for n in z.namelist())
+    # A file goes as it is.
+    r = client.get(f"{url}/SKILL-template.md")
+    assert r.headers["content-type"].startswith("text/markdown") and r.text.startswith("---\nname: your-skill-name")
+    r = client.get(f"{url}/claude-skills-cheat-sheet.pdf")
+    assert r.headers["content-type"] == "application/pdf" and r.content.startswith(b"%PDF")
+    # Only what the guide offers: not the guide's own files, nor what's inside a zip.
+    for name in ("guide.json", "guide.md", "SKILL.md", "skills.zip", "..%2Fguide.json"):
+        assert client.get(f"{url}/{name}").status_code == 404, name
+
+
+def test_downloads_come_with_reading_the_guide_in_full(client, paywall, tmp_path, monkeypatch):  # noqa: F811
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "free_guides", 1)
+    kit, other = load_the_kit(client, tmp_path, monkeypatch)
+    client.get(f"/api/posts/{other}")  # this month's free guide goes on another one
+    locked = client.get(f"/api/posts/{kit}").json()
+    assert locked["locked"] is True and len(locked["downloads"]) == 13  # listed, to show what reading it brings
+    r = client.get(f"/api/posts/{kit}/downloads/learn-anything.zip")
+    assert r.status_code == 402 and r.headers["X-Plan-Needed"] == "digital"
+    pays_for(client, "digital")
+    assert client.get(f"/api/posts/{kit}/downloads/learn-anything.zip").status_code == 200
+
+
+def test_a_link_on_another_site_cant_spend_a_free_guide_on_a_download(client, paywall, tmp_path, monkeypatch):  # noqa: F811
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "free_guides", 1)
+    a, _ = two_starters()
+    path = tmp_path / "guides.json.gz"
+    write(path, [])
+    written_guide(tmp_path / "written", companion=a.slug)
+    load(monkeypatch, path, written=tmp_path / "written")
+    signup(client)
+    gid = client.get("/api/guides").json()[0]["id"]
+    away = client.get(f"/api/posts/{gid}/downloads/notes.txt", headers={"Sec-Fetch-Site": "cross-site"})
+    assert away.status_code == 402
+    assert client.get("/api/billing").json()["guides"] == {"limit": 1, "left": 1}
+    r = client.get(f"/api/posts/{gid}/downloads/notes.txt")  # from the app itself, it opens the guide
+    assert r.status_code == 200 and r.text == "Some notes." and r.headers["content-type"].startswith("text/plain")
+    assert client.get("/api/billing").json()["guides"] == {"limit": 1, "left": 0}
+
+
+def test_changing_a_written_guide_updates_it_in_place(client, tmp_path, monkeypatch):
+    from app import guides
+
+    a, _ = two_starters()
+    path = tmp_path / "guides.json.gz"
+    write(path, [])
+    folder = written_guide(tmp_path / "written", companion=a.slug)
+    assert load(monkeypatch, path, written=tmp_path / "written") == 1
+    signup(client)
+    gid = client.get("/api/guides").json()[0]["id"]
+    assert guides.seed() is None  # nothing changed
+    (folder / "guide.md").write_text("## New text\n\nChanged.\n")
+    assert guides.seed() == 1
+    assert client.get(f"/api/posts/{gid}").json()["body"] == "## New text\n\nChanged."  # the same post, new text
+
+
+@pytest.mark.parametrize("change, reason", [
+    ({"kind": "essay"}, "kind must be one of"),
+    ({"published": "2026-10-01T08:00:00"}, "needs a time zone"),
+    ({"downloads": [{"file": "missing.txt", "title": "Missing", "about": "Isn't there."}]}, "nothing at downloads/missing.txt"),
+    ({"downloads": [{"file": "../guide.json", "title": "Escape", "about": "Above downloads/."}]}, "should match pattern"),
+    ({"downloads": [{"file": "notes.txt", "title": "A", "about": "A."}, {"file": "notes.txt", "title": "B", "about": "B."}]},
+     "two downloads have the same name"),
+    ({"surprise": True}, "Extra inputs are not permitted"),
+])
+def test_a_written_guide_that_doesnt_fit_says_why(tmp_path, change, reason):
+    from app import guides
+
+    written_guide(tmp_path, **change)
+    with pytest.raises(ValueError) as e:
+        guides.written(tmp_path)
+    assert "guide_data/a-written-guide" in str(e.value) and reason in str(e.value)
+
+
+def test_a_written_guide_is_named_with_letters(tmp_path):
+    from app import guides
+
+    written_guide(tmp_path, name="12345")  # the site's guides have numbers
+    with pytest.raises(ValueError, match="name the folder"):
+        guides.written(tmp_path)
+
+
+def test_every_skill_in_the_kit_follows_the_rules(tmp_path):
+    import importlib.util
+    import shutil
+
+    skills = APP_DIR / "guide_data" / KIT / "downloads" / "skills"
+    spec = importlib.util.spec_from_file_location("check_skill", skills / "skill-maker" / "scripts" / "check_skill.py")
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+    folders = sorted(p for p in skills.iterdir() if p.is_dir())
+    assert len(folders) == 10
+    for f in folders:
+        assert checker.check(f) == [], f.name
+    # And the checker that skill-maker brings catches the usual mistakes.
+    bad = tmp_path / "Weekly_Report"
+    shutil.copytree(skills / "learn-anything", bad)
+    (bad / "SKILL.md").write_text("---\nname: claude-helper\ndescription: Does this: and that " + "x" * 200 + "\n---\n\nSee "
+                                  "`scripts/missing.py`.\n")
+    found = " | ".join(checker.check(bad))
+    for problem in ('must not contain "claude"', "make them match", "colon followed by a space", "the Claude apps take 200",
+                    "scripts/missing.py"):
+        assert problem in found, problem
