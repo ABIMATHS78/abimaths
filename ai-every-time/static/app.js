@@ -457,26 +457,71 @@ async function router() {
 }
 window.addEventListener("hashchange", router);
 
+/* The frame around every page once signed in. Wide screens get the sidebar. Tablets get a slim rail of each page's
+   icon over a short name. Phones get a slim bar at the top, with the bell and a menu that slides in with every page,
+   and tabs for the main pages at the bottom. Each item carries its full name, read out everywhere and shown where it
+   fits, and a short one for the rail and the tabs. */
+const MENU_ICON = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const CLOSE_ICON = `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`;
+const navItem = (icon, name, short = name) =>
+  `<span class="ni" aria-hidden="true">${icon}</span><span class="nl">${name}</span><span class="ns" aria-hidden="true">${short}</span>`;
+
+/* The phone's menu covers the page, which can't be used until it closes: by its button, the shade beside it, Escape,
+   or a link in it. Turning the phone to a wider layout closes it too. */
+function setMenu(open) {
+  document.documentElement.classList.toggle("menu-open", open);
+  $("#menuBtn")?.setAttribute("aria-expanded", String(open));
+  const scrim = $("#scrim");
+  if (scrim) scrim.hidden = !open;
+  for (const el of $$(".topbar, .main, .tabbar")) el.inert = open;
+}
+const menuOpen = () => document.documentElement.classList.contains("menu-open");
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && menuOpen()) { setMenu(false); $("#menuBtn")?.focus(); }
+});
+matchMedia("(max-width: 640px)").addEventListener("change", (e) => { if (!e.matches && menuOpen()) setMenu(false); });
+
 function shell(active, inner) {
-  const nav = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["courses", "🎓", "Courses"], ["learn", "📚", "Learn"], ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"],
-    ["companions", "🌍", "Companions"], ["referral", "🎁", "Invite friends"], ["profile", "👤", "Profile"]];
-  if (state.me?.role && state.me.role !== "learner") nav.push(["staff", "🛡️", "Staff"]);
   const primary = state.me?.primary_companion_id;
+  // Each page: its key, icon, name, the short name where space is tight, and its link if not #/key.
+  const pages = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["courses", "🎓", "Courses"], ["learn", "📚", "Learn"],
+    ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"], ["companions", "🌍", "Companions"],
+    ["referral", "🎁", "Invite friends", "Invite"], ["profile", "👤", "Profile"]];
+  if (state.me?.role && state.me.role !== "learner") pages.push(["staff", "🛡️", "Staff"]);
+  if (primary) pages.push(["mine", "💬", "My companion", "Chat", `#/c/${primary}`]);
+  pages.push(["studio", "✨", "Design a companion", "Design", "#/studio/new"]);
+  const link = ([key, icon, name, short, href = `#/${key}`]) =>
+    `<a href="${href}"${active === key ? ` class="active" aria-current="page"` : ""}>${navItem(icon, name, short)}</a>`;
+  const tabs = ["feed", "guides", "courses", "learn", primary ? "mine" : "companions"].map((k) => pages.find((p) => p[0] === k));
+  const bell = `<a href="#/feed" class="bell" data-bell hidden><span class="bell-i" aria-hidden="true">🔔</span><span class="bell-t"></span><span class="bell-n" aria-hidden="true"></span></a>`;
+  const name = state.me.display_name || "";
   app.innerHTML = `
     <div class="shell">
-      <aside class="side">
-        ${logo()}
-        <nav class="nav">
-          ${nav.map(([k, i, t]) => `<a href="#/${k}" class="${active === k ? "active" : ""}">${i} ${t}</a>`).join("")}
-          ${primary ? `<a href="#/c/${primary}" class="${active === "mine" ? "active" : ""}">💬 My companion</a>` : ""}
-          <a href="#/studio/new" class="${active === "studio" ? "active" : ""}">✨ Design a companion</a>
-          <button type="button" class="install" id="installBtn" ${installPrompt ? "" : "hidden"}>📲 Install the app</button>
+      <header class="topbar">
+        <a class="home" href="#/feed">${logo(30)}</a>
+        ${bell}
+        <button type="button" class="icon-btn" id="menuBtn" aria-label="Menu" aria-controls="side" aria-expanded="false">${MENU_ICON}</button>
+      </header>
+      <aside class="side" id="side">
+        <a class="home" href="#/feed">${logo()}</a>
+        <button type="button" class="icon-btn side-close" id="menuClose" aria-label="Close the menu">${CLOSE_ICON}</button>
+        <nav class="nav" aria-label="Pages">
+          ${pages.map(link).join("")}
+          <button type="button" class="install" id="installBtn" ${installPrompt ? "" : "hidden"}>${navItem("📲", "Install the app", "Install")}</button>
         </nav>
-        <a href="#/feed" class="bell" id="bell" title="Reminders" hidden>🔔 <span></span></a>
-        <div class="me"><div><b>${esc(state.me.display_name)}</b><div class="muted small">${esc(state.me.level)}</div>${planPill()}</div></div>
+        ${bell}
+        <div class="me" title="${esc(name)}"><span class="me-av" aria-hidden="true">${esc([...name.trim()][0]?.toUpperCase() || "?")}</span>
+          <div class="me-text"><b>${esc(name)}</b><div class="muted small">${esc(state.me.level)}</div>${planPill()}</div></div>
       </aside>
+      <div class="scrim" id="scrim" hidden></div>
       <main class="main">${inner}</main>
+      <nav class="tabbar" aria-label="Main pages">${tabs.map(link).join("")}</nav>
     </div>`;
+  setMenu(false);
+  $("#menuBtn").addEventListener("click", () => { setMenu(true); $("#menuClose").focus(); });
+  $("#menuClose").addEventListener("click", () => { setMenu(false); $("#menuBtn").focus(); });
+  $("#scrim").addEventListener("click", () => setMenu(false));
+  $("#side").addEventListener("click", (e) => { if (e.target.closest("a")) setMenu(false); });
   $("#installBtn").addEventListener("click", async () => {
     if (!installPrompt) return;
     installPrompt.prompt();
@@ -489,15 +534,19 @@ function shell(active, inner) {
   return $(".main");
 }
 
-/* The sidebar bell shows how many reminders are waiting. */
+/* The bell shows how many reminders are waiting: in words in the sidebar, as a badge on the rail and the phone's bar. */
 async function refreshBell() {
-  const bell = $("#bell");
-  if (!bell) return;
+  const bells = $$("[data-bell]");
+  if (!bells.length) return;
   try {
     const rem = await fetch("/api/reminders", { credentials: "same-origin" }).then((r) => (r.ok ? r.json() : []));
-    if (!document.body.contains(bell)) return;
-    bell.hidden = !rem.length;
-    $("span", bell).textContent = `${rem.length} reminder${rem.length === 1 ? "" : "s"}`;
+    const words = `${rem.length} reminder${rem.length === 1 ? "" : "s"}`;
+    for (const bell of bells.filter((b) => document.body.contains(b))) {
+      bell.hidden = !rem.length;
+      bell.title = words;
+      $(".bell-t", bell).textContent = words;
+      $(".bell-n", bell).textContent = rem.length > 9 ? "9+" : String(rem.length);
+    }
   } catch {}
 }
 
