@@ -820,12 +820,22 @@ def forget(memory_id: int, user: dict = User):
 
 # ---------------------------------------------------------------------- static
 
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+class Static(StaticFiles):
+    """The app's files, which browsers check for a newer version of each time they use them (a quick "not modified"
+    when there isn't one), so a new version of the site reaches everyone at their next visit."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", Static(directory=STATIC), name="static")
 
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(STATIC / "index.html")
+    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/healthz", include_in_schema=False)
