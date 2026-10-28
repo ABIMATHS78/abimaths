@@ -982,10 +982,12 @@ const downloadList = (post, heading = true) => `
 const skillsOf = (post) => post.downloads.filter((d) => d.command);
 const downloadUrl = (post, d) => `/api/posts/${post.id}/downloads/${encodeURIComponent(d.name)}`;
 const jobName = (post, id) => post.download_groups.find((g) => g.id === id)?.name || "";
-const skillCard = (post, d, i, showJob = true) => `
+const skillCard = (post, d, i, showJob = true) => {
+  const tag = d.tag || (showJob ? jobName(post, d.group) : "");
+  return `
   <article class="lib-card">
     <div class="lib-card-top"><span class="lib-num">${String(i + 1).padStart(2, "0")}</span>
-      ${d.tag || showJob ? `<span class="lib-tag">${esc(d.tag || jobName(post, d.group))}</span>` : ""}</div>
+      ${tag ? `<span class="lib-tag" title="${esc(tag)}">${esc(tag)}</span>` : ""}</div>
     <h4 class="lib-title">${esc(d.title)}</h4>
     <code class="lib-cmd">${esc(d.command)}</code>
     <p class="lib-about">${esc(d.about)}</p>
@@ -993,6 +995,7 @@ const skillCard = (post, d, i, showJob = true) => `
       : `<a class="btn primary lib-dl" href="${downloadUrl(post, d)}" download="${esc(d.name)}"
           aria-label="Download ${esc(d.title)} (${fileSize(d.size)})">Download</a>`}
   </article>`;
+};
 const libraryLocked = (post) => post.locked ? `<div class="card stack paywall-card"><strong>🔒 These skills come with reading this guide in full.</strong>
   <div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div></div>` : "";
 const libraryInstall = (post) => {

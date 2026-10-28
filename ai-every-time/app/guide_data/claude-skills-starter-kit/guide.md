@@ -119,7 +119,7 @@ Interviews you about a task you repeat, writes the `SKILL.md`, checks it against
 
 ## A library of skills for every job
 
-At the end of this guide is the **Skill library**: the ten essentials above, and six skills for each of twenty jobs. The jobs run from organic and paid marketing, sales and fundraising to legal and compliance, the C-suite, operations, finance and HR. They also include research, product, writing, design, healthcare, education, students, data and building software with AI.
+At the end of this guide is the **Skill library**: the ten essentials above, and six skills for each of twenty jobs. The jobs run from organic and paid marketing, sales and fundraising to legal and compliance, the C-suite, operations, customer support, finance, HR and recruiting. They also include research, product, writing, design, healthcare, education, students, data and building software with AI.
 
 - **Browse by job** to see one job's skills, or **search** them all for what you need.
 - Every skill downloads as its own zip, ready to upload in Customize → Skills, and each job has one zip with all its skills.

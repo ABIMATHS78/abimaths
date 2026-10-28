@@ -439,6 +439,25 @@ def test_every_skill_in_the_kit_follows_the_rules(tmp_path):
         assert problem in found, problem
 
 
+def test_the_accessibility_check_measures_contrast_as_wcag_does():
+    import subprocess
+    import sys
+
+    script = DOWNLOADS / "library" / "design-brand" / "accessibility-check" / "scripts" / "contrast.py"
+
+    def run(*colours):
+        return subprocess.run([sys.executable, "-I", script, *colours], capture_output=True, text=True)
+
+    out = run("#000", "#ffffff").stdout
+    assert out.startswith("#000 on #ffffff: 21.00:1") and "fail" not in out
+    # #767676 is the lightest grey that passes AA for normal text on white; #777 just misses, and isn't rounded up.
+    passes, misses = run("#767676", "#fff").stdout, run("777", "FFF").stdout
+    assert "4.54:1" in passes and "normal text: AA pass, AAA fail" in passes
+    assert "4.47:1" in misses and "normal text: AA fail" in misses and "large text: AA pass" in misses
+    assert run("#fff", "#767676").stdout.split(": ", 1)[1] == passes.split(": ", 1)[1]  # either order
+    assert run("#12345", "#fff").returncode == 2 and run("#fff").returncode == 2
+
+
 @pytest.mark.parametrize("mistake, reason", [
     ("empty job", "downloads/library/sales has no skills"),
     ("misnamed skill", "is named 'something-else'"),
