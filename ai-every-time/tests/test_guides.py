@@ -422,7 +422,9 @@ def test_every_skill_in_the_kit_follows_the_rules(tmp_path):
     folders = sorted(p for p in skills.iterdir() if p.is_dir())
     assert len(folders) == 10
     library = sorted(p for job in (DOWNLOADS / "library").iterdir() for p in job.iterdir() if p.is_dir())
-    assert len(library) == sum(len(s) for s in library_on_disk().values()) >= 100
+    jobs = library_on_disk()
+    assert len(jobs) == 20 and all(len(s) == 6 for s in jobs.values())  # six skills for each of the 20 jobs
+    assert len(library) == sum(len(s) for s in jobs.values()) == 120
     assert len({p.name for p in folders + library}) == len(folders) + len(library)  # every name its own command
     for f in folders + library:
         assert checker.check(f) == [], f"{f.parent.name}/{f.name}"
