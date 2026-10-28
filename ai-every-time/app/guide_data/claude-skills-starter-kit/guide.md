@@ -2,13 +2,13 @@
 
 Most people use Claude the same way every day: they paste in the same long instructions, explain the same format again, and correct the same mistakes. A **skill** ends that. It is a small folder of instructions, and sometimes scripts and templates, that teaches Claude one job the way you want it done. You install it once. From then on, Claude picks it up whenever a request needs it.
 
-This guide gives you a starter kit of ten skills to download, written for AI Every Time. It shows you how to install them in a few minutes and which skills are worth having for eighteen kinds of work. It ends with how to make your own, and how to stay safe while you do.
+This guide gives you a starter kit of ten skills to download, written for AI Every Time. It shows you how to install them in a few minutes and which skills are worth having for twenty different roles. It ends with how to make your own, and how to stay safe while you do.
 
 ## What a skill is
 
 Every skill is a folder with one required file, `SKILL.md`. Its first lines hold two pieces of information:
 
-- a **name**, which is also the command you can type, such as `/clarify-first`;
+- a **name**, which is also the command you can type, such as `/learn-anything`;
 - a **description** of what the skill does and when to use it.
 
 Below that come the instructions: steps, rules, examples and checklists. A skill can also carry extra files: reference notes, templates to fill in, and scripts for steps that must come out exactly right every time.
@@ -51,62 +51,64 @@ On Team plans, skills are on by default. On Enterprise plans, an owner must firs
 
 ### In Claude Code
 
-- For every project on your computer, unzip the skill into `~/.claude/skills/`, so you end up with `~/.claude/skills/clarify-first/SKILL.md`.
+- For every project on your computer, unzip the skill into `~/.claude/skills/`, so you end up with `~/.claude/skills/learn-anything/SKILL.md`.
 - For one project, and everyone who works on it, unzip it into the project's `.claude/skills/` folder and commit it.
-- Run it by typing a slash and its name, such as `/clarify-first`, or simply ask and let Claude choose. `/skills` lists what's installed.
+- Run it by typing a slash and its name, such as `/learn-anything`, or simply ask and let Claude choose. `/skills` lists what's installed.
 
 ### Using a skill
 
-You rarely need to do anything special. Claude reads the descriptions of your skills and uses one by itself when your request matches. To be sure, name it: *"Use my analyze-data skill to check these sales figures."* In Claude Code and in the Microsoft 365 add-ins, you can also type `/` and pick a skill from the list.
+You rarely need to do anything special. Claude reads the descriptions of your skills and uses one by itself when your request matches. To be sure, name it: *"Use my check-the-numbers skill on these sales figures."* In Claude Code and in the Microsoft 365 add-ins, you can also type `/` and pick a skill from the list.
 
 If Claude doesn't use a skill you expected, check that its switch is on, name the skill in your request, or make its description clearer about when it applies.
 
 ## The starter kit: ten skills to download
 
-I wrote these ten for the jobs nearly everyone does: getting clear on the task, writing, keeping long work on track, building and analysing. Each one is a folder you can open and read before you install it, and each is a short file you can change to suit you.
+I wrote these ten for what AI Every Time learners do most: learning something new, researching and explaining, growing a career, getting work done and working with data. Each one is a folder you can open and read before you install it, and a short file you can change to suit you.
 
-### Think before you start
+### Learn and remember
 
-**clarify-first** · `/clarify-first`
-Asks you one focused question at a time, with suggested answers, until the goal, audience, limits and finish line are clear. Then it writes a short brief and waits for your go-ahead.
-*Try:* "I need a website for my bakery."
+**learn-anything** · `/learn-anything`
+A patient tutor for any topic. It asks what you already know, makes a short plan, then explains one idea at a time with an analogy and a small example, and checks your understanding before moving on.
+*Try:* "Teach me how neural networks learn. I know basic algebra."
 
-**brief-builder** · `/brief-builder`
-Turns a brain dump, voice-note transcript or pile of notes into a clear task brief: goal, deliverable, requirements, limits and what "done" means. It asks no more than three questions and confirms the brief before any work starts.
-*Try:* "Here are my notes from this morning's call. Make them into a brief."
+**quiz-me** · `/quiz-me`
+Turns your notes, a document or a topic into practice questions and asks them one at a time. It explains every answer, keeps track of what you miss and comes back to it.
+*Try:* "Quiz me on these lecture notes. Ten questions, mixed."
 
-### Write better
+### Research and explain
 
-**natural-voice** · `/natural-voice`
-Edits a draft so it reads like a thoughtful person wrote it. It cuts stock phrases, filler and unnecessary formatting, adds specifics, and keeps every fact. Share a sample of your own writing and it matches your voice.
-*Try:* "Make this LinkedIn post sound like me. Here's one I wrote last month."
+**research-brief** · `/research-brief`
+Answers a question with a one-page, sourced brief. It separates what's known from what's only claimed, gives each finding a confidence level and never invents a source.
+*Try:* "How many small businesses in Nigeria use AI? Give me a brief."
 
-**persuasive-copy** · `/persuasive-copy`
-Writes headlines, landing pages, emails, ads and calls to action from a short brief. It uses proven structures such as problem, agitate, solve, and gives you two variants to test. It never invents numbers, reviews or deadlines.
-*Try:* "Write a landing page for my Excel course for small-business owners."
+**news-explainer** · `/news-explainer`
+Turns AI and tech news into a plain explainer: what happened, why it matters, who it affects and what's still unknown. Every claim is attributed, and there's no hype. It's how I like the news explained.
+*Try:* "Explain this announcement for my newsletter readers." (Paste the link or the text.)
 
-**co-write** · `/co-write`
-Writes a longer document with you in five stages: context, outline, section-by-section drafts, a read-through as a newcomer would see it, then polish. Missing facts are marked, never made up.
-*Try:* "Help me write a funding proposal for our coding club."
+### Grow your career
 
-**plain-technical-english** · `/plain-technical-english`
-Rewrites manuals, procedures and safety text in the style of Simplified Technical English: short sentences, one instruction per step, active voice, the same word for the same thing. It includes a script that checks the result for long sentences, passive voice and wordy phrases.
-*Try:* "Rewrite these machine set-up instructions in plain technical English."
+**linkedin-post** · `/linkedin-post`
+Writes LinkedIn posts in your own voice from an idea, a lesson or a piece of work. You get an opening worth reading, one clear point, and no invented stories or engagement bait.
+*Try:* "Turn this project I finished into a post. Here are two of my old posts."
 
-### Keep long work moving
+**job-application** · `/job-application`
+Tailors your CV and cover letter to a specific job ad. It matches your real experience to what the employer asks for, and tells you honestly where the gaps are.
+*Try:* "Here's my CV and the job ad. Tailor both."
 
-**session-handoff** · `/session-handoff`
-When a chat gets long, it writes a one-page handoff note: the goal, decisions and their reasons, where things stand, exact file names, what didn't work, and the next steps. Paste it into a new chat and carry on.
-*Try:* "This chat is getting slow. Write a handoff so I can start fresh."
+### Get work done
 
-### Build and analyse
+**meeting-to-actions** · `/meeting-to-actions`
+Turns meeting notes or a transcript into decisions, actions with owners and deadlines, and open questions, with a follow-up email ready to send. It never invents an owner or a date.
+*Try:* "Here's the transcript of today's team call."
 
-**idea-to-website** · `/idea-to-website`
-Takes you from an idea to a live website in five phases: plan, design, build, put the code on GitHub, and deploy to a host such as Vercel, Netlify or GitHub Pages. It ends with a launch checklist. In Claude Code it can run the steps; in chat it gives you the files and the exact steps.
-*Try:* "I want a one-page site for my photography, live this week."
+**presentation-planner** · `/presentation-planner`
+Plans a talk before you open slide software: the story, one message per slide, titles that state the point, visuals and speaker notes. With code execution on, Claude can then build the deck with its built-in PowerPoint skill: two skills working together.
+*Try:* "Plan a ten-minute talk on our quarterly results for the board."
 
-**analyze-data** · `/analyze-data`
-Answers questions about spreadsheets, CSV files and SQL results, from quick lookups to full analyses. Before trusting a number, it defines each metric and checks the data for duplicates and missing values. It also checks whether a join multiplied the rows. Then it reports the answer first, with its caveats.
+### Work with data
+
+**check-the-numbers** · `/check-the-numbers`
+Answers questions about spreadsheets, CSV files and SQL results, and proves the answer first. A script profiles each file: missing values, numbers stored as text, repeated rows and keys, and gaps in the dates. Every join is checked for multiplied rows, and the answer comes with its caveats.
 *Try:* "Which products drove last quarter's revenue? Here's the export."
 
 ### Make your own
@@ -115,58 +117,54 @@ Answers questions about spreadsheets, CSV files and SQL results, from quick look
 Interviews you about a task you repeat, writes the `SKILL.md`, checks it against the rules, and packages the folder as a zip ready to upload. It includes the checker, the packager and a template.
 *Try:* "Help me turn the way I write our weekly report into a skill."
 
-## Skills worth having for every job
+## Skills worth having for your role
 
-The best skills capture the tasks you repeat every week, in the way your organisation does them. Here are ideas for eighteen kinds of work. Find them in the directories listed below, or make them with **skill-maker**.
+The best skills capture the tasks you repeat every week, the way your organisation does them. Here are ideas for twenty roles. Find them in Claude's directory, or make them with **skill-maker**.
 
-### Growing the business
+### Learning and teaching
 
-| Job | Skills worth having |
+| Role | Skills worth having |
 |---|---|
-| Organic marketing | A content calendar planner, an SEO brief writer, and one that turns a single article into five posts for different channels |
-| Paid marketing | Ad copy variants within each platform's length limits, a campaign results summary, and audience and keyword research |
-| Sales | Research on a prospect before a call, discovery-call notes into a follow-up email, and proposals in your house format |
-| Fundraising | Grant application drafts that follow the funder's questions, donor updates, and impact reports from programme data |
+| Students | A study plan built from your syllabus and exam dates, **quiz-me** on past papers, and feedback on an essay against its marking rubric that tells you what to improve without rewriting it |
+| Teachers and trainers | Lesson plans from a learning objective, worksheets at three levels of difficulty, and feedback drafts against your rubric for you to review |
+| Researchers | Literature review tables, **research-brief** for quick evidence summaries, and a check of your methods section against your field's reporting checklist |
 
-### Running the organisation
+### Data and technology
 
-| Job | Skills worth having |
+| Role | Skills worth having |
 |---|---|
-| C-suite | Board memos, one-page strategy summaries, and a decision log with options, risks and reasons |
-| Operations | Standard operating procedures, process audit checklists, and meeting notes into owners and deadlines |
-| Finance and accounting | Explanations of budget-versus-actual variances, invoice and expense checks against policy, and month-end summaries |
-| Legal and compliance | Contract review against your own clause checklist, plain-language policy summaries, and compliance evidence tracking, always with a lawyer's final review |
+| Data analysts | **check-the-numbers**, a sheet that defines every KPI once, and commentary that explains what changed on a dashboard and why |
+| Software developers | Code reviews in your team's conventions, pull request descriptions, and bug reports turned into fix plans |
+| IT and cybersecurity | Incident reports in your template, sorting suspected phishing emails, and access review checklists |
+| Product managers | Product requirement documents, summaries of user interviews, and release notes |
 
-### People and learning
+### Business
 
-| Job | Skills worth having |
+| Role | Skills worth having |
 |---|---|
-| HR and people | Job descriptions, onboarding plans for a new starter's first 30 days, and answers to policy questions in your company's words |
-| Recruiting | Interview question sets for a role, candidate update emails, and CV screening against agreed criteria, with a person making every decision |
-| Education and training | Lesson plans, quizzes with answer keys, and feedback on student work against a rubric |
-
-### Customers, products and research
-
-| Job | Skills worth having |
-|---|---|
+| Founders and small businesses | Investor and customer updates, price comparisons with competitors, and an FAQ written from your support emails |
+| Marketing | Content calendars, campaign briefs, and one article turned into posts for each channel |
+| Sales | Research on a prospect before a call, call notes into a follow-up email, and proposals in your house format |
 | Customer support | Replies in your brand's tone, ticket sorting and tagging, and help-centre articles from solved tickets |
-| Product | Product requirement documents, summaries of user interviews, and release notes |
-| Research | Literature review tables, source credibility checks, and analysis of interviews and surveys |
-| Healthcare | Plain-language patient information and clinic procedures, never diagnosis, with privacy rules followed and a clinician checking every output |
+| Operations | Standard operating procedures, **meeting-to-actions**, and process audit checklists |
+| Finance | Budget-versus-actual explanations, expense checks against policy, and month-end summaries |
+| HR and recruiting | Job descriptions, interview question sets, and onboarding plans for a new starter's first 30 days, with a person making every hiring decision |
+| Legal and compliance | Contract review against your own clause checklist and plain-language policy summaries, always with a lawyer's final review |
+| Leaders and managers | Leadership updates, decision memos with options and risks, and preparation for one-to-one meetings |
 
-### Creative work and building
+### Media, creative work and public service
 
-| Job | Skills worth having |
+| Role | Skills worth having |
 |---|---|
-| Writing and content | Your style guide applied to every draft, newsletters, and an editing checklist |
-| Design and brand | Brand guidelines (colours, fonts and logo use), design briefs, and accessibility checks for contrast and alt text |
-| Building with AI ("vibe coding") | **idea-to-website**, code review checklists, and bug reports turned into fix plans |
+| Journalists and editors | **news-explainer**, a fact-check list to run before publishing, and interview transcripts turned into quotes and a story outline |
+| Content creators | Video scripts with strong openings, one talk turned into a newsletter and posts, and **linkedin-post** |
+| Designers | Design briefs, your brand guidelines applied to every asset, and accessibility checks for colour contrast and alt text |
+| Healthcare and nonprofits | Plain-language information for patients or communities, grant applications that follow the funder's questions, and impact reports; never diagnosis, always within privacy rules and checked by a professional |
 
-### Where to find thousands more
+### Where to find more
 
 - **Claude's own directory**: in **Customize → Skills**, click **+**, then **Browse skills**. It includes skills from partners such as Notion, Figma and Atlassian, built to work with their connectors.
 - **Anthropic's examples on GitHub**, at [github.com/anthropics/skills](https://github.com/anthropics/skills), are good to learn from and adapt.
-- **Ruben Hassid's Claude Skill Library**, at [skillsclau.de](https://skillsclau.de/), sorts more than 33,000 skills by job. It was the inspiration for this guide.
 
 ## Make your own skill
 
@@ -223,7 +221,7 @@ A skill can contain code that runs when Claude uses it, so treat an unknown skil
 - The main risks are *prompt injection*, where hidden instructions steer Claude into something you didn't ask for, and *data leaks*. Anthropic's advice is the same as above: check before you trust.
 - On Enterprise plans, owners can turn on skill scanning, which checks uploaded skills for malicious content.
 
-Every skill in this starter kit is plain text you can read in a minute. The three scripts (one in **plain-technical-english**, two in **skill-maker**) use only Python's standard library and never connect to the internet.
+Every skill in this starter kit is plain text you can read in a minute. The three scripts (one in **check-the-numbers**, two in **skill-maker**) use only Python's standard library and never connect to the internet.
 
 ## Downloads
 

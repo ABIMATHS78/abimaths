@@ -266,7 +266,7 @@ def test_guides_written_here_load_with_the_others(client, tmp_path, monkeypatch)
     assert post["body"].startswith("## Teach Claude a job once")
     # What it offers to download, in its own order, each with its size: listed on its page.
     names = [d["name"] for d in post["downloads"]]
-    assert names[0] == f"{KIT}.zip" and "clarify-first.zip" in names and names[-1] == "claude-skills-cheat-sheet.pdf"
+    assert names[0] == f"{KIT}.zip" and "learn-anything.zip" in names and names[-1] == "claude-skills-cheat-sheet.pdf"
     assert len(names) == 13 and all(d["title"] and d["about"] and d["size"] > 0 for d in post["downloads"])
     # The guides from the site offer none.
     assert "downloads" not in client.get(f"/api/posts/{other}").json()
@@ -282,18 +282,18 @@ def test_a_guide_sends_its_downloads(client, tmp_path, monkeypatch):
     url = f"/api/posts/{kit}/downloads"
     skills = APP_DIR / "guide_data" / KIT / "downloads" / "skills"
     # A skill is a zip with its folder at the top, the way Claude takes skills.
-    r = client.get(f"{url}/clarify-first.zip")
+    r = client.get(f"{url}/learn-anything.zip")
     assert r.status_code == 200 and r.headers["content-type"] == "application/zip"
-    assert r.headers["content-disposition"] == 'attachment; filename="clarify-first.zip"'
+    assert r.headers["content-disposition"] == 'attachment; filename="learn-anything.zip"'
     z = zipfile.ZipFile(io.BytesIO(r.content))
-    assert z.namelist() == ["clarify-first/SKILL.md"]
-    assert z.read("clarify-first/SKILL.md") == (skills / "clarify-first" / "SKILL.md").read_bytes()
+    assert z.namelist() == ["learn-anything/SKILL.md"]
+    assert z.read("learn-anything/SKILL.md") == (skills / "learn-anything" / "SKILL.md").read_bytes()
     # All ten: each skill's folder at the top, ready to unzip into ~/.claude/skills/, with scripts still runnable.
     z = zipfile.ZipFile(io.BytesIO(client.get(f"{url}/{KIT}.zip").content))
     tops = {n.split("/")[0] for n in z.namelist()}
     assert tops == {p.name for p in skills.iterdir() if p.is_dir()} and len(tops) == 10
     assert all(f"{t}/SKILL.md" in z.namelist() for t in tops)
-    assert z.getinfo("plain-technical-english/scripts/check_ste.py").external_attr >> 16 & stat.S_IXUSR
+    assert z.getinfo("check-the-numbers/scripts/profile_data.py").external_attr >> 16 & stat.S_IXUSR
     assert not any("__pycache__" in n or n.endswith(".pyc") for n in z.namelist())
     # A file goes as it is.
     r = client.get(f"{url}/SKILL-template.md")
@@ -313,10 +313,10 @@ def test_downloads_come_with_reading_the_guide_in_full(client, paywall, tmp_path
     client.get(f"/api/posts/{other}")  # this month's free guide goes on another one
     locked = client.get(f"/api/posts/{kit}").json()
     assert locked["locked"] is True and len(locked["downloads"]) == 13  # listed, to show what reading it brings
-    r = client.get(f"/api/posts/{kit}/downloads/clarify-first.zip")
+    r = client.get(f"/api/posts/{kit}/downloads/learn-anything.zip")
     assert r.status_code == 402 and r.headers["X-Plan-Needed"] == "digital"
     pays_for(client, "digital")
-    assert client.get(f"/api/posts/{kit}/downloads/clarify-first.zip").status_code == 200
+    assert client.get(f"/api/posts/{kit}/downloads/learn-anything.zip").status_code == 200
 
 
 def test_a_link_on_another_site_cant_spend_a_free_guide_on_a_download(client, paywall, tmp_path, monkeypatch):  # noqa: F811
@@ -394,7 +394,7 @@ def test_every_skill_in_the_kit_follows_the_rules(tmp_path):
         assert checker.check(f) == [], f.name
     # And the checker that skill-maker brings catches the usual mistakes.
     bad = tmp_path / "Weekly_Report"
-    shutil.copytree(skills / "clarify-first", bad)
+    shutil.copytree(skills / "learn-anything", bad)
     (bad / "SKILL.md").write_text("---\nname: claude-helper\ndescription: Does this: and that " + "x" * 200 + "\n---\n\nSee "
                                   "`scripts/missing.py`.\n")
     found = " | ".join(checker.check(bad))
