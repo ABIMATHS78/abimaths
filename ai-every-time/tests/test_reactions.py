@@ -97,7 +97,7 @@ def test_the_companion_sees_the_learners_reaction(client, claude):
     seen = []
     claude.stream = lambda **kw: (seen.append(kw), FakeStream({"text": ["Glad!"], "final": message("Glad!")}))[1]
     chat(client, cid, "Tell me more")
-    rules, about = seen[-1]["system"]
+    _, rules, about = seen[-1]["system"]
     assert "<reaction>" in rules["text"] and "cache_control" in rules  # how to react: part of the cached prefix
     assert "The learner reacted 💡 to your last message" in about["text"]
 

@@ -59,6 +59,7 @@ function md(src) {
   let html = "", list = null, para = [], quote = [];
   const inline = (s) => s.split(/(`[^`\n]+`)/).map((part, k) => k % 2 ? `<code>${part.slice(1, -1)}</code>` : part
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\[([^\]\n]+)\]\((#\/[\w\/?=&;.,%+-]*)\)/g, '<a href="$2">$1</a>')  // a page in the app: a course, a track
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")).join("");
   const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
@@ -408,7 +409,7 @@ const routes = [
   [/^#\/course\/([a-z0-9-]+)\/learn\/(l\d+-\d+|lab\d+|quiz\d+|project|grades)$/, viewCoursePlayer],
   [/^#\/track\/([a-z0-9-]+)$/, viewTrack],
   [/^#\/certificate\/([A-Za-z0-9]+)$/, viewCertificate, null],
-  [/^#\/learn$/, viewLearn],
+  [/^#\/learn(?:\?(.*))?$/, viewLearn],
   [/^#\/lesson\/([\w-]+)(?:\?companion=(\d+))?$/, viewLesson],
   [/^#\/quiz\/(\d+)$/, viewQuiz],
   [/^#\/practice$/, viewPractice],
@@ -2055,8 +2056,13 @@ function pathBadge(p) {
   return `<div class="small custom-badge ${p.status === "approved" ? "ok" : p.status === "rejected" ? "bad" : ""}">${text}</div>`;
 }
 
-async function viewLearn() {
-  const paths = await api("/api/paths");
+/* A companion's chat link to a path it offered to design, #/learn?design=regression-for-beginners&with=12, opens this
+   page with the topic filled in, for that companion to design once the learner confirms. */
+async function viewLearn(m) {
+  const q = new URLSearchParams(m?.[1] || "");
+  const offer = q.get("design") ? { topic: q.get("design").replace(/-+/g, " ").trim().slice(0, 120), with: +q.get("with") || null } : null;
+  const [paths, teacher] = await Promise.all([api("/api/paths"), offer?.with ? api(`/api/companions/${offer.with}`).catch(() => null) : null]);
+  if (offer && !teacher) offer.with = null;
   const main = shell("learn", `
     <h1>Learning paths</h1>
     <p class="muted">Short paths taught by your companion, in their own voice. Finish lessons, test yourself, and take a mock exam at the end of each path.</p>
@@ -2064,9 +2070,10 @@ async function viewLearn() {
       <div class="muted small">Courses with hands-on labs, projects and certificates, taught by the AI Learning Companions.</div></div><span class="btn">Browse courses</span></a>
     <form class="card stack" id="newPath">
       <div><h3 style="margin:0">✨ Learn anything: ask your companion for a path</h3>
-        <div class="muted small">Name a topic and your companion designs a step-by-step path just for you.</div></div>
+        <div class="muted small">${teacher ? `${esc(teacher.persona.name)} offered to design this path for you. Check the topic, then design it.`
+          : "Name a topic and your companion designs a step-by-step path just for you."}</div></div>
       <div class="new-path-row">
-        <input type="text" name="topic" minlength="3" maxlength="120" required placeholder="e.g. AI for small farms, computer vision for healthcare, LLMs for lawyers" aria-label="Topic">
+        <input type="text" name="topic" minlength="3" maxlength="120" required placeholder="e.g. AI for small farms, computer vision for healthcare, LLMs for lawyers" aria-label="Topic" value="${esc(offer?.topic || "")}">
         <select name="level" aria-label="Level">${["beginner", "intermediate", "advanced"].map((v) => `<option value="${v}" ${v === state.me.level ? "selected" : ""}>${label(v)}</option>`).join("")}</select>
         <select name="lessons" aria-label="Number of lessons">${[3, 4, 5, 6, 8].map((n) => `<option value="${n}" ${n === 5 ? "selected" : ""}>${n} lessons</option>`).join("")}</select>
         <button class="btn primary">Design my path</button>
@@ -2119,14 +2126,22 @@ async function viewLearn() {
     const f = e.target, btn = $("button", f);
     btn.disabled = true; btn.textContent = "Designing…";
     try {
-      const path = await api("/api/custom-paths", { method: "POST", body: { topic: f.topic.value.trim(), level: f.level.value, lessons: +f.lessons.value } });
+      const path = await api("/api/custom-paths", { method: "POST",
+        body: { topic: f.topic.value.trim(), level: f.level.value, lessons: +f.lessons.value, companion_id: offer?.with || null } });
       toast(`"${path.title}" is ready`);
-      if (document.body.contains(f)) viewLearn();
+      if (document.body.contains(f)) {
+        if (offer) history.replaceState(null, "", "#/learn");  // the offer is taken up: a reload shouldn't fill it in again
+        viewLearn();
+      }
     } catch (err) {
       toast(err.message);
       btn.disabled = false; btn.textContent = "Design my path";
     }
   });
+  if (offer) {
+    $("#newPath", main).scrollIntoView({ block: "center" });
+    $("#newPath button", main).focus({ preventScroll: true });
+  }
 }
 
 async function viewLesson(m) {
