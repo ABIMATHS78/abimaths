@@ -397,7 +397,7 @@ const routes = [
   [/^#\/onboarding$/, viewOnboarding],
   [/^#\/feed$/, viewFeed],
   [/^#\/guides(?:\?(.*))?$/, viewGuides],
-  [/^#\/p\/(\d+)$/, viewPost],
+  [/^#\/p\/(\d+)(?:\?(.*))?$/, viewPost],
   [/^#\/companions$/, viewCompanions],
   [/^#\/c\/(\d+)(?:\?post=(\d+))?$/, viewCompanion],
   [/^#\/studio\/new$/, (m) => viewStudio({ mode: "new" })],
@@ -960,9 +960,9 @@ const GUIDES_PAGE = 24;  // guides the server sends at a time (app/main.py)
 // learners see what reading it in full brings, but only downloadable once they can.
 const FILE_KINDS = { zip: ["🗂️", "ZIP"], pdf: ["📄", "PDF"], md: ["📝", "Markdown"] };
 const fileSize = (bytes) => (bytes < 1024 ? `${bytes} bytes` : bytes < 1048576 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
-const downloadList = (post) => `
-  <section class="card downloads" aria-labelledby="downloadsTitle">
-    <h3 id="downloadsTitle" style="margin:0">Downloads</h3>
+const downloadList = (post, heading = true) => `
+  <section class="card downloads"${heading ? ` aria-labelledby="downloadsTitle"` : ""}>
+    ${heading ? `<h3 id="downloadsTitle" style="margin:0">Downloads</h3>` : ""}
     ${post.locked ? `<p class="muted small" style="margin:0">🔒 Yours to download when you read this guide in full.</p>` : ""}
     <ul class="download-list">${post.downloads.map((d) => {
       const [icon, kind] = FILE_KINDS[d.name.split(".").pop().toLowerCase()] || ["📎", "File"];
@@ -976,9 +976,130 @@ const downloadList = (post) => `
     }).join("")}</ul>
   </section>`;
 
+// A guide's skill library: the essentials, then every job's skills, each on a numbered card with its command and a
+// download button, and a search across them all. A job opens on a page of its own (#/p/ID?job=slug), and
+// #/p/ID?skills opens the library without the guide. Locked guides show the cards without download buttons.
+const skillsOf = (post) => post.downloads.filter((d) => d.command);
+const downloadUrl = (post, d) => `/api/posts/${post.id}/downloads/${encodeURIComponent(d.name)}`;
+const jobName = (post, id) => post.download_groups.find((g) => g.id === id)?.name || "";
+const skillCard = (post, d, i, showJob = true) => `
+  <article class="lib-card">
+    <div class="lib-card-top"><span class="lib-num">${String(i + 1).padStart(2, "0")}</span>
+      ${d.tag || showJob ? `<span class="lib-tag">${esc(d.tag || jobName(post, d.group))}</span>` : ""}</div>
+    <h4 class="lib-title">${esc(d.title)}</h4>
+    <code class="lib-cmd">${esc(d.command)}</code>
+    <p class="lib-about">${esc(d.about)}</p>
+    ${post.locked ? `<span class="lib-locked">🔒 Read the guide in full to download</span>`
+      : `<a class="btn primary lib-dl" href="${downloadUrl(post, d)}" download="${esc(d.name)}"
+          aria-label="Download ${esc(d.title)} (${fileSize(d.size)})">Download</a>`}
+  </article>`;
+const libraryLocked = (post) => post.locked ? `<div class="card stack paywall-card"><strong>🔒 These skills come with reading this guide in full.</strong>
+  <div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div></div>` : "";
+const libraryInstall = (post) => {
+  const first = skillsOf(post)[0]?.command || "/skill-name";
+  return `<details class="lib-install"><summary>How to install a skill</summary><ol>
+    <li>Download the skill's zip. Keep it zipped.</li>
+    <li>In Claude, open <b>Settings → Capabilities</b> and turn on <b>Code execution and file creation</b>.</li>
+    <li>Open <b>Customize → Skills</b>, click <b>+</b>, then <b>Create skill → Upload a skill</b>, and choose the zip.</li>
+    <li>Switch it on, then ask for what it does. In Claude Code, unzip it into <code>~/.claude/skills/</code> and type its command, such as <code>${esc(first)}</code>.</li>
+  </ol></details>`;
+};
+const libraryTeaser = (post) => {
+  const jobs = post.download_groups.length - 1;
+  return `<a class="lib-teaser" href="#/p/${post.id}?skills">
+    <span class="lib-teaser-icon" aria-hidden="true">🧰</span>
+    <span class="lib-teaser-text"><strong>Skill library</strong><span>${skillsOf(post).length} skills for ${jobs} jobs, ready to download</span></span>
+    <span class="lib-teaser-go">Open →</span></a>`;
+};
+function skillLibrary(post, alone = false) {
+  const [essentials, ...jobs] = post.download_groups;
+  const skills = skillsOf(post);
+  const extras = post.downloads.filter((d) => !d.command && (!d.group || d.group === "essentials"));
+  return `
+  <section class="lib" id="library" aria-labelledby="libraryTitle">
+    <header class="lib-head">
+      <p class="lib-kicker">Skill library</p>
+      <${alone ? "h1" : "h2"} id="libraryTitle" class="lib-h">Claude skills for every job</${alone ? "h1" : "h2"}>
+      <p class="lib-lead">${skills.length} skills, sorted by job. Download one, add it to Claude, and it's ready to use.</p>
+    </header>
+    ${libraryInstall(post)}
+    <input class="lib-search" type="search" placeholder="Search all ${skills.length} skills" aria-label="Search the skills" data-lib-search>
+    <div class="lib-results" hidden aria-live="polite"></div>
+    <div class="lib-browse">
+      <h3 class="lib-h3">${esc(essentials.name)}</h3>
+      <p class="lib-sub">${esc(essentials.about)}</p>
+      <div class="lib-grid">${skills.filter((d) => d.group === "essentials").map((d, i) => skillCard(post, d, i)).join("")}</div>
+      <h3 class="lib-h3">Browse by job</h3>
+      <div class="lib-jobs">${jobs.map((g) => `<a class="lib-job" href="#/p/${post.id}?job=${encodeURIComponent(g.id)}">
+        <span>${esc(g.name)}</span><span class="lib-count">${g.count}</span></a>`).join("")}</div>
+      ${extras.length ? `<h3 class="lib-h3">More downloads</h3>${downloadList({ ...post, downloads: extras }, false)}` : ""}
+    </div>
+  </section>`;
+}
+function jobPage(post, job) {
+  const skills = skillsOf(post).filter((d) => d.group === job.id);
+  const bundle = post.downloads.find((d) => d.group === job.id && d.bundle);
+  return `
+  <section class="lib lib-page" id="library" aria-labelledby="libraryTitle">
+    <a class="lib-back" href="#/p/${post.id}?skills">← All jobs</a>
+    <header class="lib-head">
+      <h1 id="libraryTitle" class="lib-h">${esc(job.name)}</h1>
+      <p class="lib-lead">${plural(skills.length, "skill")}${bundle && !post.locked
+        ? ` · <a href="${downloadUrl(post, bundle)}" download="${esc(bundle.name)}">Download all ${skills.length} in one zip</a> (${fileSize(bundle.size)})` : ""}</p>
+    </header>
+    ${libraryInstall(post)}
+    <input class="lib-search" type="search" placeholder="Filter this job" aria-label="Filter this job's skills" data-lib-search>
+    <div class="lib-grid" data-lib-list>${skills.map((d, i) => skillCard(post, d, i, false)).join("")}</div>
+    <p class="muted lib-none" hidden>No skills here match that. <a href="#/p/${post.id}?skills">Search them all</a></p>
+  </section>`;
+}
+async function viewLibrary(post, slug) {
+  const job = slug ? post.download_groups.find((g) => g.id === slug && g.id !== "essentials") : null;
+  const main = shell("guides", `
+    <div class="lib-wrap">
+      <div class="muted small crumbs"><a href="#/guides">Guides</a> › <a href="#/p/${post.id}">${esc(post.title)}</a></div>
+      ${libraryLocked(post)}
+      ${job ? jobPage(post, job) : skillLibrary(post, true)}
+    </div>`);
+  document.title = `${job ? job.name : "Skill library"} · AI Every Time`;
+  wireLibrary(main, post);
+}
+// Searching: on a job's page the cards are filtered in place; in the whole library the matches replace the browsing.
+function wireLibrary(root, post) {
+  const lib = root.querySelector("#library");
+  const input = lib?.querySelector("[data-lib-search]");
+  if (!input) return;
+  const list = lib.querySelector("[data-lib-list]");
+  const words = (d) => `${d.title} ${d.command} ${d.about} ${jobName(post, d.group)}`.toLowerCase();
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    if (list) {
+      const cards = [...list.children];
+      let shown = 0;
+      cards.forEach((card) => {
+        const hit = !q || card.textContent.toLowerCase().includes(q);
+        card.hidden = !hit;
+        shown += hit;
+      });
+      lib.querySelector(".lib-none").hidden = shown > 0;
+      return;
+    }
+    const results = lib.querySelector(".lib-results");
+    lib.querySelector(".lib-browse").hidden = Boolean(q);
+    results.hidden = !q;
+    if (!q) { results.innerHTML = ""; return; }
+    const found = skillsOf(post).filter((d) => words(d).includes(q));
+    results.innerHTML = `<p class="lib-sub">${found.length ? `${plural(found.length, "skill")} match “${esc(input.value.trim())}”` : `No skills match “${esc(input.value.trim())}”.`}</p>
+      <div class="lib-grid">${found.map((d, i) => skillCard(post, d, i)).join("")}</div>`;
+  });
+}
+
 async function viewPost(m) {
   const id = +m[1];
+  const params = new URLSearchParams(m[2] || "");
   const post = await api(`/api/posts/${id}`);
+  // A guide with a skill library opens it on its own (?skills), or one of its jobs (?job=…).
+  if (post.download_groups && (params.has("skills") || params.has("job"))) return viewLibrary(post, params.get("job"));
   const [c, more] = await Promise.all([
     api(`/api/companions/${post.companion_id}`),
     post.kind ? api(`/api/guides?companion=${post.companion_id}`) : Promise.resolve([]),
@@ -999,12 +1120,13 @@ async function viewPost(m) {
         <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${name} about this</a>
         ${engageButtons(post)}
       </div>
+      ${post.download_groups ? libraryTeaser(post) : ""}
       <div class="prose guide-body${post.locked ? " faded" : ""}">${md(post.body)}</div>
       ${post.locked ? `<div class="card stack paywall-card"><h3 style="margin:0">Keep reading with Digital</h3>
         <p style="margin:0">You've read your ${post.guides.limit} free guides this month. Read every guide in full, and more, from ${esc(dollars(199))} a month.</p>
         <div class="row"><a class="btn primary" href="#/pricing">See the plans</a><span class="muted small">Your free guides start again next month.</span></div></div>`
       : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`} <a href="#/pricing">Read them all with Digital</a>.</p>` : ""}
-      ${post.downloads?.length ? downloadList(post) : ""}
+      ${post.download_groups ? skillLibrary(post) : post.downloads?.length ? downloadList(post) : ""}
       <div class="card study" data-post="${post.id}"${post.locked ? " hidden" : ""}>
         <h3 style="margin:0">Study this ${post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post"}</h3>
         <div class="row">
@@ -1019,6 +1141,7 @@ async function viewPost(m) {
       <a class="btn ghost" href="#/guides?companion=${c.id}">All guides by ${name}</a></div>
       <div class="guide-grid">${others.map((x) => guideTile(x, c)).join("")}</div></section>` : ""}`);
   wirePosts(main, [post]);
+  if (post.download_groups) wireLibrary(main, post);
   $("#followBtn")?.addEventListener("click", async (e) => {
     try {
       await api(`/api/companions/${c.id}/follow`, { method: c.following ? "DELETE" : "POST" });

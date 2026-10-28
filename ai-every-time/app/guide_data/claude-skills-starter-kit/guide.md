@@ -2,7 +2,7 @@
 
 Most people use Claude the same way every day: they paste in the same long instructions, explain the same format again, and correct the same mistakes. A **skill** ends that. It is a small folder of instructions, and sometimes scripts and templates, that teaches Claude one job the way you want it done. You install it once. From then on, Claude picks it up whenever a request needs it.
 
-This guide gives you a starter kit of ten skills to download, written for AI Every Time. It shows you how to install them in a few minutes and which skills are worth having for twenty different roles. It ends with how to make your own, and how to stay safe while you do.
+This guide gives you a starter kit of ten skills to download, written for AI Every Time. It shows you how to install them in a few minutes, and it comes with a library of skills for twenty jobs. It ends with how to make your own, and how to stay safe while you do.
 
 ## What a skill is
 
@@ -42,7 +42,7 @@ Skills also follow an open standard, the [Agent Skills specification](https://ag
 
 ## Install a skill in four steps
 
-1. **Download the skill's zip file** from the Downloads section at the end of this guide. Don't unzip it.
+1. **Download the skill's zip file** from the Skill library at the end of this guide. Don't unzip it.
 2. In Claude, open **Settings → Capabilities** and turn on **Code execution and file creation**. In the newer Settings layout, it's called **Create and edit files**.
 3. Open **Customize → Skills**, click **+**, then **Create skill → Upload a skill**, and choose the zip.
 4. Check that the skill's switch is **on**. That's it: ask for something the skill covers.
@@ -117,49 +117,15 @@ Answers questions about spreadsheets, CSV files and SQL results, and proves the 
 Interviews you about a task you repeat, writes the `SKILL.md`, checks it against the rules, and packages the folder as a zip ready to upload. It includes the checker, the packager and a template.
 *Try:* "Help me turn the way I write our weekly report into a skill."
 
-## Skills worth having for your role
+## A library of skills for every job
 
-The best skills capture the tasks you repeat every week, the way your organisation does them. Here are ideas for twenty roles. Find them in Claude's directory, or make them with **skill-maker**.
+At the end of this guide is the **Skill library**: the ten essentials above, and six skills for each of twenty jobs. The jobs run from organic and paid marketing, sales and fundraising to legal and compliance, the C-suite, operations, finance and HR. They also include research, product, writing, design, healthcare, education, students, data and building software with AI.
 
-### Learning and teaching
+- **Browse by job** to see one job's skills, or **search** them all for what you need.
+- Every skill downloads as its own zip, ready to upload in Customize → Skills, and each job has one zip with all its skills.
+- For Claude Code, **every skill in the library** comes in one zip to unzip into `~/.claude/skills/`.
 
-| Role | Skills worth having |
-|---|---|
-| Students | A study plan built from your syllabus and exam dates, **quiz-me** on past papers, and feedback on an essay against its marking rubric that tells you what to improve without rewriting it |
-| Teachers and trainers | Lesson plans from a learning objective, worksheets at three levels of difficulty, and feedback drafts against your rubric for you to review |
-| Researchers | Literature review tables, **research-brief** for quick evidence summaries, and a check of your methods section against your field's reporting checklist |
-
-### Data and technology
-
-| Role | Skills worth having |
-|---|---|
-| Data analysts | **check-the-numbers**, a sheet that defines every KPI once, and commentary that explains what changed on a dashboard and why |
-| Software developers | Code reviews in your team's conventions, pull request descriptions, and bug reports turned into fix plans |
-| IT and cybersecurity | Incident reports in your template, sorting suspected phishing emails, and access review checklists |
-| Product managers | Product requirement documents, summaries of user interviews, and release notes |
-
-### Business
-
-| Role | Skills worth having |
-|---|---|
-| Founders and small businesses | Investor and customer updates, price comparisons with competitors, and an FAQ written from your support emails |
-| Marketing | Content calendars, campaign briefs, and one article turned into posts for each channel |
-| Sales | Research on a prospect before a call, call notes into a follow-up email, and proposals in your house format |
-| Customer support | Replies in your brand's tone, ticket sorting and tagging, and help-centre articles from solved tickets |
-| Operations | Standard operating procedures, **meeting-to-actions**, and process audit checklists |
-| Finance | Budget-versus-actual explanations, expense checks against policy, and month-end summaries |
-| HR and recruiting | Job descriptions, interview question sets, and onboarding plans for a new starter's first 30 days, with a person making every hiring decision |
-| Legal and compliance | Contract review against your own clause checklist and plain-language policy summaries, always with a lawyer's final review |
-| Leaders and managers | Leadership updates, decision memos with options and risks, and preparation for one-to-one meetings |
-
-### Media, creative work and public service
-
-| Role | Skills worth having |
-|---|---|
-| Journalists and editors | **news-explainer**, a fact-check list to run before publishing, and interview transcripts turned into quotes and a story outline |
-| Content creators | Video scripts with strong openings, one talk turned into a newsletter and posts, and **linkedin-post** |
-| Designers | Design briefs, your brand guidelines applied to every asset, and accessibility checks for colour contrast and alt text |
-| Healthcare and nonprofits | Plain-language information for patients or communities, grant applications that follow the funder's questions, and impact reports; never diagnosis, always within privacy rules and checked by a professional |
+The best skills capture the tasks you repeat every week, the way your organisation does them. So treat these as starting points: open one, change its steps to match how you work, and upload your version. To build one from scratch, use **skill-maker**.
 
 ### Where to find more
 
@@ -209,7 +175,7 @@ Zip the **folder**, not the files inside it. The zip must contain `weekly-report
 2. Upload the skill, switch it on, and try all five.
 3. If Claude misses one, improve the description first: it's what Claude uses to choose.
 
-**Shortcuts:** install **skill-maker** and say *"Help me make a skill for…"*, or start from the **SKILL.md template** in the Downloads. On a Mac, Cowork can even record you doing a task and propose a skill from it (on Pro, Max and Team plans).
+**Shortcuts:** install **skill-maker** and say *"Help me make a skill for…"*, or start from the **SKILL.md template** in the Skill library. On a Mac, Cowork can even record you doing a task and propose a skill from it (on Pro, Max and Team plans).
 
 ## Stay safe with skills
 
@@ -221,15 +187,16 @@ A skill can contain code that runs when Claude uses it, so treat an unknown skil
 - The main risks are *prompt injection*, where hidden instructions steer Claude into something you didn't ask for, and *data leaks*. Anthropic's advice is the same as above: check before you trust.
 - On Enterprise plans, owners can turn on skill scanning, which checks uploaded skills for malicious content.
 
-Every skill in this starter kit is plain text you can read in a minute. The three scripts (one in **check-the-numbers**, two in **skill-maker**) use only Python's standard library and never connect to the internet.
+Every skill in the library is plain text you can read in a minute. Only three files are scripts (one in **check-the-numbers**, two in **skill-maker**), and they use only Python's standard library and never connect to the internet.
 
-## Downloads
+## The Skill library and downloads
 
-Everything below is ready to use:
+Everything in the library below is ready to use:
 
 - **Each skill as its own zip**, ready to upload in Customize → Skills.
-- **All ten in one zip** for Claude Code: unzip it into `~/.claude/skills/`. For the Claude apps, upload the skills one at a time.
+- **Each job's skills in one zip**, on that job's page.
+- **The ten essentials in one zip**, and **every skill in the library in one zip**, for Claude Code: unzip them into `~/.claude/skills/`. For the Claude apps, upload skills one at a time.
 - **The SKILL.md template**, to start a skill of your own.
 - **A one-page cheat sheet** of installing, using and making skills.
 
-*How skills work, where they run and how to install them is from Anthropic's documentation. The ten skills are my own, written for AI Every Time learners. Ask me about any of them, or about the skill you want to make next.*
+*How skills work, where they run and how to install them is from Anthropic's documentation. The skills in the library are AI Every Time's own, written for our learners. Ask me about any of them, or about the skill you want to make next.*

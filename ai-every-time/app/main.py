@@ -550,6 +550,8 @@ def get_post(post_id: int, request: Request, user: dict = User):
         post["guides"] = access
         if offered := guides.downloads(post):  # listed even when locked, to show what reading it in full brings
             post["downloads"] = offered
+        if library := guides.download_groups(post):  # a skill library: the essentials, then its jobs
+            post["download_groups"] = library
     return post
 
 

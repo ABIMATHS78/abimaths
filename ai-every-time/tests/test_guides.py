@@ -226,6 +226,13 @@ def test_where_the_guides_come_from(monkeypatch, value):
 
 APP_DIR = Path(__file__).resolve().parent.parent / "app"
 KIT = "claude-skills-starter-kit"  # Mojeed Abisiga's guide to Claude skills, with skills to download
+DOWNLOADS = APP_DIR / "guide_data" / KIT / "downloads"
+
+
+def library_on_disk() -> dict[str, list[str]]:
+    """The kit's library as its folders hold it: each job's skills, in guide.json's order of jobs."""
+    jobs = json.loads((DOWNLOADS.parent / "guide.json").read_text())["library"]["jobs"]
+    return {j["slug"]: sorted(p.name for p in (DOWNLOADS / "library" / j["slug"]).iterdir() if p.is_dir()) for j in jobs}
 
 
 def load_the_kit(client, tmp_path, monkeypatch) -> tuple[int, int]:
@@ -266,8 +273,24 @@ def test_guides_written_here_load_with_the_others(client, tmp_path, monkeypatch)
     assert post["body"].startswith("## Teach Claude a job once")
     # What it offers to download, in its own order, each with its size: listed on its page.
     names = [d["name"] for d in post["downloads"]]
-    assert names[0] == f"{KIT}.zip" and "learn-anything.zip" in names and names[-1] == "claude-skills-cheat-sheet.pdf"
-    assert len(names) == 13 and all(d["title"] and d["about"] and d["size"] > 0 for d in post["downloads"])
+    assert names[0] == "learn-anything.zip" and f"{KIT}.zip" in names and "claude-skills-cheat-sheet.pdf" in names
+    assert all(d["title"] and d["about"] and d["size"] > 0 for d in post["downloads"])
+    # Its skill library: the ten essentials, each with its command and tag, then every job's skills and their zip.
+    library = library_on_disk()
+    groups = post["download_groups"]
+    assert groups[0] == {"id": "essentials", "name": "Start here: the 10 essentials",
+                         "about": "The skills every learner needs first.", "count": 10}
+    assert [(g["id"], g["count"]) for g in groups[1:]] == [(job, len(s)) for job, s in library.items()]
+    essentials = [d for d in post["downloads"] if d["group"] == "essentials" and d["command"]]
+    assert len(essentials) == 10 and all(d["tag"] and d["command"] == "/" + d["name"][:-4] for d in essentials)
+    for job, skills in library.items():
+        offered = [d for d in post["downloads"] if d["group"] == job]
+        assert [d["command"] for d in offered if not d["bundle"]] == ["/" + s for s in skills]
+        assert [d["name"] for d in offered if d["bundle"]] == [f"{job}-skills.zip"]
+    assert names[-1] == "every-skill.zip" and names.count("every-skill.zip") == 1
+    # A card says what a skill does: its description up to "Use when…".
+    card = next(d for d in post["downloads"] if d["group"] == "sales" and not d["bundle"])
+    assert "Use " not in card["about"] and card["about"].endswith(".")
     # The guides from the site offer none.
     assert "downloads" not in client.get(f"/api/posts/{other}").json()
     assert client.get(f"/api/posts/{other}/downloads/{KIT}.zip").status_code == 404
@@ -295,6 +318,13 @@ def test_a_guide_sends_its_downloads(client, tmp_path, monkeypatch):
     assert all(f"{t}/SKILL.md" in z.namelist() for t in tops)
     assert z.getinfo("check-the-numbers/scripts/profile_data.py").external_attr >> 16 & stat.S_IXUSR
     assert not any("__pycache__" in n or n.endswith(".pyc") for n in z.namelist())
+    # A job's zip holds its skills, each in its own folder; the library's holds every skill, the essentials too.
+    library = library_on_disk()
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"{url}/sales-skills.zip").content))
+    assert {n.split("/")[0] for n in z.namelist()} == set(library["sales"])
+    z = zipfile.ZipFile(io.BytesIO(client.get(f"{url}/every-skill.zip").content))
+    tops = {n.split("/")[0] for n in z.namelist()}
+    assert len(tops) == 10 + sum(len(s) for s in library.values()) and "learn-anything" in tops and "board-memo" in tops
     # A file goes as it is.
     r = client.get(f"{url}/SKILL-template.md")
     assert r.headers["content-type"].startswith("text/markdown") and r.text.startswith("---\nname: your-skill-name")
@@ -312,7 +342,8 @@ def test_downloads_come_with_reading_the_guide_in_full(client, paywall, tmp_path
     kit, other = load_the_kit(client, tmp_path, monkeypatch)
     client.get(f"/api/posts/{other}")  # this month's free guide goes on another one
     locked = client.get(f"/api/posts/{kit}").json()
-    assert locked["locked"] is True and len(locked["downloads"]) == 13  # listed, to show what reading it brings
+    assert locked["locked"] is True and len(locked["downloads"]) > 100  # listed, to show what reading it brings
+    assert locked["download_groups"][0]["id"] == "essentials"
     r = client.get(f"/api/posts/{kit}/downloads/learn-anything.zip")
     assert r.status_code == 402 and r.headers["X-Plan-Needed"] == "digital"
     pays_for(client, "digital")
@@ -390,8 +421,11 @@ def test_every_skill_in_the_kit_follows_the_rules(tmp_path):
     spec.loader.exec_module(checker)
     folders = sorted(p for p in skills.iterdir() if p.is_dir())
     assert len(folders) == 10
-    for f in folders:
-        assert checker.check(f) == [], f.name
+    library = sorted(p for job in (DOWNLOADS / "library").iterdir() for p in job.iterdir() if p.is_dir())
+    assert len(library) == sum(len(s) for s in library_on_disk().values()) >= 100
+    assert len({p.name for p in folders + library}) == len(folders) + len(library)  # every name its own command
+    for f in folders + library:
+        assert checker.check(f) == [], f"{f.parent.name}/{f.name}"
     # And the checker that skill-maker brings catches the usual mistakes.
     bad = tmp_path / "Weekly_Report"
     shutil.copytree(skills / "learn-anything", bad)
@@ -401,3 +435,33 @@ def test_every_skill_in_the_kit_follows_the_rules(tmp_path):
     for problem in ('must not contain "claude"', "make them match", "colon followed by a space", "the Claude apps take 200",
                     "scripts/missing.py"):
         assert problem in found, problem
+
+
+@pytest.mark.parametrize("mistake, reason", [
+    ("empty job", "downloads/library/sales has no skills"),
+    ("misnamed skill", "is named 'something-else'"),
+    ("same skill twice", "two downloads have the same name: pitch.zip"),
+    ("unknown group", "groups the library doesn't have: marketing"),
+])
+def test_a_skill_library_that_doesnt_fit_says_why(tmp_path, mistake, reason):
+    from app import guides
+
+    def skill(path, name=None):
+        path.mkdir(parents=True)
+        (path / "SKILL.md").write_text(f"---\nname: {name or path.name}\ndescription: Does a thing. Use when needed.\n---\n\n# A skill\n")
+
+    library = {"essentials": "Start here", "essentials_about": "The first ones.",
+               "jobs": [{"slug": "sales", "name": "Sales"}, {"slug": "support", "name": "Support"}]}
+    downloads = [{"file": "notes.txt", "title": "Notes", "about": "Some notes."}]
+    d = written_guide(tmp_path, library=library, downloads=downloads
+                      + ([{"file": "notes.txt", "name": "n.txt", "title": "N", "about": "N.", "group": "marketing"}]
+                         if mistake == "unknown group" else []))
+    lib = d / "downloads" / "library"
+    skill(lib / "support" / "pitch")
+    if mistake != "empty job":
+        (lib / "sales").mkdir(parents=True)
+        skill(lib / "sales" / ("pitch" if mistake == "same skill twice" else "outreach"),
+              "something-else" if mistake == "misnamed skill" else None)
+    with pytest.raises(ValueError) as e:
+        guides.written(tmp_path)
+    assert reason in str(e.value)
