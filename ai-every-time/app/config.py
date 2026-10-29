@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import re
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -12,6 +13,15 @@ def _int(name: str, default: int) -> int:
         return int(os.environ.get(name, default))
     except ValueError:
         return default
+
+
+def _matching(name: str, pattern: str) -> str:
+    """An environment variable's value if it matches the pattern, or "" (with a warning) if it doesn't."""
+    value = os.environ.get(name, "").strip()
+    if value and not re.fullmatch(pattern, value):
+        log.warning("%s isn't in the form expected, so it's ignored: %r", name, value)
+        return ""
+    return value
 
 
 def _price(p) -> tuple[float, float, float] | None:
@@ -131,6 +141,14 @@ class Settings:
     trial_days: int = field(default_factory=lambda: _int("AIET_TRIAL_DAYS", 7))
     # Where the Teams plan's "Contact us" goes.
     teams_email: str = field(default_factory=lambda: os.environ.get("AIET_TEAMS_EMAIL", "teams@aieverytime.org").strip())
+    # Where learners write for help, on the support and privacy pages: a mailbox someone reads.
+    support_email: str = field(default_factory=lambda: os.environ.get("AIET_SUPPORT_EMAIL", "").strip()
+                               or "support@aieverytime.org")
+    # The iPhone app, once Apple has it (ios/README.md): its Apple ID in App Store Connect, digits only, for links to
+    # its App Store page and Safari's banner for it; and the public TestFlight link while it's being tested.
+    ios_app_id: str = field(default_factory=lambda: _matching("AIET_IOS_APP_ID", r"[0-9]{6,12}"))
+    ios_testflight_url: str = field(default_factory=lambda: _matching(
+        "AIET_IOS_TESTFLIGHT_URL", r"https://testflight\.apple\.com/join/[A-Za-z0-9]{4,16}"))
 
     @property
     def paywall(self) -> bool:

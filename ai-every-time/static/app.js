@@ -32,6 +32,8 @@ async function api(path, { method = "GET", body } = {}) {
       if (typeof data.detail === "string") msg = data.detail;
       else if (Array.isArray(data.detail)) msg = data.detail.map((d) => `${d.loc.slice(-1)[0]}: ${d.msg}`).join("; ");
     } catch {}
+    // An AI request from a learner who hasn't agreed to their words going to Claude: ask them.
+    if (res.headers.get("X-AI-Consent")) askAiConsent();
     // Locked by the learner's plan (402), or out of AI requests where a bigger plan has more (429): the plan that
     // would do. Something they clicked gets the offer at once; a page that wouldn't open shows its own.
     const plan = res.headers.get("X-Plan-Needed");
@@ -196,6 +198,7 @@ async function streamChat(companionId, body, onText) {
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail || "Couldn't send message";
+    if (res.headers.get("X-AI-Consent")) askAiConsent();
     const plan = res.headers.get("X-Plan-Needed");
     if (plan) offerPlan(detail, plan);
     throw new Error(detail);
@@ -338,11 +341,43 @@ if (appBridge && !navigator.share) navigator.share = ({ title, text, url } = {})
 /* Plans aren't sold in the app, as Apple's rules for apps ask: prices, upgrade buttons and billing links stay out. */
 const forSale = (html) => (inApp ? "" : html);
 
+/* -------------------------------------------------------- AI and your data */
+
+/* Companions are Claude, so what a learner writes to them goes to Anthropic. Nothing does until they agree, at sign-up
+   or when first asked; the server holds AI requests until then too (app/usage.py). Apple asks the same of apps. */
+const AI_SHARING = `Companions, lessons, quizzes and feedback on AI Every Time are written by Claude, an AI made by
+  <b>Anthropic</b>. To write them, what you send to companions, and your learning profile (your name, level, goals and
+  interests), go to Anthropic, which handles them for us as a service provider.`;
+let consentAsked = null;  // the question on screen, so it's never asked twice at once
+
+function askAiConsent() {
+  consentAsked ||= new Promise((resolve) => {
+    showDialog(`<h2>Companions are powered by Claude</h2><p>${AI_SHARING}</p>
+      <p>Nothing goes to Anthropic until you agree, and you can change your mind in your profile.
+        <a href="#/privacy">How AI Every Time uses your data</a></p>
+      <div class="row"><button type="button" class="btn primary" id="aiAgree">Agree and continue</button>
+        <button type="button" class="btn ghost" data-close>Not now</button></div>`, { done: null });
+    const d = $("#dialog");
+    d.addEventListener("close", () => resolve(!!state.me?.ai_consent), { once: true });
+    $("#aiAgree").addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        state.me = await api("/api/me/ai-consent", { method: "POST", body: { agree: true } });
+        d.close();
+        toast("Thanks! Companions can reply now. If something didn't go through, try it again.");
+      } catch (err) { toast(err.message); e.target.disabled = false; }
+    });
+  }).finally(() => { consentAsked = null; });
+  return consentAsked;
+}
+
 /* ----------------------------------------------------------- notifications */
 
 const pushSupported = !!appBridge || ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window);
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const installedApp = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+// Safari on iPhone and iPad can add the site to the Home Screen, but has no prompt for it: the steps are shown instead.
+const homeScreenable = isIOS && !inApp && !installedApp;
 const deviceZone = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })();
 let installPrompt = null;
 
@@ -457,6 +492,8 @@ const routes = [
   [/^#\/course\/([a-z0-9-]+)\/learn\/(l\d+-\d+|lab\d+|quiz\d+|project|grades)$/, viewCoursePlayer],
   [/^#\/track\/([a-z0-9-]+)$/, viewTrack],
   [/^#\/certificate\/([A-Za-z0-9]+)$/, viewCertificate, null],
+  [/^#\/privacy$/, viewPrivacy, null],
+  [/^#\/support$/, viewSupport, null],
   [/^#\/learn(?:\?(.*))?$/, viewLearn],
   [/^#\/lesson\/([\w-]+)(?:\?companion=(\d+))?$/, viewLesson],
   [/^#\/quiz\/(\d+)$/, viewQuiz],
@@ -500,6 +537,10 @@ async function router() {
     if (needsAuth === true && !state.me.onboarded && !/^#\/(onboarding|studio|billing|referral)/.test(hash)) { location.hash = "#/onboarding"; return; }
     try { await view(m); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
     window.scrollTo(0, 0);
+    if (needsAuth === true && state.me && !state.me.ai_consent && state.consentAskedFor !== state.me.id) {
+      state.consentAskedFor = state.me.id;
+      askAiConsent();
+    }
     return;
   }
   location.hash = state.me ? "#/feed" : "#/welcome";
@@ -556,7 +597,7 @@ function shell(active, inner) {
         <button type="button" class="icon-btn side-close" id="menuClose" aria-label="Close the menu">${CLOSE_ICON}</button>
         <nav class="nav" aria-label="Pages">
           ${pages.map(link).join("")}
-          <button type="button" class="install" id="installBtn" ${installPrompt ? "" : "hidden"}>${navItem("📲", "Install the app", "Install")}</button>
+          <button type="button" class="install" id="installBtn" ${installPrompt || homeScreenable ? "" : "hidden"}>${navItem("📲", "Install the app", "Install")}</button>
         </nav>
         ${bell}
         <div class="me" title="${esc(name)}"><span class="me-av" aria-hidden="true">${esc([...name.trim()][0]?.toUpperCase() || "?")}</span>
@@ -572,7 +613,7 @@ function shell(active, inner) {
   $("#scrim").addEventListener("click", () => setMenu(false));
   $("#side").addEventListener("click", (e) => { if (e.target.closest("a")) setMenu(false); });
   $("#installBtn").addEventListener("click", async () => {
-    if (!installPrompt) return;
+    if (!installPrompt) { if (homeScreenable) showHomeScreenSteps(); return; }
     installPrompt.prompt();
     await installPrompt.userChoice.catch(() => {});
     installPrompt = null;
@@ -625,6 +666,8 @@ async function viewWelcome(m) {
         <div class="faces" id="faces"></div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
         ${forSale(`<p><a class="btn ghost" href="#/pricing">See plans and pricing</a></p>`)}
+        <div class="get-app stack" id="getApp" hidden></div>
+        <p class="muted small"><a href="#/support">Help and support</a> · <a href="#/privacy">Privacy</a></p>
       </div>
       <div class="card">
         <div class="tabs">
@@ -644,6 +687,7 @@ async function viewWelcome(m) {
           <label data-only="signup">What are you into? <span class="hint">Optional: hobbies, work, anything you love. Companions start your chats from it</span>
             <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
           </label>
+          <label class="check" data-only="signup"><input type="checkbox" name="ai_consent"> Let companions use Claude: what I write to them, and my profile, go to Anthropic, the company that makes Claude, so it can reply. <a href="#/privacy" target="_blank">How we use your data</a></label>
           <label class="check" data-only="signup"><input type="checkbox" name="marketing_emails"> Email me news and offers from AI Every Time. You can stop them any time.</label>
           ${ref ? `<div class="small muted" data-only="signup">🎁 A friend invited you. Welcome!</div>` : ""}
           <div class="error" id="authErr"></div>
@@ -655,6 +699,7 @@ async function viewWelcome(m) {
         </form>
       </div>
     </section>`;
+  getTheApp($("#getApp"));
   fetch("/api/starters/faces").then((r) => (r.ok ? r.json() : [])).then((faces) => {
     if (!$("#faces")) return;
     $("#faces").innerHTML = faces.map((f) => `<img class="avatar" src="/api/companions/${f.id}/avatar?v=${encodeURIComponent(f.updated_at)}" width="56" height="56" alt="" title="${esc(f.name)}">`).join("");
@@ -673,7 +718,7 @@ async function viewWelcome(m) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
     const body = tab === "signup"
-      ? { ...f, marketing_emails: !!f.marketing_emails, timezone: deviceZone, referral_code: ref, source }
+      ? { ...f, marketing_emails: !!f.marketing_emails, ai_consent: !!f.ai_consent, timezone: deviceZone, referral_code: ref, source }
       : { email: f.email, password: f.password };
     $("#authErr").textContent = "";
     $("#authBtn").disabled = true;
@@ -741,6 +786,160 @@ async function viewReset(m) {
       location.replace(state.me.onboarded ? "#/feed" : "#/onboarding");
     } catch (err) { $("#resetErr").textContent = err.message; }
   });
+}
+
+/* ------------------------------------------------- privacy, help and the app */
+
+/* What pages open to everyone need from the server: the support address, and the iPhone app's links once it has them. */
+let siteInfo = null;
+const site = () => (siteInfo ||= fetch("/api/site").then((r) => (r.ok ? r.json() : {})).catch(() => ({})));
+
+/* A page open to everyone: in the frame once signed in, under the logo otherwise. */
+function openPage(html) {
+  if (state.me) return shell("", html);
+  app.innerHTML = `<div class="public-top">${logo(34)}
+      <div class="row"><a class="btn ghost" href="#/welcome">Sign in</a><a class="btn primary" href="#/welcome">Start free</a></div></div>
+    <main class="public-page">${html}</main>`;
+  return $(".public-page");
+}
+
+const mailLink = (email) => `<a href="mailto:${esc(email)}">${esc(email)}</a>`;
+
+async function viewPrivacy() {
+  const { support_email: email = "" } = await site();
+  document.title = "Privacy · AI Every Time";
+  openPage(`<article class="prose page-text">
+    <h1>Privacy at AI Every Time</h1>
+    <p class="muted">Last updated 29 October 2026</p>
+    <p>AI Every Time is a place to learn about AI with AI companions. This page says what we keep about you, why, who else
+      handles it, and the choices you have. If anything isn't clear, write to us at ${mailLink(email)}.</p>
+    <h2>What we keep</h2>
+    <ul>
+      <li><b>Your account:</b> your name, email address and password (kept only as a one-way hash, which can't be turned
+        back into your password), your AI level, what you want to learn, your interests, your time zone and reminder time,
+        and your plan.</li>
+      <li><b>What you do here:</b> your chats with companions and what they remember about you, the companions you design
+        and any photo you give one, your progress in lessons, courses, quizzes and flashcards, the projects you hand in,
+        your certificates, reactions, reports and appeals, the days you learned and the guides you read.</li>
+      <li><b>Your devices, if you turn notifications on:</b> each device's address at Apple's or its browser maker's
+        notification service, and a short description such as "Safari on iPhone".</li>
+      <li><b>Your AI requests:</b> what kind each was and when, to keep to your daily allowance and to our costs.</li>
+      <li><b>Payments:</b> if you buy a plan on our website, Stripe takes the payment. We keep your plan, its dates and
+        Stripe's references to it, never your card details.</li>
+    </ul>
+    <h2>Why</h2>
+    <p>To run your account and your learning; to remember where you are and tailor what companions teach you; to send the
+      emails and notifications you ask for; to keep AI Every Time safe, for example by slowing down password guessing and
+      looking into reports; and to understand, in totals, how it's used, so we can make it better.</p>
+    <h2>Claude, by Anthropic</h2>
+    <p>Companions, lessons, quizzes, flashcards and feedback are written by Claude, an AI made by Anthropic. To write them,
+      what you send to a companion and what it needs to answer well (your name, level, goals and interests, what the
+      companion remembers about you, and the lesson or work in question) go to Anthropic. Nothing goes until you agree,
+      when you sign up or the first time it's needed, and you can change your mind in your profile at any time. Anthropic
+      handles it for us as a service provider: see <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's privacy policy</a>.</p>
+    <h2>Who else handles your data</h2>
+    <p>Only companies that help us run AI Every Time, for that and nothing else:</p>
+    <ul>
+      <li><b>Anthropic,</b> for Claude, as above.</li>
+      <li><b>Stripe,</b> for payments on our website.</li>
+      <li><b>Our email provider,</b> for the emails you ask for or agree to.</li>
+      <li><b>The company that hosts our servers,</b> where your account is kept.</li>
+      <li><b>Apple, Google, Mozilla or Microsoft,</b> to deliver notifications, if you turn them on.</li>
+    </ul>
+    <p>We don't sell your data, show adverts, or let anyone follow you across other apps and websites.</p>
+    <h2>What others can see</h2>
+    <p>Your chats with companions are yours alone. Companions you publish to the community can be seen by other learners,
+      with your name as their designer. Our moderators see what they need to look into a report or an appeal.</p>
+    <h2>Emails and notifications</h2>
+    <p>We email you to confirm your address, to reset your password when you ask, and about payments for a plan. Daily
+      reminders and our news come only if you choose them, and each one has a link to stop them. You can turn
+      notifications on and off in your profile, and in your phone's settings.</p>
+    <h2>Cookies</h2>
+    <p>One cookie keeps you signed in, and one remembers a friend's invite for up to a month. Your browser also keeps a
+      few settings, such as reading replies aloud, on your device. We don't use advertising or tracking cookies.</p>
+    <h2>How long we keep it</h2>
+    <p>For as long as you have an account. When you delete it (in your profile, choose <i>Delete my account</i>) we delete
+      it straight away, with everything in it: the companions you designed and their posts, your chats, memories,
+      progress and devices. What stays is in totals, without your name: the number of AI requests, payments and plan
+      changes, which we need for our accounts. Stripe keeps its own records of payments, as the law requires. Records
+      kept for security, such as recent wrong passwords, are deleted within a day, and password-reset links stop working
+      within an hour.</p>
+    <h2>Your choices</h2>
+    <ul>
+      <li>Download everything we keep about you: in your profile, choose <i>Download my data</i>.</li>
+      <li>Correct your details, in your profile.</li>
+      <li>Delete your account: in your profile, choose <i>Delete my account</i>.</li>
+      <li>Stop emails and notifications, in your profile or from the link in any email.</li>
+      <li>Stop what you write going to Claude: in your profile, under <i>Your data</i>.</li>
+    </ul>
+    <p>For anything else, including your rights under the law where you live, write to us at ${mailLink(email)}.</p>
+    <h2>Children</h2>
+    <p>AI Every Time isn't for children under 13. If you think a child under 13 has an account, write to us and we'll
+      delete it.</p>
+    <h2>Changes</h2>
+    <p>When this changes we'll update this page and its date, and for a big change we'll tell you in the app or by email.</p>
+  </article>`);
+}
+
+async function viewSupport() {
+  const { support_email: email = "" } = await site();
+  document.title = "Help · AI Every Time";
+  openPage(`<article class="prose page-text">
+    <h1>Help and support</h1>
+    <p>Write to us at ${mailLink(email)} with a question, a problem or an idea, and we'll get back to you.</p>
+    <h2>Quick answers</h2>
+    <h3>I forgot my password</h3>
+    <p>On the sign-in page, choose <i>Forgot your password?</i> and we'll email you a link to choose a new one.</p>
+    <h3>A community companion is harmful, misleading or pretends to be someone</h3>
+    <p>Open its page and choose <i>Report</i>. Our moderators look into every report, and a companion reported by several
+      learners is hidden while they do.</p>
+    <h3>I don't want to see someone's companions</h3>
+    <p>Open one of their companions and choose <i>Block designer</i>. You won't see their companions or posts again, and
+      you can unblock them in your profile.</p>
+    <h3>Notifications</h3>
+    <p>Turn them on or off in your profile. On iPhone and iPad they come through the AI Every Time app, or through
+      AI Every Time on your Home Screen.</p>
+    <h3>What companions do with what I write</h3>
+    <p>Companions are Claude, an AI made by Anthropic, so what you write to them goes to Anthropic. You choose whether
+      it does, in your profile under <i>Your data</i>.</p>
+    <h3>My data and my account</h3>
+    <p>Download your data, or delete your account, in your profile. Our <a href="#/privacy">privacy policy</a> says what we
+      keep and why.</p>
+    ${forSale(`<h3>My plan</h3>
+    <p>See or change your plan in your profile, under <i>Plan and billing</i>.</p>`)}
+  </article>`);
+}
+
+/* Adding the site to the Home Screen makes it an app of its own on iPhone and iPad, with notifications. Safari has no
+   prompt for it, so this shows the steps. */
+function showHomeScreenSteps() {
+  showDialog(`<h2>Add AI Every Time to your Home Screen</h2>
+    <ol>
+      <li>Tap <b>Share</b> in Safari. On iOS 26, tap <b>•••</b> next to the address first, then <b>Share</b>.</li>
+      <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+      <li>Leave <b>Open as Web App</b> on, and tap <b>Add</b>.</li>
+    </ol>
+    <p>Then open AI Every Time from your Home Screen. It opens full screen, like an app, and can send you notifications:
+      turn them on in your profile. In Chrome, tap <b>Share</b> in the address bar, then <b>Add to Home Screen</b>.</p>`);
+}
+
+/* Ways to have AI Every Time on a phone: the iPhone app, from the App Store or in testing, and the Home Screen.
+   Nothing to offer inside the app itself, or where it's already on the Home Screen. */
+async function getTheApp(box, { signedIn = false } = {}) {
+  if (inApp || installedApp || !box) return;
+  const { ios = {} } = await site();
+  const links = [];
+  if (ios.app_store) links.push(`<a class="btn primary" href="${esc(ios.app_store)}" target="_blank" rel="noopener">Get the iPhone app</a>`);
+  else if (ios.testflight) links.push(`<a class="btn" href="${esc(ios.testflight)}" target="_blank" rel="noopener">Try the iPhone app (beta)</a>`);
+  if (isIOS) links.push(`<button type="button" class="btn ghost" data-homescreen>Add to Home Screen</button>`);
+  if (!links.length || !document.body.contains(box)) return;
+  const testing = !ios.app_store && ios.testflight
+    ? " The iPhone app is in testing: the link opens TestFlight, Apple's app for trying apps before they're out." : "";
+  box.innerHTML = `<div><b>📱 AI Every Time on your ${isIOS ? "iPhone or iPad" : "phone"}</b>
+      <div class="muted small">${signedIn ? "Sign in there with the same email and password." : "Your companions, lessons and reminders, a tap away."}${testing}</div></div>
+    <div class="row">${links.join("")}</div>`;
+  box.hidden = false;
+  $("[data-homescreen]", box)?.addEventListener("click", showHomeScreenSteps);
 }
 
 /* --------------------------------------------------------------- onboarding */
@@ -1360,7 +1559,7 @@ async function viewCompanion(m) {
       <div class="row">
         ${canSpeak && p.voice.enabled ? `<button class="btn ghost" id="readAloud" aria-pressed="false">🔈 Read aloud</button>` : ""}
         ${c.is_mine ? `<a class="btn" href="#/studio/${id}">Edit companion</a>${c.hidden ? "" : `<button class="btn ghost" id="pubBtn">${c.is_public ? "Unpublish" : "Publish"}</button>`}` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>${c.real_person ? "" : `<a class="btn" href="#/studio/remix/${id}">Remix</a>`}`}
-        ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button>` : ""}
+        ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button><button class="btn ghost" id="blockBtn">Block designer</button>` : ""}
       </div>
     </div>
     ${c.moderation ? removalCard(c) : ""}
@@ -1434,6 +1633,7 @@ async function viewCompanion(m) {
   wireMic($("#mic"), $("#input"));
   $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
+  $("#blockBtn")?.addEventListener("click", () => blockDesigner(id, c.designer));
   $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
   messages.forEach((x) => addMsg(x.role, x.content, x));
   if (!messages.length) openChat();
@@ -2007,12 +2207,28 @@ async function viewProfile() {
       </form>
       <div class="card stack">
         <div><h2 style="margin:0">Your data</h2>
-          <div class="muted small">Your account, companions, chats, memories, progress and settings, in one file you can keep.</div></div>
+          <div class="muted small">Your account, companions, chats, memories, progress and settings, in one file you can keep.
+            <a href="#/privacy">How AI Every Time uses your data</a></div></div>
+        <div class="stack" id="consentBox"></div>
         <div class="row"><a class="btn" href="/api/me/export" download>⬇ Download my data</a><button type="button" class="btn danger" id="deleteAccount">Delete my account</button></div>
       </div>
+      <div class="card stack" id="blockedCard" hidden></div>
+      <div class="card get-app stack" id="getApp" hidden></div>
+      <p class="muted small"><a href="#/support">Help and support</a> · <a href="#/privacy">Privacy</a></p>
     </div>`);
   const f = $("#prof", main);
   f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals; f.interests.value = me.interests || "";
+  renderConsent($("#consentBox", main));
+  getTheApp($("#getApp", main), { signedIn: true });
+  const blockedCard = $("#blockedCard", main);
+  renderBlocked(blockedCard);
+  blockedCard.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-unblock]");
+    if (!b) return;
+    b.disabled = true;
+    try { await api(`/api/blocks/${b.dataset.unblock}`, { method: "DELETE" }); toast("Unblocked"); renderBlocked(blockedCard); }
+    catch (err) { toast(err.message); b.disabled = false; }
+  });
   f.addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
@@ -2101,6 +2317,7 @@ async function viewProfile() {
       else if (b.dataset.push === "off") { await disablePush(); toast("Notifications are off for this device"); }
       else if (b.dataset.push === "test") { await api("/api/push/test", { method: "POST" }); toast("Sent. It should appear in a few seconds."); }
       else if (b.dataset.push === "settings") await askApp("openSettings");
+      else if (b.dataset.push === "homescreen") showHomeScreenSteps();
       else if (b.dataset.push === "all-off") {
         await api("/api/push/devices", { method: "DELETE" });
         await forgetDevice();
@@ -2184,9 +2401,10 @@ async function renderPushBox(box) {
       + `<div class="row"><button type="button" class="btn" data-push="test">Send a test</button><button type="button" class="btn ghost" data-push="off">Turn off on this device</button></div>`
       : `<div class="row"><button type="button" class="btn primary" data-push="on">🔔 Turn on notifications on this device</button></div>`;
   } else if (!pushSupported) {
-    status = note(isIOS && !installedApp
-      ? "On iPhone and iPad, notifications come through the Home Screen app: tap <b>Share</b>, then <b>Add to Home Screen</b>, open AI Every Time from there and turn them on here."
-      : `<span class="muted">This browser can't show notifications.</span>`);
+    status = homeScreenable
+      ? note("On iPhone and iPad, notifications come through AI Every Time on your Home Screen: add it there, open it from there and turn them on here.")
+        + `<div class="row"><button type="button" class="btn" data-push="homescreen">Show me how</button></div>`
+      : note(`<span class="muted">This browser can't show notifications.</span>`);
   } else if (Notification.permission === "denied") {
     status = note("Notifications are blocked for this site. Allow them in your browser's site settings, then come back here.");
   } else if (here) {
@@ -2197,6 +2415,27 @@ async function renderPushBox(box) {
   }
   box.innerHTML = `<h3 style="margin:0">Notifications on your phone or computer</h3>${status}
     ${others.length ? `<div class="muted small">Also on: ${others.map((d) => esc(d.device)).join(", ")}. <button type="button" class="linkbtn" data-push="all-off">Turn off everywhere</button></div>` : ""}`;
+}
+
+
+/* Whether what the learner writes may go to Claude, and the way to change their mind. */
+function renderConsent(box) {
+  const on = !!state.me.ai_consent;
+  box.innerHTML = on
+    ? `<p class="small" style="margin:0">✅ Companions can reply: what you write to them, and your profile, go to Anthropic, the company that makes Claude.</p>
+       <div><button type="button" class="btn ghost" data-consent>Stop sending what I write to Claude</button></div>`
+    : `<p class="small" style="margin:0">Companions can't reply, and new lessons, quizzes and feedback can't be written, until you agree that what you write to them goes to Anthropic, the company that makes Claude.</p>
+       <div><button type="button" class="btn primary" data-consent>Agree</button></div>`;
+  $("[data-consent]", box).addEventListener("click", async (e) => {
+    if (!on) { await askAiConsent(); if (document.body.contains(box)) renderConsent(box); return; }
+    if (!confirm("Companions won't reply, and new lessons, quizzes and feedback won't be written, until you agree again.")) return;
+    e.target.disabled = true;
+    try {
+      state.me = await api("/api/me/ai-consent", { method: "POST", body: { agree: false } });
+      toast("Nothing you write goes to Claude now.");
+      renderConsent(box);
+    } catch (err) { toast(err.message); e.target.disabled = false; }
+  });
 }
 
 
@@ -2224,6 +2463,37 @@ async function studyAction(kind, sourceType, sourceRef, { companionId = null, bu
   } finally {
     if (button && document.body.contains(button)) { button.disabled = false; button.textContent = label; }
   }
+}
+
+/* Blocking a community companion's designer hides everything they design, and its posts, from the learner. */
+function blockDesigner(companionId, designer) {
+  const who = esc(designer || "this designer");
+  showDialog(`<h2>Block ${who}?</h2>
+    <p>You won't see the companions ${who} designs, or their posts, and you'll stop following them. You can unblock
+      ${who} in your profile.</p>
+    <div class="row"><button type="button" class="btn danger" id="blockYes">Block</button>
+      <button type="button" class="btn ghost" data-close>Cancel</button></div>`, { done: null });
+  $("#blockYes").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      await api(`/api/companions/${companionId}/block`, { method: "POST" });
+      $("#dialog").close();
+      state.me = await api("/api/me").catch(() => state.me);  // their companion may have been the learner's own
+      toast(designer ? `You won't see ${designer}'s companions any more.` : "Blocked.");
+      location.hash = "#/companions";
+    } catch (err) { toast(err.message); e.target.disabled = false; }
+  });
+}
+
+/* The designers the learner blocked, in their profile, each with a way to unblock them. Nothing shows until there's one. */
+async function renderBlocked(box) {
+  const list = await api("/api/blocks").catch(() => []);
+  if (!document.body.contains(box)) return;
+  box.hidden = !list.length;
+  box.innerHTML = `<div><h2 style="margin:0">Blocked designers</h2>
+      <div class="muted small">You don't see the companions they design, or their posts.</div></div>
+    ${list.map((b) => `<div class="row spread"><span>${esc(b.name)}</span>
+      <button type="button" class="btn ghost" data-unblock="${b.id}">Unblock</button></div>`).join("")}`;
 }
 
 function showReport(c) {
@@ -2279,7 +2549,7 @@ function showAppeal(c, onSent) {
   });
 }
 
-function showDialog(html) {
+function showDialog(html, { done = "Done" } = {}) {
   let d = $("#dialog");
   if (!d) {
     d = document.createElement("dialog");
@@ -2288,7 +2558,7 @@ function showDialog(html) {
     document.body.appendChild(d);
     d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.close(); });
   }
-  d.innerHTML = `<div class="prose">${html}</div><div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>Done</button></div>`;
+  d.innerHTML = `<div class="prose">${html}</div>${done ? `<div class="row" style="justify-content:flex-end"><button class="btn primary" data-close>${done}</button></div>` : ""}`;
   d.showModal();
 }
 

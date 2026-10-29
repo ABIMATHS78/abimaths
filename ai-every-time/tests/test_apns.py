@@ -171,7 +171,7 @@ def test_daily_reminders_and_notices_reach_the_app(client, apple, monkeypatch):
 
     monkeypatch.setattr(settings, "admin_emails", frozenset({"boss@example.com"}))
     r = client.post("/api/auth/signup", json={"email": "ken@example.com", "password": "correct horse",
-                                               "display_name": "Ken", "timezone": "Asia/Tokyo"})
+                                               "display_name": "Ken", "ai_consent": True, "timezone": "Asia/Tokyo"})
     assert r.status_code == 201
     client.patch("/api/me", json={"reminder_hour": 18})
     client.get("/api/lessons/tokens")  # something to remind about

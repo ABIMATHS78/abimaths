@@ -2,7 +2,7 @@ import time
 
 def signup(client, email="ada@example.com", name="Ada"):
     r = client.post("/api/auth/signup", json={"email": email, "password": "correct horse", "display_name": name,
-                                              "goals": "Build my first AI app"})
+                                              "goals": "Build my first AI app", "ai_consent": True})
     assert r.status_code == 201, r.text
     return r.json()
 
