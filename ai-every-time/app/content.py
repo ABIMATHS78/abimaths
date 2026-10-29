@@ -13,7 +13,7 @@ import time
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
-from app import companions, db, llm
+from app import companions, db, llm, paths
 from app.config import settings
 from app.persona import Persona
 
@@ -58,8 +58,9 @@ async def generate_for(companion: dict) -> dict | None:
         return None
     with db.connect() as conn:
         cur = conn.execute(
-            "INSERT INTO posts (companion_id, title, body, topic, created_at) VALUES (?, ?, ?, ?, ?)",
-            (companion["id"], post.title[:200], post.body, post.topic[:60], db.now()),
+            "INSERT INTO posts (companion_id, title, body, topic, slug, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (companion["id"], post.title[:200], post.body, post.topic[:60], paths.new_post_slug(conn, post.title[:200], companion["id"]),
+             db.now()),
         )
         row = conn.execute("SELECT * FROM posts WHERE id = ?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -149,8 +150,8 @@ def unrecord(user_id: int, post_id: int, kind: str) -> None:
 
 # What lists of posts show of each. A guide's body runs to thousands of words, so lists carry its summary and
 # graphic instead, and its own page fetches the rest; a post a companion wrote is short and comes whole.
-_LISTED = ("p.id, p.companion_id, p.title, p.topic, p.created_at, p.summary, p.kind, p.level, p.minutes, p.graphic, "
-           "CASE WHEN p.summary IS NULL THEN p.body ELSE '' END AS body")
+_LISTED = ("p.id, p.slug, p.companion_id, p.title, p.topic, p.created_at, p.summary, p.kind, p.level, p.minutes, "
+           "p.graphic, CASE WHEN p.summary IS NULL THEN p.body ELSE '' END AS body")
 _COUNTS = """
   (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'like') AS likes,
   (SELECT COUNT(*) FROM engagements e WHERE e.post_id = p.id AND e.kind = 'helpful') AS helpful,
@@ -239,6 +240,15 @@ def post_view(user_id: int, post_id: int) -> dict | None:
     """A post whole, with its likes and the learner's own engagement."""
     with db.connect() as conn:
         row = conn.execute(f"SELECT p.*, {_COUNTS} FROM posts p WHERE p.id = :pid", {"uid": user_id, "pid": post_id}).fetchone()
+    return _post(row) if row else None
+
+
+def find_post(ref: str) -> dict | None:
+    """A post by its slug, as its page's address has it, or by its id, as addresses before slugs did."""
+    with db.connect() as conn:
+        found = paths.as_id(ref)
+        row = (conn.execute("SELECT * FROM posts WHERE id = ?", (found,)) if found is not None
+               else conn.execute("SELECT * FROM posts WHERE slug = ?", (ref,))).fetchone()
     return _post(row) if row else None
 
 

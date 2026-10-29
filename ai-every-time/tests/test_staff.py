@@ -216,7 +216,7 @@ def test_email_reminders_opt_in_digest_and_unsubscribe(client, monkeypatch):
     msg = digest.build_message(user, items, token)
     assert msg["To"] == "ada@example.com" and "List-Unsubscribe=One-Click" == msg["List-Unsubscribe-Post"]
     text = msg.get_body(("plain",)).get_content()
-    assert "https://aieverytime.example/#/lesson/tokens" in text and token in text
+    assert "https://aieverytime.example/lessons/tokens" in text and token in text
 
     sent = []
     monkeypatch.setattr(digest.smtplib, "SMTP", lambda *a, **k: FakeSMTP(sent))

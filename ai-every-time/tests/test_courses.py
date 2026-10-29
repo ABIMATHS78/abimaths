@@ -221,12 +221,15 @@ def test_a_certificate_says_what_finishing_took_and_its_short_link_shows_who_ear
     assert cert["for"]["labs"] == sum(m.lab is not None for m in c.modules) and cert["for"]["project"] is True
 
     client.post("/api/auth/logout")
-    page = client.get(f"/c/{cert['code'].lower()}")
-    assert page.status_code == 200 and f"url=/#/certificate/{cert['code']}" in page.text  # on to its page in the app
+    short = client.get(f"/c/{cert['code'].lower()}", follow_redirects=False)
+    assert short.status_code == 301 and short.headers["location"] == f"/certificates/{cert['code']}"  # its page
+    page = client.get(short.headers["location"])
+    assert page.status_code == 200 and '<script src="/static/app.js"></script>' in page.text  # which the app shows
     assert ('<meta property="og:title" content="Ada &quot;&lt;b&gt;&quot; Lovelace completed Python Programming with PyCharm">'
             in page.text) and "<b>" not in page.text
-    assert f'<meta property="og:url" content="{cert["url"]}">' in page.text
-    assert client.get("/c/NOPE").status_code == 404
+    assert f'<meta property="og:url" content="{settings.public_url}/certificates/{cert["code"]}">' in page.text
+    assert '<meta property="og:image:width" content="1200">' in page.text
+    assert client.get("/c/NOPE").status_code == 404 and client.get("/certificates/NOPE").status_code == 404
 
 
 def test_rating_and_leaving_a_course(client):

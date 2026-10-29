@@ -15,7 +15,7 @@ from typing import AsyncIterator, Callable, TypeVar
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
-from app import course_guide, reactions, usage
+from app import course_guide, paths, reactions, usage
 from app.config import settings
 from app.persona import (
     EMOJI_TEXT,
@@ -224,17 +224,17 @@ async def ask(schema: type[T], effort: str, **request) -> T | None:
 async def stream_reply(
     persona: Persona, learner: dict, memories: list[str], history: list[dict], post: dict | None,
     reacted: str | None = None, react: Callable[[str], None] = lambda emoji: None, *, taught: str = "",
-    access: str = "", companion_id: int | None = None,
+    access: str = "", companion: str | None = None,
 ) -> AsyncIterator[str]:
     """Yield the companion's reply as text chunks. `history` ends with the learner's message. `reacted` is the
     learner's reaction to the companion's last message, if any; the companion's own reaction to the learner's
     message, if it makes one, goes to `react` before the reply starts. `taught` and `access` are what the
     companion knows about its courses and the learner's plan (app.course_guide); demo mode links a path for the
-    companion `companion_id` to design."""
+    companion with the slug `companion` to design."""
     if settings.offline:
         if emoji := reactions.offline(history[-1]["content"]):
             react(emoji)
-        for chunk in _offline_reply(persona, learner, history[-1]["content"], post, companion_id):
+        for chunk in _offline_reply(persona, learner, history[-1]["content"], post, companion):
             yield chunk
         return
 
@@ -278,24 +278,24 @@ COURSE_QUESTION = re.compile(r"\b(?:courses?|class(?:es)?|certificates?|certific
                              r"programmes?|programs?|tracks?)\b", re.I)
 
 
-def _offline_courses(persona: Persona, learner: dict, message: str, companion_id: int | None) -> str:
+def _offline_courses(persona: Persona, learner: dict, message: str, companion: str | None) -> str:
     """Demo mode's answer to a question about courses: the ones that match it, or a path to design on it."""
     found = course_guide.search(message)
     if found:
-        listed = "; ".join(f"[{c.title}](#/course/{c.slug}) ({c.level}, about {c.hours:g} h)" for c in found)
+        listed = "; ".join(f"[{c.title}]({paths.course(c.slug)}) ({c.level}, about {c.hours:g} h)" for c in found)
         return (f"Hi {learner['display_name']}, it's {persona.name}. These courses fit what you asked: {listed}. "
                 "(Demo mode: set ANTHROPIC_API_KEY for real answers.)")
     words = course_guide.topic(message) or "your-topic"
-    link = f"#/learn?design={words}" + (f"&with={companion_id}" if companion_id else "")
+    link = f"{paths.LEARN}?design={words}" + (f"&with={companion}" if companion else "")
     return (f"Hi {learner['display_name']}, it's {persona.name}. There's no course on that yet, but I can design a "
             f"learning path on it for you: [Design a path on {words.replace('-', ' ')} with me]({link}). "
             "(Demo mode: set ANTHROPIC_API_KEY for real answers.)")
 
 
 def _offline_reply(persona: Persona, learner: dict, message: str, post: dict | None,
-                   companion_id: int | None = None) -> list[str]:
+                   companion: str | None = None) -> list[str]:
     if not post and COURSE_QUESTION.search(message):
-        return [w + " " for w in _offline_courses(persona, learner, message, companion_id).split(" ")]
+        return [w + " " for w in _offline_courses(persona, learner, message, companion).split(" ")]
     ws = persona.writing_style
     topic = post["title"] if post else (persona.expertise[0] if persona.expertise else "AI")
     text = (

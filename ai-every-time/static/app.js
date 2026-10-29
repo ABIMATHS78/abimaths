@@ -22,7 +22,8 @@ async function api(path, { method = "GET", body } = {}) {
   });
   if (res.status === 401 && !path.startsWith("/api/auth")) {
     state.me = null;
-    location.hash = "#/welcome";
+    state.signedOut = true;
+    navigate(`/signin?next=${encodeURIComponent(here())}`, { replace: true });
     throw new StaleView("Please sign in");
   }
   if (!res.ok) {
@@ -61,7 +62,8 @@ function md(src) {
   let html = "", list = null, para = [], quote = [];
   const inline = (s) => s.split(/(`[^`\n]+`)/).map((part, k) => k % 2 ? `<code>${part.slice(1, -1)}</code>` : part
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-    .replace(/\[([^\]\n]+)\]\((#\/[\w\/?=&;.,%+-]*)\)/g, '<a href="$2">$1</a>')  // a page in the app: a course, a track
+    .replace(/\[([^\]\n]+)\]\((\/(?!\/)[\w\/?=&;.,%+-]*)\)/g, '<a href="$2">$1</a>')  // a page in the app: a course, a track
+    .replace(/\[([^\]\n]+)\]\((#\/[\w\/?=&;.,%+-]*)\)/g, (_, text, old) => `<a href="${esc(fromLegacy(old.replace(/&amp;/g, "&")))}">${text}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")).join("");
   const closeList = () => { if (list) { html += `</${list}>`; list = null; } };
@@ -354,7 +356,7 @@ function askAiConsent() {
   consentAsked ||= new Promise((resolve) => {
     showDialog(`<h2>Companions are powered by Claude</h2><p>${AI_SHARING}</p>
       <p>Nothing goes to Anthropic until you agree, and you can change your mind in your profile.
-        <a href="#/privacy">How AI Every Time uses your data</a></p>
+        <a href="/privacy">How AI Every Time uses your data</a></p>
       <div class="row"><button type="button" class="btn primary" id="aiAgree">Agree and continue</button>
         <button type="button" class="btn ghost" data-close>Not now</button></div>`, { done: null });
     const d = $("#dialog");
@@ -387,7 +389,7 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data?.type !== "open") return;
     const url = new URL(e.data.url, location.origin);
-    if (url.origin === location.origin) location.hash = url.hash || "#/feed";
+    if (url.origin === location.origin) navigate(url.hash.startsWith("#/") ? fromLegacy(url.hash) : url.pathname + url.search);
   });
 }
 /* Browsers that can install the app ask through this event; the sidebar shows an Install button instead of their banner. */
@@ -471,53 +473,113 @@ async function syncAppDevice() {
 
 /* ------------------------------------------------------------------- router */
 
+/* Every page has an address of its own, in words: /guides/how-to-write-a-prompt, /companions/amahle-ndlovu,
+   /courses/python-with-pycharm/module-1/lesson-2. Links in the site change the page without loading it again
+   (navigate), and the server answers each address with the app, its head the page's own for link previews
+   (app/pages.py). Addresses from before, such as /#/p/1165, still open their pages (fromLegacy). */
+
+// A course item's key (l1-2, lab1, quiz1, project, grades) as part of its address, and back.
+const coursePart = (key) => {
+  const m = key.match(/^l(\d+)-(\d+)$|^(lab|quiz)(\d+)$/);
+  return !m ? key : m[1] ? `module-${m[1]}/lesson-${m[2]}` : `module-${m[4]}/${m[3]}`;
+};
+const courseKey = (part) => {
+  const m = part.match(/^module-(\d+)\/(?:lesson-(\d+)|(lab|quiz))$/);
+  return !m ? part : m[2] ? `l${m[1]}-${m[2]}` : `${m[3]}${m[1]}`;
+};
+// Where things are, from what the server says of them. Without a slug, an id finds them too.
+const to = {
+  post: (p) => `/${p.kind ? "guides" : "posts"}/${p.slug || p.id}`,
+  companion: (c) => `/companions/${c.slug || c.id}`,
+  course: (slug, key) => `/courses/${slug}${key ? `/${coursePart(key)}` : ""}`,
+  track: (slug) => `/tracks/${slug}`,
+  certificate: (code) => `/certificates/${code}`,
+  lesson: (id) => `/lessons/${id}`,
+  quiz: (id) => `/quizzes/${id}`,
+  deck: (id) => `/flashcards/${id}`,
+};
+const here = () => location.pathname + location.search;
+// A page in this site to go to, never another site's: for ?next= and the like.
+const sameSite = (where) => {
+  try {
+    const u = new URL(where, location.origin);
+    return u.origin === location.origin && !u.pathname.startsWith("/api/") ? u.pathname + u.search + u.hash : null;
+  } catch { return null; }
+};
+
+/* needsAuth: true for learners signed in, false for visitors who aren't (the welcome page), null for anyone. A
+   function is for learners too, and gives the page a visitor who isn't signed in sees instead: the course's page
+   for one of its lessons, say. */
 const routes = [
-  [/^#\/welcome(?:\?(.*))?$/, viewWelcome, false],
-  [/^#\/reset\/([\w-]+)$/, viewReset, null],
-  [/^#\/pricing(?:\?(.*))?$/, viewPricing, null],
-  [/^#\/billing(?:\?(.*))?$/, viewBilling],
-  [/^#\/referral$/, viewReferral],
-  [/^#\/onboarding$/, viewOnboarding],
-  [/^#\/feed$/, viewFeed],
-  [/^#\/guides(?:\?(.*))?$/, viewGuides],
-  [/^#\/p\/(\d+)(?:\?(.*))?$/, viewPost],
-  [/^#\/companions$/, viewCompanions],
+  [/^\/$/, viewWelcome, false],
+  [/^\/(signin|signup)$/, viewWelcome, false],
+  [/^\/reset-password\/([\w-]+)$/, viewReset, null],
+  [/^\/pricing$/, viewPricing, null],
+  [/^\/billing$/, viewBilling],
+  [/^\/invite-friends$/, viewReferral],
+  [/^\/get-started$/, viewOnboarding],
+  [/^\/feed$/, viewFeed],
+  [/^\/guides$/, viewGuides, null],
+  [/^\/(guides|posts)\/([\w-]+)(?:\/(skills)(?:\/([a-z0-9-]+))?)?$/, viewPost, null],
+  [/^\/companions$/, viewCompanions, null],
+  [/^\/companions\/new$/, () => viewStudio({ mode: "new" })],
   // The learner's own companion, wherever it is: for the iPhone app's shortcuts, which can't know which it is.
-  [/^#\/mine$/, () => location.replace(state.me.primary_companion_id ? `#/c/${state.me.primary_companion_id}` : "#/companions")],
-  [/^#\/c\/(\d+)(?:\?post=(\d+))?$/, viewCompanion],
-  [/^#\/studio\/new$/, (m) => viewStudio({ mode: "new" })],
-  [/^#\/studio\/remix\/(\d+)$/, (m) => viewStudio({ mode: "remix", id: +m[1] })],
-  [/^#\/studio\/(\d+)$/, (m) => viewStudio({ mode: "edit", id: +m[1] })],
-  [/^#\/profile$/, viewProfile],
-  [/^#\/courses(?:\?(.*))?$/, viewCourses],
-  [/^#\/course\/([a-z0-9-]+)$/, viewCourse],
-  [/^#\/course\/([a-z0-9-]+)\/learn\/(l\d+-\d+|lab\d+|quiz\d+|project|grades)$/, viewCoursePlayer],
-  [/^#\/track\/([a-z0-9-]+)$/, viewTrack],
-  [/^#\/certificate\/([A-Za-z0-9]+)$/, viewCertificate, null],
-  [/^#\/privacy$/, viewPrivacy, null],
-  [/^#\/support$/, viewSupport, null],
-  [/^#\/learn(?:\?(.*))?$/, viewLearn],
-  [/^#\/lesson\/([\w-]+)(?:\?companion=(\d+))?$/, viewLesson],
-  [/^#\/quiz\/(\d+)$/, viewQuiz],
-  [/^#\/practice$/, viewPractice],
-  [/^#\/review(?:\?deck=(\d+))?$/, viewReview],
-  [/^#\/progress$/, viewProgress],
-  [/^#\/staff(?:\/(insights|analytics|reports|appeals|paths|roles|campaigns|setup|log))?$/, viewStaff],
+  [/^\/my-companion$/, () => navigate(state.me.primary_companion_id ? `/companions/${state.me.primary_companion_id}` : "/companions", { replace: true }),
+    () => "/companions"],
+  [/^\/companions\/([\w-]+)$/, viewCompanion, null],
+  [/^\/companions\/([\w-]+)\/customise$/, (m) => viewStudio({ mode: "remix", ref: m[1] }), (m) => `/companions/${m[1]}`],
+  [/^\/companions\/([\w-]+)\/edit$/, (m) => viewStudio({ mode: "edit", ref: m[1] }), (m) => `/companions/${m[1]}`],
+  [/^\/profile$/, viewProfile],
+  [/^\/courses$/, viewCourses, null],
+  [/^\/courses\/([a-z0-9-]+)$/, viewCourse, null],
+  [/^\/courses\/([a-z0-9-]+)\/(module-\d+\/(?:lesson-\d+|lab|quiz)|project|grades)$/, viewCoursePlayer, (m) => `/courses/${m[1]}`],
+  [/^\/tracks\/([a-z0-9-]+)$/, viewTrack, null],
+  [/^\/certificates\/([A-Za-z0-9]+)$/, viewCertificate, null],
+  [/^\/privacy$/, viewPrivacy, null],
+  [/^\/support$/, viewSupport, null],
+  [/^\/learn$/, viewLearn],
+  [/^\/lessons\/([\w-]+)$/, viewLesson],
+  [/^\/quizzes\/(\d+)$/, viewQuiz],
+  [/^\/practice$/, viewPractice],
+  [/^\/flashcards(?:\/(\d+))?$/, viewReview],
+  [/^\/progress$/, viewProgress],
+  [/^\/staff(?:\/(insights|analytics|reports|appeals|paths|roles|campaigns|setup|log))?$/, viewStaff],
 ];
+const routeFor = (path) => {
+  for (const [re, view, needsAuth = true] of routes) {
+    const m = path.match(re);
+    if (m) return { m, view, needsAuth, members: needsAuth === true || typeof needsAuth === "function" };
+  }
+  return null;
+};
+// Pages a learner who hasn't chosen a companion yet can open; the rest wait until they have.
+const BEFORE_ONBOARDING = /^\/(get-started|billing|invite-friends|companions\/(new|[\w-]+\/(customise|edit)))$/;
+
+/* Go to a page of the site without loading it again, adding it to the history unless `replace`. */
+function navigate(where, { replace = false } = {}) {
+  const url = new URL(where, location.origin);
+  if (url.origin !== location.origin) { location.href = url.href; return; }
+  const next = url.pathname + url.search + url.hash;
+  if (next !== here() + location.hash) history[replace ? "replaceState" : "pushState"](null, "", next);
+  return router();
+}
 
 async function router() {
   state.nav++;
   document.title = "AI Every Time";
   // A dialog belongs to the page that opened it (Back, a notification or a link can change pages under it).
   if ($("#dialog")?.open) $("#dialog").close();
-  const hash = location.hash || "#/feed";
-  if (!state.me) {
+  const path = location.pathname, q = new URLSearchParams(location.search), found = routeFor(path);
+  // Whether they're signed in, asked again on each page while they aren't (they may have signed in in another tab),
+  // except pages anyone can see once it's known they aren't: reading guide after guide needn't ask each time.
+  if (!state.me && !(state.signedOut && found?.needsAuth === null)) {
     // Not api(): its sign-in redirect would pull pages open to everyone, like the reset link, back to the welcome page.
     const nav = state.nav;
     const res = await fetch("/api/me", { credentials: "same-origin" }).catch(() => null);
     const me = res?.ok ? await res.json() : null;
     if (nav !== state.nav) return;  // a newer navigation took over while this one waited
     state.me = me;
+    state.signedOut = !me;
   }
   // Reminders follow the learner's own day, so learn their time zone the first time we can.
   if (state.me && !state.me.timezone && deviceZone && state.zoneSentFor !== state.me.id) {
@@ -529,25 +591,100 @@ async function router() {
   $("#banner").hidden = !(state.me?.ai_problem || state.me?.offline_mode);
   $("#banner").textContent = state.me?.ai_problem
     || "Demo mode: companions use templated replies. Set ANTHROPIC_API_KEY on the server for real AI conversations and content.";
-  // needsAuth: true = signed in, false = signed out, null = either.
-  for (const [re, view, needsAuth = true] of routes) {
-    const m = hash.match(re);
-    if (!m) continue;
-    if (needsAuth === true && !state.me) { location.hash = "#/welcome"; return; }
-    if (needsAuth === false && state.me) { location.hash = "#/feed"; return; }
-    // Back from checkout (or on the way to it) before finishing setting up is fine; the rest waits for onboarding.
-    if (needsAuth === true && !state.me.onboarded && !/^#\/(onboarding|studio|billing|referral)/.test(hash)) { location.hash = "#/onboarding"; return; }
-    try { await view(m); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
-    window.scrollTo(0, 0);
-    if (needsAuth === true && state.me && !state.me.ai_consent && state.consentAskedFor !== state.me.id) {
-      state.consentAskedFor = state.me.id;
-      askAiConsent();
-    }
-    return;
+  if (!found) { viewNotFound(); return; }
+  const { m, view, needsAuth, members } = found;
+  if (members && !state.me) {
+    return navigate(typeof needsAuth === "function" ? needsAuth(m) : `/signin?next=${encodeURIComponent(here())}`, { replace: true });
   }
-  location.hash = state.me ? "#/feed" : "#/welcome";
+  if (needsAuth === false && state.me) return navigate(afterSignIn(q.get("next")) || "/feed", { replace: true });
+  // Back from checkout (or on the way to it) before finishing setting up is fine; the rest waits for onboarding.
+  if (members && !state.me.onboarded && !BEFORE_ONBOARDING.test(path)) { keepNext(here()); return navigate("/get-started", { replace: true }); }
+  try { await view(m, q); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
+  window.scrollTo(0, 0);
+  if (members && state.me && !state.me.ai_consent && state.consentAskedFor !== state.me.id) {
+    state.consentAskedFor = state.me.id;
+    askAiConsent();
+  }
 }
-window.addEventListener("hashchange", router);
+window.addEventListener("popstate", router);
+
+/* Addresses from before pages had their own, such as /#/p/1165 or /#/c/52?post=7: in links shared before, emails,
+   notifications and older chats. Each gives the page's address now, with an id where a slug goes; the page then
+   shows its slug. */
+function fromLegacy(hash) {
+  const [path, query = ""] = hash.replace(/^#/, "").split("?");
+  const q = new URLSearchParams(query), with_ = (base, extra = {}) => {
+    const out = new URLSearchParams(q);
+    for (const [k, v] of Object.entries(extra)) v === null ? out.delete(k) : out.set(k, v);
+    return out.toString() ? `${base}?${out}` : base;
+  };
+  const rules = [
+    [/^\/welcome$/, () => with_("/")],
+    [/^\/reset\/([\w-]+)$/, (m) => `/reset-password/${m[1]}`],
+    [/^\/onboarding$/, () => "/get-started"],
+    [/^\/referral$/, () => "/invite-friends"],
+    [/^\/p\/(\d+)$/, (m) => `/guides/${m[1]}` + (q.has("job") ? `/skills/${q.get("job")}` : q.has("skills") ? "/skills" : "")],
+    [/^\/mine$/, () => "/my-companion"],
+    [/^\/c\/(\d+)$/, (m) => with_(`/companions/${m[1]}`, { post: null, about: q.get("post") || null })],
+    [/^\/studio\/new$/, () => "/companions/new"],
+    [/^\/studio\/remix\/(\d+)$/, (m) => `/companions/${m[1]}/customise`],
+    [/^\/studio\/(\d+)$/, (m) => `/companions/${m[1]}/edit`],
+    [/^\/course\/([a-z0-9-]+)$/, (m) => `/courses/${m[1]}`],
+    [/^\/course\/([a-z0-9-]+)\/learn\/([\w-]+)$/, (m) => to.course(m[1], m[2])],
+    [/^\/track\/([a-z0-9-]+)$/, (m) => `/tracks/${m[1]}`],
+    [/^\/certificate\/(\w+)$/, (m) => `/certificates/${m[1]}`],
+    [/^\/lesson\/([\w-]+)$/, (m) => with_(`/lessons/${m[1]}`)],
+    [/^\/quiz\/(\d+)$/, (m) => `/quizzes/${m[1]}`],
+    [/^\/review$/, () => (q.get("deck") ? `/flashcards/${q.get("deck")}` : "/flashcards")],
+  ];
+  for (const [re, page] of rules) {
+    const m = path.match(re);
+    if (m) return page(m);
+  }
+  // The rest kept their names: /#/feed, /#/guides?topic=…, /#/courses, /#/learn?design=…, /#/staff/reports and so on.
+  return with_(path || "/");
+}
+// A link the server made: a page's address, or the #/ route of a notice from before.
+const appLink = (link) => (link?.startsWith("#/") ? fromLegacy(link) : link || "/feed");
+// An old link clicked in a chat or a notice, or typed in.
+window.addEventListener("hashchange", () => { if (location.hash.startsWith("#/")) navigate(fromLegacy(location.hash), { replace: true }); });
+
+/* Links to the site's pages open them in place; downloads, other sites and new tabs are left to the browser. */
+document.addEventListener("click", (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest("a[href]");
+  if (!a || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+  const href = a.getAttribute("href");
+  if (href.startsWith("#") && !href.startsWith("#/")) return;  // a place on this page
+  const url = new URL(href.startsWith("#/") ? fromLegacy(href) : a.href, location.origin);
+  if (url.origin !== location.origin || !routeFor(url.pathname)) return;
+  e.preventDefault();
+  navigate(url.pathname + url.search + url.hash);
+});
+
+/* Where to go once signed in: the page they were on, if they came from one. One that waits for onboarding is kept
+   for when they've chosen their companion. */
+const NEXT_KEY = "aiet-next";
+function keepNext(where) { try { where ? sessionStorage.setItem(NEXT_KEY, where) : sessionStorage.removeItem(NEXT_KEY); } catch {} }
+function takeNext() {
+  try { const where = sessionStorage.getItem(NEXT_KEY); sessionStorage.removeItem(NEXT_KEY); return where ? sameSite(where) : null; }
+  catch { return null; }
+}
+// The page to go to once signed in: the one they came from, unless that's the welcome page itself.
+function afterSignIn(next) {
+  const where = next && sameSite(next);
+  return where && routeFor(new URL(where, location.origin).pathname)?.needsAuth !== false ? where : null;
+}
+
+/* A page that isn't there. */
+function viewNotFound() {
+  document.title = "Page not found · AI Every Time";
+  openPage(`<div class="card empty stack narrow-card">
+    <h1 style="margin:0">We couldn't find that page</h1>
+    <p class="muted" style="margin:0">The link may be wrong, or what it led to may have moved or been taken down.</p>
+    <div class="row" style="justify-content:center"><a class="btn primary" href="${state.me ? "/feed" : "/"}">Go to AI Every Time</a>
+      <a class="btn" href="/guides">Browse the guides</a></div></div>`);
+}
 
 /* The frame around every page once signed in. Wide screens get the sidebar. Tablets get a slim rail of each page's
    icon over a short name. Phones get a slim bar at the top, with the bell and a menu that slides in with every page,
@@ -575,27 +712,27 @@ matchMedia("(max-width: 640px)").addEventListener("change", (e) => { if (!e.matc
 
 function shell(active, inner) {
   const primary = state.me?.primary_companion_id;
-  // Each page: its key, icon, name, the short name where space is tight, and its link if not #/key.
+  // Each page: its key, icon, name, the short name where space is tight, and its address if not /key.
   const pages = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["courses", "🎓", "Courses"], ["learn", "📚", "Learn"],
     ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"], ["companions", "🌍", "Companions"],
-    ["referral", "🎁", "Invite friends", "Invite"], ["profile", "👤", "Profile"]];
+    ["referral", "🎁", "Invite friends", "Invite", "/invite-friends"], ["profile", "👤", "Profile"]];
   if (state.me?.role && state.me.role !== "learner") pages.push(["staff", "🛡️", "Staff"]);
-  if (primary) pages.push(["mine", "💬", "My companion", "Chat", `#/c/${primary}`]);
-  pages.push(["studio", "✨", "Design a companion", "Design", "#/studio/new"]);
-  const link = ([key, icon, name, short, href = `#/${key}`]) =>
+  if (primary) pages.push(["mine", "💬", "My companion", "Chat", "/my-companion"]);
+  pages.push(["studio", "✨", "Design a companion", "Design", "/companions/new"]);
+  const link = ([key, icon, name, short, href = `/${key}`]) =>
     `<a href="${href}"${active === key ? ` class="active" aria-current="page"` : ""}>${navItem(icon, name, short)}</a>`;
   const tabs = ["feed", "guides", "courses", "learn", primary ? "mine" : "companions"].map((k) => pages.find((p) => p[0] === k));
-  const bell = `<a href="#/feed" class="bell" data-bell hidden><span class="bell-i" aria-hidden="true">🔔</span><span class="bell-t"></span><span class="bell-n" aria-hidden="true"></span></a>`;
+  const bell = `<a href="/feed" class="bell" data-bell hidden><span class="bell-i" aria-hidden="true">🔔</span><span class="bell-t"></span><span class="bell-n" aria-hidden="true"></span></a>`;
   const name = state.me.display_name || "";
   app.innerHTML = `
     <div class="shell">
       <header class="topbar">
-        <a class="home" href="#/feed">${logo(30)}</a>
+        <a class="home" href="/feed">${logo(30)}</a>
         ${bell}
         <button type="button" class="icon-btn" id="menuBtn" aria-label="Menu" aria-controls="side" aria-expanded="false">${MENU_ICON}</button>
       </header>
       <aside class="side" id="side">
-        <a class="home" href="#/feed">${logo()}</a>
+        <a class="home" href="/feed">${logo()}</a>
         <button type="button" class="icon-btn side-close" id="menuClose" aria-label="Close the menu">${CLOSE_ICON}</button>
         <nav class="nav" aria-label="Pages">
           ${pages.map(link).join("")}
@@ -646,6 +783,8 @@ async function refreshBell() {
 
 /* The friend's code from an invite link, kept for a month in case they sign up later. */
 const REF_KEY = "aiet-ref";
+// Where a visitor came from (the utm_source of the link that brought them), for the analytics when they sign up.
+const SOURCE_KEY = "aiet-source";
 function inviteCode(fromLink) {
   try {
     if (fromLink) localStorage.setItem(REF_KEY, JSON.stringify({ code: fromLink, until: Date.now() + 30 * 86400000 }));
@@ -654,11 +793,14 @@ function inviteCode(fromLink) {
   } catch { return fromLink || null; }
 }
 
-async function viewWelcome(m) {
-  const q = new URLSearchParams(m?.[1] || "");
+/* The welcome page, at / for everyone; /signup and /signin open it at creating an account or signing in, and
+   ?next= says which page to go back to afterwards (a guide they were reading, say). */
+async function viewWelcome(m, q) {
   const ref = inviteCode(/^[A-Za-z0-9]{6,12}$/.test(q.get("ref") || "") ? q.get("ref") : null);
-  // Where they came from (?utm_source=... before the #), for the analytics.
-  const source = new URLSearchParams(location.search).get("utm_source") || "";
+  const next = afterSignIn(q.get("next"));
+  let source = "";
+  try { source = sessionStorage.getItem(SOURCE_KEY) || ""; } catch {}
+  document.title = m[1] === "signin" ? "Sign in · AI Every Time" : m[1] === "signup" ? "Create your free account · AI Every Time" : "AI Every Time";
   app.innerHTML = `
     <section class="landing">
       <div>
@@ -667,9 +809,10 @@ async function viewWelcome(m) {
         <p class="muted" style="font-size:18px">Follow, chat with and learn from always-available AI Learning Companions from around the world, each with their own face, voice and expertise. Or design your own companion, exactly the way you want it.</p>
         <div class="faces" id="faces"></div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
-        ${forSale(`<p><a class="btn ghost" href="#/pricing">See plans and pricing</a></p>`)}
+        <p class="row"><a class="btn ghost" href="/guides">Read the guides</a><a class="btn ghost" href="/courses">See the courses</a>
+          ${forSale(`<a class="btn ghost" href="/pricing">Plans and pricing</a>`)}</p>
         <div class="get-app stack" id="getApp" hidden></div>
-        <p class="muted small"><a href="#/support">Help and support</a> · <a href="#/privacy">Privacy</a></p>
+        <p class="muted small"><a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
       </div>
       <div class="card">
         <div class="tabs">
@@ -689,7 +832,7 @@ async function viewWelcome(m) {
           <label data-only="signup">What are you into? <span class="hint">Optional: hobbies, work, anything you love. Companions start your chats from it</span>
             <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
           </label>
-          <label class="check" data-only="signup"><input type="checkbox" name="ai_consent"> Let companions use Claude: what I write to them, and my profile, go to Anthropic, the company that makes Claude, so it can reply. <a href="#/privacy" target="_blank">How we use your data</a></label>
+          <label class="check" data-only="signup"><input type="checkbox" name="ai_consent"> Let companions use Claude: what I write to them, and my profile, go to Anthropic, the company that makes Claude, so it can reply. <a href="/privacy" target="_blank">How we use your data</a></label>
           <label class="check" data-only="signup"><input type="checkbox" name="marketing_emails"> Email me news and offers from AI Every Time. You can stop them any time.</label>
           ${ref ? `<div class="small muted" data-only="signup">🎁 A friend invited you. Welcome!</div>` : ""}
           <div class="error" id="authErr"></div>
@@ -707,13 +850,16 @@ async function viewWelcome(m) {
     $("#faces").innerHTML = faces.map((f) => `<img class="avatar" src="/api/companions/${f.id}/avatar?v=${encodeURIComponent(f.updated_at)}" width="56" height="56" alt="" title="${esc(f.name)}">`).join("");
   }).catch(() => {});
   let tab = "signup";
-  const setTab = (t) => {
+  const setTab = (t, address = true) => {
     tab = t;
     $$("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === t));
     $$("[data-only]").forEach((el) => (el.hidden = el.dataset.only !== t));
     $("#authBtn").textContent = t === "signup" ? "Create account" : "Sign in";
     $("[name=password]").autocomplete = t === "signup" ? "new-password" : "current-password";
+    // The address says which: /signin to come back to signing in.
+    if (address) history.replaceState(null, "", (t === "login" ? "/signin" : "/signup") + location.search);
   };
+  if (m[1] === "signin") setTab("login", false);
   $$("[data-tab]").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
   $("#forgotBtn").addEventListener("click", () => showForgot($("[name=email]").value.trim()));
   $("#authForm").addEventListener("submit", async (e) => {
@@ -726,11 +872,13 @@ async function viewWelcome(m) {
     $("#authBtn").disabled = true;
     try {
       state.me = await api(`/api/auth/${tab}`, { method: "POST", body });
-      if (tab === "signup") try { localStorage.removeItem(REF_KEY); } catch {}
+      if (tab === "signup") try { localStorage.removeItem(REF_KEY); sessionStorage.removeItem(SOURCE_KEY); } catch {}
       if (tab === "signup" && state.me.email_available) toast("Welcome! We've emailed you a link to confirm your address.");
       const pending = takeCheckout();  // a plan chosen on the pricing page before signing in
       if (pending && tierRank(pending.tier) > tierRank(state.me.plan?.tier) && await choosePlan(pending.tier, pending.interval)) return;
-      location.hash = state.me.onboarded ? "#/feed" : "#/onboarding";
+      // Back to the page they came from: open to them now if it's a guide or a course, after choosing their
+      // companion if it's one of the pages that waits for that.
+      navigate(next || (state.me.onboarded ? "/feed" : "/get-started"), { replace: true });
     } catch (err) {
       $("#authErr").textContent = err.message;
     } finally {
@@ -785,7 +933,7 @@ async function viewReset(m) {
       state.me = await api("/api/me");
       toast("Password changed. You're signed in.");
       // Replace the link in the history so the spent token isn't left behind.
-      location.replace(state.me.onboarded ? "#/feed" : "#/onboarding");
+      navigate(state.me.onboarded ? "/feed" : "/get-started", { replace: true });
     } catch (err) { $("#resetErr").textContent = err.message; }
   });
 }
@@ -796,14 +944,25 @@ async function viewReset(m) {
 let siteInfo = null;
 const site = () => (siteInfo ||= fetch("/api/site").then((r) => (r.ok ? r.json() : {})).catch(() => ({})));
 
-/* A page open to everyone: in the frame once signed in, under the logo otherwise. */
-function openPage(html) {
-  if (state.me) return shell("", html);
-  app.innerHTML = `<div class="public-top">${logo(34)}
-      <div class="row"><a class="btn ghost" href="#/welcome">Sign in</a><a class="btn primary" href="#/welcome">Start free</a></div></div>
-    <main class="public-page">${html}</main>`;
-  return $(".public-page");
+/* A page open to everyone: in the frame once signed in (with `active` lit up in it), under the logo otherwise, with
+   the pages anyone can browse and ways to sign up or in that come back to this one. Pages of guides, courses and
+   companions are as wide as inside the frame; pages of text, narrower. */
+function openPage(html, active = "", mainClass = active ? "public-page wide" : "public-page") {
+  if (state.me) return shell(active, html);
+  app.innerHTML = `<div class="public-top"><a class="home plain" href="/" aria-label="AI Every Time home">${logo(34)}</a>
+      <nav class="public-nav" aria-label="Pages">${[["guides", "Guides"], ["courses", "Courses"], ["companions", "Companions"]].map(([key, name]) =>
+        `<a href="/${key}"${active === key ? ` class="active" aria-current="page"` : ""}>${name}</a>`).join("")}</nav>
+      <div class="row">${signLinks()}</div></div>
+    <main class="${mainClass}">${html}</main>`;
+  return $("main", app);
 }
+// shell() for pages anyone may see: the learner's frame once signed in, the public one otherwise.
+const frame = (active, html) => openPage(html, active);
+// Sign in and sign up, each coming back to this page: the public pages' buttons.
+const signLinks = (signUp = "Start free") => {
+  const back = encodeURIComponent(here());
+  return `<a class="btn ghost" href="/signin?next=${back}">Sign in</a><a class="btn primary" href="/signup?next=${back}">${signUp}</a>`;
+};
 
 const mailLink = (email) => `<a href="mailto:${esc(email)}">${esc(email)}</a>`;
 
@@ -906,7 +1065,7 @@ async function viewSupport() {
     <p>Companions are Claude, an AI made by Anthropic, so what you write to them goes to Anthropic. You choose whether
       it does, in your profile under <i>Your data</i>.</p>
     <h3>My data and my account</h3>
-    <p>Download your data, or delete your account, in your profile. Our <a href="#/privacy">privacy policy</a> says what we
+    <p>Download your data, or delete your account, in your profile. Our <a href="/privacy">privacy policy</a> says what we
       keep and why.</p>
     ${forSale(`<h3>My plan</h3>
     <p>See or change your plan in your profile, under <i>Plan and billing</i>.</p>`)}
@@ -951,9 +1110,9 @@ const REAL_NOTE = "AI companion modelled on a real person";
 const RETIRED_NOTE = "No longer listed for new learners. Your chats with them are kept, and you can carry on.";
 
 function companionCard(c, { onboarding = false } = {}) {
-  const p = c.persona;
-  const mine = c.owner_id === state.me.id;
-  const isPrimary = state.me.primary_companion_id === c.id;
+  const p = c.persona, me = state.me;
+  const mine = !!me && c.owner_id === me.id;
+  const isPrimary = me?.primary_companion_id === c.id;
   return `
     <article class="card ccard" data-id="${c.id}">
       <div class="head">
@@ -975,10 +1134,11 @@ function companionCard(c, { onboarding = false } = {}) {
       <div class="actions">
         ${onboarding
           ? `<button class="btn primary" data-act="choose">Choose ${esc(p.name)}</button>
-             ${c.real_person ? "" : `<a class="btn" href="#/studio/remix/${c.id}">Customise</a>`}`
-          : `<a class="btn primary" href="#/c/${c.id}">Chat</a>
+             ${c.real_person ? "" : `<a class="btn" href="${to.companion(c)}/customise">Customise</a>`}`
+          : !me ? `<a class="btn primary" href="${to.companion(c)}">Meet ${esc(p.name.split(" ")[0])}</a>`
+          : `<a class="btn primary" href="${to.companion(c)}">Chat</a>
              ${mine ? "" : `<button class="btn ${c.following ? "on" : ""}" data-act="follow">${c.following ? "Following" : "Follow"}</button>`}
-             ${mine ? `<a class="btn" href="#/studio/${c.id}">Edit</a>` : c.real_person ? "" : `<a class="btn" href="#/studio/remix/${c.id}">Remix</a>`}
+             ${mine ? `<a class="btn" href="${to.companion(c)}/edit">Edit</a>` : c.real_person ? "" : `<a class="btn" href="${to.companion(c)}/customise">Remix</a>`}
              ${mine && !c.hidden ? `<button class="btn ghost" data-act="publish">${c.is_public ? "Unpublish" : "Publish"}</button>` : ""}
              ${isPrimary ? "" : `<button class="btn ghost" data-act="primary">Make primary</button>`}`}
       </div>
@@ -995,7 +1155,7 @@ function wireCompanionCards(root, list, rerender) {
         if (act === "choose" || act === "primary") {
           await api(`/api/companions/${c.id}/primary`, { method: "POST" });
           state.me = await api("/api/me");
-          if (act === "choose") { toast(`${c.persona.name} is now your companion`); location.hash = `#/c/${c.id}`; return; }
+          if (act === "choose") { toast(`${c.persona.name} is now your companion`); navigate(takeNext() || to.companion(c)); return; }
           toast(`${c.persona.name} is now your primary companion`);
         } else if (act === "publish") {
           if (!(await togglePublish(c))) return;
@@ -1072,7 +1232,7 @@ async function viewOnboarding() {
       <p class="muted">Pick one of our companions as-is, customise one, or design your own from scratch. You can change your companion's look, personality and style whenever you like.</p>
       <div class="card row spread" style="margin:20px 0">
         <div><h3 style="margin:0">✨ Design your own companion</h3><div class="muted small">Choose their face, country, personality, teaching style and writing voice.</div></div>
-        <a class="btn primary" href="#/studio/new">Start designing</a>
+        <a class="btn primary" href="/companions/new">Start designing</a>
       </div>
       <h2>Or choose one of our ${starters.length} companions</h2>
       <div id="starters">${starterBrowser(starters)}</div>
@@ -1086,28 +1246,38 @@ const KIND_LABELS = { tutorial: "Tutorial", cheat_sheet: "Cheat sheet" };
 const guideBadges = (p, topic = true) => `<div class="badges">${[KIND_LABELS[p.kind], p.level && label(p.level),
   p.minutes && `${p.minutes} min read`, topic && p.topic].filter(Boolean).map((b) => `<span class="badge">${esc(b)}</span>`).join("")}</div>`;
 const byline = (c, when) => `<div class="by">
-  <a href="#/c/${c.id}">${avatarImg(c, 36)}</a>
-  <div><a href="#/c/${c.id}" class="plain"><b>${esc(c.persona.name)}</b> ${esc(c.persona.flag)}</a>
+  <a href="${to.companion(c)}">${avatarImg(c, 36)}</a>
+  <div><a href="${to.companion(c)}" class="plain"><b>${esc(c.persona.name)}</b> ${esc(c.persona.flag)}</a>
   <div class="muted small">${esc(c.persona.country || c.region || "")}${when ? ` · ${timeAgo(when)}` : ""}</div></div>
 </div>`;
-const engageButtons = (post) => `
+// Asking a companion about a post opens the chat with the post in hand.
+const askAbout = (c, post) => `${to.companion(c)}?about=${encodeURIComponent(post.slug || post.id)}`;
+// Likes and "helpful" are learners'; anyone can share.
+const engageButtons = (post) => (state.me ? `
   <button class="btn ${post.liked ? "on" : ""}" data-eng="like" aria-pressed="${post.liked}">♥ <span>${post.likes || ""}</span></button>
-  <button class="btn ${post.marked_helpful ? "on" : ""}" data-eng="helpful" aria-pressed="${post.marked_helpful}">💡 Helpful <span>${post.helpful || ""}</span></button>
+  <button class="btn ${post.marked_helpful ? "on" : ""}" data-eng="helpful" aria-pressed="${post.marked_helpful}">💡 Helpful <span>${post.helpful || ""}</span></button>` : "") + `
   <button class="btn ghost" data-eng="share">↗ Share</button>`;
+
+/* For a visitor who isn't signed in, where what they can see of a page ends: what a free account opens, and the way
+   to it, which comes back to this page. */
+const signUpCard = (title, text) => `<section class="card stack paywall-card signup-card">
+  <h3 style="margin:0">${title}</h3><p style="margin:0">${text}</p>
+  <div class="row"><a class="btn primary" href="/signup?next=${encodeURIComponent(here())}">Create a free account</a>
+    <a class="btn ghost" href="/signin?next=${encodeURIComponent(here())}">I have an account</a></div></section>`;
 
 function postCard(post, c) {
   if (post.kind) return guideCard(post, c);
   return `
     <article class="card post" data-post="${post.id}">
       <div class="by">
-        <a href="#/c/${c.id}">${avatarImg(c, 40)}</a>
-        <div><a href="#/c/${c.id}" style="color:inherit;text-decoration:none"><b>${esc(c.persona.name)}</b> ${esc(c.persona.flag)}</a>
+        <a href="${to.companion(c)}">${avatarImg(c, 40)}</a>
+        <div><a href="${to.companion(c)}" style="color:inherit;text-decoration:none"><b>${esc(c.persona.name)}</b> ${esc(c.persona.flag)}</a>
         <div class="muted small">${esc(post.topic)} · ${timeAgo(post.created_at)}</div></div>
       </div>
       <h3>${esc(post.title)}</h3>
       <div class="prose">${md(post.body)}</div>
       <div class="row">
-        <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${esc(c.persona.name)} about this</a>
+        <a class="btn primary" href="${askAbout(c, post)}">💬 Ask ${esc(c.persona.name)} about this</a>
         ${engageButtons(post)}
       </div>
       <div class="row small">
@@ -1128,14 +1298,14 @@ const guideArt = (post, alt = "") => post.graphic
 function guideCard(post, c) {
   return `
     <article class="card post guide-card" data-post="${post.id}">
-      ${post.graphic ? `<a class="guide-graphic" href="#/p/${post.id}" tabindex="-1" aria-hidden="true">${guideArt(post)}</a>` : ""}
+      ${post.graphic ? `<a class="guide-graphic" href="${to.post(post)}" tabindex="-1" aria-hidden="true">${guideArt(post)}</a>` : ""}
       ${guideBadges(post)}
-      <h3><a href="#/p/${post.id}" class="plain">${esc(post.title)}</a></h3>
+      <h3><a href="${to.post(post)}" class="plain">${esc(post.title)}</a></h3>
       <p class="muted" style="margin:0">${esc(post.summary)}</p>
       ${byline(c, post.created_at)}
       <div class="row">
-        <a class="btn primary" href="#/p/${post.id}">📖 Read the guide</a>
-        <a class="btn" href="#/c/${c.id}?post=${post.id}">💬 Ask ${esc(c.persona.name)}</a>
+        <a class="btn primary" href="${to.post(post)}">📖 Read the guide</a>
+        <a class="btn" href="${askAbout(c, post)}">💬 Ask ${esc(c.persona.name)}</a>
         ${engageButtons(post)}
       </div>
     </article>`;
@@ -1144,7 +1314,7 @@ function guideCard(post, c) {
 /* A guide in a grid: the top of its graphic as a cover, and what it is. */
 function guideTile(post, c) {
   return `
-    <a class="card guide-tile plain" href="#/p/${post.id}">
+    <a class="card guide-tile plain" href="${to.post(post)}">
       ${post.graphic ? `<div class="cover">${guideArt(post)}</div>` : ""}
       ${guideBadges(post, false)}
       <b class="title">${esc(post.title)}</b>
@@ -1160,7 +1330,7 @@ function wirePosts(root, posts) {
   const io = wirePosts.io || (wirePosts.io = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
     for (const en of entries) {
       const id = +en.target.dataset.post;
-      if (en.isIntersecting && !seen.has(id)) { seen.add(id); api(`/api/posts/${id}/engage`, { method: "POST", body: { kind: "view" } }).catch(() => {}); }
+      if (en.isIntersecting && !seen.has(id) && state.me) { seen.add(id); api(`/api/posts/${id}/engage`, { method: "POST", body: { kind: "view" } }).catch(() => {}); }
     }
   }, { threshold: 0.6 }) : null);
   $$("[data-post]", root).forEach((el) => {
@@ -1176,9 +1346,9 @@ function wirePosts(root, posts) {
       const kind = btn.dataset.eng;
       try {
         if (kind === "share") {
-          const url = `${location.origin}/#/${post.kind ? `p/${post.id}` : `c/${post.companion_id}?post=${post.id}`}`;
+          const url = `${location.origin}${to.post(post)}`;
           await navigator.clipboard?.writeText(url).catch(() => {});
-          await api(`/api/posts/${post.id}/engage`, { method: "POST", body: { kind } });
+          if (state.me) await api(`/api/posts/${post.id}/engage`, { method: "POST", body: { kind } });
           toast("Link copied");
           return;
         }
@@ -1220,11 +1390,11 @@ async function viewFeed() {
   const main = shell("feed", `
     <div class="row spread" style="margin-bottom:16px">
       <div><h1 style="margin:0">Your feed</h1><div class="muted">Fresh lessons and guides from the companions you follow. Every post is a conversation starter.</div></div>
-      <div class="row"><a class="btn" href="#/guides">All guides</a><a class="btn" href="#/companions">Find more companions</a></div>
+      <div class="row"><a class="btn" href="/guides">All guides</a><a class="btn" href="/companions">Find more companions</a></div>
     </div>
     <div id="today"></div>
     <div class="stack feed" id="posts">
-      ${posts.length ? posts.map((p) => postCard(p, byId[p.companion_id])).join("") : `<div class="card empty">Follow a few companions to fill your feed. <a href="#/companions">Browse companions</a></div>`}
+      ${posts.length ? posts.map((p) => postCard(p, byId[p.companion_id])).join("") : `<div class="card empty">Follow a few companions to fill your feed. <a href="/companions">Browse companions</a></div>`}
     </div>`);
   wirePosts(main, posts);
   if (posts.length >= FEED_PAGE) {
@@ -1237,8 +1407,8 @@ async function viewFeed() {
   const rem = (await api("/api/reminders")).filter((r) => r.kind !== "new_posts");
   if (rem.length) {
     $("#today").innerHTML = `<div class="card today"><h3>Today</h3><ul>${rem.map((r) => r.kind === "notice"
-      ? `<li class="notice"><span>📣 <a href="${esc(r.link)}">${esc(r.text)}</a></span><button class="linkbtn" data-read="${r.id}">Dismiss</button></li>`
-      : `<li><a href="${esc(r.link)}">${esc(r.text)}</a></li>`).join("")}</ul></div>`;
+      ? `<li class="notice"><span>📣 <a href="${esc(appLink(r.link))}">${esc(r.text)}</a></span><button class="linkbtn" data-read="${r.id}">Dismiss</button></li>`
+      : `<li><a href="${esc(appLink(r.link))}">${esc(r.text)}</a></li>`).join("")}</ul></div>`;
     $("#today").addEventListener("click", async (e) => {
       const id = e.target.dataset.read;
       if (!id) return;
@@ -1263,7 +1433,8 @@ const fileSize = (bytes) => (bytes < 1024 ? `${bytes} bytes` : bytes < 1048576 ?
 const downloadList = (post, heading = true) => `
   <section class="card downloads"${heading ? ` aria-labelledby="downloadsTitle"` : ""}>
     ${heading ? `<h3 id="downloadsTitle" style="margin:0">Downloads</h3>` : ""}
-    ${post.locked ? `<p class="muted small" style="margin:0">🔒 Yours to download when you read this guide in full.</p>` : ""}
+    ${post.locked ? `<p class="muted small" style="margin:0">🔒 ${post.signed_out ? "Create a free account to download these."
+      : "Yours to download when you read this guide in full."}</p>` : ""}
     <ul class="download-list">${post.downloads.map((d) => {
       const [icon, kind] = FILE_KINDS[d.name.split(".").pop().toLowerCase()] || ["📎", "File"];
       return `<li>
@@ -1277,8 +1448,8 @@ const downloadList = (post, heading = true) => `
   </section>`;
 
 // A guide's skill library: the essentials, then every job's skills, each on a numbered card with its command and a
-// download button, and a search across them all. A job opens on a page of its own (#/p/ID?job=slug), and
-// #/p/ID?skills opens the library without the guide. Locked guides show the cards without download buttons.
+// download button, and a search across them all. A job opens on a page of its own (/guides/<guide>/skills/<job>),
+// and /guides/<guide>/skills opens the library without the guide. Locked guides show the cards without download buttons.
 const skillsOf = (post) => post.downloads.filter((d) => d.command);
 const downloadUrl = (post, d) => `/api/posts/${post.id}/downloads/${encodeURIComponent(d.name)}`;
 const jobName = (post, id) => post.download_groups.find((g) => g.id === id)?.name || "";
@@ -1291,13 +1462,15 @@ const skillCard = (post, d, i, showJob = true) => {
     <h4 class="lib-title">${esc(d.title)}</h4>
     <code class="lib-cmd">${esc(d.command)}</code>
     <p class="lib-about">${esc(d.about)}</p>
-    ${post.locked ? `<span class="lib-locked">🔒 Read the guide in full to download</span>`
+    ${post.locked ? `<span class="lib-locked">🔒 ${post.signed_out ? "Sign up free to download" : "Read the guide in full to download"}</span>`
       : `<a class="btn primary lib-dl" href="${downloadUrl(post, d)}" download="${esc(d.name)}"
           aria-label="Download ${esc(d.title)} (${fileSize(d.size)})">Download</a>`}
   </article>`;
 };
-const libraryLocked = (post) => post.locked ? `<div class="card stack paywall-card"><strong>🔒 These skills come with reading this guide in full.</strong>
-  ${forSale(`<div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div>`)}</div>` : "";
+const libraryLocked = (post) => post.signed_out
+  ? signUpCard("🔒 Download every skill free", "Create a free account to download these skills and add them to Claude.")
+  : post.locked ? `<div class="card stack paywall-card"><strong>🔒 These skills come with reading this guide in full.</strong>
+  ${forSale(`<div class="row"><a class="btn primary" href="/pricing">See the plans</a></div>`)}</div>` : "";
 const libraryInstall = (post) => {
   const first = skillsOf(post)[0]?.command || "/skill-name";
   return `<details class="lib-install"><summary>How to install a skill</summary><ol>
@@ -1309,7 +1482,7 @@ const libraryInstall = (post) => {
 };
 const libraryTeaser = (post) => {
   const jobs = post.download_groups.length - 1;
-  return `<a class="lib-teaser" href="#/p/${post.id}?skills">
+  return `<a class="lib-teaser" href="${to.post(post)}/skills">
     <span class="lib-teaser-icon" aria-hidden="true">🧰</span>
     <span class="lib-teaser-text"><strong>Skill library</strong><span>${skillsOf(post).length} skills for ${jobs} jobs, ready to download</span></span>
     <span class="lib-teaser-go">Open →</span></a>`;
@@ -1333,7 +1506,7 @@ function skillLibrary(post, alone = false) {
       <p class="lib-sub">${esc(essentials.about)}</p>
       <div class="lib-grid">${skills.filter((d) => d.group === "essentials").map((d, i) => skillCard(post, d, i)).join("")}</div>
       <h3 class="lib-h3">Browse by job</h3>
-      <div class="lib-jobs">${jobs.map((g) => `<a class="lib-job" href="#/p/${post.id}?job=${encodeURIComponent(g.id)}">
+      <div class="lib-jobs">${jobs.map((g) => `<a class="lib-job" href="${to.post(post)}/skills/${encodeURIComponent(g.id)}">
         <span>${esc(g.name)}</span><span class="lib-count">${g.count}</span></a>`).join("")}</div>
       ${extras.length ? `<h3 class="lib-h3">More downloads</h3>${downloadList({ ...post, downloads: extras }, false)}` : ""}
     </div>
@@ -1344,7 +1517,7 @@ function jobPage(post, job) {
   const bundle = post.downloads.find((d) => d.group === job.id && d.bundle);
   return `
   <section class="lib lib-page" id="library" aria-labelledby="libraryTitle">
-    <a class="lib-back" href="#/p/${post.id}?skills">← All jobs</a>
+    <a class="lib-back" href="${to.post(post)}/skills">← All jobs</a>
     <header class="lib-head">
       <h1 id="libraryTitle" class="lib-h">${esc(job.name)}</h1>
       <p class="lib-lead">${plural(skills.length, "skill")}${bundle && !post.locked
@@ -1353,17 +1526,17 @@ function jobPage(post, job) {
     ${libraryInstall(post)}
     <input class="lib-search" type="search" placeholder="Filter this job" aria-label="Filter this job's skills" data-lib-search>
     <div class="lib-grid" data-lib-list>${skills.map((d, i) => skillCard(post, d, i, false)).join("")}</div>
-    <p class="muted lib-none" hidden>No skills here match that. <a href="#/p/${post.id}?skills">Search them all</a></p>
+    <p class="muted lib-none" hidden>No skills here match that. <a href="${to.post(post)}/skills">Search them all</a></p>
   </section>`;
 }
 async function viewLibrary(post, slug) {
   const job = slug ? post.download_groups.find((g) => g.id === slug && g.id !== "essentials") : null;
-  const main = shell("guides", `
+  const main = openPage(`
     <div class="lib-wrap">
-      <div class="muted small crumbs"><a href="#/guides">Guides</a> › <a href="#/p/${post.id}">${esc(post.title)}</a></div>
+      <div class="muted small crumbs"><a href="/guides">Guides</a> › <a href="${to.post(post)}">${esc(post.title)}</a></div>
       ${libraryLocked(post)}
       ${job ? jobPage(post, job) : skillLibrary(post, true)}
-    </div>`);
+    </div>`, "guides");
   document.title = `${job ? job.name : "Skill library"} · AI Every Time`;
   wireLibrary(main, post);
 }
@@ -1397,38 +1570,45 @@ function wireLibrary(root, post) {
   });
 }
 
+/* A guide at /guides/<slug>, with its graphic, or a companion's post at /posts/<slug>. A guide with a skill library
+   opens it on its own at /guides/<slug>/skills, and one of its jobs at /guides/<slug>/skills/<job>. A visitor who
+   isn't signed in reads the start, then is asked to sign up to read on, and comes back here when they have. */
 async function viewPost(m) {
-  const id = +m[1];
-  const params = new URLSearchParams(m[2] || "");
-  const post = await api(`/api/posts/${id}`);
-  // A guide with a skill library opens it on its own (?skills), or one of its jobs (?job=…).
-  if (post.download_groups && (params.has("skills") || params.has("job"))) return viewLibrary(post, params.get("job"));
+  const [, , ref, skills, job] = m;
+  const post = await api(`/api/posts/${encodeURIComponent(ref)}`);
+  const library = post.download_groups && skills ? `/skills${job ? `/${job}` : ""}` : "";
+  // Its address in words, whatever it was opened by (its id, in a link from before addresses had them).
+  if (location.pathname !== to.post(post) + library) history.replaceState(null, "", to.post(post) + library + location.search);
+  if (library) return viewLibrary(post, job);
   const [c, more] = await Promise.all([
     api(`/api/companions/${post.companion_id}`),
     post.kind ? api(`/api/guides?companion=${post.companion_id}`) : Promise.resolve([]),
   ]);
-  const name = esc(c.persona.name);
-  const others = more.filter((x) => x.id !== id).slice(0, 3);
-  const main = shell(post.kind ? "guides" : "feed", `
+  document.title = `${post.title} · AI Every Time`;
+  const name = esc(c.persona.name), what = post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post";
+  const others = more.filter((x) => x.id !== post.id).slice(0, 3);
+  const main = openPage(`
     <article class="guide">
-      <div class="muted small crumbs">${post.kind ? `<a href="#/guides">Guides</a> › <a href="#/guides?topic=${encodeURIComponent(post.topic)}">${esc(post.topic)}</a>`
-        : `<a href="#/feed">Feed</a>`}</div>
+      <div class="muted small crumbs">${post.kind ? `<a href="/guides">Guides</a> › <a href="/guides?topic=${encodeURIComponent(post.topic)}">${esc(post.topic)}</a>`
+        : `<a href="/feed">Feed</a>`}</div>
       ${post.kind ? guideBadges(post, false) : ""}
       <h1>${esc(post.title)}</h1>
       ${post.summary ? `<p class="lead">${esc(post.summary)}</p>` : ""}
       <div class="row spread">${byline(c, post.created_at)}
-        ${c.is_mine ? "" : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>`}</div>
+        ${c.is_mine || !state.me ? "" : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>`}</div>
       ${post.graphic ? `<figure class="guide-figure">${guideArt(post, `The graphic for “${post.title}”`)}</figure>` : ""}
       <div class="row actions" data-post="${post.id}">
-        <a class="btn primary" href="#/c/${c.id}?post=${post.id}">💬 Ask ${name} about this</a>
+        <a class="btn primary" href="${askAbout(c, post)}">💬 Ask ${name} about this</a>
         ${engageButtons(post)}
       </div>
       ${post.download_groups ? libraryTeaser(post) : ""}
       <div class="prose guide-body${post.locked ? " faded" : ""}">${md(post.body)}</div>
-      ${post.locked ? `<div class="card stack paywall-card"><h3 style="margin:0">${inApp ? "You've read this month's free guides" : "Keep reading with Digital"}</h3>
+      ${post.signed_out ? signUpCard("Keep reading for free", `Create a free account to read the whole ${what}${post.downloads?.length
+        ? `, download ${post.download_groups ? "its skills" : "what comes with it"}` : ""} and ask ${name} anything about it.`)
+      : post.locked ? `<div class="card stack paywall-card"><h3 style="margin:0">${inApp ? "You've read this month's free guides" : "Keep reading with Digital"}</h3>
         <p style="margin:0">You've read your ${post.guides.limit} free guides this month.${forSale(` Read every guide in full, and more, from ${esc(dollars(199))} a month.`)}</p>
-        <div class="row">${forSale(`<a class="btn primary" href="#/pricing">See the plans</a>`)}<span class="muted small">Your free guides start again next month.</span></div></div>`
-      : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`}${forSale(` <a href="#/pricing">Read them all with Digital</a>.`)}</p>` : ""}
+        <div class="row">${forSale(`<a class="btn primary" href="/pricing">See the plans</a>`)}<span class="muted small">Your free guides start again next month.</span></div></div>`
+      : post.guides?.left != null ? `<p class="muted small">${post.guides.left === 0 ? "That was your last free guide this month." : `${plural(post.guides.left, "free guide")} left this month.`}${forSale(` <a href="/pricing">Read them all with Digital</a>.`)}</p>` : ""}
       ${post.download_groups ? skillLibrary(post) : post.downloads?.length ? downloadList(post) : ""}
       <div class="card study" data-post="${post.id}"${post.locked ? " hidden" : ""}>
         <h3 style="margin:0">Study this ${post.kind ? KIND_LABELS[post.kind].toLowerCase() : "post"}</h3>
@@ -1436,13 +1616,13 @@ async function viewPost(m) {
           <button class="btn" data-study="quiz">📝 Quiz me</button>
           <button class="btn" data-study="cards">🃏 Flashcards</button>
           <button class="btn" data-study="summary">📄 Summary</button>
-          <a class="btn ghost" href="#/c/${c.id}?post=${post.id}">💬 Talk it through with ${name}</a>
+          <a class="btn ghost" href="${askAbout(c, post)}">💬 Talk it through with ${name}</a>
         </div>
       </div>
     </article>
     ${others.length ? `<section class="more-guides"><div class="row spread"><h2 style="margin:0">More from ${name}</h2>
-      <a class="btn ghost" href="#/guides?companion=${c.id}">All guides by ${name}</a></div>
-      <div class="guide-grid">${others.map((x) => guideTile(x, c)).join("")}</div></section>` : ""}`);
+      <a class="btn ghost" href="/guides?companion=${encodeURIComponent(c.slug)}">All guides by ${name}</a></div>
+      <div class="guide-grid">${others.map((x) => guideTile(x, c)).join("")}</div></section>` : ""}`, post.kind ? "guides" : "feed");
   wirePosts(main, [post]);
   if (post.download_groups) wireLibrary(main, post);
   $("#followBtn")?.addEventListener("click", async (e) => {
@@ -1457,20 +1637,21 @@ async function viewPost(m) {
 
 /* The guides library: every companion's tutorials and cheat sheets, by region like aieverytime.org's education
    page, and by kind, level, topic or a search. The filters live in the address, so Back and links keep them. */
-async function viewGuides(m) {
-  const params = new URLSearchParams(m[1] || "");
+async function viewGuides(m, q) {
+  const params = new URLSearchParams(q);
   for (const [k, v] of [...params]) if (!v) params.delete(k);
   const [list, topics, companions] = await Promise.all([api(`/api/guides?${params}`), api("/api/guides/topics"), api("/api/companions")]);
   const byId = Object.fromEntries(companions.map((c) => [c.id, c]));
-  const only = params.get("companion") ? byId[+params.get("companion")] : null;
+  const only = params.get("companion") ? companions.find((c) => c.slug === params.get("companion") || String(c.id) === params.get("companion")) : null;
+  document.title = `${only ? `Guides by ${only.persona.name}` : "Guides"} · AI Every Time`;
   const link = (changes) => {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(changes)) v ? p.set(k, v) : p.delete(k);
     const s = p.toString();
-    return `#/guides${s ? `?${s}` : ""}`;
+    return `/guides${s ? `?${s}` : ""}`;
   };
   const tab = (key, value, text) => `<a href="${link({ [key]: value })}" class="${(params.get(key) || "") === (value || "") ? "active" : ""}">${text}</a>`;
-  const main = shell("guides", `
+  const main = frame("guides", `
     <div class="row spread" style="margin-bottom:6px">
       <div><h1 style="margin:0">Guides</h1>
       <div class="muted">Tutorials and cheat sheets by the AI Learning Companions: read one, then ask its author anything.</div></div>
@@ -1488,11 +1669,11 @@ async function viewGuides(m) {
     ${only ? `<div class="row small" style="margin:4px 0 12px"><span class="chip">By ${esc(only.persona.name)} ${esc(only.persona.flag)}</span>
       <a href="${link({ companion: "" })}">Show every companion's guides</a></div>` : ""}
     <div class="guide-grid" id="guides">${list.length ? list.map((p) => guideTile(p, byId[p.companion_id])).join("")
-      : `<div class="card empty">No guides match. <a href="#/guides">See them all</a></div>`}</div>`);
+      : `<div class="card empty">No guides match. <a href="/guides">See them all</a></div>`}</div>`);
   const form = $("#filters");
   const go = () => {
     const data = new FormData(form);
-    location.hash = link({ level: data.get("level"), topic: data.get("topic"), q: String(data.get("q") || "").trim() });
+    navigate(link({ level: data.get("level"), topic: data.get("topic"), q: String(data.get("q") || "").trim() }));
   };
   form.addEventListener("submit", (e) => { e.preventDefault(); go(); });
   $$("select", form).forEach((s) => s.addEventListener("change", go));
@@ -1511,12 +1692,13 @@ async function viewGuides(m) {
 /* --------------------------------------------------------------- companions */
 
 async function viewCompanions() {
-  const list = await api("/api/companions");
+  const list = await api("/api/companions"), me = state.me;
+  document.title = "AI Learning Companions · AI Every Time";
   // The server lists other learners' companions most followed first.
-  const mine = list.filter((c) => c.owner_id === state.me.id), starters = list.filter((c) => c.is_starter && !c.retired);
-  const community = list.filter((c) => !c.is_starter && c.owner_id !== state.me.id);
+  const mine = me ? list.filter((c) => c.owner_id === me.id) : [], starters = list.filter((c) => c.is_starter && !c.retired);
+  const community = list.filter((c) => !c.is_starter && (!me || c.owner_id !== me.id));
   const retired = list.filter((c) => c.retired);
-  const main = shell("companions", `
+  const main = frame("companions", `
     <h1>Companions</h1>
     <p class="muted">Each companion represents a country and brings their own expertise, perspective and voice.</p>
     ${mine.length ? `<h2>Your companions</h2><div class="grid" id="mineGrid" style="margin-bottom:28px">${mine.map((c) => companionCard(c)).join("")}</div>` : ""}
@@ -1537,17 +1719,23 @@ async function viewCompanions() {
 
 /* --------------------------------------------------------- companion + chat */
 
-async function viewCompanion(m) {
-  const id = +m[1];
-  const postId = m[2] ? +m[2] : null;
-  const [c, messages, memories, posts] = await Promise.all([
-    api(`/api/companions/${id}`), api(`/api/companions/${id}/messages`),
-    api(`/api/companions/${id}/memories`), api(`/api/companions/${id}/posts`),
+/* A companion's page, /companions/<slug>: the chat, for a learner; ?about=<post> starts it on a post. For a visitor
+   who isn't signed in, who the companion is, what they teach and write, and a way to chat that starts with an account. */
+async function viewCompanion(m, q = new URLSearchParams()) {
+  const about = q.get("about") || q.get("post");  // ?post=<id> in links from before
+  const c = await api(`/api/companions/${encodeURIComponent(m[1])}`);
+  // Its address in words, whatever it was opened by (its id, in a link from before addresses had them).
+  if (location.pathname !== to.companion(c)) history.replaceState(null, "", to.companion(c) + location.search);
+  document.title = `${c.persona.name} · AI Every Time`;
+  if (!state.me) return companionPreview(c, about);
+  const id = c.id;
+  const [messages, memories, posts] = await Promise.all([
+    api(`/api/companions/${id}/messages`), api(`/api/companions/${id}/memories`), api(`/api/companions/${id}/posts`),
   ]);
   const p = c.persona;
-  let contextPost = postId ? posts.find((x) => x.id === postId) : null;
+  let contextPost = about ? posts.find((x) => x.slug === about || String(x.id) === about) : null;
   // A post further back than the first page of them, like an older guide.
-  if (postId && !contextPost) contextPost = await api(`/api/posts/${postId}`).catch((e) => { if (e instanceof StaleView) throw e; return null; });
+  if (about && !contextPost) contextPost = await api(`/api/posts/${encodeURIComponent(about)}`).catch((e) => { if (e instanceof StaleView) throw e; return null; });
   const main = shell(state.me.primary_companion_id === id ? "mine" : "companions", `
     <div class="row" style="margin-bottom:18px">
       ${avatarImg(c, 72)}
@@ -1561,7 +1749,7 @@ async function viewCompanion(m) {
       </div>
       <div class="row">
         ${canSpeak && p.voice.enabled ? `<button class="btn ghost" id="readAloud" aria-pressed="false">🔈 Read aloud</button>` : ""}
-        ${c.is_mine ? `<a class="btn" href="#/studio/${id}">Edit companion</a>${c.hidden ? "" : `<button class="btn ghost" id="pubBtn">${c.is_public ? "Unpublish" : "Publish"}</button>`}` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>${c.real_person ? "" : `<a class="btn" href="#/studio/remix/${id}">Remix</a>`}`}
+        ${c.is_mine ? `<a class="btn" href="${to.companion(c)}/edit">Edit companion</a>${c.hidden ? "" : `<button class="btn ghost" id="pubBtn">${c.is_public ? "Unpublish" : "Publish"}</button>`}` : `<button class="btn ${c.following ? "on" : ""}" id="followBtn">${c.following ? "Following" : "Follow"}</button>${c.real_person ? "" : `<a class="btn" href="${to.companion(c)}/customise">Remix</a>`}`}
         ${!c.is_starter && !c.is_mine ? `<button class="btn ghost danger" id="reportBtn">Report</button><button class="btn ghost" id="blockBtn">Block designer</button>` : ""}
       </div>
     </div>
@@ -1583,7 +1771,7 @@ async function viewCompanion(m) {
           <p class="muted small" style="margin:.6em 0 0">Teaching style: ${label(p.teaching_style)}</p>
         </div>
         ${c.courses?.length ? `<div class="card"><h3>🎓 Courses ${esc(p.name.split(" ")[0])} teaches</h3>
-          <div class="stack" style="gap:6px">${c.courses.map((x) => `<a href="#/course/${x.slug}">${esc(x.title)}</a>`).join("")}</div></div>` : ""}
+          <div class="stack" style="gap:6px">${c.courses.map((x) => `<a href="${to.course(x.slug)}">${esc(x.title)}</a>`).join("")}</div></div>` : ""}
         <div class="card memory">
           <h3>What ${esc(p.name)} remembers</h3>
           <div id="mem"></div>
@@ -1634,10 +1822,10 @@ async function viewCompanion(m) {
   syncRead();
   readBtn?.addEventListener("click", () => { readAloud = !readAloud; prefs.set("readAloud", readAloud); if (!readAloud) speechSynthesis.cancel(); syncRead(); });
   wireMic($("#mic"), $("#input"));
-  $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m); });
+  $("#pubBtn")?.addEventListener("click", async () => { if (await togglePublish(c)) viewCompanion(m, q); });
   $("#reportBtn")?.addEventListener("click", () => showReport(c));
   $("#blockBtn")?.addEventListener("click", () => blockDesigner(id, c.designer));
-  $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m)));
+  $("#appealBtn")?.addEventListener("click", () => showAppeal(c, () => viewCompanion(m, q)));
   messages.forEach((x) => addMsg(x.role, x.content, x));
   if (!messages.length) openChat();
 
@@ -1697,9 +1885,9 @@ async function viewCompanion(m) {
 
   const renderRecent = (list) => {
     $("#recent").innerHTML = list.length
-      ? list.slice(0, 6).map((x) => x.kind ? `<a href="#/p/${x.id}">📘 ${esc(x.title)}</a>`
-        : `<a href="#/c/${id}?post=${x.id}" data-ctx="${x.id}">${esc(x.title)}</a>`).join("")
-        + (list.some((x) => x.kind) ? `<a class="muted" href="#/guides?companion=${id}">All guides by ${esc(p.name)} →</a>` : "")
+      ? list.slice(0, 6).map((x) => x.kind ? `<a href="${to.post(x)}">📘 ${esc(x.title)}</a>`
+        : `<a href="${askAbout(c, x)}" data-ctx="${x.id}">${esc(x.title)}</a>`).join("")
+        + (list.some((x) => x.kind) ? `<a class="muted" href="/guides?companion=${encodeURIComponent(c.slug)}">All guides by ${esc(p.name)} →</a>` : "")
       : `<span class="muted">No posts yet.</span>`;
   };
   renderRecent(posts);
@@ -1776,6 +1964,44 @@ async function viewCompanion(m) {
   if (contextPost) input.focus();
 }
 
+/* A companion's page for a visitor who isn't signed in: who they are, what they teach and write, and a way to chat with
+   them that starts with a free account and comes back here. */
+async function companionPreview(c, about) {
+  const p = c.persona, first = esc(p.name.split(" ")[0]);
+  const [posts, post] = await Promise.all([
+    api(`/api/companions/${c.id}/posts`),
+    about ? api(`/api/posts/${encodeURIComponent(about)}`).catch((e) => { if (e instanceof StaleView) throw e; return null; }) : null,
+  ]);
+  frame("companions", `
+    <div class="row" style="margin-bottom:18px">
+      ${avatarImg(c, 96)}
+      <div style="flex:1;min-width:200px">
+        <h1 style="margin:0">${esc(p.name)} ${esc(p.flag)}</h1>
+        <div class="muted">${esc(p.tagline || p.country)}</div>
+        ${c.real_person ? `<div class="muted small" style="margin-top:2px">${REAL_NOTE}. It doesn't speak for them.</div>` : ""}
+        <div class="row small" style="margin-top:6px">${p.expertise.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}${c.followers != null
+          ? `<span class="muted">${fmtCount(c.followers)} follower${c.followers === 1 ? "" : "s"}</span>` : ""}</div>
+        ${c.is_starter ? "" : `<div class="muted small" style="margin-top:4px">Community companion designed by ${esc(c.designer || "a learner")}</div>`}
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="stack">
+        ${signUpCard(post ? `Ask ${first} about “${esc(post.title)}”` : `Chat with ${first}`, `${esc(p.name)} is an AI Learning Companion: ask
+          anything about AI, any time, and ${first} explains it your way and remembers what you talked about. Create a free
+          account to start chatting.`)}
+        <div class="card"><h3>About ${esc(p.name)}</h3><p class="small" style="margin:0">${esc(p.bio)}</p>
+          <p class="muted small" style="margin:.6em 0 0">Teaching style: ${label(p.teaching_style)}</p></div>
+      </div>
+      <div class="stack">
+        ${c.courses?.length ? `<div class="card"><h3>🎓 Courses ${first} teaches</h3>
+          <div class="stack" style="gap:6px">${c.courses.map((x) => `<a href="${to.course(x.slug)}">${esc(x.title)}</a>`).join("")}</div></div>` : ""}
+        ${posts.length ? `<div class="card"><h3>Recent from ${first}</h3><div class="stack small" style="gap:6px">${posts.slice(0, 6).map((x) =>
+          `<a href="${to.post(x)}">${x.kind ? "📘 " : ""}${esc(x.title)}</a>`).join("")}
+          ${posts.some((x) => x.kind) ? `<a class="muted" href="/guides?companion=${encodeURIComponent(c.slug)}">All guides by ${esc(p.name)} →</a>` : ""}</div></div>` : ""}
+      </div>
+    </div>`);
+}
+
 /* ------------------------------------------------------------------- studio */
 
 const SKIN = ["#FFDBAC", "#F1C27D", "#E0AC69", "#D19A6A", "#C68642", "#A0522D", "#7A4B2A", "#5C3A21", "#3B2414"];
@@ -1838,17 +2064,20 @@ const ACCENTS = [
 ];
 const PHOTO_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
-async function viewStudio({ mode, id }) {
+async function viewStudio({ mode, ref }) {
   state.options ||= await api("/api/options");
   const o = state.options;
-  let persona, source = null, versions = [];
+  let persona, source = null, versions = [], id = null;
   if (mode === "new") persona = blankPersona();
   else {
-    source = await api(`/api/companions/${id}`);
+    source = await api(`/api/companions/${encodeURIComponent(ref)}`);
+    id = source.id;
+    const address = `${to.companion(source)}/${mode === "edit" ? "edit" : "customise"}`;
+    if (location.pathname !== address) history.replaceState(null, "", address);
     persona = structuredClone(source.persona);
     if (mode === "remix") { persona.name = `My ${persona.name}`.slice(0, 40); persona.custom_instructions = ""; }
     if (mode === "edit") {
-      if (!source.is_mine) { location.hash = `#/studio/remix/${id}`; return; }
+      if (!source.is_mine) { navigate(`${to.companion(source)}/customise`, { replace: true }); return; }
       versions = await api(`/api/companions/${id}/versions`);
     }
   }
@@ -1951,7 +2180,7 @@ async function viewStudio({ mode, id }) {
         <div class="error" id="studioErr"></div>
         <div class="row">
           <button class="btn primary" type="submit" id="saveBtn">${mode === "edit" ? "Save changes" : "Create my companion"}</button>
-          ${mode === "edit" ? `<a class="btn" href="#/c/${id}">Back to chat</a><button type="button" class="btn danger" id="delBtn">Delete companion</button>` : `<a class="btn" href="${onboarding ? "#/onboarding" : "#/companions"}">Cancel</a>`}
+          ${mode === "edit" ? `<a class="btn" href="${to.companion(source)}">Back to chat</a><button type="button" class="btn danger" id="delBtn">Delete companion</button>` : `<a class="btn" href="${onboarding ? "/get-started" : "/companions"}">Cancel</a>`}
         </div>
       </form>
 
@@ -2142,7 +2371,7 @@ async function viewStudio({ mode, id }) {
       }
       state.me = await api("/api/me");
       toast(mode === "edit" ? "Changes saved" : `${saved.persona.name} is ready to teach you`);
-      location.hash = `#/c/${saved.id}`;
+      navigate(takeNext() || to.companion(saved));
     } catch (err) {
       $("#studioErr").textContent = err.message;
     } finally {
@@ -2155,12 +2384,12 @@ async function viewStudio({ mode, id }) {
     await api(`/api/companions/${id}`, { method: "DELETE" });
     state.me = await api("/api/me");
     toast("Companion deleted");
-    location.hash = "#/companions";
+    navigate("/companions");
   });
   $$("[data-restore]", main).forEach((b) => b.addEventListener("click", async () => {
     await api(`/api/companions/${id}/versions/${b.dataset.restore}/restore`, { method: "POST" });
     toast("Version restored");
-    viewStudio({ mode, id });
+    viewStudio({ mode, ref });
   }));
 }
 
@@ -2211,13 +2440,13 @@ async function viewProfile() {
       <div class="card stack">
         <div><h2 style="margin:0">Your data</h2>
           <div class="muted small">Your account, companions, chats, memories, progress and settings, in one file you can keep.
-            <a href="#/privacy">How AI Every Time uses your data</a></div></div>
+            <a href="/privacy">How AI Every Time uses your data</a></div></div>
         <div class="stack" id="consentBox"></div>
         <div class="row"><a class="btn" href="/api/me/export" download>⬇ Download my data</a><button type="button" class="btn danger" id="deleteAccount">Delete my account</button></div>
       </div>
       <div class="card stack" id="blockedCard" hidden></div>
       <div class="card get-app stack" id="getApp" hidden></div>
-      <p class="muted small"><a href="#/support">Help and support</a> · <a href="#/privacy">Privacy</a></p>
+      <p class="muted small"><a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
     </div>`);
   const f = $("#prof", main);
   f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals; f.interests.value = me.interests || "";
@@ -2243,7 +2472,7 @@ async function viewProfile() {
     await disablePush();
     await api("/api/auth/logout", { method: "POST" });
     state.me = null;
-    location.hash = "#/welcome";
+    navigate("/");
   });
 
   const renderZone = () => {
@@ -2270,7 +2499,7 @@ async function viewProfile() {
   $("#planCard").innerHTML = `<div><h2 style="margin:0">Your plan: ${esc(plan.name)}</h2>
       <div class="muted small">${plan.subscription?.live ? `${esc(STATUS_TEXT[plan.subscription.status])}${plan.subscription.period_end ? ` · ${plan.subscription.cancel_at_period_end ? "ends" : "renews"} ${esc(longDate(plan.subscription.period_end))}` : ""}`
         : plan.grant ? `Given to you${plan.grant.until ? ` until ${esc(longDate(plan.grant.until))}` : ""}` : plan.paywall ? forSale("Upgrade for every guide, full courses and more AI requests.") : "Everything is open while plans are being set up."}</div></div>
-    ${forSale(`<a class="btn" href="#/billing">Plan and billing</a>`)}`;
+    ${forSale(`<a class="btn" href="/billing">Plan and billing</a>`)}`;
   main.addEventListener("click", async (e) => {  // both "send a confirmation link" buttons
     const b = e.target.closest("[data-confirm]");
     if (!b) return;
@@ -2380,7 +2609,7 @@ function showDeleteAccount() {
       state.me = null;
       $("#dialog").close();
       toast("Your account was deleted.");
-      location.hash = "#/welcome";
+      navigate("/");
     } catch (err) { $("#deleteErr").textContent = err.message; }
   });
 }
@@ -2452,11 +2681,11 @@ async function studyAction(kind, sourceType, sourceRef, { companionId = null, bu
     const companion_id = companionId ?? null;
     if (kind === "quiz" || kind === "exam") {
       const a = await api("/api/assessments", { method: "POST", body: { kind, source_type: sourceType, source_ref: sourceRef, companion_id } });
-      location.hash = `#/quiz/${a.id}`;
+      navigate(to.quiz(a.id));
     } else if (kind === "cards") {
       const d = await api("/api/decks", { method: "POST", body: { source_type: sourceType, source_ref: sourceRef, companion_id, count: 10 } });
       toast(`${d.total} flashcards ready`);
-      location.hash = `#/review?deck=${d.id}`;
+      navigate(to.deck(d.id));
     } else if (kind === "summary") {
       const s = await api("/api/summaries", { method: "POST", body: { source_type: sourceType, source_ref: sourceRef, companion_id } });
       showDialog(`<h2>${esc(s.title)}</h2><p>${esc(s.summary)}</p><h3>Key takeaways</h3><ul>${s.key_takeaways.map((t) => `<li>${esc(t)}</li>`).join("")}</ul><p><b>Next step:</b> ${esc(s.next_step)}</p>`);
@@ -2483,7 +2712,7 @@ function blockDesigner(companionId, designer) {
       $("#dialog").close();
       state.me = await api("/api/me").catch(() => state.me);  // their companion may have been the learner's own
       toast(designer ? `You won't see ${designer}'s companions any more.` : "Blocked.");
-      location.hash = "#/companions";
+      navigate("/companions");
     } catch (err) { toast(err.message); e.target.disabled = false; }
   });
 }
@@ -2582,17 +2811,17 @@ function pathBadge(p) {
   return `<div class="small custom-badge ${p.status === "approved" ? "ok" : p.status === "rejected" ? "bad" : ""}">${text}</div>`;
 }
 
-/* A companion's chat link to a path it offered to design, #/learn?design=regression-for-beginners&with=12, opens this
+/* A companion's chat link to a path it offered to design, /learn?design=regression-for-beginners&with=amahle-ndlovu, opens this
    page with the topic filled in, for that companion to design once the learner confirms. */
-async function viewLearn(m) {
-  const q = new URLSearchParams(m?.[1] || "");
-  const offer = q.get("design") ? { topic: q.get("design").replace(/-+/g, " ").trim().slice(0, 120), with: +q.get("with") || null } : null;
-  const [paths, teacher] = await Promise.all([api("/api/paths"), offer?.with ? api(`/api/companions/${offer.with}`).catch(() => null) : null]);
+async function viewLearn(m, q = new URLSearchParams()) {
+  // with: the companion who offered to design the path, by its slug (or its id, in older chats).
+  const offer = q.get("design") ? { topic: q.get("design").replace(/-+/g, " ").trim().slice(0, 120), with: q.get("with") || null } : null;
+  const [paths, teacher] = await Promise.all([api("/api/paths"), offer?.with ? api(`/api/companions/${encodeURIComponent(offer.with)}`).catch(() => null) : null]);
   if (offer && !teacher) offer.with = null;
   const main = shell("learn", `
     <h1>Learning paths</h1>
     <p class="muted">Short paths taught by your companion, in their own voice. Finish lessons, test yourself, and take a mock exam at the end of each path.</p>
-    <a class="card row spread plain courses-pointer" href="#/courses"><div><b>🎓 Looking for full courses?</b>
+    <a class="card row spread plain courses-pointer" href="/courses"><div><b>🎓 Looking for full courses?</b>
       <div class="muted small">Courses with hands-on labs, projects and certificates, taught by the AI Learning Companions.</div></div><span class="btn">Browse courses</span></a>
     <form class="card stack" id="newPath">
       <div><h3 style="margin:0">✨ Learn anything: ask your companion for a path</h3>
@@ -2622,7 +2851,7 @@ async function viewLearn(m) {
           <p style="margin:0">${esc(p.description)}</p>
           ${bar(p.completed, p.total)}
           <ol class="lessons">
-            ${p.lessons.map((l) => `<li><a href="#/lesson/${l.id}">${STATUS_ICON[l.status]} ${esc(l.title)}</a>
+            ${p.lessons.map((l) => `<li><a href="${to.lesson(l.id)}">${STATUS_ICON[l.status]} ${esc(l.title)}</a>
               <span class="muted small">${l.minutes} min${l.best_score != null ? ` · best quiz ${l.best_score}%` : ""}</span></li>`).join("")}
           </ol>
         </section>`).join("")}
@@ -2653,10 +2882,10 @@ async function viewLearn(m) {
     btn.disabled = true; btn.textContent = "Designing…";
     try {
       const path = await api("/api/custom-paths", { method: "POST",
-        body: { topic: f.topic.value.trim(), level: f.level.value, lessons: +f.lessons.value, companion_id: offer?.with || null } });
+        body: { topic: f.topic.value.trim(), level: f.level.value, lessons: +f.lessons.value, companion_id: offer?.with ? teacher.id : null } });
       toast(`"${path.title}" is ready`);
       if (document.body.contains(f)) {
-        if (offer) history.replaceState(null, "", "#/learn");  // the offer is taken up: a reload shouldn't fill it in again
+        if (offer) history.replaceState(null, "", "/learn");  // the offer is taken up: a reload shouldn't fill it in again
         viewLearn();
       }
     } catch (err) {
@@ -2670,10 +2899,10 @@ async function viewLearn(m) {
   }
 }
 
-async function viewLesson(m) {
-  const lessonId = m[1], companionId = m[2] ? +m[2] : null;
+async function viewLesson(m, q = new URLSearchParams()) {
+  const lessonId = m[1], companionId = +q.get("companion") || null;
   const inCourse = lessonId.match(/^course-([a-z0-9-]+)-(\d+)-(\d+)$/);
-  if (inCourse) { location.replace(`#/course/${inCourse[1]}/learn/l${inCourse[2]}-${inCourse[3]}`); return; }
+  if (inCourse) { navigate(to.course(inCourse[1], `l${inCourse[2]}-${inCourse[3]}`), { replace: true }); return; }
   const main = shell("learn", `<div class="card empty">Your companion is preparing this lesson…</div>`);
   let lesson, list;
   try {
@@ -2683,13 +2912,13 @@ async function viewLesson(m) {
     ]);
   } catch (err) {  // e.g. the daily AI requests are used up, or the companion couldn't write it
     if (err instanceof StaleView) throw err;
-    main.innerHTML = `<div class="card empty stack"><div>${esc(err.message)}</div><div><a class="btn" href="#/learn">Back to learning paths</a></div></div>`;
+    main.innerHTML = `<div class="card empty stack"><div>${esc(err.message)}</div><div><a class="btn" href="/learn">Back to learning paths</a></div></div>`;
     return;
   }
   const t = lesson.teacher;
   const teachers = list.filter((c) => c.following || c.owner_id === state.me.id);
   main.innerHTML = `
-    <div class="muted small"><a href="#/learn">Learning paths</a> › ${esc(lesson.path.title)}</div>
+    <div class="muted small"><a href="/learn">Learning paths</a> › ${esc(lesson.path.title)}</div>
     <div class="row spread" style="margin:8px 0 16px">
       <h1 style="margin:0">${esc(lesson.title)}</h1>
       <label class="row small" style="font-weight:500">Taught by
@@ -2710,8 +2939,8 @@ async function viewLesson(m) {
           <button class="btn" data-study="summary">📄 Summary</button>
         </div>
         <div class="row spread">
-          ${lesson.prev ? `<a class="btn ghost" href="#/lesson/${lesson.prev}">← Previous</a>` : "<span></span>"}
-          ${lesson.next ? `<a class="btn ghost" href="#/lesson/${lesson.next}">Next lesson →</a>` : `<a class="btn ghost" href="#/learn">Back to paths</a>`}
+          ${lesson.prev ? `<a class="btn ghost" href="${to.lesson(lesson.prev)}">← Previous</a>` : "<span></span>"}
+          ${lesson.next ? `<a class="btn ghost" href="${to.lesson(lesson.next)}">Next lesson →</a>` : `<a class="btn ghost" href="/learn">Back to paths</a>`}
         </div>
       </article>
       <aside class="card chat tutor">
@@ -2723,12 +2952,11 @@ async function viewLesson(m) {
         </form>
       </aside>
     </div>`;
-  $("#teacher").addEventListener("change", (e) => (location.hash = `#/lesson/${lessonId}?companion=${e.target.value}`));
+  $("#teacher").addEventListener("change", (e) => navigate(`${to.lesson(lessonId)}?companion=${e.target.value}`));
   $("#complete").addEventListener("click", async () => {
     await api(`/api/lessons/${lessonId}/complete`, { method: "POST" });
     toast("Lesson completed");
-    if (lesson.next) location.hash = `#/lesson/${lesson.next}${companionId ? `?companion=${companionId}` : ""}`;
-    else location.hash = "#/learn";
+    navigate(lesson.next ? `${to.lesson(lesson.next)}${companionId ? `?companion=${companionId}` : ""}` : "/learn");
   });
   $$("[data-study]", main).forEach((b) => b.addEventListener("click", () => studyAction(b.dataset.study, "lesson", lessonId, { companionId: t.id, button: b })));
 
@@ -2804,8 +3032,8 @@ async function viewQuiz(m) {
 /* From a course's quiz or mock exam, back to where it sits in the course. */
 function courseBack(r) {
   const module = r.source_type === "path" && r.source_ref.match(/^course-([a-z0-9-]+)-(\d+)$/);
-  if (module) return `<a class="btn" href="#/course/${module[1]}/learn/quiz${module[2]}">Back to the course</a>`;
-  return r.source_type === "course" ? `<a class="btn" href="#/course/${r.source_ref}/learn/grades">Back to the course</a>` : "";
+  if (module) return `<a class="btn" href="${to.course(module[1], `quiz${module[2]}`)}">Back to the course</a>`;
+  return r.source_type === "course" ? `<a class="btn" href="${to.course(r.source_ref, "grades")}">Back to the course</a>` : "";
 }
 
 function renderResults(r) {
@@ -2815,7 +3043,7 @@ function renderResults(r) {
       <div><div class="big">${r.percent}%</div><div class="muted">${r.score} of ${r.total} correct${r.over_time ? " · submitted after the time limit" : ""}</div></div>
       <div><b>${r.percent >= 70 ? "Passed. Nice work!" : "Keep going: review and try again."}</b></div>
     </div>
-    ${r.by_lesson ? `<div class="card"><h3>By lesson</h3>${r.by_lesson.map((b) => `<div class="row spread small"><a href="#/lesson/${b.lesson_id}">${esc(b.title)}</a><span>${b.correct}/${b.total}</span></div>${bar(b.correct, b.total)}`).join("")}</div>` : ""}
+    ${r.by_lesson ? `<div class="card"><h3>By lesson</h3>${r.by_lesson.map((b) => `<div class="row spread small"><a href="${to.lesson(b.lesson_id)}">${esc(b.title)}</a><span>${b.correct}/${b.total}</span></div>${bar(b.correct, b.total)}`).join("")}</div>` : ""}
     <div class="stack" style="margin-top:16px">
       ${r.questions.map((q, i) => `
         <div class="card question ${q.correct ? "right" : "wrong"}">
@@ -2827,9 +3055,9 @@ function renderResults(r) {
     </div>
     <div class="row" style="margin-top:16px">
       <button class="btn primary" id="retry">Try a new ${r.kind === "exam" ? "exam" : "quiz"}</button>
-      ${r.source_type === "lesson" ? `<a class="btn" href="#/lesson/${r.source_ref}">Back to lesson</a>` : ""}
+      ${r.source_type === "lesson" ? `<a class="btn" href="${to.lesson(r.source_ref)}">Back to lesson</a>` : ""}
       ${courseBack(r)}
-      <a class="btn" href="#/practice">All practice</a>
+      <a class="btn" href="/practice">All practice</a>
     </div>`);
   $("#retry", main).addEventListener("click", (e) => studyAction(r.kind, r.source_type, r.source_ref, { companionId: r.companion_id, button: e.target }));
 }
@@ -2842,7 +3070,7 @@ async function viewPractice() {
     <h1>Practice</h1>
     <div class="card row spread">
       <div><h2 style="margin:0">🃏 ${due.length} card${due.length === 1 ? "" : "s"} due</h2><div class="muted small">Spaced repetition brings each card back just before you'd forget it.</div></div>
-      ${due.length ? `<a class="btn primary" href="#/review">Start review</a>` : `<a class="btn" href="#/learn">Make cards from a lesson</a>`}
+      ${due.length ? `<a class="btn primary" href="/flashcards">Start review</a>` : `<a class="btn" href="/learn">Make cards from a lesson</a>`}
     </div>
     <h2 style="margin-top:24px">Flashcard decks</h2>
     ${decks.length ? `<div class="grid">${decks.map((d) => `
@@ -2850,11 +3078,11 @@ async function viewPractice() {
         <b>${esc(d.title)}</b>
         <div class="muted small">${d.total} cards · ${d.due} due · ${d.mastered} mastered</div>
         ${bar(d.mastered, d.total)}
-        <div class="row"><a class="btn" href="#/review?deck=${d.id}">Review</a><button class="btn ghost danger" data-del>Delete</button></div>
+        <div class="row"><a class="btn" href="${to.deck(d.id)}">Review</a><button class="btn ghost danger" data-del>Delete</button></div>
       </div>`).join("")}</div>` : `<div class="card empty">No decks yet. Make flashcards from any lesson, post or conversation.</div>`}
     <h2 style="margin-top:24px">Quizzes and exams</h2>
     ${quizzes.length ? `<div class="card"><table class="table"><thead><tr><th>Title</th><th>Score</th><th>Date</th></tr></thead><tbody>
-      ${quizzes.map((q) => `<tr><td><a href="#/quiz/${q.id}">${esc(q.title)}</a></td><td>${q.percent != null ? `${q.percent}%` : `<span class="muted">Not finished</span>`}</td><td class="muted small">${timeAgo(q.created_at)}</td></tr>`).join("")}
+      ${quizzes.map((q) => `<tr><td><a href="${to.quiz(q.id)}">${esc(q.title)}</a></td><td>${q.percent != null ? `${q.percent}%` : `<span class="muted">Not finished</span>`}</td><td class="muted small">${timeAgo(q.created_at)}</td></tr>`).join("")}
     </tbody></table></div>` : `<div class="card empty">No quizzes yet. Every lesson and post has a "Quiz me" button.</div>`}`);
   $$("[data-deck]", main).forEach((el) => $("[data-del]", el).addEventListener("click", async () => {
     if (!confirm("Delete this deck?")) return;
@@ -2871,7 +3099,7 @@ async function viewReview(m) {
   const render = () => {
     const card = cards[i];
     if (!card) {
-      $("#rv").innerHTML = `<div class="card empty"><h2>All caught up 🎉</h2><p>You reviewed ${reviewed} card${reviewed === 1 ? "" : "s"}. They'll come back when it's time.</p><a class="btn primary" href="#/practice">Back to practice</a></div>`;
+      $("#rv").innerHTML = `<div class="card empty"><h2>All caught up 🎉</h2><p>You reviewed ${reviewed} card${reviewed === 1 ? "" : "s"}. They'll come back when it's time.</p><a class="btn primary" href="/practice">Back to practice</a></div>`;
       return;
     }
     $("#rv").innerHTML = `
@@ -2912,15 +3140,15 @@ async function viewProgress() {
     <div class="two-col">
       <div class="stack">
         <div class="card"><h3>Last 7 days</h3><div class="week">${p.last_7_days.map((d) => `<div class="day ${d.active ? "on" : ""}" title="${d.day}"><span>${new Date(d.day + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "short" })}</span></div>`).join("")}</div></div>
-        ${p.next_lesson ? `<div class="card row spread"><div><div class="muted small">Up next · ${esc(p.next_lesson.path_title)}</div><b>${esc(p.next_lesson.title)}</b></div><a class="btn primary" href="#/lesson/${p.next_lesson.lesson_id}">Continue</a></div>` : ""}
-        <div class="card"><div class="row spread"><h3 style="margin:0">Your courses</h3><a class="small" href="#/courses">All courses</a></div>
-          ${myCourses.length ? myCourses.map((c) => `<div class="row spread small" style="margin-top:10px"><a href="#/course/${c.slug}">${esc(c.title)}</a>
-            ${c.certificate ? `<a href="#/certificate/${c.certificate}">🎓 Certificate</a>` : `<a href="#/course/${c.slug}/learn/${c.next || "grades"}">Continue</a>`}</div>${bar(c.progress, 100)}`).join("")
-            : `<p class="muted small" style="margin:8px 0 0">You haven't enrolled in a course yet. <a href="#/courses">Find one</a>: they're free.</p>`}
-          ${certificates.length ? `<h3 style="margin:14px 0 6px">Certificates</h3>${certificates.map((x) => `<div class="small"><a href="#/certificate/${x.code}">🎓 ${esc(x.title)}</a></div>`).join("")}` : ""}
+        ${p.next_lesson ? `<div class="card row spread"><div><div class="muted small">Up next · ${esc(p.next_lesson.path_title)}</div><b>${esc(p.next_lesson.title)}</b></div><a class="btn primary" href="${to.lesson(p.next_lesson.lesson_id)}">Continue</a></div>` : ""}
+        <div class="card"><div class="row spread"><h3 style="margin:0">Your courses</h3><a class="small" href="/courses">All courses</a></div>
+          ${myCourses.length ? myCourses.map((c) => `<div class="row spread small" style="margin-top:10px"><a href="${to.course(c.slug)}">${esc(c.title)}</a>
+            ${c.certificate ? `<a href="${to.certificate(c.certificate)}">🎓 Certificate</a>` : `<a href="${to.course(c.slug, c.next || "grades")}">Continue</a>`}</div>${bar(c.progress, 100)}`).join("")
+            : `<p class="muted small" style="margin:8px 0 0">You haven't enrolled in a course yet. <a href="/courses">Find one</a>: they're free.</p>`}
+          ${certificates.length ? `<h3 style="margin:14px 0 6px">Certificates</h3>${certificates.map((x) => `<div class="small"><a href="${to.certificate(x.code)}">🎓 ${esc(x.title)}</a></div>`).join("")}` : ""}
         </div>
         <div class="card"><h3>Paths</h3>${p.paths.map((x) => `<div class="row spread small"><span>${esc(x.title)}</span><span>${x.completed}/${x.total}</span></div>${bar(x.completed, x.total)}`).join("")}</div>
-        ${p.needs_review.length ? `<div class="card"><h3>Worth reviewing</h3>${p.needs_review.map((x) => `<div class="row spread small"><a href="#/lesson/${x.lesson_id}">${esc(x.title)}</a><span class="muted">best ${x.best_score}%</span></div>`).join("")}</div>` : ""}
+        ${p.needs_review.length ? `<div class="card"><h3>Worth reviewing</h3>${p.needs_review.map((x) => `<div class="row spread small"><a href="${to.lesson(x.lesson_id)}">${esc(x.title)}</a><span class="muted">best ${x.best_score}%</span></div>`).join("")}</div>` : ""}
       </div>
       <div class="card stack" id="planCard">
         <div class="row spread"><h2 style="margin:0">Study plan</h2>${plan ? `<span class="muted small">${plan.done}/${plan.total} done</span>` : ""}</div>
@@ -2935,7 +3163,7 @@ async function viewProgress() {
     </div>`);
   $$(".plan-item", main).forEach((b) => b.addEventListener("click", () => {
     const act = b.dataset.act;
-    if (act === "lesson") location.hash = `#/lesson/${b.dataset.lesson}`;
+    if (act === "lesson") navigate(to.lesson(b.dataset.lesson));
     else if (act === "exam") studyAction("exam", "path", b.dataset.path, { button: b });
     else studyAction(act === "flashcards" ? "cards" : "quiz", "lesson", b.dataset.lesson, { button: b });
   }));
@@ -2976,13 +3204,13 @@ const lines = (v) => v.split("\n").map((x) => x.trim()).filter(Boolean);
 
 async function viewStaff(m) {
   const tabs = ROLE_CAN[state.me.role] || [];
-  if (!tabs.length) { location.hash = "#/feed"; return; }
+  if (!tabs.length) { navigate("/feed", { replace: true }); return; }
   const tab = tabs.includes(m[1]) ? m[1] : tabs[0];
   const names = { analytics: "Analytics", insights: "AI usage", reports: "Reported companions", appeals: "Appeals", paths: "Path reviews", roles: "People",
     campaigns: "Emails", setup: "Setup", log: "Decision log" };
   const main = shell("staff", `
     <h1>Staff</h1>
-    <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="#/staff/${t}">${names[t]}</a>`).join("")}</div>
+    <div class="tabs">${tabs.map((t) => `<a class="btn ${t === tab ? "on" : ""}" href="/staff/${t}">${names[t]}</a>`).join("")}</div>
     <div id="staffBody" class="stack"><div class="card empty">Loading…</div></div>`);
   const body = $("#staffBody", main);
   await { analytics: staffAnalytics, insights: staffInsights, reports: staffReports, appeals: staffAppeals, paths: staffPaths, roles: staffRoles,
@@ -3066,7 +3294,7 @@ async function staffInsights(body) {
         <div><h3 style="margin:0">Most followed community companions</h3>
           <div class="muted small">Companions learners designed and shared.</div></div>
         ${c.most_followed.length ? `<table class="table num"><thead><tr><th>Companion</th><th>Followers</th></tr></thead><tbody>
-          ${c.most_followed.map((x) => `<tr><td><a href="#/c/${x.id}">${esc(x.name)} ${esc(x.flag || "")}</a> <span class="muted small">by ${esc(x.designer || "a former learner")}</span></td><td>${x.followers.toLocaleString()}</td></tr>`).join("")}
+          ${c.most_followed.map((x) => `<tr><td><a href="${to.companion(x)}">${esc(x.name)} ${esc(x.flag || "")}</a> <span class="muted small">by ${esc(x.designer || "a former learner")}</span></td><td>${x.followers.toLocaleString()}</td></tr>`).join("")}
         </tbody></table>` : `<div class="empty">No community companions yet.</div>`}
       </div>
     </div>`;
@@ -3385,7 +3613,7 @@ const ratingText = (r) => (r ? `<span class="stars" aria-hidden="true">★</span
 function courseCard(c) {
   const [icon, c1, c2] = look(c.category);
   const tools = c.jetbrains.length ? c.jetbrains.slice(0, 2).join(" · ") : c.cisco ? "Cisco-aligned" : c.tools[0] || "";
-  return `<a class="card course-card" href="#/course/${c.slug}">
+  return `<a class="card course-card" href="${to.course(c.slug)}">
     <div class="course-cover" style="--c1:${c1};--c2:${c2}">
       <span class="kind">${kindName(c)}</span><span class="icon" aria-hidden="true">${icon}</span>${tools ? `<span class="tools">${esc(tools)}</span>` : ""}
     </div>
@@ -3401,7 +3629,7 @@ function courseCard(c) {
 }
 
 function trackCard(t) {
-  return `<a class="card track-card" href="#/track/${t.slug}">
+  return `<a class="card track-card" href="${to.track(t.slug)}">
     <div class="eyebrow">${esc(t.kind)}</div>
     <h3>${esc(t.title)}</h3>
     <div class="small muted clamp2">${esc(t.subtitle)}</div>
@@ -3411,9 +3639,10 @@ function trackCard(t) {
 }
 
 /* The catalogue: what's in progress, the tracks, then every course, with filters kept in the address. */
-async function viewCourses(m) {
-  const params = new URLSearchParams(m[1] || "");
+async function viewCourses(m, query) {
+  const params = new URLSearchParams(query);
   const cat = await api("/api/courses");
+  document.title = "Courses · AI Every Time";
   const f = { category: params.get("category") || "", level: params.get("level") || "", kind: params.get("kind") || "", tag: params.get("tag") || "" };
   const q = (params.get("q") || "").trim().toLowerCase();
   const TAGS = {
@@ -3430,10 +3659,10 @@ async function viewCourses(m) {
     const p = new URLSearchParams(params);
     for (const [k, v] of Object.entries(changes)) v ? p.set(k, v) : p.delete(k);
     const s = p.toString();
-    return `#/courses${s ? `?${s}` : ""}`;
+    return `/courses${s ? `?${s}` : ""}`;
   };
   const tab = (key, value, text) => `<a href="${link({ [key]: value })}" class="${f[key] === value ? "active" : ""}">${text}</a>`;
-  const main = shell("courses", `
+  const main = frame("courses", `
     <div class="course-hero">
       <h1>Courses</h1>
       <p class="muted">Structured courses taught by the AI Learning Companions: lessons in their own voice, tools shown step by step,
@@ -3442,7 +3671,7 @@ async function viewCourses(m) {
         <input type="search" name="q" value="${esc(params.get("q") || "")}" placeholder="What do you want to learn? Try PyCharm, subnetting or RAG" aria-label="Search courses">
         <button class="btn primary">Search</button>
       </form>
-      ${cat.full_access ? "" : `<p class="small" style="margin:12px 0 0">The first module of every course is free.${forSale(` <a href="#/pricing">Plus</a> opens every module, lab and project, and the certificates.`)}</p>`}
+      ${cat.full_access ? "" : `<p class="small" style="margin:12px 0 0">The first module of every course is free.${forSale(` <a href="/pricing">Plus</a> opens every module, lab and project, and the certificates.`)}</p>`}
     </div>
     ${!filtering && going.length ? `<h2 class="section">Continue learning</h2><div class="course-grid">${going.map(courseCard).join("")}</div>` : ""}
     ${!filtering && cat.tracks.length ? `<h2 class="section">Professional Certificates and Specializations</h2>
@@ -3455,9 +3684,9 @@ async function viewCourses(m) {
       <div class="seg" role="group" aria-label="Level">${tab("level", "", "Any level")}${["beginner", "intermediate", "advanced"].map((l) => tab("level", l, label(l))).join("")}</div>
       ${Object.entries(TAGS).map(([k, [text]]) => `<a class="btn tag ${f.tag === k ? "on" : ""}" href="${link({ tag: f.tag === k ? "" : k })}">${text}</a>`).join("")}
     </div>
-    <div class="row spread small muted" style="margin:0 0 12px"><span>${plural2(list.length, "course")}</span>${filtering ? `<a href="#/courses">Clear the filters</a>` : ""}</div>
-    <div class="course-grid">${list.length ? list.map(courseCard).join("") : `<div class="card empty">No courses match. <a href="#/courses">See them all</a></div>`}</div>`);
-  $("#courseSearch", main).addEventListener("submit", (e) => { e.preventDefault(); location.hash = link({ q: e.target.q.value.trim() }); });
+    <div class="row spread small muted" style="margin:0 0 12px"><span>${plural2(list.length, "course")}</span>${filtering ? `<a href="/courses">Clear the filters</a>` : ""}</div>
+    <div class="course-grid">${list.length ? list.map(courseCard).join("") : `<div class="card empty">No courses match. <a href="/courses">See them all</a></div>`}</div>`);
+  $("#courseSearch", main).addEventListener("submit", (e) => { e.preventDefault(); navigate(link({ q: e.target.q.value.trim() })); });
 }
 
 const allItems = (c) => [...c.syllabus.flatMap((mod) => mod.items.map((i) => ({ ...i, module: mod }))), ...(c.project ? [c.project] : [])];
@@ -3469,7 +3698,7 @@ const itemLine = (i) => ({
 function itemRow(c, i) {
   const inner = `<span class="ico" aria-hidden="true">${ITEM_ICON[i.type]}</span><span class="what"><span class="t">${esc(i.title)}</span>
     <span class="type">${itemLine(i)}</span></span>${c.enrolled ? `<span title="${STATUS_WORDS[i.status]}">${ITEM_STATUS[i.status]}</span>` : ""}`;
-  return `<li>${c.enrolled ? `<a class="item-row" href="#/course/${c.slug}/learn/${i.key}">${inner}</a>` : `<div class="item-row">${inner}</div>`}</li>`;
+  return `<li>${c.enrolled ? `<a class="item-row" href="${to.course(c.slug, i.key)}">${inner}</a>` : `<div class="item-row">${inner}</div>`}</li>`;
 }
 
 function moduleBlock(c, mod, open) {
@@ -3495,7 +3724,7 @@ function instructorCard(i) {
       <p class="small" style="margin:0">${esc(i.bio)}</p>
       ${i.expertise?.length ? chipList(i.expertise) : ""}
       <div class="row small"><span class="muted">${plural2(i.courses, "course")} on AI Every Time</span>
-        <a class="btn" href="#/c/${i.id}">💬 Chat with ${esc(i.name.split(" ")[0])}</a></div>
+        <a class="btn" href="${to.companion(i)}">💬 Chat with ${esc(i.name.split(" ")[0])}</a></div>
     </div>
   </div>`;
 }
@@ -3513,7 +3742,7 @@ function progressBlock(c, { grades = false } = {}) {
     <div class="row spread"><h2 style="margin:0">Your progress</h2><b>${c.progress}%</b></div>
     ${bar(c.progress, 100)}
     <ul class="checklist">${lines.map((l) => `<li>${l}</li>`).join("")}</ul>
-    ${c.certificate ? `<div class="row"><a class="btn primary" href="#/certificate/${c.certificate}">🎓 View your certificate</a></div>`
+    ${c.certificate ? `<div class="row"><a class="btn primary" href="${to.certificate(c.certificate)}">🎓 View your certificate</a></div>`
       : r.complete ? `<form id="certForm" class="stack cert-form">
           <div><b>🎉 You've finished the ${kindName(c).toLowerCase()}!</b> Your certificate is ready.</div>
           <label>Name on your certificate <input type="text" name="name" value="${esc(state.me.display_name)}" minlength="2" maxlength="80" required></label>
@@ -3521,7 +3750,7 @@ function progressBlock(c, { grades = false } = {}) {
       : `<div class="muted small">Finish all of these to earn your certificate.</div>`}
     <div class="row rate-row"><span class="small">Rate this ${kindName(c).toLowerCase()}:</span><span class="rate" role="group" aria-label="Your rating">${[1, 2, 3, 4, 5].map((n) =>
       `<button type="button" class="star ${n <= (c.my_rating || 0) ? "on" : ""}" data-stars="${n}" aria-label="${n} star${n === 1 ? "" : "s"}">★</button>`).join("")}</span></div>
-    <div class="row small">${grades ? `<a href="#/course/${c.slug}">Course page</a>` : `<a href="#/course/${c.slug}/learn/grades">Grades</a>`}
+    <div class="row small">${grades ? `<a href="${to.course(c.slug)}">Course page</a>` : `<a href="${to.course(c.slug, "grades")}">Grades</a>`}
       <button type="button" class="textbtn" id="leave">Leave this ${kindName(c).toLowerCase()}</button></div>
   </section>`;
 }
@@ -3533,7 +3762,7 @@ function wireProgress(root, c) {
     btn.disabled = true;
     try {
       const cert = await api(`/api/courses/${c.slug}/certificate`, { method: "POST", body: { name: e.target.name.value } });
-      location.hash = `#/certificate/${cert.code}`;
+      navigate(to.certificate(cert.code));
     } catch (err) { toast(err.message); btn.disabled = false; }
   });
   $$(".star", root).forEach((b) => b.addEventListener("click", async () => {
@@ -3548,9 +3777,7 @@ function wireProgress(root, c) {
     if (!confirm("Leave this course? It comes off your list; your progress is kept in case you come back.")) return;
     await api(`/api/courses/${c.slug}/enroll`, { method: "DELETE" });
     toast("You've left the course");
-    const page = `#/course/${c.slug}`;
-    if (location.hash === page) router();
-    else location.hash = page;
+    navigate(to.course(c.slug));
   });
 }
 
@@ -3573,27 +3800,29 @@ function planBlock(c, kind) {
 async function viewCourse(m) {
   const slug = m[1];
   const c = await api(`/api/courses/${slug}`);
+  document.title = `${c.title} · AI Every Time`;
   const [icon, c1, c2] = look(c.category);
   const items = allItems(c);
   const count = (type) => items.filter((i) => i.type === type).length;
   const next = items.find((i) => i.key === c.next);
   const kind = kindName(c).toLowerCase();
   const start = c.enrolled
-    ? `<a class="btn primary go" href="#/course/${slug}/learn/${c.next || "grades"}">${!c.next ? "Go to the course" : c.progress ? "Resume" : "Start learning"}</a>`
-    : `<button class="btn primary go" id="enrol">Enrol for free</button>`;
-  const main = shell("courses", `
-    <div class="muted small crumbs"><a href="#/courses">Courses</a> › <a href="#/courses?category=${encodeURIComponent(c.category)}">${esc(c.category)}</a></div>
+    ? `<a class="btn primary go" href="${to.course(slug, c.next || "grades")}">${!c.next ? "Go to the course" : c.progress ? "Resume" : "Start learning"}</a>`
+    : state.me ? `<button class="btn primary go" id="enrol">Enrol for free</button>`
+    : `<a class="btn primary go" href="/signup?next=${encodeURIComponent(here())}">Enrol for free</a>`;
+  const main = frame("courses", `
+    <div class="muted small crumbs"><a href="/courses">Courses</a> › <a href="/courses?category=${encodeURIComponent(c.category)}">${esc(c.category)}</a></div>
     <section class="card course-head" style="--c1:${c1};--c2:${c2}">
       <div class="badges"><span class="badge">${kindName(c)}</span><span class="badge">${label(c.level)}</span>${c.jetbrains.map((t) =>
         `<span class="badge">🖥️ ${esc(t)}</span>`).join("")}${c.cisco ? `<span class="badge">🌐 Cisco-aligned</span>` : ""}</div>
       <h1><span aria-hidden="true">${icon}</span> ${esc(c.title)}</h1>
       <p class="lead">${esc(c.subtitle)}</p>
       <div class="row">${faces(c.instructors, 36)}<span>${c.instructors.length > 1 ? "Instructors" : "Instructor"}: ${c.instructors.map((i) =>
-        `<a href="#/c/${i.id}">${esc(i.name)} ${esc(i.flag)}</a>`).join(", ")}</span></div>
+        `<a href="${to.companion(i)}">${esc(i.name)} ${esc(i.flag)}</a>`).join(", ")}</span></div>
       <div class="row">${start}<span class="muted small">${c.learners ? `${fmtCount(c.learners)} ${c.learners === 1 ? "learner has" : "learners have"} enrolled` : "Free · be one of the first to enrol"}</span></div>
       ${c.enrolled ? `<div>${bar(c.progress, 100)}<div class="small muted">${c.progress}% complete${next ? ` · Up next: ${esc(next.title)}` : ""}</div></div>` : ""}
       ${c.aligned_with ? `<div class="small">📋 Follows ${esc(c.aligned_with)}</div>` : ""}
-      ${c.tracks.length ? `<div class="small">🎓 Part of ${c.tracks.map((t) => `the <a href="#/track/${t.slug}">${esc(t.title)} ${esc(t.kind)}</a>`).join(" and ")}</div>` : ""}
+      ${c.tracks.length ? `<div class="small">🎓 Part of ${c.tracks.map((t) => `the <a href="${to.track(t.slug)}">${esc(t.title)} ${esc(t.kind)}</a>`).join(" and ")}</div>` : ""}
     </section>
     <div class="card course-stats">
       <div><b>${plural2(c.syllabus.length, "module")}</b><span class="muted small">${plural2(count("lesson"), "lesson")}</span></div>
@@ -3622,11 +3851,11 @@ async function viewCourse(m) {
       <h2 class="section">There ${c.syllabus.length === 1 ? "is 1 module" : `are ${c.syllabus.length} modules`} in this ${kind}</h2>
       ${c.access && !c.access.full ? `<div class="card row spread access-note"><div><b>The first module is free.</b>
         <div class="small muted">Every module, lab and project, and the certificate, come with ${esc(c.access.plan)} and the plans above it.</div></div>
-        ${forSale(`<a class="btn primary" href="#/pricing">See the plans</a>`)}</div>` : ""}
+        ${forSale(`<a class="btn primary" href="/pricing">See the plans</a>`)}</div>` : ""}
       ${c.syllabus.map((mod, i) => moduleBlock(c, mod, i === 0)).join("")}
       ${c.project ? `<div class="card stack project-block"><div class="muted small">Capstone project · ${duration(c.project.minutes)}</div>
         <h3 style="margin:0">🏗️ ${esc(c.project.title)}</h3><div class="small muted">Put the whole ${kind} to work on a project of your own, scored by your instructor against a rubric.</div>
-        ${c.enrolled ? `<div><a class="btn" href="#/course/${slug}/learn/project">${ITEM_STATUS[c.project.status]} Open the project</a></div>` : ""}</div>` : ""}
+        ${c.enrolled ? `<div><a class="btn" href="${to.course(slug, "project")}">${ITEM_STATUS[c.project.status]} Open the project</a></div>` : ""}</div>` : ""}
     </section>
     <section class="stack" id="instructors"><h2 class="section">${c.instructors.length > 1 ? "Instructors" : "Instructor"}</h2>${c.instructors.map(instructorCard).join("")}</section>
     ${c.enrolled ? progressBlock(c) : ""}
@@ -3637,7 +3866,7 @@ async function viewCourse(m) {
     try {
       await api(`/api/courses/${slug}/enroll`, { method: "POST" });
       toast(`You're enrolled in ${c.title}`);
-      location.hash = `#/course/${slug}/learn/${c.next || "l1-1"}`;
+      navigate(to.course(slug, c.next || "l1-1"));
     } catch (err) { toast(err.message); e.target.disabled = false; }
   });
   if (c.enrolled) wireProgress(main, c);
@@ -3788,40 +4017,40 @@ const earlier = (attempts, kind) => (attempts.length > 1 ? `<details><summary>Ea
 
 /* The player: the course's outline beside the item in hand (a lesson, lab, quiz, the project, or the grades). */
 async function viewCoursePlayer(m) {
-  const slug = m[1], key = m[2];
+  const slug = m[1], key = courseKey(m[2]);
   const c = await api(`/api/courses/${slug}`);
   if (!c.enrolled) {
     shell("courses", `<div class="card empty stack"><div>Enrol in <b>${esc(c.title)}</b> to start it. It's free.</div>
-      <div class="row" style="justify-content:center"><button class="btn primary" id="enrolNow">Enrol for free</button><a class="btn" href="#/course/${slug}">About the ${kindName(c).toLowerCase()}</a></div></div>`);
+      <div class="row" style="justify-content:center"><button class="btn primary" id="enrolNow">Enrol for free</button><a class="btn" href="${to.course(slug)}">About the ${kindName(c).toLowerCase()}</a></div></div>`);
     $("#enrolNow").addEventListener("click", async () => { await api(`/api/courses/${slug}/enroll`, { method: "POST" }); router(); });
     return;
   }
   const items = allItems(c);
   const idx = items.findIndex((i) => i.key === key);
-  if (idx < 0 && key !== "grades") { location.replace(`#/course/${slug}`); return; }
+  if (idx < 0 && key !== "grades") { navigate(to.course(slug), { replace: true }); return; }
   const item = items[idx], prev = idx > 0 ? items[idx - 1] : null, next = idx >= 0 ? items[idx + 1] : null;
   const wide = matchMedia("(min-width: 981px)").matches;
   const shut = (i) => i.module?.locked || (i.type === "project" && c.access && !c.access.full);
-  const link = (i) => `<a href="#/course/${slug}/learn/${i.key}" class="${i.key === key ? "active" : ""}"><span class="st" title="${shut(i) ? "Locked" : STATUS_WORDS[i.status]}">${shut(i) ? "🔒" : ITEM_STATUS[i.status]}</span>
+  const link = (i) => `<a href="${to.course(slug, i.key)}" class="${i.key === key ? "active" : ""}"><span class="st" title="${shut(i) ? "Locked" : STATUS_WORDS[i.status]}">${shut(i) ? "🔒" : ITEM_STATUS[i.status]}</span>
     <span><span class="t">${esc(i.title)}</span><span class="type">${{ lesson: "Lesson", lab: "Lab", quiz: "Quiz", project: "Project" }[i.type]} · ${duration(i.minutes)}</span></span></a>`;
   const main = shell("courses", `
     <div class="player-top">
-      <div class="muted small crumbs"><a href="#/courses">Courses</a> › <a href="#/course/${slug}">${esc(c.title)}</a></div>
-      <div class="row spread small"><b>${c.progress}% complete</b><a href="#/course/${slug}/learn/grades">Grades and certificate</a></div>${bar(c.progress, 100)}
+      <div class="muted small crumbs"><a href="/courses">Courses</a> › <a href="${to.course(slug)}">${esc(c.title)}</a></div>
+      <div class="row spread small"><b>${c.progress}% complete</b><a href="${to.course(slug, "grades")}">Grades and certificate</a></div>${bar(c.progress, 100)}
     </div>
     <div class="player">
       <details class="card outline"${wide ? " open" : ""}><summary>Course outline</summary>
         ${c.syllabus.map((mod) => `<h4>Module ${mod.index}: ${esc(mod.title)}</h4>${mod.items.map(link).join("")}`).join("")}
         ${c.project ? `<h4>Capstone project</h4>${link(c.project)}` : ""}
-        <h4>Your work</h4><a href="#/course/${slug}/learn/grades" class="${key === "grades" ? "active" : ""}"><span class="st">📊</span><span><span class="t">Grades and certificate</span></span></a>
+        <h4>Your work</h4><a href="${to.course(slug, "grades")}" class="${key === "grades" ? "active" : ""}"><span class="st">📊</span><span><span class="t">Grades and certificate</span></span></a>
       </details>
       <div class="stack" id="item"><div class="card empty">Loading…</div></div>
     </div>`);
   const box = $("#item", main);
-  const go = (i) => `#/course/${slug}/learn/${i.key}`;
+  const go = (i) => to.course(slug, i.key);
   const short = (t) => (t.length > 38 ? `${t.slice(0, 36)}…` : t);
   const nav = `<div class="row spread item-nav">${prev ? `<a class="btn ghost" href="${go(prev)}">← ${esc(short(prev.title))}</a>` : "<span></span>"}
-    ${next ? `<a class="btn ghost" href="${go(next)}">${esc(short(next.title))} →</a>` : `<a class="btn ghost" href="#/course/${slug}/learn/grades">Grades →</a>`}</div>`;
+    ${next ? `<a class="btn ghost" href="${go(next)}">${esc(short(next.title))} →</a>` : `<a class="btn ghost" href="${to.course(slug, "grades")}">Grades →</a>`}</div>`;
   const ctx = { c, slug, item, next, nav, box, go };
   if (key === "grades") return playerGrades(ctx);
   if (item.module?.locked || (item.type === "project" && c.access && !c.access.full)) {
@@ -3829,7 +4058,7 @@ async function viewCoursePlayer(m) {
       <h2 style="margin:0">${esc(item.title)}</h2>
       <p style="margin:0">The first module of every course is free. This ${item.type === "project" ? "capstone project" : "part of the course"}, and every
         module, lab and project after it, and the certificate, come with ${esc(c.access.plan)} and the plans above it.</p>
-      ${forSale(`<div class="row"><a class="btn primary" href="#/pricing">See the plans</a></div>`)}${nav}</div>`;
+      ${forSale(`<div class="row"><a class="btn primary" href="/pricing">See the plans</a></div>`)}${nav}</div>`;
     return;
   }
   await { lesson: playerLesson, lab: playerLab, quiz: playerQuiz, project: playerProject }[item.type](ctx);
@@ -3877,7 +4106,7 @@ async function playerLesson({ c, slug, item, next, nav, box, go }) {
   $("#complete", box).addEventListener("click", async () => {
     await api(`/api/lessons/${item.id}/complete`, { method: "POST" });
     toast("Lesson completed");
-    location.hash = next ? go(next) : `#/course/${slug}/learn/grades`;
+    navigate(next ? go(next) : to.course(slug, "grades"));
   });
   $$("[data-study]", box).forEach((b) => b.addEventListener("click", () => studyAction(b.dataset.study, "lesson", item.id, { companionId: t.id, button: b })));
   $("#listen", box)?.addEventListener("click", async () => {
@@ -4014,9 +4243,10 @@ function playerGrades({ c, slug, box, go }) {
 
 async function viewTrack(m) {
   const t = await api(`/api/tracks/${m[1]}`);
+  document.title = `${t.title} ${t.kind} · AI Every Time`;
   const complete = t.done === t.total;
-  const main = shell("courses", `
-    <div class="muted small crumbs"><a href="#/courses">Courses</a> › ${esc(t.kind)}s</div>
+  const main = frame("courses", `
+    <div class="muted small crumbs"><a href="/courses">Courses</a> › ${esc(t.kind)}s</div>
     <section class="card course-head" style="--c1:#5b4cdb;--c2:#8a7dff">
       <div class="badges"><span class="badge">${esc(t.kind)}</span><span class="badge">${t.total}-course series</span></div>
       <h1>${esc(t.title)}</h1>
@@ -4035,7 +4265,7 @@ async function viewTrack(m) {
         ${t.roles.length ? `<div><h3>It prepares you for roles such as</h3>${chipList(t.roles)}</div>` : ""}
         <div><h3>Skills you'll gain</h3>${chipList(t.skills)}</div></div>
       <div class="card stack" id="trackCert"><h2 style="margin:0">🎓 Your certificate</h2>
-        ${t.certificate ? `<p style="margin:0">You've earned the ${esc(t.title)} ${esc(t.kind)}.</p><div><a class="btn primary" href="#/certificate/${t.certificate}">View your certificate</a></div>`
+        ${t.certificate ? `<p style="margin:0">You've earned the ${esc(t.title)} ${esc(t.kind)}.</p><div><a class="btn primary" href="${to.certificate(t.certificate)}">View your certificate</a></div>`
           : complete ? `<form id="certForm" class="stack cert-form"><div><b>🎉 You've finished every course!</b></div>
               <label>Name on your certificate <input type="text" name="name" value="${esc(state.me.display_name)}" minlength="2" maxlength="80" required></label>
               <div><button class="btn primary">Get my certificate</button></div></form>`
@@ -4045,7 +4275,7 @@ async function viewTrack(m) {
     <h2 class="section">${t.total} courses in this ${esc(t.kind)}</h2>
     <ol class="track-courses">${t.courses.map((c, i) => `<li class="card">
       <div class="muted small">Course ${i + 1} · ${label(c.level)} · ${hoursText(c.hours)}</div>
-      <div class="row spread"><a class="plain" href="#/course/${c.slug}"><h3 style="margin:0">${esc(c.title)}</h3></a>
+      <div class="row spread"><a class="plain" href="${to.course(c.slug)}"><h3 style="margin:0">${esc(c.title)}</h3></a>
         <span>${c.certificate ? "🎓 Done" : c.enrolled ? `${c.progress}%` : ""}</span></div>
       <div class="small muted">${esc(c.subtitle)}</div>
       ${c.enrolled ? bar(c.progress, 100) : ""}
@@ -4057,7 +4287,7 @@ async function viewTrack(m) {
     btn.disabled = true;
     try {
       const cert = await api(`/api/tracks/${t.slug}/certificate`, { method: "POST", body: { name: e.target.name.value } });
-      location.hash = `#/certificate/${cert.code}`;
+      navigate(to.certificate(cert.code));
     } catch (err) { toast(err.message); btn.disabled = false; }
   });
 }
@@ -4276,7 +4506,7 @@ async function viewCertificate(m) {
     cert = await api(`/api/certificates/${m[1]}`);
   } catch (err) {
     if (err instanceof StaleView) throw err;
-    app.innerHTML = `<div class="narrow-card card stack">${logo()}<p>${esc(err.message)}</p><div><a class="btn" href="#/feed">Go to AI Every Time</a></div></div>`;
+    app.innerHTML = `<div class="narrow-card card stack">${logo()}<p>${esc(err.message)}</p><div><a class="btn" href="/">Go to AI Every Time</a></div></div>`;
     return;
   }
   const f = cert.for, track = cert.kind === "track", issued = new Date(cert.issued_at);
@@ -4287,7 +4517,7 @@ async function viewCertificate(m) {
   const about = track ? [f.kind, plural2(f.courses.length, "course"), hoursText(f.hours)] : [f.kind, label(f.level), hoursText(f.hours)];
   app.innerHTML = `
     <div class="cert-page">
-      <div class="cert-bar">${logo(30)}${state.me ? `<a class="btn" href="#/courses">Back to courses</a>` : `<a class="btn primary" href="#/welcome">Start learning</a>`}</div>
+      <div class="cert-bar">${logo(30)}${state.me ? `<a class="btn" href="/courses">Back to courses</a>` : `<a class="btn primary" href="/signup">Start learning</a>`}</div>
       <figure class="cert-sheet" id="certSheet" aria-busy="true"></figure>
       <div class="row cert-actions">
         <button class="btn primary" id="saveCert">⬇️ Download image</button>
@@ -4369,7 +4599,7 @@ function offerPlan(message, plan) {
   toast.quiet = message;  // the dialog says it; a toast saying it again is noise
   setTimeout(() => { toast.quiet = null; }, 1500);
   showDialog(`<h2>${inApp ? "Not in your plan" : plan in PLAN_NAMES ? `Unlock it with ${PLAN_NAMES[plan]}` : "Unlock more with a plan"}</h2><p>${esc(message)}</p>
-    ${forSale(`<p><a class="btn primary" href="#/pricing" data-close>See the plans</a></p>`)}`);
+    ${forSale(`<p><a class="btn primary" href="/pricing" data-close>See the plans</a></p>`)}`);
 }
 
 /* A plan chosen before signing in, to carry on to checkout with afterwards. */
@@ -4389,7 +4619,7 @@ async function choosePlan(tier, interval, button) {
   if (!state.me) {
     rememberCheckout(tier, interval);
     toast(`Create your account or sign in, then we'll take you to checkout for ${PLAN_NAMES[tier]}.`);
-    location.hash = "#/welcome";
+    navigate("/signup");
     return false;
   }
   const plan = state.me.plan;
@@ -4409,7 +4639,7 @@ async function choosePlan(tier, interval, button) {
 
 function confirmChange(tier, interval) {
   const sub = state.me.plan.subscription;
-  if (sub.tier === tier && sub.interval === interval) { location.hash = "#/billing"; return; }
+  if (sub.tier === tier && sub.interval === interval) { navigate("/billing"); return; }
   const up = tierRank(tier) > tierRank(sub.tier) || (tierRank(tier) === tierRank(sub.tier) && interval === "yearly");
   showDialog(`<h2>Switch to ${PLAN_NAMES[tier]}, ${interval}?</h2>
     <p>${up ? "It starts straight away, and you pay the difference for the rest of this billing period now."
@@ -4422,7 +4652,7 @@ function confirmChange(tier, interval) {
       state.me.plan = plan;
       $("#dialog").close();
       toast(plan.message || `You're on ${plan.name} now.`);
-      if (location.hash.startsWith("#/billing")) router(); else location.hash = "#/billing";
+      navigate("/billing");
     } catch (err) { if (!(err instanceof StaleView)) toast(err.message); e.target.disabled = false; }
   });
 }
@@ -4432,13 +4662,13 @@ function planPill() {
   const p = state.me?.plan;
   if (!p?.paywall || state.me.role === "admin") return "";  // admins can use everything
   if (inApp) return `<span class="plan-pill">${esc(p.name)} plan</span>`;
-  return `<a class="plan-pill" href="${p.tier === "free" ? "#/pricing" : "#/billing"}">${esc(p.name)} plan${p.tier === "free" ? " · Upgrade" : ""}</a>`;
+  return `<a class="plan-pill" href="${p.tier === "free" ? "/pricing" : "/billing"}">${esc(p.name)} plan${p.tier === "free" ? " · Upgrade" : ""}</a>`;
 }
 
 const INTENT_HIDDEN = "aiet-upgrade-hidden";
 function upgradeBanner(main) {
   const p = state.me?.plan, intent = p?.intended;
-  if (inApp || !intent || !p.payments || /^#\/(pricing|billing)/.test(location.hash)) return;
+  if (inApp || !intent || !p.payments || /^\/(pricing|billing)$/.test(location.pathname)) return;
   try { if (+localStorage.getItem(INTENT_HIDDEN) > Date.now()) return; } catch {}
   const el = document.createElement("div");
   el.className = "card upgrade-banner";
@@ -4465,9 +4695,8 @@ const PRICING_FAQ = (d) => [
   ["Is my payment information safe?", "Payments are handled by Stripe, and AI Every Time never sees or stores your card number."],
 ];
 
-async function viewPricing(m) {
-  if (inApp) { location.hash = state.me ? "#/profile" : "#/welcome"; return; }
-  const q = new URLSearchParams(m[1] || "");
+async function viewPricing(m, q) {
+  if (inApp) { navigate(state.me ? "/profile" : "/", { replace: true }); return; }
   if (q.get("checkout") === "cancelled") toast("Checkout cancelled. Nothing has changed.");
   const d = await api("/api/plans");
   let interval = q.get("interval") === "yearly" ? "yearly" : "monthly";
@@ -4498,7 +4727,7 @@ async function viewPricing(m) {
   const action = (p) => {
     if (p.slug === "teams") return `<a class="btn" href="mailto:${esc(d.teams_email)}?subject=${encodeURIComponent("AI Every Time Teams")}">Contact us</a>`;
     if (p.slug === current) return `<button class="btn" disabled>Your plan</button>`;
-    if (p.slug === "free") return me ? `<a class="btn" href="#/feed">Keep learning free</a>` : `<a class="btn" href="#/welcome">Start free</a>`;
+    if (p.slug === "free") return me ? `<a class="btn" href="/feed">Keep learning free</a>` : `<a class="btn" href="/signup">Start free</a>`;
     if (!d.payments) return `<button class="btn" disabled>Coming soon</button>`;
     const trial = p.trial_days && (!me || me.plan?.trial_available);
     const live = me?.plan?.subscription?.live;
@@ -4535,12 +4764,10 @@ async function viewPricing(m) {
     <section class="pricing-hero final">
       <h2>Start learning today</h2>
       <p>Free to start, with no card needed. Upgrade whenever you're ready.</p>
-      ${me ? `<a class="btn primary" href="#/feed">Back to learning</a>` : `<a class="btn primary" href="#/welcome">Create your free account</a>`}
+      ${me ? `<a class="btn primary" href="/feed">Back to learning</a>` : `<a class="btn primary" href="/signup">Create your free account</a>`}
     </section>`;
-  const page = me ? shell("pricing", `<div class="pricing" id="pricing"></div>`) : (app.innerHTML = `<div class="public-top">${logo(34)}
-      <div class="row"><a class="btn ghost" href="#/welcome">Sign in</a><a class="btn primary" href="#/welcome">Start free</a></div></div>
-      <main class="pricing public" id="pricing"></main>`, app);
-  const box = $("#pricing", page);
+  document.title = "Plans and pricing · AI Every Time";
+  const box = me ? $("#pricing", shell("pricing", `<div class="pricing" id="pricing"></div>`)) : openPage("", "pricing", "pricing public");
   const draw = () => { box.innerHTML = render(); };
   draw();
   box.addEventListener("click", (e) => {
@@ -4554,9 +4781,8 @@ async function viewPricing(m) {
 
 /* ------------------------------------------------------------------ billing */
 
-async function viewBilling(m) {
-  if (inApp) { location.hash = "#/profile"; return; }
-  const q = new URLSearchParams(m[1] || "");
+async function viewBilling(m, q) {
+  if (inApp) { navigate("/profile", { replace: true }); return; }
   const session = q.get("checkout");
   const main = shell("billing", `<h1>Plan and billing</h1><div class="stack" id="billing" style="max-width:720px"><div class="card empty">Loading…</div></div>`);
   const box = $("#billing", main);
@@ -4565,7 +4791,7 @@ async function viewBilling(m) {
     box.innerHTML = `<div class="card empty">Checking your payment…</div>`;
     try { plan = await api("/api/billing/checkout/confirm", { method: "POST", body: { session_id: session } }); }
     catch (err) { if (err instanceof StaleView) throw err; toast(err.message); }
-    history.replaceState(null, "", "#/billing");  // the session's id isn't needed again
+    history.replaceState(null, "", "/billing");  // the session's id isn't needed again
     if (plan?.subscription?.live) toast(plan.subscription.status === "trialing" ? `Your ${plan.name} trial has started. Enjoy!` : `Welcome to ${plan.name}!`);
   }
   plan = plan || await api("/api/billing");
@@ -4585,7 +4811,7 @@ async function viewBilling(m) {
       ${sub.status === "past_due" ? `<div class="alert">Your last payment didn't go through. Update your card so your plan carries on.</div>` : ""}
       ${sub.cancel_at_period_end && sub.live ? `<div class="muted small">It's set to stop at the end of this period. You can keep it if you change your mind.</div>` : ""}
       ${sub.manageable ? `<div class="row">
-          ${sub.live ? `<a class="btn" href="#/pricing">Change plan</a>` : `<a class="btn primary" href="#/pricing">Choose a plan</a>`}
+          ${sub.live ? `<a class="btn" href="/pricing">Change plan</a>` : `<a class="btn primary" href="/pricing">Choose a plan</a>`}
           <button class="btn" data-portal>Payment method and invoices</button>
           ${sub.live ? (sub.cancel_at_period_end ? `<button class="btn primary" data-resume>Keep my plan</button>` : `<button class="btn ghost" data-cancel>Cancel plan</button>`) : ""}
         </div>` : sub.live ? `<div class="muted small">This plan came over from the old AI Every Time site${plan.payments ? " and is being linked to your payment details" : ""}. It carries on as before.</div>` : ""}
@@ -4593,7 +4819,7 @@ async function viewBilling(m) {
   box.innerHTML = `
     <div class="card stack plan-now">
       <div class="row spread"><div><div class="muted small">You're on</div><h2 style="margin:0">${esc(plan.name)}</h2></div>
-        ${plan.tier === "free" || plan.tier === "digital" ? `<a class="btn primary" href="#/pricing">See the plans</a>` : ""}</div>
+        ${plan.tier === "free" || plan.tier === "digital" ? `<a class="btn primary" href="/pricing">See the plans</a>` : ""}</div>
       ${plan.paywall ? `<ul class="perks"><li>AI Learning Companions, learning paths, quizzes, flashcards and study plans</li>
         ${["guides", "courses", "exams", "custom_paths", "event_pass"].filter((f) => plan.unlocks.includes(f)).map((f) => `<li>${features[f]}</li>`).join("")}
         ${plan.unlocks.includes("courses") ? "" : `<li>The first module of every course</li>`}
@@ -4601,7 +4827,7 @@ async function viewBilling(m) {
         ${plan.event_discount ? `<li>${plan.event_discount}% off AI Every Time events</li>` : ""}</ul>`
         : `<p class="muted" style="margin:0">Everything on AI Every Time is open to you while plans are being set up.</p>`}
       ${plan.guides ? `<div><div class="small">${plan.guides.left} of ${plan.guides.limit} free guides left this month</div>${bar(plan.guides.left, plan.guides.limit)}</div>` : ""}
-      ${me.onboarded ? "" : `<div><a class="btn primary" href="#/onboarding">Carry on setting up your account</a></div>`}
+      ${me.onboarded ? "" : `<div><a class="btn primary" href="/get-started">Carry on setting up your account</a></div>`}
     </div>
     ${subCard}
     ${grant ? `<div class="card stack"><div class="muted small">Given to you</div><h3 style="margin:0">${esc(grant.name)}${grant.until ? ` until ${esc(longDate(grant.until))}` : ""}</h3>
@@ -4610,7 +4836,7 @@ async function viewBilling(m) {
       <h3 style="margin:0">${esc(plan.reward.name)} until ${esc(longDate(plan.reward.until))}</h3></div>` : ""}
     ${plan.intended && plan.payments ? `<div class="card row spread"><div>You chose <b>${esc(plan.intended.name)}</b> but didn't finish checking out.</div>
       <button class="btn primary" data-finish>Finish upgrading</button></div>` : ""}
-    <a class="card row spread invite-card" href="#/referral"><div><b>🎁 Invite three friends, get a month of Plus free</b>
+    <a class="card row spread invite-card" href="/invite-friends"><div><b>🎁 Invite three friends, get a month of Plus free</b>
       <div class="small muted">Share your link from the Invite friends page.</div></div><span aria-hidden="true">→</span></a>
     <p class="muted small">Payments are handled by Stripe; AI Every Time never sees your card number.${plan.payments ? "" : " Plans can't be bought on this server just yet."}</p>`;
   box.addEventListener("click", async (e) => {
@@ -4971,4 +5197,20 @@ async function staffSetup(body) {
   }));
 }
 
+/* Opening the site: an address from before (/#/p/1165) becomes the page's own, keeping the tags of an email's link
+   (?utm_source=email&…#/courses); where a visitor came from is kept for when they sign up, and taken off the address. */
+if (location.hash.startsWith("#/")) {
+  const now = new URL(fromLegacy(location.hash), location.origin);
+  for (const [k, v] of new URLSearchParams(location.search)) if (!now.searchParams.has(k)) now.searchParams.set(k, v);
+  history.replaceState(null, "", now.pathname + now.search);
+}
+{
+  const q = new URLSearchParams(location.search);
+  if (q.get("utm_source")) { try { sessionStorage.setItem(SOURCE_KEY, q.get("utm_source")); } catch {} }
+  const tagged = [...q.keys()].filter((k) => k.startsWith("utm_"));
+  if (tagged.length) {
+    tagged.forEach((k) => q.delete(k));
+    history.replaceState(null, "", location.pathname + (q.toString() ? `?${q}` : ""));
+  }
+}
 router();

@@ -13,7 +13,7 @@ from email.message import EmailMessage
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from app import auth, billing, db, digest, learning
+from app import auth, billing, db, digest, learning, paths
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ class Forgot(BaseModel):
 
 
 def reset_message(user: dict, token: str) -> EmailMessage:
-    link = f"{settings.public_url}/#/reset/{token}"
+    link = paths.absolute(paths.reset_password(token))
     rules = f"The link works once, within the next {RESET_MINUTES} minutes, and signs you out everywhere else."
     # The name only once the address is known to be theirs; until then it's whatever was typed at sign-up.
     name = user["display_name"] if user.get("email_confirmed_at") else ""

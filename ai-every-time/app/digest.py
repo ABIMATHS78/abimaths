@@ -21,7 +21,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from app import auth, db, learning, reminders, usage
+from app import auth, db, learning, paths, reminders, usage
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def ensure_token(conn, user_id: int) -> str:
 def build_message(user: dict, items: list[dict], token: str) -> EmailMessage:
     base = settings.public_url
     unsubscribe = f"{base}/api/email/unsubscribe?token={token}"
-    lines = [f"- {r['text']}\n  {base}/{r['link']}" for r in items]
+    lines = [f"- {r['text']}\n  {paths.absolute(r['link'])}" for r in items]
     msg = EmailMessage()
     msg["Subject"] = f"Today on AI Every Time: {len(items)} thing{'s' if len(items) != 1 else ''} waiting for you"
     msg["From"] = settings.mail_from
@@ -60,7 +60,7 @@ def build_message(user: dict, items: list[dict], token: str) -> EmailMessage:
         f"Hi {user['display_name']},\n\nHere's what's waiting for you today:\n\n" + "\n".join(lines)
         + f"\n\nSee you soon!\n\nYou get this because you turned on email reminders. Stop them: {unsubscribe}\n"
     )
-    items_html = "".join(f'<li><a href="{html.escape(base + "/" + r["link"])}">{html.escape(r["text"])}</a></li>' for r in items)
+    items_html = "".join(f'<li><a href="{html.escape(paths.absolute(r["link"]))}">{html.escape(r["text"])}</a></li>' for r in items)
     msg.add_alternative(
         f"<p>Hi {html.escape(user['display_name'])},</p><p>Here's what's waiting for you today:</p><ul>{items_html}</ul>"
         f'<p>See you soon!</p><p style="color:#777;font-size:12px">You get this because you turned on email reminders. '
@@ -266,7 +266,7 @@ async def confirm_submit(request: Request):
     body = parse_qs((await request.body())[:4096].decode("utf-8", "replace"))
     if confirm((body.get("token") or [""])[0]):
         return _page("<h1>Thanks, it's confirmed</h1><p>If you turned on reminder emails, they'll come at the time you "
-                     "chose.</p><p><a href='/#/profile'>Back to AI Every Time</a></p>", "Email confirmed")
+                     "chose.</p><p><a href='/profile'>Back to AI Every Time</a></p>", "Email confirmed")
     return _page("<h1>Link not recognised</h1><p>It may have expired or been used already. You can ask for a new one "
                  "in your profile.</p>", "Link not recognised", 400)
 

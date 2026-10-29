@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, StrictInt
 
-from app import auth, db, usage
+from app import auth, db, paths, usage
 from app.config import settings
 
 router = APIRouter(prefix="/api/staff")
@@ -81,7 +81,7 @@ def decide_companion(companion_id: int, body: CompanionDecision, user: dict = Mo
         if c["owner_id"]:
             if body.action == "remove":
                 text += " If you think it was a mistake, you can ask for a second look from its page."
-            notify(conn, c["owner_id"], text, f"#/c/{companion_id}")
+            notify(conn, c["owner_id"], text, paths.companion(c))
     return {"ok": True}
 
 
@@ -183,7 +183,7 @@ def decide_appeal(appeal_id: int, body: AppealDecision, user: dict = Moderator):
         else:
             text = f"Your appeal about {name} had a second look, and the removal stands: {note}"
         log(conn, user["id"], "companion", c["id"], f"appeal:{body.decision}", note)
-        notify(conn, a["user_id"], text, f"#/c/{c['id']}")
+        notify(conn, a["user_id"], text, paths.companion(c))
     return {"ok": True}
 
 
@@ -259,7 +259,7 @@ def decide_path(path_id: str, body: PathDecision, user: dict = Reviewer):
             ids = [f"{path_id}-{i + 1}" for i in range(len(data["lessons"]))]
             conn.execute(f"DELETE FROM lesson_content WHERE lesson_id IN ({','.join('?' * len(ids))})", ids)
         log(conn, user["id"], "path", row["id"], body.decision, body.note.strip())
-        notify(conn, row["user_id"], text, "#/learn")
+        notify(conn, row["user_id"], text, paths.LEARN)
     return {"ok": True, "status": status}
 
 
@@ -327,7 +327,7 @@ def set_allowance(user_id: int, body: AllowanceChange, user: dict = Admin):
         log(conn, user["id"], "user", user_id, f"allowance:{'usual' if value is None else value or 'no limit'}")
         notify(conn, user_id, "Your daily AI requests have changed: " + (
             "you're back to the usual allowance." if value is None else "you have no daily limit." if value == 0
-            else f"you can now make {value} in any 24 hours."), "#/profile")
+            else f"you can now make {value} in any 24 hours."), paths.PROFILE)
         changed = dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     return usage.status(changed)
 

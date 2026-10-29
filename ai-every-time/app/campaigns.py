@@ -26,7 +26,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app import auth, billing, catalog, db, digest, plans
+from app import auth, billing, catalog, db, digest, paths, plans
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -41,9 +41,9 @@ FOLLOW_UP_AFTER_HOURS, FOLLOW_UP_BEFORE_HOURS = 24, 48
 AGREED = "u.marketing_emails = 1 AND u.email_confirmed_at IS NOT NULL"
 
 
-def link(route: str, campaign: str) -> str:
-    """A link into the app, tagged with the email it came from."""
-    return f"{settings.public_url}/?utm_source=email&utm_medium=email&utm_campaign={campaign}#/{route}"
+def link(page: str, campaign: str) -> str:
+    """A link to a page of the app ("/billing", "/" for the home page), tagged with the email it came from."""
+    return f"{paths.absolute(page)}?utm_source=email&utm_medium=email&utm_campaign={campaign}"
 
 
 def _date(iso: str | None) -> str:
@@ -108,7 +108,7 @@ def _send(msg: EmailMessage, log_id: int, user_id: int) -> bool:
 
 def _billing_message(user: dict, kind: str, sub: dict) -> EmailMessage | None:
     p = plans.plan(sub["tier"])
-    billing_link = f"{settings.public_url}/#/billing"
+    billing_link = paths.absolute(paths.BILLING)
     if kind == "started":
         if sub["status"] == "trialing":
             first = (f"Your {p.name} plan has started, with a free trial until {_date(sub['trial_end'])}. You won't be "
@@ -117,7 +117,7 @@ def _billing_message(user: dict, kind: str, sub: dict) -> EmailMessage | None:
             first = f"Your {p.name} plan has started. Thank you for learning with AI Every Time."
         adds = [name for f, name in plans.FEATURES.items() if f in p.unlocks]
         return compose(user, f"Welcome to {p.name}", [first, "It includes: " + "; ".join(adds) + "." if adds else ""],
-                       ("Start learning", f"{settings.public_url}/#/courses"))
+                       ("Start learning", paths.absolute(paths.COURSES)))
     if kind == "trial_ending":
         price = plans.money(sub["amount_cents"] if sub["amount_cents"] is not None else p.price(sub["billing_interval"]))
         per = "year" if sub["billing_interval"] == "yearly" else "month"
@@ -132,7 +132,7 @@ def _billing_message(user: dict, kind: str, sub: dict) -> EmailMessage | None:
     if kind == "ended":
         return compose(user, f"Your {p.name} plan has ended", [
             "You're on the free plan now. Your progress, certificates and companions are all still here.",
-            "You can pick a plan again whenever you like."], ("See the plans", f"{settings.public_url}/#/pricing"))
+            "You can pick a plan again whenever you like."], ("See the plans", paths.absolute(paths.PRICING)))
     return None
 
 
@@ -225,7 +225,7 @@ def follow_ups(now: datetime | None = None) -> int:
                 f"You chose {p.name} on AI Every Time but didn't get to the end of checkout.{trial}",
                 f"{p.name} adds: " + "; ".join(h.format(free_guides=settings.free_guides, courses=len(catalog.data().courses))
                                               for h in p.highlights[1:3]) + "."],
-                ("Finish upgrading", link("billing", "checkout-follow-up")))
+                ("Finish upgrading", link(paths.BILLING, "checkout-follow-up")))
     return sent
 
 
@@ -275,7 +275,7 @@ def campaign_batch() -> int:
             {"now": db.now(), "key": str(c["id"]), "batch": BATCH}).fetchall()
         for r in rows:
             sent += _news(conn, dict(r), "campaign", str(c["id"]), c["subject"], c["body"].split("\n\n"),
-                          ("Open AI Every Time", link("", f"campaign-{c['id']}")))
+                          ("Open AI Every Time", link("/", f"campaign-{c['id']}")))
         if len(rows) < BATCH:
             conn.execute("UPDATE campaigns SET finished_at = ? WHERE id = ?", (db.now(), c["id"]))
     return sent
@@ -325,7 +325,7 @@ def create(body: CampaignIn, user: dict = Admin):
     if body.test:
         with db.connect() as conn:
             token = _news_token(conn, user["id"])
-        msg = compose(user, f"[Test] {body.subject}", paragraphs, ("Open AI Every Time", link("", "campaign-test")), token)
+        msg = compose(user, f"[Test] {body.subject}", paragraphs, ("Open AI Every Time", link("/", "campaign-test")), token)
         try:
             digest.send(msg)
         except (smtplib.SMTPException, OSError):

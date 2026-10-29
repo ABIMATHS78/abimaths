@@ -8,10 +8,10 @@ enum Shortcut: String {
 
     var path: String {
         switch self {
-        case .companion: "/#/mine"  // the learner's own companion, which the site knows and the app doesn't
-        case .learn: "/#/learn"
-        case .practice: "/#/practice"
-        case .courses: "/#/courses"
+        case .companion: "/my-companion"  // the learner's own companion, which the site knows and the app doesn't
+        case .learn: "/learn"
+        case .practice: "/practice"
+        case .courses: "/courses"
         }
     }
 

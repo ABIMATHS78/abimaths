@@ -18,8 +18,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
 from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, course_guide, courses, db,
-                 digest, guides, insights, learning, legacy, llm, photos, push, reactions, referrals, reminders, staff,
-                 usage)
+                 digest, guides, insights, learning, legacy, llm, pages, photos, push, reactions, referrals, reminders,
+                 staff, usage)
 from app import plans
 from app.avatar import render_initials, render_svg
 from app.config import settings
@@ -80,6 +80,8 @@ app.include_router(campaigns.router)
 app.include_router(analytics.router)
 app.include_router(legacy.router)
 User = Depends(auth.current_user)
+# Pages anyone may open (a guide, a companion, a course) ask with this: the learner if signed in, None if not.
+Visitor = Depends(auth.optional_user)
 
 
 # ------------------------------------------------------------------------- auth
@@ -299,7 +301,10 @@ def options():
 
 
 @app.get("/api/companions")
-def list_companions(user: dict = User):
+def list_companions(user: dict | None = Visitor):
+    """Every companion the learner can see. A visitor who isn't signed in sees the starters and the community's."""
+    if user is None:
+        return [companions.public_view(c) for c in companions.list_for(None)]
     return companions.list_for(user["id"])
 
 
@@ -313,18 +318,26 @@ def starter_faces():
     return [dict(r) for r in rows]
 
 
-@app.get("/api/companions/{companion_id}")
-def get_companion(companion_id: int, user: dict = User):
-    c = companions.get_visible(companion_id, user["id"])
+@app.get("/api/companions/{ref}")
+def get_companion(ref: str, user: dict | None = Visitor):
+    """A companion's page, by its slug (or its id). Anyone may see a starter, or a companion published to the
+    community; a learner, their own too."""
+    c = companions.get_by_ref(ref)
+    if user is None:
+        if not companions.public(c):
+            raise HTTPException(404, "Companion not found")
+    else:
+        c = companions.get_visible(c["id"], user["id"])
+    uid, companion_id = user["id"] if user else None, c["id"]
     with db.connect() as conn:
         following = conn.execute("SELECT 1 FROM follows WHERE user_id = ? AND companion_id = ?",
-                                 (user["id"], companion_id)).fetchone()
+                                 (uid, companion_id)).fetchone()
         counts = conn.execute("SELECT is_starter, base_followers, (SELECT COUNT(*) FROM follows WHERE companion_id = c.id) "
                               "AS follows FROM companions c WHERE id = ?", (companion_id,)).fetchone()
         designer = conn.execute("SELECT display_name FROM users WHERE id = ?", (c["owner_id"],)).fetchone() if c["owner_id"] else None
         has_photo = conn.execute("SELECT 1 FROM companion_photos WHERE companion_id = ?", (companion_id,)).fetchone()
-    mine = c["owner_id"] == user["id"]
-    return companions.for_viewer(c, user["id"]) | {
+    mine = uid is not None and c["owner_id"] == uid
+    return (companions.for_viewer(c, uid) if user else companions.public_view(c)) | {
         "following": bool(following), "followers": companions.followers(counts), "is_mine": mine,
         "designer": designer["display_name"] if designer else None, "has_photo": has_photo is not None,
         # Only the designer sees why a companion was removed and where their appeal stands.
@@ -567,22 +580,40 @@ def get_feed(user: dict = User, before: Before = None):
 
 
 @app.get("/api/companions/{companion_id}/posts")
-def companion_posts(companion_id: int, user: dict = User, before: Before = None):
+def companion_posts(companion_id: int, user: dict | None = Visitor, before: Before = None):
+    if user is None:  # what the companion's page lists for a visitor who isn't signed in: the titles
+        if not companions.public(companions.get(companion_id)):
+            raise HTTPException(404, "Companion not found")
+        return [p | {"body": ""} for p in _page(content.feed, None, companion_id=companion_id, before=before)]
     companions.get_visible(companion_id, user["id"])
     return _page(content.feed, user["id"], companion_id=companion_id, before=before)
 
 
-@app.get("/api/posts/{post_id}")
-def get_post(post_id: int, request: Request, user: dict = User):
-    _visible_post(post_id, user["id"])
-    post = content.post_view(user["id"], post_id)
+@app.get("/api/posts/{ref}")
+def get_post(ref: str, request: Request, user: dict | None = Visitor):
+    """A guide or a companion's post, whole, by its slug (or its id). A visitor who isn't signed in gets the start
+    of it, as a learner whose free guides are used up does, on a page that asks them to sign up and read on."""
+    found = content.find_post(ref)
+    if found is None:
+        raise HTTPException(404, "Post not found")
+    if user is None:
+        if not companions.public(companions.get(found["companion_id"])):
+            raise HTTPException(404, "Post not found")
+        post = content.post_view(None, found["id"]) | {"body": billing.preview(found["body"]), "locked": True,
+                                                       "signed_out": True}
+    else:
+        _visible_post(found["id"], user["id"])
+        post = content.post_view(user["id"], found["id"])
     if post.get("kind"):  # a guide: free learners read a few in full each month, and the start of the rest
-        # Only the app itself uses up a free guide: a link on another site could otherwise spend them for the learner.
-        ours = request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
-        access = billing.guide_access(user, post, record=ours)
-        if not access["full"]:
-            post |= {"body": billing.preview(post["body"]), "locked": True, "plan_needed": plans.lowest_with("guides").slug}
-        post["guides"] = access
+        if user is not None:
+            # Only the app itself uses up a free guide: a link on another site could otherwise spend them for the
+            # learner.
+            ours = request.headers.get("sec-fetch-site", "same-origin") in ("same-origin", "none")
+            access = billing.guide_access(user, post, record=ours)
+            if not access["full"]:
+                post |= {"body": billing.preview(post["body"]), "locked": True,
+                         "plan_needed": plans.lowest_with("guides").slug}
+            post["guides"] = access
         if offered := guides.downloads(post):  # listed even when locked, to show what reading it in full brings
             post["downloads"] = offered
         if library := guides.download_groups(post):  # a skill library: the essentials, then its jobs
@@ -608,23 +639,29 @@ def guide_download(post_id: int, name: str, request: Request, user: dict = User)
 
 @app.get("/api/guides")
 def list_guides(
-    user: dict = User,
+    user: dict | None = Visitor,
     region: Annotated[str | None, Query(max_length=40)] = None,
     kind: Literal["tutorial", "cheat_sheet"] | None = None,
     level: Literal["beginner", "intermediate", "advanced"] | None = None,
     topic: Annotated[str | None, Query(max_length=80)] = None,
     q: Annotated[str | None, Query(max_length=120)] = None,
-    companion: int | None = None,
+    companion: Annotated[str | None, Query(max_length=80)] = None,  # its slug, or its id
     before: Before = None,
 ):
-    """The education guides, newest first, a page at a time, optionally narrowed down."""
-    return _page(content.guides, user["id"], region=region, kind=kind, level=level, topic=topic, q=q,
-                 companion_id=companion, before=before)
+    """The education guides, newest first, a page at a time, optionally narrowed down. Anyone may browse them."""
+    companion_id = None
+    if companion:
+        try:
+            companion_id = companions.get_by_ref(companion)["id"]
+        except HTTPException:
+            return []
+    return _page(content.guides, user["id"] if user else None, region=region, kind=kind, level=level, topic=topic, q=q,
+                 companion_id=companion_id, before=before)
 
 
 @app.get("/api/guides/topics")
-def guide_topics(user: dict = User):
-    return content.guide_topics(user["id"])
+def guide_topics(user: dict | None = Visitor):
+    return content.guide_topics(user["id"] if user else None)
 
 
 @app.post("/api/companions/{companion_id}/posts/generate", status_code=201)
@@ -768,7 +805,7 @@ async def chat(companion_id: int, body: ChatIn, user: dict = User):
             parts: list[str] = []
             async for chunk in llm.stream_reply(persona, user, memories, history, post, reacted, react,
                                                 taught=course_guide.taught(c), access=course_guide.access(user),
-                                                companion_id=companion_id):
+                                                companion=c["slug"]):
                 parts.append(chunk)
                 yield chunk
             reply = reactions.strip("".join(parts)).strip()
@@ -888,24 +925,6 @@ class Static(StaticFiles):
 app.mount("/static", Static(directory=STATIC), name="static")
 
 
-@app.get("/", include_in_schema=False)
-def index():
-    html = (STATIC / "index.html").read_text(encoding="utf-8")
-    if settings.ios_app_id:
-        # Safari's banner for the iPhone app, once it's on the App Store. Apps' web views, the app's own included,
-        # never show it.
-        html = html.replace('<meta name="theme-color"',
-                            f'<meta name="apple-itunes-app" content="app-id={settings.ios_app_id}">\n  <meta name="theme-color"', 1)
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
-
-
-@app.get("/privacy", include_in_schema=False)
-@app.get("/support", include_in_schema=False)
-def short_page_address(request: Request):
-    """Plain addresses for the privacy and support pages, for App Store Connect and emails."""
-    return RedirectResponse(f"/#{request.url.path}")
-
-
 @app.get("/api/site")
 def site():
     """What pages open to everyone need from the settings: where to write for help, and where to get the iPhone app
@@ -941,3 +960,19 @@ def favicon():
 def service_worker():
     # Served from the root so it can show notifications for the whole app; no-cache so updates reach devices.
     return FileResponse(STATIC / "sw.js", media_type="text/javascript", headers={"Cache-Control": "no-cache"})
+
+
+# ----------------------------------------------------------------------- pages
+
+# Last, so every address above comes first: the rest are the app's pages (app/pages.py).
+@app.get("/{path:path}", include_in_schema=False)
+def page(path: str, request: Request, user: dict | None = Visitor):
+    address = "/" + path.lstrip("/")  # one slash at the start: //elsewhere.example/ would be another site's
+    if address.startswith("/api/"):
+        raise HTTPException(404, "Not Found")
+    if address != "/" and address.endswith("/"):  # /guides/ is /guides
+        return RedirectResponse(address.rstrip("/") + (f"?{request.url.query}" if request.url.query else ""), status_code=301)
+    found = pages.describe(address, user)
+    if found.move_to:
+        return RedirectResponse(found.move_to + (f"?{request.url.query}" if request.url.query else ""), status_code=301)
+    return HTMLResponse(pages.render(address, found), status_code=found.status, headers={"Cache-Control": "no-cache"})

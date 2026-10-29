@@ -127,7 +127,7 @@ def test_app_notifications_are_signed_for_apple_and_open_the_page(client, apple)
     # What the phone shows, from the learner's own companion, and the page a tap opens.
     body = json.loads(req.content)
     assert body == {"aps": {"alert": {"title": f"{starter['persona']['name']} {starter['persona']['flag']}",
-                                      "body": body["aps"]["alert"]["body"]}, "sound": "default"}, "url": "/#/profile"}
+                                      "body": body["aps"]["alert"]["body"]}, "sound": "default"}, "url": "/profile"}
     assert body["aps"]["alert"]["body"].startswith("Notifications are on")
     # The signed token is used again rather than made for every message; Apple refuses new ones too often.
     client.post("/api/push/test")
@@ -180,7 +180,7 @@ def test_daily_reminders_and_notices_reach_the_app(client, apple, monkeypatch):
     assert run(datetime(2026, 3, 10, 9, 5, tzinfo=timezone.utc)) == 1  # 18:05 in Tokyo
     [req] = apple.to(TOKEN)
     body = json.loads(req.content)
-    assert req.headers["apns-collapse-id"] == "daily" and body["url"] == "/#/lesson/tokens"
+    assert req.headers["apns-collapse-id"] == "daily" and body["url"] == "/lessons/tokens"
     assert "Pick up where you left off" in body["aps"]["alert"]["body"]
 
     zara = client.post("/api/companions", json={"persona": persona()}).json()
@@ -192,7 +192,7 @@ def test_daily_reminders_and_notices_reach_the_app(client, apple, monkeypatch):
     client.post(f"/api/staff/companions/{zara['id']}", json={"action": "restore"})
     assert run(NIGHT) == 1
     body = json.loads(apple.to(TOKEN)[-1].content)
-    assert body["aps"]["alert"]["title"] == "AI Every Time" and body["url"] == f"/#/c/{zara['id']}"
+    assert body["aps"]["alert"]["title"] == "AI Every Time" and body["url"] == f"/companions/{zara['slug']}"
 
 
 def test_a_browser_and_the_app_both_get_it(client, apple, service):

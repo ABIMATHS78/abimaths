@@ -37,7 +37,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from app import db
+from app import db, paths
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -181,7 +181,8 @@ def seed() -> int | None:
                              "level = ?, minutes = ?, graphic = ?, created_at = ? WHERE id = ?", (*values, existing[source]))
             else:
                 conn.execute("INSERT INTO posts (companion_id, title, body, topic, summary, kind, level, minutes, graphic, "
-                             "created_at, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (*values, source))
+                             "created_at, source, slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                             (*values, source, paths.new_post_slug(conn, g["title"], cid)))
                 added += 1
             kept.add(source)
         gone = [(pid,) for source, pid in existing.items() if source not in kept]

@@ -10,25 +10,24 @@ certificate is then theirs for the asking, and one for a track once they have ev
 
 from __future__ import annotations
 
-import html
 import io
 import json
 import re
 import secrets
 import zipfile
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from app import auth, billing, catalog, companions, db, learning, tutor, usage
+from app import auth, billing, catalog, companions, db, learning, paths, tutor, usage
 from app.catalog import Course, Track
 from app.config import settings
 
 router = APIRouter(prefix="/api")
 links = APIRouter()  # certificates' short links, outside /api
 User = Depends(auth.current_user)
+Visitor = Depends(auth.optional_user)  # the catalogue, a course's page and a track's are open to everyone
 
 PASS_MARK = learning.PASS_MARK
 MAX_SUBMISSION = 40000
@@ -103,7 +102,7 @@ def _teacher(c: Course, m: int) -> dict:
 class State:
     """What a learner has done in every course, read in a few queries."""
 
-    def __init__(self, user_id: int):
+    def __init__(self, user_id: int | None):  # None: a visitor who isn't signed in, who has done nothing yet
         self.stats = learning._lesson_stats(user_id)
         with db.connect() as conn:
             self.enrolled = {r["course_slug"]: r["enrolled_at"] for r in conn.execute(
@@ -255,9 +254,9 @@ def _track_view(t: Track, summaries: dict[str, dict], st: State) -> dict:
 
 
 @router.get("/courses")
-def list_courses(user: dict = User):
+def list_courses(user: dict | None = Visitor):
     """Every course, as the catalogue lists it, with the learner's progress in it; the subjects; and the tracks."""
-    cat, st = catalog.data(), State(user["id"])
+    cat, st = catalog.data(), State(user["id"] if user else None)
     people, (counts, ratings) = _all_instructors(), _counts()
     summaries = {c.slug: _summary(c, st, people, counts, ratings) for c in cat.courses}
     categories = [{"name": name, "count": sum(c.category == name for c in cat.courses)} for name in catalog.CATEGORIES]
@@ -267,17 +266,19 @@ def list_courses(user: dict = User):
 
 
 @router.get("/courses/{slug}")
-def get_course(slug: str, user: dict = User):
-    """A course's page: what it covers, who teaches it, its syllabus with the learner's progress, and what's left."""
+def get_course(slug: str, user: dict | None = Visitor):
+    """A course's page: what it covers, who teaches it, its syllabus with the learner's progress, and what's left.
+    For a visitor who isn't signed in, as it is for a new learner."""
     c = _course_or_404(slug)
-    st, people, (counts, ratings) = State(user["id"]), _instructors(set(c.instructors)), _counts()
+    uid = user["id"] if user else None
+    st, people, (counts, ratings) = State(uid), _instructors(set(c.instructors)), _counts()
     modules, project, requirements, next_key = _outline(c, st)
     for m in modules:
         m["instructor"] = _brief_instructor(people[m["instructor"]]) if m["instructor"] in people else None
     taught = {s: sum(s in x.instructors for x in catalog.data().courses) for s in c.instructors}
     with db.connect() as conn:
         mine = conn.execute("SELECT stars FROM course_ratings WHERE user_id = ? AND course_slug = ?",
-                            (user["id"], slug)).fetchone()
+                            (uid, slug)).fetchone()
     cert = st.certificate("course", slug)
     full = billing.unlocked(user, "courses")
     for m in modules:
@@ -542,43 +543,17 @@ def certificate(code: str):
 
 @links.get("/c/{code}", include_in_schema=False)
 def certificate_link(code: str):
-    """A certificate's short link, the one printed on it: opens its page. The page this sends first carries the
-    certificate's own title and description, so a shared link shows who earned what (LinkedIn reads them)."""
-    code = re.sub(r"[^A-Za-z0-9]", "", code)[:24].upper()
-    page = f"/#/certificate/{code}"
-    try:
-        cert = certificate(code)
-    except HTTPException:
-        return HTMLResponse(_link_page(page, "There's no certificate with that code · AI Every Time"), status_code=404)
-    f = cert["for"]
-    title = (f"{cert['name']} earned the {f['title']} {f['kind']}" if cert["kind"] == "track"
-             else f"{cert['name']} completed {f['title']}")
-    issued = datetime.fromisoformat(cert["issued_at"])
-    description = (f"A certificate from AI Every Time, issued on {issued.day} {issued:%B %Y}. "
-                   f"Check it at {cert['url'].split('://', 1)[-1]}")
-    tags = {"og:type": "website", "og:site_name": "AI Every Time", "og:title": title, "og:description": description,
-            "og:url": cert["url"], "og:image": f"{settings.public_url}/static/icons/certificate-card.png",
-            "og:image:width": "1200", "og:image:height": "630"}
-    head = (f'<meta name="description" content="{html.escape(description)}">'
-            f'<link rel="canonical" href="{html.escape(cert["url"])}">'
-            + "".join(f'<meta property="{k}" content="{html.escape(v)}">' for k, v in tags.items())
-            + '<meta name="twitter:card" content="summary_large_image">')
-    return HTMLResponse(_link_page(page, f"{title} · AI Every Time", head), headers={"Cache-Control": "no-cache"})
-
-
-def _link_page(page: str, title: str, head: str = "") -> str:
-    """A page that goes straight on to the certificate's own page in the app."""
-    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{html.escape(title)}</title>{head}'
-            f'<meta http-equiv="refresh" content="0; url={html.escape(page)}"></head>'
-            f'<body><p><a href="{html.escape(page)}">See the certificate</a></p></body></html>')
+    """A certificate's short link, the one printed on it: its page, whose head says who earned what, for the
+    previews of shared links (LinkedIn reads them; app/pages.py)."""
+    return RedirectResponse(paths.certificate(re.sub(r"[^A-Za-z0-9]", "", code)[:24].upper()), status_code=301)
 
 
 # ---------------------------------------------------------------------- tracks
 
 
 @router.get("/tracks/{slug}")
-def get_track(slug: str, user: dict = User):
+def get_track(slug: str, user: dict | None = Visitor):
     t = _track_or_404(slug)
-    st, people, (counts, ratings) = State(user["id"]), _all_instructors(), _counts()
+    st, people, (counts, ratings) = State(user["id"] if user else None), _all_instructors(), _counts()
     summaries = {s: _summary(catalog.course(s), st, people, counts, ratings) for s in t.courses}
     return _track_view(t, summaries, st)

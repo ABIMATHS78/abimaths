@@ -3,8 +3,8 @@
 Every companion sees the whole catalogue (each course with its level, length, lead instructor, skills and the
 address of its page), the courses it teaches itself, and what the learner's plan opens. So it can recommend its
 own courses, point learners to the courses other companions teach, and, when no course fits, offer to design a
-learning path on the topic. Replies link a course as [Title](#/course/slug), which the chat shows as a link to
-its page, and a path to design as [Design a path on …](#/learn?design=topic-words&with=companion-id), which
+learning path on the topic. Replies link a course as [Title](/courses/slug), which the chat shows as a link to
+its page, and a path to design as [Design a path on …](/learn?design=topic-words&with=companion-slug), which
 opens the Learning paths page with the topic filled in.
 """
 
@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from functools import cache
 
-from app import billing, catalog, plans
+from app import billing, catalog, paths, plans
 from app.curriculum import PATHS
 from app.starter_companions import STARTERS
 
@@ -22,7 +22,7 @@ You know every course on AI Every Time: they're all listed below. The ones you t
 
 When a learner asks what to study, whether there's a course on something, or would clearly be helped by one:
 - Recommend the courses on the list that fit best: your own first when they fit, then any other companion's. For a course you don't teach, say who does, so they know whom they'll learn with there.
-- Link every course you name the way the list does, [Course title](#/course/slug), so the learner can open it from this chat. Name only courses on the list, with their links exactly as given; never make up a course, a link or a detail.
+- Link every course you name the way the list does, [Course title](/courses/slug), so the learner can open it from this chat. Name only courses on the list, with their links exactly as given; never make up a course, a link or a detail.
 - Give two or three good matches rather than a long list, each with why it fits, its level and roughly how long it takes. Name a Professional Certificate or Specialization when they want a whole series of courses.
 - Be clear about what their plan opens; it's under "About this learner".
 - When nothing on the list covers what they want, say so plainly, then offer two things: to design a learning path on exactly that topic for them (link it as "Courses you teach" shows), and to start teaching it right here in the chat.
@@ -62,14 +62,14 @@ def _index(data: catalog.Catalogue) -> str:  # written once for each catalogue t
         lines.append(f"\n## {category}")
         for c in courses:
             kind = f"{c.level} guided project" if c.kind == "guided-project" else c.level
-            lines.append(f"- [{c.title}](#/course/{c.slug}): {kind}, {_hours(c)}, taught by "
+            lines.append(f"- [{c.title}]({paths.course(c.slug)}): {kind}, {_hours(c)}, taught by "
                          f"{_teacher(c.instructors[0])}. Skills: {', '.join(c.skills[:6])}.")
     if data.tracks:
         lines.append("\n# Professional Certificates and Specializations\n"
                      "Series of courses, each with its own certificate.")
         for t in data.tracks:
-            lines.append(f"- [{t.title}](#/track/{t.slug}): {t.kind}, {len(t.courses)} courses. {t.subtitle}")
-    lines.append("\n# Free learning paths\nShort paths of lessons on the [Learning paths](#/learn) page, taught by the "
+            lines.append(f"- [{t.title}]({paths.track(t.slug)}): {t.kind}, {len(t.courses)} courses. {t.subtitle}")
+    lines.append(f"\n# Free learning paths\nShort paths of lessons on the [Learning paths]({paths.LEARN}) page, taught by the "
                  "companion the learner chooses: " + "; ".join(f"{p.title} ({p.level})" for p in PATHS) + ".")
     return "\n".join(lines)
 
@@ -83,11 +83,11 @@ def taught(companion: dict) -> str:
     for c in mine:
         role = "you lead it" if c.instructors[0] == slug else "you teach part of it"
         others = [_teacher(s) for s in c.instructors if s != slug]
-        lines.append(f"- [{c.title}](#/course/{c.slug}): {role}{', with ' + _names(others) if others else ''}.")
+        lines.append(f"- [{c.title}]({paths.course(c.slug)}): {role}{', with ' + _names(others) if others else ''}.")
     if not mine:
         lines.append("None: you don't teach any of the platform's courses, so recommend the ones other companions "
                      "teach.")
-    link = f"#/learn?design=<topic-words>&with={companion['id']}"
+    link = f"{paths.LEARN}?design=<topic-words>&with={companion['slug']}"
     lines.append("To offer a learning path designed for the learner, on a topic no course covers, link it like this, "
                  "with the topic's words in lowercase joined by hyphens. It opens the page where they confirm it, and "
                  f"you design it: [Design a path on <topic> with me]({link})")

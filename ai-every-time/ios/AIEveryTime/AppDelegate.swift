@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         [.banner, .list, .sound]
     }
 
-    /// Tapping a notification opens its page: the server sends the page's path, such as "/#/review".
+    /// Tapping a notification opens its page: the server sends the page's path, such as "/flashcards".
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
         let path = response.notification.request.content.userInfo["url"] as? String

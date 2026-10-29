@@ -83,9 +83,8 @@ for _ in range(240):
 print(f"{have} of {wanted} starter photos, {scalar('SELECT COUNT(*) FROM posts WHERE kind IS NOT NULL')} guides, "
       + ("Claude writing the companions' words" if AI else "demo mode"))
 
-ids = {slug: cid for slug, cid in sqlite3.connect(DB).execute("SELECT slug, id FROM companions WHERE is_starter = 1")}
 # A guide whose graphic has been corrected: most still show the site's original, spelling mistakes and all.
-GUIDE = scalar("SELECT id FROM posts WHERE graphic LIKE '/static/guides/%' AND title LIKE 'Mastering DuckDB%' "
+GUIDE = scalar("SELECT slug FROM posts WHERE graphic LIKE '/static/guides/%' AND title LIKE 'Mastering DuckDB%' "
                "ORDER BY id LIMIT 1")
 
 DEVICES = {
@@ -158,7 +157,7 @@ def journey(browser, kind):
     page.on("pageerror", lambda e: errors.append(f"{kind}: error on {page.url}: {e}"))
 
     # Signing up.
-    page.goto(BASE + "/#/welcome")
+    page.goto(BASE + "/")
     page.wait_for_function("document.querySelectorAll('#faces img').length === 8")
     settle(page)
     shot(page, kind, "01-welcome")
@@ -175,13 +174,13 @@ def journey(browser, kind):
     page.click("#authBtn")
 
     # Choosing a companion, who starts the conversation.
-    page.wait_for_url("**/#/onboarding")
+    page.wait_for_url("**/get-started")
     page.wait_for_selector("#starterGrid .ccard img.avatar")
     settle(page, 1.0)
     shot(page, kind, "03-choose")
     page.fill("#starterSearch", "Amahlé")
     page.click("#starterGrid [data-act=choose]")
-    page.wait_for_url("**/#/c/*")
+    page.wait_for_url("**/companions/*")
     page.wait_for_selector("#log .msg.assistant[data-id]", timeout=WAIT_AI)
     if TAKE_AI:
         to_content(page, kind, ".chat")
@@ -196,7 +195,7 @@ def journey(browser, kind):
         shot(page, kind, "05-chat-reply")
 
     # Customising a companion.
-    page.goto(BASE + f"/#/studio/remix/{ids['agnieszka-kowalska']}")
+    page.goto(BASE + "/companions/agnieszka-kowalska/customise")
     page.wait_for_selector("#pv")
     to_content(page, kind)
     settle(page)
@@ -206,24 +205,24 @@ def journey(browser, kind):
     shot(page, kind, "07-customise-face")
 
     # A guide, the learning paths, and a lesson with a quiz.
-    page.goto(BASE + f"/#/p/{GUIDE}")
+    page.goto(BASE + f"/guides/{GUIDE}")
     page.wait_for_selector(".guide-figure img")
     to_content(page, kind)
     settle(page, 1.0)
     shot(page, kind, "08-guide")
-    page.goto(BASE + "/#/learn")
+    page.goto(BASE + "/learn")
     page.wait_for_selector(".main h1")
     to_content(page, kind)
     settle(page)
     shot(page, kind, "09-learn")
     if TAKE_AI:
-        page.goto(BASE + "/#/lesson/what-is-ai")
+        page.goto(BASE + "/lessons/what-is-ai")
         page.wait_for_selector(".lesson-layout .prose", timeout=WAIT_AI)
         to_content(page, kind)
         settle(page)
         shot(page, kind, "10-lesson")
         page.click(".lesson-layout [data-study=quiz]")  # before "Mark as complete", which moves on to the next lesson
-        page.wait_for_url("**/#/quiz/*", timeout=WAIT_AI)
+        page.wait_for_url("**/quizzes/*", timeout=WAIT_AI)
         page.wait_for_selector("#quiz .question")
         quiz = int(page.url.rsplit("/", 1)[1])
         # Amara knows her stuff: every answer right but the last, as a learner part-way through might.
@@ -241,19 +240,19 @@ def journey(browser, kind):
         settle(page)
         shot(page, kind, "12-quiz-results")
         page.request.post(BASE + "/api/lessons/what-is-ai/complete")
-        page.goto(BASE + "/#/feed")
+        page.goto(BASE + "/feed")
         page.wait_for_selector(".main h1")
         to_content(page, kind)
         settle(page, 1.0)
         shot(page, kind, "13-feed")
-        page.goto(BASE + "/#/progress")
+        page.goto(BASE + "/progress")
         page.wait_for_selector(".tiles")
         to_content(page, kind)
         settle(page)
         shot(page, kind, "14-progress")
 
     # The companions from around the world.
-    page.goto(BASE + "/#/companions")
+    page.goto(BASE + "/companions")
     page.wait_for_selector(".ccard img.avatar")
     page.fill("#starterSearch", "")
     page.wait_for_function("document.querySelectorAll('#starterGrid .ccard').length > 20")

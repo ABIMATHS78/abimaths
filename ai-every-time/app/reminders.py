@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from app import auth, companions, db, learning
+from app import auth, companions, db, learning, paths
 from app.config import settings
 
 router = APIRouter(prefix="/api")
@@ -40,17 +40,17 @@ def _staff_work(user: dict) -> list[dict]:
                                    "WHERE a.status = 'open' AND l.staff_id IS NOT ? AND a.user_id != ?",
                                    (uid, uid)).fetchone()[0]
             if reported:
-                out.append({"kind": "staff", "priority": 1, "count": reported, "link": "#/staff/reports",
+                out.append({"kind": "staff", "priority": 1, "count": reported, "link": paths.staff("reports"),
                             "text": f"{_plural(reported, 'reported companion')} waiting for a moderator."})
             if appeals:
-                out.append({"kind": "staff", "priority": 1, "count": appeals, "link": "#/staff/appeals",
+                out.append({"kind": "staff", "priority": 1, "count": appeals, "link": paths.staff("appeals"),
                             "text": f"{_plural(appeals, 'appeal')} waiting for a second look."})
         if role in auth.CAN["review"]:
-            paths = conn.execute("SELECT COUNT(*) FROM custom_paths WHERE status = 'pending' AND user_id != ?",
-                                 (uid,)).fetchone()[0]
-            if paths:
-                out.append({"kind": "staff", "priority": 1, "count": paths, "link": "#/staff/paths",
-                            "text": f"{_plural(paths, 'learner path')} waiting for expert review."})
+            pending = conn.execute("SELECT COUNT(*) FROM custom_paths WHERE status = 'pending' AND user_id != ?",
+                                   (uid,)).fetchone()[0]
+            if pending:
+                out.append({"kind": "staff", "priority": 1, "count": pending, "link": paths.staff("paths"),
+                            "text": f"{_plural(pending, 'learner path')} waiting for expert review."})
     return out
 
 
@@ -93,40 +93,40 @@ def reminders(user: dict = User):
                                "ORDER BY updated_at DESC", (uid,)).fetchall()
 
     for n in notices:
-        out.append({"kind": "notice", "priority": 0, "id": n["id"], "text": n["text"], "link": n["link"] or "#/feed"})
+        out.append({"kind": "notice", "priority": 0, "id": n["id"], "text": n["text"], "link": n["link"] or paths.FEED})
     out += _staff_work(user)
     from app import digest  # imported here: digest builds its emails from this list
 
     if user.get("email_reminders") and not user.get("email_confirmed_at") and digest.email_available():
-        out.append({"kind": "confirm_email", "priority": 2, "link": "#/profile",
+        out.append({"kind": "confirm_email", "priority": 2, "link": paths.PROFILE,
                     "text": "Confirm your email address to start getting reminder emails. Use the link we emailed you, "
                             "or send a new one from your profile."})
     today = learning.local_now(user).date()
     streak = learning._streak(days, today)
     if streak and today.isoformat() not in days:
         out.append({"kind": "streak", "priority": 1, "text": f"Keep your {streak}-day streak going: study something today.",
-                    "link": "#/progress"})
+                    "link": paths.PROGRESS})
     if due:
         out.append({"kind": "cards_due", "priority": 2, "count": due,
-                    "text": f"{due} flashcard{'s are' if due != 1 else ' is'} due for review.", "link": "#/review"})
+                    "text": f"{due} flashcard{'s are' if due != 1 else ' is'} due for review.", "link": paths.FLASHCARDS})
     item = _current_plan_item(uid)
     if item:
         verb = {"lesson": "Lesson", "quiz": "Quiz", "flashcards": "Flashcards", "exam": "Mock exam"}[item["activity"]]
         out.append({"kind": "plan", "priority": 2 if item["overdue"] else 3,
                     "text": f"{'Catch up' if item['overdue'] else 'This week'} in your study plan: {verb} – {item['title']}.",
-                    "link": "#/progress", "lesson_id": item["lesson_id"], "activity": item["activity"]})
+                    "link": paths.PROGRESS, "lesson_id": item["lesson_id"], "activity": item["activity"]})
     if unfinished:
         out.append({"kind": "unfinished_quiz", "priority": 3, "text": f"Finish your {unfinished['title'].lower()}.",
-                    "link": f"#/quiz/{unfinished['id']}"})
+                    "link": paths.quiz(unfinished['id'])})
     for r in started:
         found = learning.find_for(uid, r["lesson_id"])
         if found:
             out.append({"kind": "continue_lesson", "priority": 4, "text": f"Pick up where you left off: {found[1].title}.",
-                        "link": f"#/lesson/{r['lesson_id']}"})
+                        "link": paths.lesson(r['lesson_id'])})
             break
     if new_posts:
         out.append({"kind": "new_posts", "priority": 5, "count": new_posts,
-                    "text": f"{new_posts} new post{'s' if new_posts != 1 else ''} from companions you follow.", "link": "#/feed"})
+                    "text": f"{new_posts} new post{'s' if new_posts != 1 else ''} from companions you follow.", "link": paths.FEED})
     return sorted(out, key=lambda r: r["priority"])
 
 

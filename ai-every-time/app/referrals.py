@@ -20,7 +20,7 @@ import stripe
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 
-from app import auth, billing, db, plans
+from app import auth, billing, db, paths, plans
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -102,11 +102,11 @@ def qualify(conn, invitee_id: int) -> None:
     if counted // PER_REWARD > earned and this_year < MAX_REWARDS_A_YEAR:
         conn.execute("INSERT INTO referral_rewards (user_id, created_at) VALUES (?, ?)", (referrer, db.now()))
         staff.notify(conn, referrer, f"{friend} joined through your invite, so you've earned a free month of Plus. "
-                                     "Claim it when you like.", "#/referral")
+                                     "Claim it when you like.", paths.INVITE)
     else:
         left = PER_REWARD - counted % PER_REWARD
         staff.notify(conn, referrer, f"{friend} joined through your invite. {left} more for a free month of Plus.",
-                     "#/referral")
+                     paths.INVITE)
 
 
 def subscribed(conn, user_id: int) -> None:
@@ -179,9 +179,9 @@ def claim(user: dict = User):
 
 @links.get("/r/{code}", include_in_schema=False)
 def invite_link(code: str):
-    """An invite link: remembers who invited the visitor for when they sign up, then opens the welcome page."""
+    """An invite link: remembers who invited the visitor for when they sign up, then opens the sign-up page."""
     code = clean(code)
-    response = RedirectResponse(f"/#/welcome?ref={code}" if code else "/#/welcome", status_code=302)
+    response = RedirectResponse(f"/signup?ref={code}" if code else "/signup", status_code=302)
     if code:
         response.set_cookie(COOKIE, code, max_age=30 * 86400, httponly=True, samesite="lax", secure=settings.secure_cookies)
     return response

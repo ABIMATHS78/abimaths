@@ -189,9 +189,9 @@ def test_reminders(client):
     client.post("/api/study-plan", json={"paths": ["llms"], "weekly_minutes": 60, "weeks": 2})
     rem = client.get("/api/reminders").json()
     by_kind = {r["kind"]: r for r in rem}
-    assert by_kind["cards_due"]["count"] == 3 and by_kind["cards_due"]["link"] == "#/review"
-    assert by_kind["continue_lesson"]["link"] == "#/lesson/tokens"
-    assert by_kind["unfinished_quiz"]["link"].startswith("#/quiz/")
+    assert by_kind["cards_due"]["count"] == 3 and by_kind["cards_due"]["link"] == "/flashcards"
+    assert by_kind["continue_lesson"]["link"] == "/lessons/tokens"
+    assert by_kind["unfinished_quiz"]["link"].startswith("/quizzes/")
     assert by_kind["plan"]["text"].startswith("This week")
     assert [r["priority"] for r in rem] == sorted(r["priority"] for r in rem)
 

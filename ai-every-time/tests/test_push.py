@@ -246,7 +246,7 @@ def test_test_notification_is_encrypted_and_signed(client, service):
     # Only the device can read it, and it comes from the learner's own companion.
     msg = phone.read(req)
     assert msg["title"] == f"{starter['persona']['name']} {starter['persona']['flag']}"
-    assert msg["body"].startswith("Notifications are on") and msg["url"] == "/#/profile" and msg["tag"] == "test"
+    assert msg["body"].startswith("Notifications are on") and msg["url"] == "/profile" and msg["tag"] == "test"
 
 
 def test_gone_and_failing_devices_are_forgotten(client, service):
@@ -285,7 +285,7 @@ def test_daily_reminder_follows_the_learners_clock(client, service):
     [req] = service.to(phone)
     assert req["headers"]["topic"] == "daily" and int(req["headers"]["ttl"]) == push.DAILY_TTL
     msg = phone.read(req)
-    assert msg["tag"] == "daily" and "Pick up where you left off" in msg["body"] and msg["url"] == "/#/lesson/tokens"
+    assert msg["tag"] == "daily" and "Pick up where you left off" in msg["body"] and msg["url"] == "/lessons/tokens"
     assert run(utc(10, 11)) == 0  # once a day
     # Hours late, it waits for tomorrow instead of buzzing at night.
     assert push.due_daily(utc(11, 12, 30)) == []  # 21:30 in Tokyo
@@ -341,7 +341,7 @@ def test_notices_are_pushed_once_as_they_happen(client, service, monkeypatch):
     client.post(f"/api/staff/companions/{zara['id']}", json={"action": "restore"})
     assert run(NIGHT) == 1
     msg = phone.read(service.to(phone)[0])
-    assert msg["title"] == "AI Every Time" and "back in the community" in msg["body"] and msg["url"] == f"/#/c/{zara['id']}"
+    assert msg["title"] == "AI Every Time" and "back in the community" in msg["body"] and msg["url"] == f"/companions/{zara['slug']}"
     assert run(NIGHT) == 0
 
 
