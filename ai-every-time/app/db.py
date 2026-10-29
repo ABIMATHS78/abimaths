@@ -155,6 +155,13 @@ CREATE TABLE IF NOT EXISTS reports (
     created_at TEXT NOT NULL,
     PRIMARY KEY (user_id, companion_id)
 );
+-- Designers a learner blocked: none of their community companions, or the companions' posts, are shown to the learner.
+CREATE TABLE IF NOT EXISTS blocks (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, blocked_id)
+);
 CREATE TABLE IF NOT EXISTS companion_photos (
     companion_id INTEGER PRIMARY KEY REFERENCES companions(id) ON DELETE CASCADE,
     mime TEXT NOT NULL,
@@ -560,6 +567,9 @@ MIGRATIONS = [
     ("users", "signup_source", "TEXT NOT NULL DEFAULT ''"),
     # Months of Plus earned with referrals run until here, apart from any plan an admin gave (app/referrals.py).
     ("subscriptions", "reward_until", "TEXT"),
+    # When the learner agreed that what they write, and their profile, may be sent to Anthropic's Claude for
+    # replies, lessons and feedback (app/usage.py asks for it before any AI request). NULL until they do.
+    ("users", "ai_consent_at", "TEXT"),
 ]
 
 # Indexes on columns added above, so made after them.

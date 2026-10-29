@@ -1,0 +1,192 @@
+# Signs the iPhone and iPad app and sends it to App Store Connect from one of GitHub's Macs, so no Mac of your own
+# is needed. Run it from the Actions tab: "iOS release", then "Run workflow". Each run uploads a new build. Once
+# Apple has processed it (usually 5 to 30 minutes) it's in TestFlight for your testers, and from there you submit it
+# for the App Store in App Store Connect. Setting up the Apple account, the app and the three secrets this needs is
+# in ai-every-time/ios/README.md.
+name: iOS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version people see, like 1.0 or 1.1. Leave blank to keep the project's."
+        required: false
+        default: ""
+      whats_new:
+        description: "What to test, shown to TestFlight testers. Optional."
+        required: false
+        default: ""
+      external_group:
+        description: "TestFlight group of outside testers to send it to, like Public beta. Leave blank for your own team only."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+env:
+  BUNDLE_ID: org.aieverytime.app
+  APP_NAME: AI Every Time
+  # Codemagic's open-source tools talk to Apple: the app ID, certificate and profile, the upload and TestFlight.
+  # 0.69.1 reads the upload result of Xcode 26's altool correctly; Xcode 27 needs 0.70.1 or later.
+  CODEMAGIC_CLI_TOOLS: "0.69.1"
+
+jobs:
+  release:
+    name: Sign and upload to App Store Connect
+    runs-on: macos-latest
+    timeout-minutes: 75
+    env:
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+    defaults:
+      run:
+        working-directory: ai-every-time/ios
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Check the Apple secrets and the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          missing=""
+          [ -n "$APP_STORE_CONNECT_ISSUER_ID" ] || missing="$missing APP_STORE_CONNECT_ISSUER_ID"
+          [ -n "$APP_STORE_CONNECT_KEY_IDENTIFIER" ] || missing="$missing APP_STORE_CONNECT_KEY_ID"
+          [ -n "$APP_STORE_CONNECT_PRIVATE_KEY" ] || missing="$missing APP_STORE_CONNECT_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error title=Apple secrets missing::Add$missing in this repository's Settings, under Secrets and variables, Actions. ai-every-time/ios/README.md says where each comes from."
+            exit 1
+          fi
+          if [ -n "$VERSION" ] && ! [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            echo "::error title=Version::A version looks like 1.0 or 1.2.3, not \"$VERSION\"."
+            exit 1
+          fi
+
+      - name: Use Xcode 26
+        # The newest Xcode 26 on the Mac: Apple takes uploads built with Xcode 26 or later.
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -1)
+          if [ -z "$xcode" ]; then
+            echo "::error title=No Xcode 26::GitHub's Mac doesn't have Xcode 26 any more. Change this step and CODEMAGIC_CLI_TOOLS for a newer Xcode."
+            ls -d /Applications/Xcode_*.app
+            exit 1
+          fi
+          echo "Using $xcode"
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - name: Install the tools for Apple's signing and upload
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install --quiet --disable-pip-version-check "codemagic-cli-tools==$CODEMAGIC_CLI_TOOLS"
+          echo "$RUNNER_TEMP/tools/bin" >> "$GITHUB_PATH"
+
+      - name: Register the app with Apple, with notifications
+        run: |
+          set -o pipefail
+          id=$(app-store-connect bundle-ids list --bundle-id-identifier "$BUNDLE_ID" --strict-match-identifier --platform IOS --json | jq -r '.[0].id // empty')
+          if [ -z "$id" ]; then
+            id=$(app-store-connect bundle-ids create "$BUNDLE_ID" --name "$APP_NAME" --platform IOS --json | jq -r '.id')
+            echo "Registered the app ID $BUNDLE_ID."
+          fi
+          if app-store-connect bundle-ids capabilities "$id" --json | jq -e 'any(.[]; .attributes.capabilityType == "PUSH_NOTIFICATIONS")' > /dev/null; then
+            echo "Push Notifications are on for $BUNDLE_ID."
+          else
+            app-store-connect bundle-ids enable-capabilities "$id" --capability "Push Notifications"
+          fi
+          app=$(app-store-connect apps list --bundle-id-identifier "$BUNDLE_ID" --strict-match-identifier --json | jq -r '.[0].id // empty')
+          if [ -z "$app" ]; then
+            echo "::error title=Add the app in App Store Connect::Apple now knows the app ID $BUNDLE_ID. In App Store Connect choose Apps, then +, New App, and pick $BUNDLE_ID as the bundle ID, as ai-every-time/ios/README.md shows. Then run this again."
+            exit 1
+          fi
+          echo "The app is in App Store Connect (Apple ID $app)."
+
+      - name: Get the signing certificate and profile
+        run: |
+          python3 release/signing.py certificate-key "$RUNNER_TEMP/certificate.key"
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --platform IOS --type IOS_APP_STORE \
+            --strict-match-identifier --create --certificate-key "@file:$RUNNER_TEMP/certificate.key"
+          keychain add-certificates
+          profile=$(python3 release/signing.py profile "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$BUNDLE_ID")
+          read -r uuid team <<< "$profile"
+          echo "PROFILE_UUID=$uuid" >> "$GITHUB_ENV"
+          echo "TEAM_ID=$team" >> "$GITHUB_ENV"
+
+      - name: Build and sign
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          # A build number Apple hasn't seen for this app: the run's number, and the attempt's if it's run again.
+          build="$GITHUB_RUN_NUMBER"
+          [ "$GITHUB_RUN_ATTEMPT" = 1 ] || build="$build.$GITHUB_RUN_ATTEMPT"
+          settings=(CURRENT_PROJECT_VERSION="$build")
+          [ -z "$VERSION" ] || settings+=(MARKETING_VERSION="$VERSION")
+          xcodebuild archive -quiet \
+            -project AIEveryTime.xcodeproj \
+            -scheme AIEveryTime \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/AIEveryTime.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/build" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            "${settings[@]}"
+          python3 release/signing.py export-options "$TEAM_ID" "$PROFILE_UUID" "$BUNDLE_ID" "$RUNNER_TEMP/ExportOptions.plist"
+          xcodebuild -exportArchive -quiet \
+            -archivePath "$RUNNER_TEMP/AIEveryTime.xcarchive" \
+            -exportPath "$RUNNER_TEMP/ipa" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          ipa=$(ls "$RUNNER_TEMP"/ipa/*.ipa)
+          unzip -q "$ipa" -d "$RUNNER_TEMP/unzipped"
+          app="$RUNNER_TEMP/unzipped/Payload/AIEveryTime.app"
+          python3 release/signing.py check-app "$app" "$TEAM_ID" "$BUNDLE_ID"
+          shown=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist")
+          echo "IPA=$ipa" >> "$GITHUB_ENV"
+          echo "BUILD=$build" >> "$GITHUB_ENV"
+          echo "SHOWN_VERSION=$shown" >> "$GITHUB_ENV"
+          echo "Built AI Every Time $shown ($build)."
+
+      - name: Upload to App Store Connect
+        env:
+          WHATS_NEW: ${{ inputs.whats_new }}
+          EXTERNAL_GROUP: ${{ inputs.external_group }}
+        run: |
+          options=()
+          [ -z "$WHATS_NEW" ] || options+=(--whats-new "$WHATS_NEW")
+          # Outside testers need the build checked by Apple's beta review first; the tools wait for processing.
+          [ -z "$EXTERNAL_GROUP" ] || options+=(--beta-group "$EXTERNAL_GROUP" --testflight)
+          [ ${#options[@]} = 0 ] || options+=(--max-build-processing-wait 50)
+          app-store-connect publish --path "$IPA" "${options[@]}"
+
+      - name: Say what happens next
+        env:
+          EXTERNAL_GROUP: ${{ inputs.external_group }}
+        run: |
+          {
+            echo "### AI Every Time $SHOWN_VERSION ($BUILD) is in App Store Connect"
+            echo
+            echo "Apple processes a new build in 5 to 30 minutes and emails when it's ready. Then:"
+            echo
+            echo "- **Your team** (internal testers) can install it from the TestFlight app."
+            if [ -n "$EXTERNAL_GROUP" ]; then
+              echo "- **$EXTERNAL_GROUP** gets it once Apple's beta review approves it, usually within a day."
+            fi
+            echo "- **The App Store:** in App Store Connect, open the app's version $SHOWN_VERSION, choose build $BUILD and submit it for review."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tidy up the signing files
+        if: always()
+        run: |
+          keychain use-login 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/certificate.key"
+          rm -rf "$HOME/Library/Developer/Xcode/UserData/Certificates"

@@ -1,13 +1,14 @@
-"""Phone and browser notifications (Web Push).
+"""Phone and browser notifications (Web Push), and the iPhone app's (Apple's push service, in app/apns.py).
 
-Learners turn notifications on for each phone or browser they use. The daily reminder
+Learners turn notifications on for each phone, browser or app they use. The daily reminder
 arrives at the hour they chose, in their own time zone, and is built from the same list
 as the in-app "Today" panel. Notices about decisions on their companions and paths are
 pushed as they happen.
 
 Every message is encrypted for one device (RFC 8291) and signed with this server's VAPID
 key (RFC 8292). The key is made on first use and kept in the database, because every
-subscription is tied to it.
+subscription is tied to it. The iPhone app's devices are kept in the same list, with an apns: address, and
+everything below reaches them too.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from email.utils import parseaddr
+from typing import Literal
 from urllib.parse import urlsplit
 
 import requests
@@ -30,7 +32,7 @@ from pydantic import BaseModel, Field, field_validator
 from pywebpush import WebPushException, webpush
 from urllib3.util import parse_url
 
-from app import auth, companions, db, learning, reminders
+from app import apns, auth, companions, db, learning, reminders
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -100,6 +102,11 @@ def available() -> bool:
     return bool(contact())
 
 
+def app_available() -> bool:
+    """Whether the iPhone app can turn notifications on: the server has its APNs settings."""
+    return apns.available()
+
+
 def _require_available() -> None:
     if not available():
         raise HTTPException(409, "Notifications aren't set up on this server yet")
@@ -161,11 +168,20 @@ class Subscription(BaseModel):
         return v
 
 
+class AppDevice(BaseModel):
+    """The iPhone app's registration with Apple's push service, which the app passes on."""
+
+    token: str = Field(min_length=64, max_length=200, pattern=r"^[0-9a-fA-F]+$")
+    environment: Literal["production", "sandbox"] = "production"
+    # The device's previous address, when its token changed.
+    replaces: str | None = Field(None, max_length=300)
+
+
 class Endpoint(BaseModel):
     endpoint: str = Field(max_length=2000)
 
 
-_BROWSERS = (("Edg/", "Edge"), ("SamsungBrowser", "Samsung Internet"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
+_BROWSERS = (("AIEveryTimeApp/", "AI Every Time app"), ("Edg/", "Edge"), ("SamsungBrowser", "Samsung Internet"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
              ("FxiOS", "Firefox"), ("CriOS", "Chrome"), ("Chrome/", "Chrome"), ("Safari/", "Safari"))
 _SYSTEMS = (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"), ("Windows", "Windows"),
             ("Mac OS X", "Mac"), ("CrOS", "ChromeOS"), ("Linux", "Linux"))
@@ -197,20 +213,18 @@ def devices(user: dict = User):
     return _devices(user["id"])
 
 
-@router.post("/subscriptions", status_code=201)
-def subscribe(body: Subscription, request: Request, user: dict = User):
-    """Turn notifications on for this device. A device that changes hands goes to whoever subscribed last."""
-    _require_available()
-    uid, ts = user["id"], db.now()
+def _save_device(uid: int, endpoint: str, p256dh: str, auth: str, device: str, replaces: str | None) -> list[dict]:
+    """Keep a device for the learner. A device that changes hands goes to whoever turned notifications on last."""
+    ts = db.now()
     with db.connect() as conn:
         first = conn.execute("SELECT 1 FROM push_subscriptions WHERE user_id = ? LIMIT 1", (uid,)).fetchone() is None
-        if body.replaces:
-            conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", (body.replaces, uid))
+        if replaces:
+            conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", (replaces, uid))
         conn.execute(
             "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, device, created_at) VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT (endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, "
             "device = excluded.device, created_at = excluded.created_at, failures = 0",
-            (uid, body.endpoint, body.keys.p256dh, body.keys.auth, device_name(request.headers.get("user-agent", "")), ts),
+            (uid, endpoint, p256dh, auth, device, ts),
         )
         conn.execute("DELETE FROM push_subscriptions WHERE user_id = ? AND id NOT IN (SELECT id FROM push_subscriptions "
                      "WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?)", (uid, uid, MAX_DEVICES))
@@ -218,6 +232,23 @@ def subscribe(body: Subscription, request: Request, user: dict = User):
             # Notices from before notifications were on are already in the app; only new ones are pushed.
             conn.execute("UPDATE notices SET pushed_at = ? WHERE user_id = ? AND pushed_at IS NULL", (ts, uid))
     return _devices(uid)
+
+
+@router.post("/subscriptions", status_code=201)
+def subscribe(body: Subscription, request: Request, user: dict = User):
+    """Turn notifications on for this browser."""
+    _require_available()
+    return _save_device(user["id"], body.endpoint, body.keys.p256dh, body.keys.auth,
+                        device_name(request.headers.get("user-agent", "")), body.replaces)
+
+
+@router.post("/apns", status_code=201)
+def subscribe_app(body: AppDevice, request: Request, user: dict = User):
+    """Turn notifications on for the iPhone app on this device. Its address is the token Apple's service gave it."""
+    if not app_available():
+        raise HTTPException(409, "Notifications for the app aren't set up on this server yet")
+    return _save_device(user["id"], apns.endpoint(body.environment, body.token.lower()), "", "",
+                        device_name(request.headers.get("user-agent", "")), body.replaces)
 
 
 @router.post("/unsubscribe", status_code=204)
@@ -236,7 +267,8 @@ def unsubscribe_all(user: dict = User):
 @router.post("/test")
 async def test(user: dict = User):
     """Send a test notification to each of the learner's devices."""
-    _require_available()
+    if not (available() or app_available()):
+        _require_available()
     text = f"Notifications are on. Your daily reminder will come around {reminders.reminder_hour(user):02d}:00."
     sent = await send_to_user(user["id"], message(sender(user), text, "#/profile", "test"), ttl=600)
     if not sent:
@@ -273,6 +305,8 @@ def _session() -> requests.Session:
 def _send(sub: dict, data: dict, ttl: int, topic: str | None) -> str:
     """Send to one device: "sent", "gone" (it unsubscribed), "failed" (it rejected the message)
     or "retry" (a problem on our side or the push service's that isn't the device's fault)."""
+    if sub["endpoint"].startswith(apns.PREFIX):
+        return apns.send(sub["endpoint"], data, ttl)
     if not push_service(sub["endpoint"]):  # checked again in case the rules tightened since it was saved
         return "gone"
     headers = {"Urgency": "normal"} | ({"Topic": topic} if topic else {})

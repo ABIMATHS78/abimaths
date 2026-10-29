@@ -13,7 +13,7 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import BackgroundTasks, Cookie, Depends, FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
@@ -118,6 +118,8 @@ class Signup(BaseModel):
     timezone: Annotated[str, AfterValidator(_zone_or_unknown)] = ""
     # Emails with news and offers: only if they tick the box.
     marketing_emails: bool = False
+    # Whether they agreed that what they write may be sent to Anthropic's Claude (see usage.CONSENT).
+    ai_consent: bool = False
     # The code from a friend's invite link, if they came through one (the link also leaves it in a cookie).
     referral_code: str | None = Field(None, max_length=40)
     # The utm_source of the link that brought them, if any.
@@ -148,10 +150,10 @@ def signup(body: Signup, response: Response, background: BackgroundTasks, aiet_r
         with db.connect() as conn:
             cur = conn.execute(
                 "INSERT INTO users (email, display_name, password_hash, level, goals, interests, timezone, marketing_emails, "
-                "signup_source, last_signed_in, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "ai_consent_at, signup_source, last_signed_in, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (body.email.lower(), body.display_name.strip(), auth.hash_password(body.password), body.level,
-                 body.goals.strip(), body.interests.strip(), body.timezone, int(body.marketing_emails), source, db.now(),
-                 db.now()),
+                 body.goals.strip(), body.interests.strip(), body.timezone, int(body.marketing_emails),
+                 db.now() if body.ai_consent else None, source, db.now(), db.now()),
             )
             # Start every learner following the featured starter companions, one from each region, so their
             # feed isn't empty.
@@ -207,9 +209,11 @@ def _load_user(user_id: int) -> dict:
 def me(user: dict = User):
     return auth.public_user(user) | {
         "offline_mode": settings.offline, "email_available": digest.email_available(), "push_available": push.available(),
+        "app_push_available": push.app_available(),
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
         "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
         "ai_problem": _ai_problem(user), "marketing_emails": bool(user.get("marketing_emails")), "plan": billing.view(user),
+        "ai_consent": bool(user.get("ai_consent_at")),
     }
 
 
@@ -221,6 +225,19 @@ def _ai_problem(user: dict) -> str | None:
         return llm.AI_UNAVAILABLE
     return (f"AI isn't working: {llm.account_problem}. Check ANTHROPIC_API_KEY (and ANTHROPIC_WORKSPACE_ID and "
             "AIET_MODEL, if set) on the server, then restart it.")
+
+
+class AiConsent(BaseModel):
+    agree: bool
+
+
+@app.post("/api/me/ai-consent")
+def ai_consent(body: AiConsent, user: dict = User):
+    """Agree that what the learner writes may be sent to Claude, or take that back: AI requests stop until they agree
+    again."""
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET ai_consent_at = ? WHERE id = ?", (db.now() if body.agree else None, user["id"]))
+    return me(_load_user(user["id"]))
 
 
 @app.patch("/api/me")
@@ -341,6 +358,22 @@ def report_companion(companion_id: int, body: ReportIn, user: dict = User):
     companions.report(user["id"], companion_id, body.reason)
 
 
+@app.post("/api/companions/{companion_id}/block", status_code=204)
+def block_designer(companion_id: int, user: dict = User):
+    """Block the designer of this community companion: the learner won't see their companions or posts."""
+    companions.block_designer(user["id"], companion_id)
+
+
+@app.get("/api/blocks")
+def list_blocks(user: dict = User):
+    return companions.blocked(user["id"])
+
+
+@app.delete("/api/blocks/{designer_id}", status_code=204)
+def unblock_designer(designer_id: int, user: dict = User):
+    companions.unblock(user["id"], designer_id)
+
+
 async def _first_post(companion: dict, row: int) -> None:
     with usage.recording(row):
         await content.generate_for(companion)
@@ -441,7 +474,9 @@ def companion_avatar(companion_id: int, background: BackgroundTasks, v: str = ""
     c = companions.get(companion_id)
     # Moderators also need to see hidden companions' faces to review them.
     moderator = user is not None and auth.role_of(user) in auth.CAN["moderate"]
-    if not companions.visible_to(c, user["id"] if user else None) and not moderator:
+    hidden = (not companions.visible_to(c, user["id"] if user else None)
+              or (user is not None and companions.designer_blocked(c, user["id"])))
+    if hidden and not moderator:
         raise HTTPException(404, "Companion not found")
     keep = c["is_starter"] and v == c["updated_at"]
     headers = IMAGE_HEADERS | ({"Cache-Control": "private, max-age=86400"} if keep else {})
@@ -855,7 +890,29 @@ app.mount("/static", Static(directory=STATIC), name="static")
 
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    if settings.ios_app_id:
+        # Safari's banner for the iPhone app, once it's on the App Store. Apps' web views, the app's own included,
+        # never show it.
+        html = html.replace('<meta name="theme-color"',
+                            f'<meta name="apple-itunes-app" content="app-id={settings.ios_app_id}">\n  <meta name="theme-color"', 1)
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/privacy", include_in_schema=False)
+@app.get("/support", include_in_schema=False)
+def short_page_address(request: Request):
+    """Plain addresses for the privacy and support pages, for App Store Connect and emails."""
+    return RedirectResponse(f"/#{request.url.path}")
+
+
+@app.get("/api/site")
+def site():
+    """What pages open to everyone need from the settings: where to write for help, and where to get the iPhone app
+    (its App Store page once it's there, and the public TestFlight link while it's tested)."""
+    return {"support_email": settings.support_email,
+            "ios": {"app_store": f"https://apps.apple.com/app/id{settings.ios_app_id}" if settings.ios_app_id else None,
+                    "testflight": settings.ios_testflight_url or None}}
 
 
 @app.get("/healthz", include_in_schema=False)

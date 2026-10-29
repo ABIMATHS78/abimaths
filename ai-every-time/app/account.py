@@ -207,7 +207,7 @@ def export(user: dict = User):
             "exported_at": db.now(),
             "account": {k: user[k] for k in ("email", "display_name", "level", "goals", "interests", "timezone", "reminder_hour",
                                              "email_confirmed_at", "ai_allowance", "login_method", "last_signed_in",
-                                             "signup_source", "created_at")}
+                                             "signup_source", "ai_consent_at", "created_at")}
                        | {"role": auth.role_of(user), "email_reminders": bool(user["email_reminders"]),
                           "news_and_offers_emails": bool(user["marketing_emails"])},
             "companions_you_designed": designed,
@@ -239,6 +239,8 @@ def export(user: dict = User):
                 "ratings": rows("SELECT course_slug, stars, updated_at FROM course_ratings WHERE user_id = ? ORDER BY updated_at"),
             },
             "reports_you_made": rows("SELECT companion_id, reason, created_at FROM reports WHERE user_id = ? ORDER BY created_at"),
+            "designers_you_blocked": rows("SELECT u.display_name AS designer, b.created_at FROM blocks b "
+                                          "JOIN users u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.created_at"),
             "appeals": rows("SELECT companion_id, message, status, decision_note, created_at, decided_at FROM appeals "
                             "WHERE user_id = ? ORDER BY id"),
             "notices": rows("SELECT text, created_at, read_at FROM notices WHERE user_id = ? ORDER BY id"),

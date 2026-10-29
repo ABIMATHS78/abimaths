@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import re
 from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
@@ -12,6 +13,15 @@ def _int(name: str, default: int) -> int:
         return int(os.environ.get(name, default))
     except ValueError:
         return default
+
+
+def _matching(name: str, pattern: str) -> str:
+    """An environment variable's value if it matches the pattern, or "" (with a warning) if it doesn't."""
+    value = os.environ.get(name, "").strip()
+    if value and not re.fullmatch(pattern, value):
+        log.warning("%s isn't in the form expected, so it's ignored: %r", name, value)
+        return ""
+    return value
 
 
 def _price(p) -> tuple[float, float, float] | None:
@@ -94,6 +104,13 @@ class Settings:
     # How push services can reach whoever runs this server: a mailto: address or an https:// address.
     # Defaults to the AIET_MAIL_FROM address, then an https AIET_PUBLIC_URL. Notifications are off without one.
     push_contact: str = field(default_factory=lambda: os.environ.get("AIET_PUSH_CONTACT", ""))
+    # Notifications for the iPhone app, through Apple's push service: the text of the APNs key (the AuthKey .p8
+    # file, line breaks or "\n"), its key ID, the Apple team's ID, and the app's bundle ID. The app can't turn
+    # notifications on until the first three are set.
+    apns_key: str = field(default_factory=lambda: os.environ.get("AIET_APNS_KEY", ""))
+    apns_key_id: str = field(default_factory=lambda: os.environ.get("AIET_APNS_KEY_ID", "").strip())
+    apns_team_id: str = field(default_factory=lambda: os.environ.get("AIET_APNS_TEAM_ID", "").strip())
+    apns_bundle_id: str = field(default_factory=lambda: os.environ.get("AIET_APNS_BUNDLE_ID", "").strip() or "org.aieverytime.app")
     # AI requests each learner can make in any 24 hours (a chat message counts 1; see app/usage.py). 0: no limit.
     ai_allowance: int = field(default_factory=lambda: _int("AIET_AI_ALLOWANCE", 100))
     # The allowance until a learner confirms their email address (only while email is set up).
@@ -124,6 +141,14 @@ class Settings:
     trial_days: int = field(default_factory=lambda: _int("AIET_TRIAL_DAYS", 7))
     # Where the Teams plan's "Contact us" goes.
     teams_email: str = field(default_factory=lambda: os.environ.get("AIET_TEAMS_EMAIL", "teams@aieverytime.org").strip())
+    # Where learners write for help, on the support and privacy pages: a mailbox someone reads.
+    support_email: str = field(default_factory=lambda: os.environ.get("AIET_SUPPORT_EMAIL", "").strip()
+                               or "support@aieverytime.org")
+    # The iPhone app, once Apple has it (ios/README.md): its Apple ID in App Store Connect, digits only, for links to
+    # its App Store page and Safari's banner for it; and the public TestFlight link while it's being tested.
+    ios_app_id: str = field(default_factory=lambda: _matching("AIET_IOS_APP_ID", r"[0-9]{6,12}"))
+    ios_testflight_url: str = field(default_factory=lambda: _matching(
+        "AIET_IOS_TESTFLIGHT_URL", r"https://testflight\.apple\.com/join/[A-Za-z0-9]{4,16}"))
 
     @property
     def paywall(self) -> bool:

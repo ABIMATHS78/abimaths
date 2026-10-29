@@ -272,7 +272,7 @@ def test_daily_reminder_follows_the_learners_clock(client, service):
     from app import push
 
     r = client.post("/api/auth/signup", json={"email": "ken@example.com", "password": "correct horse",
-                                               "display_name": "Ken", "timezone": "Asia/Tokyo"})
+                                               "display_name": "Ken", "ai_consent": True, "timezone": "Asia/Tokyo"})
     assert r.status_code == 201 and r.json()["timezone"] == "Asia/Tokyo"
     assert client.patch("/api/me", json={"reminder_hour": 18}).json()["reminder_hour"] == 18
     client.get("/api/lessons/tokens")  # something to remind about
@@ -380,7 +380,7 @@ def test_reminder_settings(client):
         assert r.status_code == 201 and r.json()["timezone"] == "", zone
         client.post("/api/auth/logout")
     r = client.post("/api/auth/signup", json={"email": "ada@example.com", "password": "correct horse",
-                                               "display_name": "Ada", "timezone": "Mars/Olympus_Mons"})
+                                               "display_name": "Ada", "ai_consent": True, "timezone": "Mars/Olympus_Mons"})
     assert r.status_code == 201 and r.json()["timezone"] == ""  # an unknown zone never blocks sign-up
     assert r.json()["reminder_hour"] == settings.reminder_hour
     assert client.patch("/api/me", json={"timezone": "Mars/Olympus_Mons"}).status_code == 422
@@ -395,7 +395,7 @@ def test_streaks_follow_the_learners_day(client, monkeypatch):
     from app import learning
 
     client.post("/api/auth/signup", json={"email": "mia@example.com", "password": "correct horse",
-                                          "display_name": "Mia", "timezone": "America/Mexico_City"})
+                                          "display_name": "Mia", "ai_consent": True, "timezone": "America/Mexico_City"})
     # 02:00 UTC on 10 March is still the evening of 9 March in Mexico City.
     monkeypatch.setattr(learning, "_utcnow", lambda: datetime(2026, 3, 10, 2, 0, tzinfo=timezone.utc))
     client.get("/api/lessons/what-is-ai")

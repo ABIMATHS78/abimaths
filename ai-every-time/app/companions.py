@@ -105,14 +105,26 @@ def starter(slug: str) -> dict | None:
 
 def visible_to(companion: dict, user_id: int | None) -> bool:
     """Starter companions are public. Learner-designed ones are private to their owner
-    unless published to the community (and not hidden after reports)."""
+    unless published to the community (and not hidden after reports). get_visible also leaves out
+    companions by designers the learner blocked."""
     if companion["is_starter"] or (user_id is not None and companion["owner_id"] == user_id):
         return True
     return companion["is_public"] and not companion["hidden"]
 
 
-# SQL equivalent of visible_to, for a query aliasing companions as `c` with the user id bound to `:uid`.
-VISIBLE_SQL = "(c.is_starter = 1 OR c.owner_id = :uid OR (c.is_public = 1 AND c.hidden = 0))"
+# SQL equivalent of visible_to, for a query aliasing companions as `c` with the user id bound to `:uid`. Community
+# companions by a designer the learner blocked are left out too.
+VISIBLE_SQL = ("(c.is_starter = 1 OR c.owner_id = :uid OR (c.is_public = 1 AND c.hidden = 0 "
+               "AND c.owner_id NOT IN (SELECT blocked_id FROM blocks WHERE user_id = :uid)))")
+
+
+def designer_blocked(companion: dict, user_id: int) -> bool:
+    """Whether the learner blocked the designer of this community companion."""
+    if companion["is_starter"] or companion["owner_id"] in (None, user_id):
+        return False
+    with db.connect() as conn:
+        return conn.execute("SELECT 1 FROM blocks WHERE user_id = ? AND blocked_id = ?",
+                            (user_id, companion["owner_id"])).fetchone() is not None
 
 
 def for_viewer(companion: dict, user_id: int) -> dict:
@@ -125,7 +137,7 @@ def for_viewer(companion: dict, user_id: int) -> dict:
 
 def get_visible(companion_id: int, user_id: int) -> dict:
     c = get(companion_id)
-    if not visible_to(c, user_id):
+    if not visible_to(c, user_id) or designer_blocked(c, user_id):
         raise HTTPException(404, "Companion not found")
     return c
 
@@ -193,6 +205,37 @@ def report(user_id: int, companion_id: int, reason: str) -> None:
         n = conn.execute("SELECT COUNT(*) FROM reports WHERE companion_id = ?", (companion_id,)).fetchone()[0]
         if n >= REPORTS_TO_HIDE:
             conn.execute("UPDATE companions SET hidden = 1 WHERE id = ?", (companion_id,))
+
+
+def block_designer(user_id: int, companion_id: int) -> None:
+    """The learner stops seeing the companions this one's designer makes, and their posts: they unfollow them, and
+    one that was the learner's own companion no longer is. Apple asks apps with things learners make to let them
+    block each other (App Review guideline 1.2)."""
+    c = get_visible(companion_id, user_id)
+    if c["is_starter"] or c["owner_id"] in (None, user_id):
+        raise HTTPException(400, "Only the designers of other learners' community companions can be blocked.")
+    designer = c["owner_id"]
+    with db.connect() as conn:
+        conn.execute("INSERT OR IGNORE INTO blocks (user_id, blocked_id, created_at) VALUES (?, ?, ?)",
+                     (user_id, designer, db.now()))
+        conn.execute("DELETE FROM follows WHERE user_id = ? AND companion_id IN (SELECT id FROM companions WHERE owner_id = ?)",
+                     (user_id, designer))
+        conn.execute("UPDATE users SET primary_companion_id = NULL WHERE id = ? AND primary_companion_id IN "
+                     "(SELECT id FROM companions WHERE owner_id = ?)", (user_id, designer))
+
+
+def blocked(user_id: int) -> list[dict]:
+    """The designers the learner blocked, most recent first."""
+    with db.connect() as conn:
+        rows = conn.execute("SELECT b.blocked_id AS id, u.display_name AS name, b.created_at AS since FROM blocks b "
+                            "JOIN users u ON u.id = b.blocked_id WHERE b.user_id = ? ORDER BY b.created_at DESC, b.rowid DESC",
+                            (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def unblock(user_id: int, designer_id: int) -> None:
+    with db.connect() as conn:
+        conn.execute("DELETE FROM blocks WHERE user_id = ? AND blocked_id = ?", (user_id, designer_id))
 
 
 def create(user_id: int, persona: Persona, remixed_from: int | None = None) -> dict:

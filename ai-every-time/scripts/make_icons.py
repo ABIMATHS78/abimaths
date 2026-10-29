@@ -1,4 +1,5 @@
-"""Make the app's logo image and icons in static/icons from the AI Every Time logo, scripts/logo.webp.
+"""Make the app's logo image and icons in static/icons, and the iPhone app's icon and launch logo in
+ios/AIEveryTime/Assets.xcassets, from the AI Every Time logo, scripts/logo.webp.
 
 Run it again whenever the logo changes:
 
@@ -15,6 +16,7 @@ from PIL import Image, ImageDraw
 
 SOURCE = Path(__file__).resolve().with_name("logo.webp")
 OUT = Path(__file__).resolve().parent.parent / "static" / "icons"
+IOS = Path(__file__).resolve().parent.parent / "ios" / "AIEveryTime" / "Assets.xcassets"
 LANCZOS = Image.Resampling.LANCZOS
 WHITE = (255, 255, 255, 255)
 
@@ -76,6 +78,12 @@ def main() -> None:
     save_png(centred(clock, 512, 0.78, WHITE), "icon-maskable-512.png")
     save_png(centred(clock, 180, 0.9, WHITE), "apple-touch-icon.png")
     badge(96).save(OUT / "badge-96.png", optimize=True)
+    # The iPhone app's icon: a full square with no transparency, as the App Store requires; iOS rounds the corners.
+    centred(clock, 1024, 0.86, WHITE).convert("RGB").save(IOS / "AppIcon.appiconset" / "AppIcon.png", optimize=True)
+    # The launch screen's logo, 160 points across, on screens of one, two and three pixels to the point.
+    for scale in (1, 2, 3):
+        name = "LaunchLogo.png" if scale == 1 else f"LaunchLogo@{scale}x.png"
+        clock.resize((160 * scale, 160 * scale), LANCZOS).save(IOS / "LaunchLogo.imageset" / name, optimize=True)
 
 
 if __name__ == "__main__":
