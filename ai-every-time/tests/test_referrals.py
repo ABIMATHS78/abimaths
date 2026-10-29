@@ -73,11 +73,11 @@ def test_the_invite_link_remembers_the_code_for_sign_up(client, paywall):
     code = invite_code(client)
     client.post("/api/auth/logout")
     r = client.get(f"/r/{code.lower()}", follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"] == f"/#/welcome?ref={code}"
+    assert r.status_code == 302 and r.headers["location"] == f"/signup?ref={code}"
     assert client.cookies.get("aiet_ref") == code
     client.post("/api/auth/signup", json={"email": "kofi@example.com", "password": "correct horse", "display_name": "Kofi"})
     assert sql("SELECT COUNT(*) AS n FROM referral_invites")[0]["n"] == 1
-    assert client.get("/r/<script>", follow_redirects=False).headers["location"] == "/#/welcome"
+    assert client.get("/r/<script>", follow_redirects=False).headers["location"] == "/signup"
 
 
 def test_a_friend_who_pays_shows_as_subscribed(client, stripe_fake):

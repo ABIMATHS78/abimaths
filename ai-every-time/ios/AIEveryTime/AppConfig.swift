@@ -14,9 +14,9 @@ enum AppConfig {
     }()
 
     /// The page the app opens on: the feed, which sends someone not signed in to the welcome page.
-    static var startURL: URL { page("/#/feed") }
+    static var startURL: URL { page("/feed") }
 
-    /// A page of the site from its path, such as "/#/review" from a notification.
+    /// A page of the site from its path, such as "/flashcards" from a notification.
     static func page(_ path: String) -> URL {
         URL(string: path, relativeTo: siteURL)?.absoluteURL ?? siteURL
     }

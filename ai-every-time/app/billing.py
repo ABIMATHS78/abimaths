@@ -37,7 +37,7 @@ import stripe
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app import auth, catalog, db, plans
+from app import auth, catalog, db, paths, plans
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -167,10 +167,11 @@ def tier(user: dict) -> str:
     return effective_tier(dict(found) if found else None)
 
 
-def unlocked(user: dict, feature: str) -> bool:
-    if not paywall() or auth.role_of(user) == "admin":
+def unlocked(user: dict | None, feature: str) -> bool:
+    """Whether the learner's plan has this; for a visitor who isn't signed in (None), whether the free plan does."""
+    if not paywall() or (user is not None and auth.role_of(user) == "admin"):
         return True
-    return feature in plans.plan(tier(user)).unlocks
+    return feature in plans.plan(tier(user) if user is not None else "free").unlocks
 
 
 def locked(feature: str) -> HTTPException:
@@ -216,12 +217,16 @@ def guide_access(user: dict, post: dict, record: bool = True) -> dict:
 
 
 def preview(body: str, share: float = 0.2, most: int = 1500) -> str:
-    """The start of a locked guide: about a fifth of it, no more than `most` characters, ending at a paragraph."""
+    """The start of a locked guide: about a fifth of it, no more than `most` characters, ending at a paragraph, and
+    not on a heading with nothing under it."""
     cut = min(most, max(400, int(len(body) * share)))
     if len(body) <= cut:
         return body
     end = body.rfind("\n\n", 0, cut)
-    return body[:end if end > cut // 3 else cut].rstrip()
+    blocks = body[:end if end > cut // 3 else cut].rstrip().split("\n\n")
+    while len(blocks) > 1 and blocks[-1].lstrip().startswith("#") and "\n" not in blocks[-1].strip():
+        blocks.pop()
+    return "\n\n".join(blocks).rstrip()
 
 
 def _record_change(conn, user_id: int, before: str, after: str, source: str, when: str | None = None) -> None:
@@ -663,8 +668,8 @@ def checkout(body: PlanChoice, user: dict = User):
             "mode": "subscription", "customer": customer, "client_reference_id": str(user["id"]),
             "line_items": [{"price": price, "quantity": 1}], "allow_promotion_codes": True, "metadata": meta,
             "subscription_data": subscription_data,
-            "success_url": f"{base}/#/billing?checkout={{CHECKOUT_SESSION_ID}}",
-            "cancel_url": f"{base}/#/pricing?checkout=cancelled",
+            "success_url": f"{base}{paths.BILLING}?checkout={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": f"{base}{paths.PRICING}?checkout=cancelled",
         }))
     return {"url": session["url"]}
 
@@ -764,7 +769,7 @@ def portal(user: dict = User):
         raise HTTPException(409, "There's nothing to manage yet: you haven't paid for a plan.")
     with _stripe("open the billing portal"):
         session = _plain(_client().v1.billing_portal.sessions.create(params={
-            "customer": sub["stripe_customer_id"], "return_url": f"{settings.public_url}/#/billing"}))
+            "customer": sub["stripe_customer_id"], "return_url": paths.absolute(paths.BILLING)}))
     return {"url": session["url"]}
 
 
@@ -849,7 +854,7 @@ def give_plan(user_id: int, body: PlanGrant, user: dict = Admin):
             text = f"You've been given the {plans.plan(body.tier).name} plan" + (f", until {body.until}." if until else ".")
         else:
             text = "The plan you were given has ended. Any plan you pay for carries on."
-        staff.notify(conn, user_id, text, "#/billing")
+        staff.notify(conn, user_id, text, paths.BILLING)
     with db.connect() as conn:
         target = dict(conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone())
     return view(target)

@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field, field_validator
 from pywebpush import WebPushException, webpush
 from urllib3.util import parse_url
 
-from app import apns, auth, companions, db, learning, reminders
+from app import apns, auth, companions, db, learning, paths, reminders
 from app.config import settings
 
 log = logging.getLogger(__name__)
@@ -270,7 +270,7 @@ async def test(user: dict = User):
     if not (available() or app_available()):
         _require_available()
     text = f"Notifications are on. Your daily reminder will come around {reminders.reminder_hour(user):02d}:00."
-    sent = await send_to_user(user["id"], message(sender(user), text, "#/profile", "test"), ttl=600)
+    sent = await send_to_user(user["id"], message(sender(user), text, paths.PROFILE, "test"), ttl=600)
     if not sent:
         raise HTTPException(409, "None of your devices could be reached. Turn notifications off and on again.")
     return {"sent": sent}
@@ -291,7 +291,8 @@ def sender(user: dict) -> str:
 
 
 def message(title: str, body: str, link: str, tag: str) -> dict:
-    """What the service worker shows. `link` is an in-app route such as "#/review"."""
+    """What the service worker shows. `link` is the page to open, such as "/flashcards" (old notices' "#/review"
+    still opens its page)."""
     return {"title": title[:80], "body": body[:240], "url": "/" + link.lstrip("/"), "tag": tag}
 
 
@@ -398,7 +399,7 @@ def daily_message(user: dict, items: list[dict]) -> dict:
     """The day's most important reminder; with several, it opens the Today panel that lists them all."""
     if len(items) == 1:
         return message(sender(user), items[0]["text"], items[0]["link"], "daily")
-    return message(sender(user), f"{items[0]['text']} (+{len(items) - 1} more)", "#/feed", "daily")
+    return message(sender(user), f"{items[0]['text']} (+{len(items) - 1} more)", paths.FEED, "daily")
 
 
 async def run_once(now: datetime | None = None) -> int:
@@ -407,7 +408,7 @@ async def run_once(now: datetime | None = None) -> int:
     delivered = 0
     for n in pending_notices():
         try:
-            data = message("AI Every Time", n["text"], n["link"] or "#/feed", f"notice-{n['id']}")
+            data = message("AI Every Time", n["text"], n["link"] or paths.FEED, f"notice-{n['id']}")
             delivered += await send_to_user(n["user_id"], data, NOTICE_TTL)
         except Exception:
             log.exception("notice %s for user %s failed", n["id"], n["user_id"])

@@ -112,7 +112,7 @@ def test_moderators_cant_decide_their_own_appeals(client, staff):
     [item] = client.get("/api/staff/appeals").json()
     assert item["can_decide"] is False
     assert client.post(f"/api/staff/appeals/{item['id']}", json={"decision": "overturn"}).status_code == 403
-    assert not [r for r in client.get("/api/reminders").json() if r["link"] == "#/staff/appeals"]
+    assert not [r for r in client.get("/api/reminders").json() if r["link"] == "/staff/appeals"]
     assert client.get(f"/api/companions/{mine['id']}").json()["removed"]
 
     # A third moderator gives it the second look.
@@ -146,10 +146,10 @@ def test_staff_see_waiting_work_in_their_reminders(client, staff):
         return {r["link"]: r["text"] for r in client.get("/api/reminders").json() if r["kind"] == "staff"}
 
     assert work("boss@example.com", "Boss") == {
-        "#/staff/reports": "1 reported companion waiting for a moderator.",
-        "#/staff/paths": "1 learner path waiting for expert review.",
+        "/staff/reports": "1 reported companion waiting for a moderator.",
+        "/staff/paths": "1 learner path waiting for expert review.",
     }
-    assert work("mo@example.com", "Mo") == {"#/staff/reports": "1 reported companion waiting for a moderator."}
+    assert work("mo@example.com", "Mo") == {"/staff/reports": "1 reported companion waiting for a moderator."}
     assert work("ada@example.com", "Ada") == {}
 
     as_user(client, "boss@example.com", "Boss")
@@ -157,5 +157,5 @@ def test_staff_see_waiting_work_in_their_reminders(client, staff):
     as_user(client, "ada@example.com", "Ada")
     client.post(f"/api/companions/{zara['id']}/appeal", json={"message": MESSAGE})
     # Mo can take the second look; Boss made the removal, so it isn't waiting on Boss.
-    assert work("mo@example.com", "Mo") == {"#/staff/appeals": "1 appeal waiting for a second look."}
-    assert "#/staff/appeals" not in work("boss@example.com", "Boss")
+    assert work("mo@example.com", "Mo") == {"/staff/appeals": "1 appeal waiting for a second look."}
+    assert "/staff/appeals" not in work("boss@example.com", "Boss")

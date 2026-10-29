@@ -7,7 +7,7 @@ import pytest
 
 from tests.test_app import signup
 
-LINKS = {"reset": r"#/reset/([\w-]+)", "confirm": r"/api/email/confirm\?token=([\w-]+)"}
+LINKS = {"reset": r"/reset-password/([\w-]+)", "confirm": r"/api/email/confirm\?token=([\w-]+)"}
 
 
 class Mailbox:

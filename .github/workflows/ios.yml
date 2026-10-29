@@ -66,11 +66,24 @@ jobs:
           "$RUNNER_TEMP/tools/bin/keychain" initialize
           "$RUNNER_TEMP/tools/bin/keychain" use-login
 
-      - name: Work out a certificate key from a made-up API key
+      - name: Check a made-up API key, as the release checks the real one
+        working-directory: ai-every-time/ios
+        env:
+          # Pasted carelessly: spaces and line breaks around the IDs, and the key on one line.
+          APP_STORE_CONNECT_ISSUER_ID: " 57246542-96fe-1a63-e053-0824d011072a\n"
+          APP_STORE_CONNECT_KEY_ID: "2X9R4HXF34 "
+        run: |
+          openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt > "$RUNNER_TEMP/api-key.p8"
+          APP_STORE_CONNECT_PRIVATE_KEY=$(tr '\n' ' ' < "$RUNNER_TEMP/api-key.p8")
+          export APP_STORE_CONNECT_PRIVATE_KEY
+          "$RUNNER_TEMP/tools/bin/python3" release/signing.py api-key
+
+      - name: Work out a certificate key from it, as passed on
         working-directory: ai-every-time/ios
         run: |
-          APP_STORE_CONNECT_PRIVATE_KEY=$(openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt)
-          export APP_STORE_CONNECT_PRIVATE_KEY
+          [ "$APP_STORE_CONNECT_ISSUER_ID" = 57246542-96fe-1a63-e053-0824d011072a ]
+          [ "$APP_STORE_CONNECT_KEY_IDENTIFIER" = 2X9R4HXF34 ]
+          [ "$APP_STORE_CONNECT_PRIVATE_KEY" = "$(cat "$RUNNER_TEMP/api-key.p8")" ]
           "$RUNNER_TEMP/tools/bin/python3" release/signing.py certificate-key "$RUNNER_TEMP/certificate.key"
           "$RUNNER_TEMP/tools/bin/python3" -c '
           import sys

@@ -9,7 +9,7 @@ from tests.test_usage import claude, message, records, tokens, used  # noqa: F40
 
 def join(client, name="Ada", email=None, **profile):
     r = client.post("/api/auth/signup", json={"email": email or f"{name.lower()}@example.com", "password": "correct horse",
-                                              "display_name": name, "ai_consent": True, **profile})
+                                              "display_name": name, **profile})
     assert r.status_code == 201, r.text
     return r.json()
 

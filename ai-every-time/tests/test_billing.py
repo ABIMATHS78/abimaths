@@ -328,8 +328,8 @@ def test_checkout_starts_with_a_trial_and_remembers_the_plan_chosen(client, stri
     assert p["mode"] == "subscription" and p["customer"] == "cus_new" and p["client_reference_id"] == str(uid)
     assert p["line_items"] == [{"price": "price_aiet_plus_yearly", "quantity": 1}] and p["allow_promotion_codes"] is True
     assert p["subscription_data"]["trial_period_days"] == 7 and p["subscription_data"]["metadata"]["aiet_tier"] == "plus"
-    assert p["success_url"] == "https://aieverytime.example/#/billing?checkout={CHECKOUT_SESSION_ID}"
-    assert p["cancel_url"].startswith("https://aieverytime.example/#/pricing")
+    assert p["success_url"] == "https://aieverytime.example/billing?checkout={CHECKOUT_SESSION_ID}"
+    assert p["cancel_url"].startswith("https://aieverytime.example/pricing?")
     assert plan(client)["intended"] == {"tier": "plus", "name": "Plus", "interval": "yearly",
                                         "at": sql("SELECT intended_at FROM subscriptions")[0]["intended_at"]}
     # Again: the same customer, and no trial for someone who has had one.
@@ -483,7 +483,7 @@ def test_cancelling_keeps_the_plan_to_the_end_of_the_period_and_can_be_undone(cl
     assert p["subscription"]["cancel_at_period_end"] is False
     assert client.post("/api/billing/portal").json()["url"].startswith("https://billing.stripe.test/")
     portal = stripe_fake.named("portal.create")[0][2]["params"]
-    assert portal == {"customer": "cus_1", "return_url": "https://aieverytime.example/#/billing"}
+    assert portal == {"customer": "cus_1", "return_url": "https://aieverytime.example/billing"}
 
 
 def test_free_learners_have_nothing_to_change_or_cancel(client, stripe_fake):

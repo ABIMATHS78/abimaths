@@ -28,12 +28,15 @@ email or a file in the repository.
 
 The workflow uses this key to register the app with Apple, get its signing certificate and upload builds.
 
-1. In [App Store Connect](https://appstoreconnect.apple.com), open **Users and Access**, then **Integrations**, then
-   **App Store Connect API**, and make sure **Team Keys** is selected.
-2. Choose **Generate API Key** (or **+**). Name it `GitHub release` and give it the **App Manager** role.
-3. Note the **Issuer ID** shown above the list and the new key's **Key ID**, then **Download** the key: a file named
+1. In [App Store Connect](https://appstoreconnect.apple.com), open **Users and Access**, then **Integrations**. The
+   page opens on **App Store Connect API**.
+2. The first time, choose **Request Access**, tick the box to agree to the terms and choose **Submit**. Only the
+   Account Holder can, and Apple approves each request itself: often at once, sometimes after a while.
+3. Once it's approved, choose **Team Keys**, then **Generate API Key** (or **+**). Name it `GitHub release` and give it
+   the **App Manager** role.
+4. Note the **Issuer ID** shown above the list and the new key's **Key ID**, then **Download API Key**: a file named
    `AuthKey_` and the Key ID, ending `.p8`. Apple lets you download it only once, so keep it somewhere safe.
-4. On GitHub, open this repository's **Settings**, then **Secrets and variables**, **Actions**, and add three
+5. On GitHub, open this repository's **Settings**, then **Secrets and variables**, **Actions**, and add three
    **repository secrets** with **New repository secret**:
 
    | Name | Value |
@@ -41,6 +44,8 @@ The workflow uses this key to register the app with Apple, get its signing certi
    | `APP_STORE_CONNECT_ISSUER_ID` | The Issuer ID |
    | `APP_STORE_CONNECT_KEY_ID` | The Key ID |
    | `APP_STORE_CONNECT_PRIVATE_KEY` | The whole `.p8` file: open it in a text editor and copy everything, the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines included |
+
+   To change a secret later, choose the pencil next to its name. GitHub never shows a secret again, even to you.
 
 The workflow works out the private key for the app's signing certificate from this API key (see
 `release/signing.py`), so there's nothing else to make or keep.
@@ -154,9 +159,13 @@ notes in [AppStore.md](AppStore.md) say how the app handles plans.
 | What the workflow says | What to do |
 |---|---|
 | Apple secrets missing | Add the three secrets in step 1 |
+| Issuer ID, Key ID or Private key | That secret isn't what it should be: copy it again as in step 1 |
+| Issuer ID and Key ID swapped | Swap the values of those two secrets |
+| Apple didn't accept the API key | In App Store Connect, open **Users and Access**, **Integrations**, **Team Keys**. Check that `APP_STORE_CONNECT_ISSUER_ID` is the Issuer ID above the list, and that `APP_STORE_CONNECT_KEY_ID` is the Key ID in your key's row and in the `.p8` file's name (`AuthKey_`, then the Key ID). The key must be a Team key, not an Individual key, an In-App Purchase key or a key from developer.apple.com. A new key can take a few minutes to work. If it still fails, revoke the key, make a new one and update all three secrets |
+| Accept Apple's agreement | The Account Holder signs in at [developer.apple.com/account](https://developer.apple.com/account) and in App Store Connect, accepts the agreement each shows at the top, then runs it again |
 | Add the app in App Store Connect | Do step 3, then run it again |
 | Can't create a certificate: you have reached the maximum, or one is pending | At developer.apple.com, **Certificates**, revoke an Apple Distribution certificate you don't use, then run it again |
-| FORBIDDEN, or the key isn't allowed to do something | Make a new key with the **Admin** role, and update the three secrets |
+| The API key isn't allowed to do this, or FORBIDDEN | Make a new Team key with the **Admin** role, and update the three secrets |
 | The bundle version must be higher than the previous one | Run it again: each run has a higher build number |
 | A version's train is closed, or the version already exists | That version is on the App Store already: type a higher one in **Version** |
 | An identifier `org.aieverytime.app` isn't available | Someone else has it: change `PRODUCT_BUNDLE_IDENTIFIER` in `AIEveryTime.xcodeproj`, `BUNDLE_ID` in `.github/workflows/ios-release.yml` and `AIET_APNS_BUNDLE_ID` on Render to one of your own |
@@ -179,7 +188,8 @@ If you make a new API key, Apple gives the workflow a new signing certificate. T
   `AIET_SITE_URL` at a test server to try the site's changes in the app first.
 - `.github/workflows/ios.yml` builds the app on a Mac whenever it changes, and checks the release tools.
   `.github/workflows/ios-release.yml` releases it: Codemagic's open-source tools (`codemagic-cli-tools`, pinned)
-  talk to Apple, and `release/signing.py` works out the certificate key, picks the App Store profile, writes the
-  export options and checks the signed app before it's uploaded.
+  talk to Apple, and `release/signing.py` checks the API key in the secrets (and passes it on without the spaces and
+  line breaks pasting adds), works out the certificate key, picks the App Store profile, writes the export options
+  and checks the signed app before it's uploaded.
 - The icon and launch logo come from the site's logo: `python scripts/make_icons.py`. The App Store screenshots come
   from the site itself: `python ios/screenshots/make.py` runs it in demo mode and photographs it as the app shows it.

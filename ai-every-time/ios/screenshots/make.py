@@ -65,13 +65,13 @@ CARDS = [
 ]
 
 SCREENS = {  # in the order the App Store shows them
-    "chat": lambda s: f"#/c/{s['companion']}",
-    "studio": lambda s: "#/studio/new",
-    "course": lambda s: f"#/course/{s['course']}",
-    "lesson": lambda s: f"#/course/{s['course']}/learn/l1-1",
-    "flashcards": lambda s: f"#/review?deck={s['deck']}",
-    "guides": lambda s: "#/guides",
-    "progress": lambda s: "#/progress",
+    "chat": lambda s: f"/companions/{s['companion']}",
+    "studio": lambda s: "/companions/new",
+    "course": lambda s: f"/courses/{s['course']}",
+    "lesson": lambda s: f"/courses/{s['course']}/module-1/lesson-1",
+    "flashcards": lambda s: f"/flashcards/{s['deck']}",
+    "guides": lambda s: "/guides",
+    "progress": lambda s: "/progress",
 }
 # The flashcard page is mostly empty space on an iPad's big screen, so iPads skip it.
 SETS = {"iphone": list(SCREENS), "ipad": [n for n in SCREENS if n != "flashcards"]}
@@ -128,7 +128,7 @@ def serve(db: Path) -> tuple[subprocess.Popen, str]:
 def make_learner(request, base: str, db: Path) -> dict:
     r = request.post(f"{base}/api/auth/signup", data={
         "email": "amara@example.com", "password": "correct horse", "display_name": "Amara", "level": "beginner",
-        "goals": "Use AI to grow my bakery", "interests": "baking, football, my small business", "ai_consent": True})
+        "goals": "Use AI to grow my bakery", "interests": "baking, football, my small business"})
     assert r.status == 201, r.text()
     me = r.json()
     companion = next(c["id"] for c in request.get(f"{base}/api/companions").json()
@@ -181,7 +181,7 @@ def photograph(browser, base, kind, learner, cookies, folder: Path) -> list[Path
     page = ctx.new_page()
     shots = []
     for n, name in enumerate(SETS[kind], 1):
-        page.goto(f"{base}/?shot={name}{SCREENS[name](learner)}")
+        page.goto(f"{base}{SCREENS[name](learner)}")
         page.add_style_tag(content=HIDE)
         page.wait_for_timeout(2500)
         page.add_style_tag(content=HIDE)

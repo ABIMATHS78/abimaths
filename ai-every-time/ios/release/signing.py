@@ -8,6 +8,7 @@ has: the same API key always gives the same certificate key, so the workflow fin
 first time. Anyone holding the API key can already make certificates for the team, so this gives nothing away.
 A new API key brings a new certificate; the old one can then be revoked at developer.apple.com.
 
+    python3 signing.py api-key                              the three secrets, checked, to the later steps
     python3 signing.py certificate-key OUT                  the key (from APP_STORE_CONNECT_PRIVATE_KEY) to OUT
     python3 signing.py profile DIR BUNDLE_ID                the App Store profile for the app in DIR: UUID TEAM
     python3 signing.py export-options TEAM UUID BUNDLE_ID OUT   xcodebuild's options for an App Store export
@@ -20,19 +21,35 @@ import hmac
 import math
 import os
 import plistlib
+import re
+import secrets
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
+
+ISSUER_ID = re.compile(r"[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}")
+KEY_ID = re.compile(r"[A-Z0-9]{10}")
+BEGIN, END = "-----BEGIN PRIVATE KEY-----", "-----END PRIVATE KEY-----"
+SETTINGS = "this repository's Settings, under Secrets and variables, Actions"
 
 # Changing this, or how the key is made from it, means a new certificate on the next run.
 LABEL = b"AI Every Time: Apple Distribution certificate key, version 1"
 BITS = 2048
 E = 65537
 SMALL_PRIMES = [n for n in range(3, 2000, 2) if all(n % d for d in range(3, math.isqrt(n) + 1, 2))]
+
+
+class Problem(SystemExit):
+    """Something for whoever runs the release to put right: a short title, and what to do."""
+
+    def __init__(self, title: str, message: str):
+        super().__init__(message)
+        self.title = title
 
 
 class _Stream:
@@ -82,19 +99,54 @@ def _prime(stream: _Stream) -> int:
             return n
 
 
+def p8(text: str) -> str:
+    """The .p8 file pasted into the secret, written out as Apple wrote it: whatever happened to its line breaks on
+    the way (Windows line endings, spaces, or written out as \\n), and whatever was pasted around it."""
+    start, stop = text.find(BEGIN), text.find(END)
+    body = "".join(re.sub(r"\\[nr]", " ", text[start + len(BEGIN):stop]).split()) if 0 <= start < stop else ""
+    if not re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", body):
+        raise Problem("Private key", "APP_STORE_CONNECT_PRIVATE_KEY isn't the key: open the AuthKey_ file in a "
+                      "text editor and paste the whole .p8 file, from -----BEGIN PRIVATE KEY----- to "
+                      "-----END PRIVATE KEY-----.")
+    return "\n".join([BEGIN, *(body[i:i + 64] for i in range(0, len(body), 64)), END]) + "\n"
+
+
 def _api_key(text: str) -> ec.EllipticCurvePrivateKey:
     """The App Store Connect API key, from the contents of its .p8 file as pasted into the secret."""
-    text = text.strip()
-    if "\n" not in text:
-        text = text.replace("\\n", "\n")  # pasted with its line breaks written out
     try:
-        key = serialization.load_pem_private_key(text.encode(), password=None)
-    except ValueError:
-        raise SystemExit("APP_STORE_CONNECT_PRIVATE_KEY isn't a private key: paste the whole .p8 file, "
-                         "from -----BEGIN PRIVATE KEY----- to -----END PRIVATE KEY-----.") from None
+        key = serialization.load_pem_private_key(p8(text).encode(), password=None)
+    except (ValueError, TypeError, UnsupportedAlgorithm):
+        key = None
     if not isinstance(key, ec.EllipticCurvePrivateKey) or key.curve.name != "secp256r1":
-        raise SystemExit("APP_STORE_CONNECT_PRIVATE_KEY isn't an App Store Connect API key (.p8).")
+        raise Problem("Private key", "APP_STORE_CONNECT_PRIVATE_KEY isn't an App Store Connect API key: paste "
+                      "the whole .p8 file you downloaded from App Store Connect's Team Keys.")
     return key
+
+
+def api_key_secrets(issuer: str, key_id: str, private_key: str) -> tuple[str, str, str]:
+    """The Issuer ID, Key ID and .p8 file from the three secrets, as Apple takes them: without the spaces and line
+    breaks that pasting brings along, which make Apple turn the key down. Problem says what to change if one of
+    them can't be right."""
+    given = {"APP_STORE_CONNECT_ISSUER_ID": issuer, "APP_STORE_CONNECT_KEY_ID": key_id,
+             "APP_STORE_CONNECT_PRIVATE_KEY": private_key}
+    missing = [name for name, value in given.items() if not value.strip()]
+    if missing:
+        names = " and ".join([", ".join(missing[:-1]), missing[-1]] if len(missing) > 1 else missing)
+        raise Problem("Apple secrets missing", f"Add {names} in {SETTINGS}. "
+                      "ai-every-time/ios/README.md says where each comes from.")
+    issuer, key_id = "".join(issuer.split()), "".join(key_id.split())
+    if ISSUER_ID.fullmatch(key_id) and KEY_ID.fullmatch(issuer):
+        raise Problem("Issuer ID and Key ID swapped", "APP_STORE_CONNECT_ISSUER_ID holds the Key ID and "
+                      f"APP_STORE_CONNECT_KEY_ID the Issuer ID: swap them in {SETTINGS}.")
+    if not ISSUER_ID.fullmatch(issuer):
+        raise Problem("Issuer ID", "APP_STORE_CONNECT_ISSUER_ID isn't an Issuer ID, which looks like "
+                      "57246542-96fe-1a63-e053-0824d011072a. Copy it from above the list of Team Keys in App Store "
+                      "Connect (Users and Access, Integrations).")
+    if not KEY_ID.fullmatch(key_id):
+        raise Problem("Key ID", "APP_STORE_CONNECT_KEY_ID isn't a Key ID, which is 10 capital letters and digits, "
+                      "like 2X9R4HXF34. Copy it from the key's row in the list of Team Keys in App Store Connect.")
+    _api_key(private_key)
+    return issuer, key_id, p8(private_key)
 
 
 def certificate_key(api_key_text: str) -> rsa.RSAPrivateKey:
@@ -166,6 +218,13 @@ def entitlement_problems(entitlements: dict, team_id: str, bundle_id: str) -> li
     return problems
 
 
+def _hide(values) -> None:
+    """GitHub hides its secrets in the log, but not what's made from them: hide these too."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for value in values:
+            print(f"::add-mask::{value}")
+
+
 def _write_secret(path: Path, data: bytes) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "wb") as f:
@@ -174,16 +233,23 @@ def _write_secret(path: Path, data: bytes) -> None:
 
 def main(argv: list[str]) -> None:
     command, args = (argv[0], argv[1:]) if argv else ("", [])
-    if command == "certificate-key" and len(args) == 1:
+    if command == "api-key" and not args:
+        issuer, key_id, pem = api_key_secrets(*(os.environ.get(name, "") for name in (
+            "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_PRIVATE_KEY")))
+        if not os.environ.get("GITHUB_ENV"):
+            raise SystemExit("api-key passes the key on to the workflow's later steps, through GITHUB_ENV.")
+        _hide([issuer, key_id, *pem.splitlines()[1:-1]])
+        end = f"END_OF_KEY_{secrets.token_hex(12)}"
+        with open(os.environ["GITHUB_ENV"], "a") as env:  # under the names Codemagic's tools read
+            env.write(f"APP_STORE_CONNECT_ISSUER_ID={issuer}\nAPP_STORE_CONNECT_KEY_IDENTIFIER={key_id}\n"
+                      f"APP_STORE_CONNECT_PRIVATE_KEY<<{end}\n{pem}{end}\n")
+        print("The Apple secrets look right: an Issuer ID, a Key ID and an App Store Connect API key.")
+    elif command == "certificate-key" and len(args) == 1:
         api_key = os.environ.get("APP_STORE_CONNECT_PRIVATE_KEY", "")
         if not api_key:
             raise SystemExit("APP_STORE_CONNECT_PRIVATE_KEY isn't set.")
         pem = key_pem(certificate_key(api_key))
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            # GitHub hides its own secrets in the log, but doesn't know this one: hide every line of it too.
-            for line in pem.decode().splitlines():
-                if not line.startswith("-----"):
-                    print(f"::add-mask::{line}")
+        _hide(line for line in pem.decode().splitlines() if not line.startswith("-----"))
         _write_secret(Path(args[0]), pem)
         print("Worked out the certificate key from the App Store Connect API key.")
     elif command == "profile" and len(args) == 2:
@@ -212,4 +278,10 @@ def main(argv: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except Problem as problem:
+        if os.environ.get("GITHUB_ACTIONS") != "true":
+            raise
+        print(f"::error title={problem.title}::{problem.code}")  # at the top of the run's page, not just in its log
+        sys.exit(1)

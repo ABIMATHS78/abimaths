@@ -9,7 +9,7 @@ import secrets
 
 from fastapi import HTTPException
 
-from app import db
+from app import db, paths
 from app.persona import Persona
 from app.starter_companions import STARTERS
 
@@ -101,6 +101,29 @@ def starter(slug: str) -> dict | None:
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM companions WHERE slug = ? AND is_starter = 1 AND retired = 0", (slug,)).fetchone()
     return db.row_to_companion(row) if row else None
+
+
+def get_by_ref(ref: str) -> dict:
+    """A companion by its slug, as its page's address has it, or by its id, as addresses before slugs did."""
+    with db.connect() as conn:
+        found = paths.as_id(ref)
+        row = (conn.execute("SELECT * FROM companions WHERE id = ?", (found,)) if found is not None
+               else conn.execute("SELECT * FROM companions WHERE slug = ?", (ref,))).fetchone()
+    if row is None:
+        raise HTTPException(404, "Companion not found")
+    return db.row_to_companion(row)
+
+
+def public(companion: dict) -> bool:
+    """Whether anyone may see this companion, signed in or not: a starter still listed, or a learner's companion
+    published to the community and not hidden after reports."""
+    return visible_to(companion, None) and not companion["retired"]
+
+
+def public_view(companion: dict) -> dict:
+    """What a visitor who isn't signed in sees of a companion: not its designer's account, nor their custom
+    instructions."""
+    return companion | {"owner_id": None, "persona": companion["persona"] | {"custom_instructions": ""}}
 
 
 def visible_to(companion: dict, user_id: int | None) -> bool:

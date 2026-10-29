@@ -75,7 +75,7 @@ def insights(user: dict = Depends(auth.require("admin"))):
             # Starter companions' counts begin at the numbers in starter_companions.csv, and everyone starts out
             # following the featured ones, so only learners' own designs say much here.
             "most_followed": [dict(r) for r in conn.execute(
-                "SELECT c.id, json_extract(c.persona, '$.name') AS name, json_extract(c.persona, '$.flag') AS flag, "
+                "SELECT c.id, c.slug, json_extract(c.persona, '$.name') AS name, json_extract(c.persona, '$.flag') AS flag, "
                 "u.display_name AS designer, COUNT(f.user_id) AS followers FROM companions c "
                 "JOIN follows f ON f.companion_id = c.id LEFT JOIN users u ON u.id = c.owner_id "
                 "WHERE c.owner_id IS NOT NULL AND c.is_public = 1 AND c.hidden = 0 AND c.removed = 0 "

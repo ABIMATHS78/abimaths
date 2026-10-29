@@ -16,19 +16,19 @@ self.addEventListener("push", (event) => {
     tag: data.tag || undefined,
     // Today's reminder replaces yesterday's if it's still showing, and should still alert.
     renotify: Boolean(data.tag),
-    data: { url: data.url || "/#/feed" },
+    data: { url: data.url || "/feed" },
   }));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/#/feed", self.location.origin);
+  const url = new URL(event.notification.data?.url || "/feed", self.location.origin);
   if (url.origin !== self.location.origin) return;
   event.waitUntil((async () => {
     const open = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const tab = open.find((c) => new URL(c.url).origin === url.origin);
     if (!tab) return self.clients.openWindow(url.href);
-    // The app routes on the URL hash, so the open tab switches pages without reloading.
+    // The open tab switches to the page without loading the app again.
     tab.postMessage({ type: "open", url: url.href });
     return tab.focus();
   })());

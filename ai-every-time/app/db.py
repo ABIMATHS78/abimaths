@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator
 
+from app import paths
 from app.config import settings
 
 SCHEMA = """
@@ -568,8 +569,15 @@ MIGRATIONS = [
     # Months of Plus earned with referrals run until here, apart from any plan an admin gave (app/referrals.py).
     ("subscriptions", "reward_until", "TEXT"),
     # When the learner agreed that what they write, and their profile, may be sent to Anthropic's Claude for
-    # replies, lessons and feedback (app/usage.py asks for it before any AI request). NULL until they do.
+    # replies, lessons and feedback: at sign-up or when asked, while the site asked first, or since then by turning
+    # it back on in their profile.
     ("users", "ai_consent_at", "TEXT"),
+    # When the learner turned Claude off in their profile: AI requests are turned away until they turn it back on
+    # (app/usage.py). NULL for everyone else, as sign-up says companions are Claude.
+    ("users", "ai_off_at", "TEXT"),
+    # Words from the post's title for its address, /guides/<slug> or /posts/<slug> (app/paths.py). Given when the
+    # post is written, and kept if its title changes, so links to it keep working.
+    ("posts", "slug", "TEXT"),
 ]
 
 # Indexes on columns added above, so made after them.
@@ -579,6 +587,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_companion_created ON posts(companion_id, cr
 CREATE INDEX IF NOT EXISTS idx_posts_kind_created ON posts(kind, created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_legacy ON users(legacy_id) WHERE legacy_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code) WHERE referral_code IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug) WHERE slug IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at);
 """
 
@@ -594,6 +603,7 @@ def init_db() -> None:
                 for fill in backfill:
                     fill(conn) if callable(fill) else conn.execute(fill)
         conn.executescript(INDEXES)
+        paths.fill_post_slugs(conn)  # posts from before slugs, and any written without one
 
 
 def _with_defaults(persona: dict) -> dict:

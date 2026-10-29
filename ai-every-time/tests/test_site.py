@@ -34,7 +34,9 @@ def test_settings_in_the_wrong_form_are_ignored(monkeypatch):
     assert (s.ios_app_id, s.ios_testflight_url, s.support_email) == ("", "", "support@aieverytime.org")
 
 
-def test_short_addresses_for_privacy_and_support(client):
-    for page in ("privacy", "support"):
+def test_privacy_and_support_have_plain_addresses(client):
+    # For App Store Connect and emails: the pages themselves, open to everyone.
+    for page, title in (("privacy", "Privacy"), ("support", "Help and support")):
         r = client.get(f"/{page}", follow_redirects=False)
-        assert r.status_code in (302, 307) and r.headers["location"] == f"/#/{page}"
+        assert r.status_code == 200 and f"<title>{title} · AI Every Time</title>" in r.text
+        assert '<script src="/static/app.js"></script>' in r.text

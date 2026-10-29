@@ -34,9 +34,10 @@ COSTS = {"chat": 1, "lesson": 1, "quiz": 1, "exam": 2, "flashcards": 1, "summary
          "opening": 0, "lab": 1, "project": 2}
 NAMES = {"exam": "A mock exam", "path": "A new learning path", "project": "A project review"}
 BUSY = "AI Every Time is very busy right now, so new AI requests are paused. Please try again in an hour or so."
-# Nothing a learner writes goes to Claude until they've agreed to it (Apple's guideline 5.1.2(i) asks for this too).
-CONSENT = ("Companions are Claude, an AI made by Anthropic, so what you write to them goes to Anthropic. "
-           "Agree to that to carry on.")
+# Companions are Claude: sign-up says so, and a learner can turn it off in their profile. Then nothing they write goes
+# to Claude, and AI requests are turned away with this.
+CLAUDE_OFF = ("You've turned Claude off in your profile, so nothing you write goes to Anthropic. Turn it back on there "
+              "(under Your data) to carry on.")
 BUSY_UNCONFIRMED = ("AI Every Time is very busy right now, so AI requests are paused for accounts that haven't confirmed "
                     "their email address. Confirm yours from your profile to carry on, or try again in an hour or so.")
 
@@ -156,10 +157,10 @@ def _refusal(kind: str, limit: int, rows: list, raise_to: int | None) -> tuple[s
 
 def reserve(user: dict, kind: str) -> int:
     """Count one AI request against the allowance and record it, or turn it away with a 429 that
-    says when the learner can ask again. Returns the id of the request's record. A learner who hasn't
-    agreed to their words going to Claude is turned away first, with a 403 the page answers by asking."""
-    if not user.get("ai_consent_at"):
-        raise HTTPException(403, CONSENT, headers={"X-AI-Consent": "needed"})
+    says when the learner can ask again. Returns the id of the request's record. A learner who turned
+    Claude off in their profile is turned away first, with a 403 that says where to turn it back on."""
+    if user.get("ai_off_at"):
+        raise HTTPException(403, CLAUDE_OFF)
     cost, limit, refusal = COSTS[kind], allowance(user), None
     with db.connect() as conn:
         conn.execute("BEGIN IMMEDIATE")  # check and record in one go, so parallel requests can't both squeeze in

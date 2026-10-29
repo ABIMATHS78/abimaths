@@ -43,7 +43,7 @@ def test_forgotten_password_reset_by_email(client, mailbox, monkeypatch):
     [msg] = mailbox.sent
     assert msg["To"] == "ada@example.com" and "List-Unsubscribe" not in msg
     token = mailbox.reset_link()
-    assert f"https://aieverytime.example/#/reset/{token}" in msg.get_body(("plain",)).get_content()
+    assert f"https://aieverytime.example/reset-password/{token}" in msg.get_body(("plain",)).get_content()
     with db.connect() as conn:  # only a hash of the token is kept
         assert conn.execute("SELECT COUNT(*) FROM password_resets WHERE token_hash = ?", (token,)).fetchone()[0] == 0
 
