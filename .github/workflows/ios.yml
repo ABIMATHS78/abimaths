@@ -1,6 +1,6 @@
 # Builds the iPhone and iPad app (ai-every-time/ios) on one of GitHub's Macs whenever it changes, to check it
-# compiles. The build isn't signed, so it needs no Apple account. Releasing to TestFlight and the App Store is done
-# from Xcode on a Mac, or with Codemagic without one: see ai-every-time/ios/README.md.
+# compiles. The build isn't signed, so it needs no Apple account. Releasing to TestFlight and the App Store is the
+# "iOS release" workflow (ios-release.yml): see ai-every-time/ios/README.md.
 name: iOS app
 
 on:
@@ -8,10 +8,12 @@ on:
     paths:
       - "ai-every-time/ios/**"
       - ".github/workflows/ios.yml"
+      - ".github/workflows/ios-release.yml"
   pull_request:
     paths:
       - "ai-every-time/ios/**"
       - ".github/workflows/ios.yml"
+      - ".github/workflows/ios-release.yml"
   workflow_dispatch:
 
 concurrency:
@@ -44,3 +46,36 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/build" \
             CODE_SIGNING_ALLOWED=NO
           echo "Built $(ls -d "$RUNNER_TEMP"/build/Build/Products/Release-iphoneos/*.app)"
+
+  release-tools:
+    name: Release tools work on the Mac
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Install the tools the release uses
+        run: |
+          version=$(sed -nE 's/^ *CODEMAGIC_CLI_TOOLS: "(.*)"/\1/p' .github/workflows/ios-release.yml)
+          echo "codemagic-cli-tools $version"
+          python3 -m venv "$RUNNER_TEMP/tools"
+          "$RUNNER_TEMP/tools/bin/pip" install --quiet --disable-pip-version-check "codemagic-cli-tools==$version"
+          "$RUNNER_TEMP/tools/bin/app-store-connect" --version
+          "$RUNNER_TEMP/tools/bin/keychain" initialize
+          "$RUNNER_TEMP/tools/bin/keychain" use-login
+
+      - name: Work out a certificate key from a made-up API key
+        working-directory: ai-every-time/ios
+        run: |
+          APP_STORE_CONNECT_PRIVATE_KEY=$(openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt)
+          export APP_STORE_CONNECT_PRIVATE_KEY
+          "$RUNNER_TEMP/tools/bin/python3" release/signing.py certificate-key "$RUNNER_TEMP/certificate.key"
+          "$RUNNER_TEMP/tools/bin/python3" -c '
+          import sys
+          from cryptography.hazmat.primitives.serialization import load_pem_private_key
+          key = load_pem_private_key(open(sys.argv[1], "rb").read(), None)
+          assert key.key_size == 2048, key.key_size
+          print("A 2048-bit RSA key, as Apple asks for.")
+          ' "$RUNNER_TEMP/certificate.key"
