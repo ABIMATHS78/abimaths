@@ -181,4 +181,5 @@ If you make a new API key, Apple gives the workflow a new signing certificate. T
   `.github/workflows/ios-release.yml` releases it: Codemagic's open-source tools (`codemagic-cli-tools`, pinned)
   talk to Apple, and `release/signing.py` works out the certificate key, picks the App Store profile, writes the
   export options and checks the signed app before it's uploaded.
-- The icon and launch logo come from the site's logo: `python scripts/make_icons.py`.
+- The icon and launch logo come from the site's logo: `python scripts/make_icons.py`. The App Store screenshots come
+  from the site itself: `python ios/screenshots/make.py` runs it in demo mode and photographs it as the app shows it.

@@ -73,7 +73,8 @@ In `screenshots/`, made from the site as the app shows it:
 - `iphone-6.9/`: 1320 × 2868, for **iPhone 6.9" Display**. App Store Connect uses them for smaller iPhones too.
 - `ipad-13/`: 2064 × 2752, for **iPad 13" Display**, needed because the app runs on iPads.
 
-Drag each folder's images into its size on the version's page, in the order of their names.
+Drag each folder's images into its size on the version's page, in the order of their names. After the site's look
+changes, `python ios/screenshots/make.py` (from `ai-every-time/`) makes them again, with the captions in it.
 
 ## App Privacy
 
