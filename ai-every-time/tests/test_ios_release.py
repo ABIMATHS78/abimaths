@@ -1,8 +1,12 @@
-"""Signing the iPhone app on GitHub's Macs (ios/release/signing.py): the certificate key worked out from the App
-Store Connect API key, choosing the App Store profile, the export options, and checking the signed app."""
+"""Signing the iPhone app on GitHub's Macs (ios/release/signing.py): checking the App Store Connect API key from the
+secrets, the certificate key worked out from it, choosing the App Store profile, the export options, and checking
+the signed app."""
 
 import importlib.util
+import os
 import plistlib
+import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +21,7 @@ spec.loader.exec_module(signing)
 
 BUNDLE = "org.aieverytime.app"
 TEAM = "TEAM123456"
+ISSUER, KEY_ID = "57246542-96fe-1a63-e053-0824d011072a", "2X9R4HXF34"
 NOW = datetime(2026, 10, 29, 12, 0)
 
 
@@ -84,6 +89,101 @@ def test_the_command_writes_the_key_privately_and_hides_it_in_the_log(tmp_path, 
     monkeypatch.delenv("APP_STORE_CONNECT_PRIVATE_KEY")
     with pytest.raises(SystemExit, match="isn't set"):
         signing.main(["certificate-key", str(out)])
+
+
+PASTED = {  # how the .p8 file can arrive in the secret
+    "as downloaded": lambda pem: pem,
+    "with Windows line breaks": lambda pem: pem.replace("\n", "\r\n"),
+    "with its line breaks written out": lambda pem: pem.strip().replace("\n", "\\n"),
+    "on one line": lambda pem: pem.strip().replace("\n", " "),
+    "indented, between blank lines": lambda pem: "\n\n" + "".join(f"    {line}\n" for line in pem.splitlines()) + "\n",
+    "after its file name": lambda pem: f"AuthKey_{KEY_ID}.p8\n{pem}",
+}
+
+
+@pytest.mark.parametrize("how", PASTED)
+def test_a_pasted_key_comes_out_as_apple_wrote_it(how):
+    pem = api_key()
+    assert signing.p8(PASTED[how](pem)) == pem
+    assert signing.api_key_secrets(ISSUER, KEY_ID, PASTED[how](pem)) == (ISSUER, KEY_ID, pem)
+
+
+def read_github_env(text: str) -> dict:
+    """$GITHUB_ENV as GitHub's runner reads it: NAME=value lines, and NAME<<DELIMITER blocks for longer values."""
+    found, lines = {}, iter(text.split("\n"))
+    for line in lines:
+        equals, heredoc = line.find("="), line.find("<<")
+        if equals >= 0 and (heredoc < 0 or equals < heredoc):
+            found[line[:equals]] = line[equals + 1:]
+        elif heredoc >= 0:
+            delimiter, value = line[heredoc + 2:], []
+            for more in lines:
+                if more == delimiter:
+                    break
+                value.append(more)
+            else:
+                raise AssertionError(f"{line[:heredoc]} has no end")
+            found[line[:heredoc]] = "\n".join(value)
+    return found
+
+
+def test_the_api_key_goes_on_to_the_later_steps_cleaned_and_hidden(tmp_path, monkeypatch, capsys):
+    key = api_key()
+    github_env = tmp_path / "github_env"
+    github_env.write_text("EARLIER=kept\n")
+    # Pasted the way people paste: spaces and line breaks around the IDs, Windows line breaks in the key.
+    for name, value in {"APP_STORE_CONNECT_ISSUER_ID": f" {ISSUER}\n", "APP_STORE_CONNECT_KEY_ID": f"{KEY_ID} \r\n",
+                        "APP_STORE_CONNECT_PRIVATE_KEY": key.replace("\n", "\r\n"), "GITHUB_ENV": str(github_env),
+                        "GITHUB_ACTIONS": "true"}.items():
+        monkeypatch.setenv(name, value)
+    signing.main(["api-key"])
+    assert read_github_env(github_env.read_text()) == {
+        "EARLIER": "kept", "APP_STORE_CONNECT_ISSUER_ID": ISSUER, "APP_STORE_CONNECT_KEY_IDENTIFIER": KEY_ID,
+        "APP_STORE_CONNECT_PRIVATE_KEY": key.strip()}
+    # Hidden in the log before anything could show them, and shown nowhere else.
+    printed = capsys.readouterr().out.splitlines()
+    hidden = {line.removeprefix("::add-mask::") for line in printed if line.startswith("::add-mask::")}
+    shown = "\n".join(line for line in printed if not line.startswith("::add-mask::"))
+    secret = [ISSUER, KEY_ID, *key.strip().splitlines()[1:-1]]
+    assert set(secret) <= hidden and not any(part in shown for part in secret) and "look right" in shown
+
+    monkeypatch.delenv("GITHUB_ENV")
+    with pytest.raises(SystemExit, match="GITHUB_ENV"):
+        signing.main(["api-key"])
+
+
+SAME = lambda pem: pem  # noqa: E731
+
+
+@pytest.mark.parametrize("issuer, key_id, key, title", [
+    ("", "", lambda pem: "", "Apple secrets missing"),
+    (ISSUER, KEY_ID, lambda pem: " \n", "Apple secrets missing"),
+    (KEY_ID, ISSUER, SAME, "Issuer ID and Key ID swapped"),
+    ("A1B2C3D4E5", KEY_ID, SAME, "Issuer ID"),  # the Team ID
+    (f'"{ISSUER}"', KEY_ID, SAME, "Issuer ID"),
+    (ISSUER, "GitHub release", SAME, "Key ID"),  # the key's name
+    (ISSUER, KEY_ID.lower(), SAME, "Key ID"),
+    (ISSUER, ISSUER, SAME, "Key ID"),
+    (ISSUER, KEY_ID, lambda pem: f"AuthKey_{KEY_ID}.p8", "Private key"),
+    (ISSUER, KEY_ID, lambda pem: pem.split("\n", 1)[1], "Private key"),  # without its first line
+    (ISSUER, KEY_ID, lambda pem: pem.replace("\n-----END", "\nmy key\n-----END"), "Private key"),
+    (ISSUER, KEY_ID, lambda pem: pem.replace("PRIVATE", "PUBLIC"), "Private key"),
+    (ISSUER, KEY_ID, lambda pem: pem[:60] + pem[61:], "Private key"),  # a letter lost
+])
+def test_secrets_that_cant_be_right_say_what_to_change(issuer, key_id, key, title):
+    with pytest.raises(signing.Problem) as problem:
+        signing.api_key_secrets(issuer, key_id, key(api_key()))
+    assert problem.value.title == title
+
+
+def test_in_the_workflow_a_problem_shows_at_the_top_of_the_run(tmp_path):
+    env = {**os.environ, "GITHUB_ACTIONS": "true", "GITHUB_ENV": str(tmp_path / "github_env"),
+           "APP_STORE_CONNECT_ISSUER_ID": ISSUER, "APP_STORE_CONNECT_KEY_ID": "GitHub release",
+           "APP_STORE_CONNECT_PRIVATE_KEY": api_key()}
+    run = subprocess.run([sys.executable, spec.origin, "api-key"], env=env, capture_output=True, text=True)
+    assert run.returncode == 1 and run.stderr == ""
+    assert run.stdout.startswith("::error title=Key ID::APP_STORE_CONNECT_KEY_ID isn't a Key ID")
+    assert not (tmp_path / "github_env").exists()
 
 
 def profile(uuid, kind="store", bundle=BUNDLE, push=True, created=datetime(2026, 10, 1), expires=datetime(2027, 10, 1)):
