@@ -28,12 +28,15 @@ email or a file in the repository.
 
 The workflow uses this key to register the app with Apple, get its signing certificate and upload builds.
 
-1. In [App Store Connect](https://appstoreconnect.apple.com), open **Users and Access**, then **Integrations**, then
-   **App Store Connect API**, and make sure **Team Keys** is selected.
-2. Choose **Generate API Key** (or **+**). Name it `GitHub release` and give it the **App Manager** role.
-3. Note the **Issuer ID** shown above the list and the new key's **Key ID**, then **Download** the key: a file named
+1. In [App Store Connect](https://appstoreconnect.apple.com), open **Users and Access**, then **Integrations**. The
+   page opens on **App Store Connect API**.
+2. The first time, choose **Request Access**, tick the box to agree to the terms and choose **Submit**. Only the
+   Account Holder can, and Apple approves each request itself: often at once, sometimes after a while.
+3. Once it's approved, choose **Team Keys**, then **Generate API Key** (or **+**). Name it `GitHub release` and give it
+   the **App Manager** role.
+4. Note the **Issuer ID** shown above the list and the new key's **Key ID**, then **Download API Key**: a file named
    `AuthKey_` and the Key ID, ending `.p8`. Apple lets you download it only once, so keep it somewhere safe.
-4. On GitHub, open this repository's **Settings**, then **Secrets and variables**, **Actions**, and add three
+5. On GitHub, open this repository's **Settings**, then **Secrets and variables**, **Actions**, and add three
    **repository secrets** with **New repository secret**:
 
    | Name | Value |
