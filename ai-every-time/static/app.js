@@ -848,7 +848,8 @@ async function viewPrivacy() {
       <li><b>The company that hosts our servers,</b> where your account is kept.</li>
       <li><b>Apple, Google, Mozilla or Microsoft,</b> to deliver notifications, if you turn them on.</li>
     </ul>
-    <p>We don't sell your data, show adverts, or let anyone follow you across other apps and websites.</p>
+    <p>Each of them handles your data only to do that work for us, and must protect it at least as well as this page
+      says we do. We don't sell your data, show adverts, or let anyone follow you across other apps and websites.</p>
     <h2>What others can see</h2>
     <p>Your chats with companions are yours alone. Companions you publish to the community can be seen by other learners,
       with your name as their designer. Our moderators see what they need to look into a report or an appeal.</p>
