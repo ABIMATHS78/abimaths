@@ -482,6 +482,8 @@ const routes = [
   [/^#\/guides(?:\?(.*))?$/, viewGuides],
   [/^#\/p\/(\d+)(?:\?(.*))?$/, viewPost],
   [/^#\/companions$/, viewCompanions],
+  // The learner's own companion, wherever it is: for the iPhone app's shortcuts, which can't know which it is.
+  [/^#\/mine$/, () => location.replace(state.me.primary_companion_id ? `#/c/${state.me.primary_companion_id}` : "#/companions")],
   [/^#\/c\/(\d+)(?:\?post=(\d+))?$/, viewCompanion],
   [/^#\/studio\/new$/, (m) => viewStudio({ mode: "new" })],
   [/^#\/studio\/remix\/(\d+)$/, (m) => viewStudio({ mode: "remix", id: +m[1] })],
