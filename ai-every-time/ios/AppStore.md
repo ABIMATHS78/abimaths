@@ -125,7 +125,7 @@ rating than your answers give, choose 13+.
 AI Every Time is a place to learn about AI with AI companions: learners chat with a companion, follow its lessons, take quizzes and flashcards, and take courses that end in a certificate. The app shows our website, www.aieverytime.org, and adds what only an app can: notifications through Apple's push service, the share sheet, actions on the app's icon, Siri and Spotlight shortcuts, and an offline screen.
 
 To try it with the account above:
-1. Sign in. Companions are Claude, Anthropic's AI, so what learners write to them goes to Anthropic: sign-up says so, and Profile, under "Your data", is where learners turn it off.
+1. Sign in. Companions are Claude, Anthropic's AI, so what learners write to them goes to Anthropic: our privacy policy says so, and Profile, under "Your data", is where learners turn it off.
 2. Open "Chat" (or a companion from "Companions") and ask a question.
 3. In Profile, turn notifications on, then "Send a test".
 4. Touch and hold the app's icon for its shortcuts.

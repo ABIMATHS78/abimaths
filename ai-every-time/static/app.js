@@ -796,7 +796,6 @@ async function viewWelcome(m, q) {
             <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
           </label>
           <label class="check" data-only="signup"><input type="checkbox" name="marketing_emails"> Email me news and offers from AI Every Time. You can stop them any time.</label>
-          <p class="small muted" data-only="signup" style="margin:0">Companions are powered by Claude, an AI made by Anthropic: what you write to them, and your profile, go to Anthropic so it can reply. You can turn this off in your profile. <a href="/privacy" target="_blank">How we use your data</a></p>
           ${ref ? `<div class="small muted" data-only="signup">🎁 A friend invited you. Welcome!</div>` : ""}
           <div class="error" id="authErr"></div>
           <button class="btn primary" type="submit" id="authBtn">Create account</button>
@@ -2613,8 +2612,8 @@ async function renderPushBox(box) {
 }
 
 
-/* Companions are Claude, so what a learner writes to them goes to Anthropic: sign-up says so, and nobody is asked
-   first. Here they can turn it off, and back on; while it's off, the server turns AI requests away (app/usage.py). */
+/* Companions are Claude, so what a learner writes to them goes to Anthropic: the privacy page says so, and nobody is
+   asked first. Here they can turn it off, and back on; while it's off, the server turns AI requests away (app/usage.py). */
 function renderConsent(box) {
   const on = !!state.me.ai_consent;
   box.innerHTML = on
