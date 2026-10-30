@@ -1,5 +1,5 @@
-"""Companions are Claude, so what a learner writes to them goes to Anthropic. Sign-up says so, and nobody is asked
-first: companions reply from the start. A learner can turn Claude off in their profile, and then nothing they write
+"""Companions are Claude, so what a learner writes to them goes to Anthropic. The privacy page says so, and nobody is
+asked first: companions reply from the start. A learner can turn Claude off in their profile, and then nothing they write
 goes to it until they turn it back on."""
 
 import time

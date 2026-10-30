@@ -34,8 +34,8 @@ COSTS = {"chat": 1, "lesson": 1, "quiz": 1, "exam": 2, "flashcards": 1, "summary
          "opening": 0, "lab": 1, "project": 2}
 NAMES = {"exam": "A mock exam", "path": "A new learning path", "project": "A project review"}
 BUSY = "AI Every Time is very busy right now, so new AI requests are paused. Please try again in an hour or so."
-# Companions are Claude: sign-up says so, and a learner can turn it off in their profile. Then nothing they write goes
-# to Claude, and AI requests are turned away with this.
+# Companions are Claude (the privacy page says so), and a learner can turn that off in their profile. Then nothing
+# they write goes to Claude, and AI requests are turned away with this.
 CLAUDE_OFF = ("You've turned Claude off in your profile, so nothing you write goes to Anthropic. Turn it back on there "
               "(under Your data) to carry on.")
 BUSY_UNCONFIRMED = ("AI Every Time is very busy right now, so AI requests are paused for accounts that haven't confirmed "

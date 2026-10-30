@@ -573,7 +573,7 @@ MIGRATIONS = [
     # it back on in their profile.
     ("users", "ai_consent_at", "TEXT"),
     # When the learner turned Claude off in their profile: AI requests are turned away until they turn it back on
-    # (app/usage.py). NULL for everyone else, as sign-up says companions are Claude.
+    # (app/usage.py). NULL for everyone else: nobody is asked first.
     ("users", "ai_off_at", "TEXT"),
     # Words from the post's title for its address, /guides/<slug> or /posts/<slug> (app/paths.py). Given when the
     # post is written, and kept if its title changes, so links to it keep working.
