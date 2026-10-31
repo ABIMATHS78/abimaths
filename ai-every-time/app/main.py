@@ -120,8 +120,7 @@ class Signup(BaseModel):
     timezone: Annotated[str, AfterValidator(_zone_or_unknown)] = ""
     # Emails with news and offers: only if they tick the box.
     marketing_emails: bool = False
-    # Whether they agreed that what they write may be sent to Anthropic's Claude (see usage.CONSENT). The sign-up
-    # page doesn't ask, as the first page they open does; scripts may.
+    # Whether they agreed that what they write may be sent to Anthropic's Claude (see usage.CONSENT).
     ai_consent: bool = False
     # The code from a friend's invite link, if they came through one (the link also leaves it in a cookie).
     referral_code: str | None = Field(None, max_length=40)

@@ -832,6 +832,7 @@ async function viewWelcome(m, q) {
           <label data-only="signup">What are you into? <span class="hint">Optional: hobbies, work, anything you love. Companions start your chats from it</span>
             <input type="text" name="interests" maxlength="300" placeholder="e.g. football, cooking, my job in banking">
           </label>
+          <label class="check" data-only="signup"><input type="checkbox" name="ai_consent"> Let companions use Claude: what I write to them, and my profile, go to Anthropic, the company that makes Claude, so it can reply. <a href="/privacy" target="_blank">How we use your data</a></label>
           <label class="check" data-only="signup"><input type="checkbox" name="marketing_emails"> Email me news and offers from AI Every Time. You can stop them any time.</label>
           ${ref ? `<div class="small muted" data-only="signup">🎁 A friend invited you. Welcome!</div>` : ""}
           <div class="error" id="authErr"></div>
@@ -865,7 +866,7 @@ async function viewWelcome(m, q) {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
     const body = tab === "signup"
-      ? { ...f, marketing_emails: !!f.marketing_emails, timezone: deviceZone, referral_code: ref, source }
+      ? { ...f, marketing_emails: !!f.marketing_emails, ai_consent: !!f.ai_consent, timezone: deviceZone, referral_code: ref, source }
       : { email: f.email, password: f.password };
     $("#authErr").textContent = "";
     $("#authBtn").disabled = true;
@@ -995,7 +996,7 @@ async function viewPrivacy() {
     <p>Companions, lessons, quizzes, flashcards and feedback are written by Claude, an AI made by Anthropic. To write them,
       what you send to a companion and what it needs to answer well (your name, level, goals and interests, what the
       companion remembers about you, and the lesson or work in question) go to Anthropic. Nothing goes until you agree,
-      the first time it's needed, and you can change your mind in your profile at any time. Anthropic
+      when you sign up or the first time it's needed, and you can change your mind in your profile at any time. Anthropic
       handles it for us as a service provider: see <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's privacy policy</a>.</p>
     <h2>Who else handles your data</h2>
     <p>Only companies that help us run AI Every Time, for that and nothing else:</p>

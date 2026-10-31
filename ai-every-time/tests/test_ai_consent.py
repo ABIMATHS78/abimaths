@@ -1,4 +1,4 @@
-"""Nothing a learner writes goes to Claude until they've agreed to it: the first page they open asks them, and they can
+"""Nothing a learner writes goes to Claude until they've agreed to it: at sign-up, or later from the page, and they can
 take it back. Apple's App Review guideline 5.1.2(i) asks for this before personal data reaches a third-party AI."""
 
 import time
@@ -10,7 +10,7 @@ from tests.test_usage import chat, records, starter
 def join(client, agree=False):
     body = {"email": "ada@example.com", "password": "correct horse", "display_name": "Ada"}
     if agree:
-        body["ai_consent"] = True  # as scripts may: the sign-up page doesn't ask
+        body["ai_consent"] = True  # the box at sign-up
     r = client.post("/api/auth/signup", json=body)
     assert r.status_code == 201, r.text
     return r.json()
