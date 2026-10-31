@@ -56,7 +56,7 @@ IN THE APP
 • Share your certificates, and invite friends, with the share sheet
 • Touch and hold the app's icon to chat with your companion or carry on learning, or ask Siri
 
-Companions are Claude, an AI made by Anthropic: what you write to them goes to Anthropic so it can reply. You can turn that off in your profile.
+Companions are Claude, an AI made by Anthropic. Nothing you write to them goes to Anthropic until you agree, and you can change your mind in your profile.
 
 Design companions and share them with the community. Every community companion can be reported, and its designer blocked.
 
@@ -125,7 +125,7 @@ rating than your answers give, choose 13+.
 AI Every Time is a place to learn about AI with AI companions: learners chat with a companion, follow its lessons, take quizzes and flashcards, and take courses that end in a certificate. The app shows our website, www.aieverytime.org, and adds what only an app can: notifications through Apple's push service, the share sheet, actions on the app's icon, Siri and Spotlight shortcuts, and an offline screen.
 
 To try it with the account above:
-1. Sign in. Companions are Claude, Anthropic's AI, so what learners write to them goes to Anthropic: our privacy policy says so, and Profile, under "Your data", is where learners turn it off.
+1. Sign in. On the first page you're asked whether companions may use Claude, Anthropic's AI, because what learners write to them goes to Anthropic. Choose "Agree and continue". (Profile, under "Your data", is where learners change their mind.)
 2. Open "Chat" (or a companion from "Companions") and ask a question.
 3. In Profile, turn notifications on, then "Send a test".
 4. Touch and hold the app's icon for its shortcuts.

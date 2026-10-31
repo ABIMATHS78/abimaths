@@ -33,6 +33,8 @@ async function api(path, { method = "GET", body } = {}) {
       if (typeof data.detail === "string") msg = data.detail;
       else if (Array.isArray(data.detail)) msg = data.detail.map((d) => `${d.loc.slice(-1)[0]}: ${d.msg}`).join("; ");
     } catch {}
+    // An AI request from a learner who hasn't agreed to their words going to Claude: ask them.
+    if (res.headers.get("X-AI-Consent")) askAiConsent();
     // Locked by the learner's plan (402), or out of AI requests where a bigger plan has more (429): the plan that
     // would do. Something they clicked gets the offer at once; a page that wouldn't open shows its own.
     const plan = res.headers.get("X-Plan-Needed");
@@ -198,6 +200,7 @@ async function streamChat(companionId, body, onText) {
   });
   if (!res.ok) {
     const detail = (await res.json().catch(() => ({}))).detail || "Couldn't send message";
+    if (res.headers.get("X-AI-Consent")) askAiConsent();
     const plan = res.headers.get("X-Plan-Needed");
     if (plan) offerPlan(detail, plan);
     throw new Error(detail);
@@ -339,6 +342,36 @@ if (inApp) document.documentElement.classList.add("in-app");
 if (appBridge && !navigator.share) navigator.share = ({ title, text, url } = {}) => askApp("share", { title, text, url });
 /* Plans aren't sold in the app, as Apple's rules for apps ask: prices, upgrade buttons and billing links stay out. */
 const forSale = (html) => (inApp ? "" : html);
+
+/* -------------------------------------------------------- AI and your data */
+
+/* Companions are Claude, so what a learner writes to them goes to Anthropic. Nothing does until they agree, at sign-up
+   or when first asked; the server holds AI requests until then too (app/usage.py). Apple asks the same of apps. */
+const AI_SHARING = `Companions, lessons, quizzes and feedback on AI Every Time are written by Claude, an AI made by
+  <b>Anthropic</b>. To write them, what you send to companions, and your learning profile (your name, level, goals and
+  interests), go to Anthropic, which handles them for us as a service provider.`;
+let consentAsked = null;  // the question on screen, so it's never asked twice at once
+
+function askAiConsent() {
+  consentAsked ||= new Promise((resolve) => {
+    showDialog(`<h2>Companions are powered by Claude</h2><p>${AI_SHARING}</p>
+      <p>Nothing goes to Anthropic until you agree, and you can change your mind in your profile.
+        <a href="/privacy">How AI Every Time uses your data</a></p>
+      <div class="row"><button type="button" class="btn primary" id="aiAgree">Agree and continue</button>
+        <button type="button" class="btn ghost" data-close>Not now</button></div>`, { done: null });
+    const d = $("#dialog");
+    d.addEventListener("close", () => resolve(!!state.me?.ai_consent), { once: true });
+    $("#aiAgree").addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        state.me = await api("/api/me/ai-consent", { method: "POST", body: { agree: true } });
+        d.close();
+        toast("Thanks! Companions can reply now. If something didn't go through, try it again.");
+      } catch (err) { toast(err.message); e.target.disabled = false; }
+    });
+  }).finally(() => { consentAsked = null; });
+  return consentAsked;
+}
 
 /* ----------------------------------------------------------- notifications */
 
@@ -568,6 +601,10 @@ async function router() {
   if (members && !state.me.onboarded && !BEFORE_ONBOARDING.test(path)) { keepNext(here()); return navigate("/get-started", { replace: true }); }
   try { await view(m, q); } catch (e) { if (e instanceof StaleView) return; console.error(e); toast(e.message); }
   window.scrollTo(0, 0);
+  if (members && state.me && !state.me.ai_consent && state.consentAskedFor !== state.me.id) {
+    state.consentAskedFor = state.me.id;
+    askAiConsent();
+  }
 }
 window.addEventListener("popstate", router);
 
@@ -957,9 +994,9 @@ async function viewPrivacy() {
     <h2>Claude, by Anthropic</h2>
     <p>Companions, lessons, quizzes, flashcards and feedback are written by Claude, an AI made by Anthropic. To write them,
       what you send to a companion and what it needs to answer well (your name, level, goals and interests, what the
-      companion remembers about you, and the lesson or work in question) go to Anthropic. You can turn this off in your
-      profile at any time: then nothing you write goes to Anthropic, and companions can't reply until you turn it back
-      on. Anthropic handles it for us as a service provider: see <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's privacy policy</a>.</p>
+      companion remembers about you, and the lesson or work in question) go to Anthropic. Nothing goes until you agree,
+      the first time it's needed, and you can change your mind in your profile at any time. Anthropic
+      handles it for us as a service provider: see <a href="https://www.anthropic.com/legal/privacy" target="_blank" rel="noopener">Anthropic's privacy policy</a>.</p>
     <h2>Who else handles your data</h2>
     <p>Only companies that help us run AI Every Time, for that and nothing else:</p>
     <ul>
@@ -1024,8 +1061,8 @@ async function viewSupport() {
     <p>Turn them on or off in your profile. On iPhone and iPad they come through the AI Every Time app, or through
       AI Every Time on your Home Screen.</p>
     <h3>What companions do with what I write</h3>
-    <p>Companions are Claude, an AI made by Anthropic, so what you write to them goes to Anthropic. You can turn that
-      off in your profile, under <i>Your data</i>.</p>
+    <p>Companions are Claude, an AI made by Anthropic, so what you write to them goes to Anthropic. You choose whether
+      it does, in your profile under <i>Your data</i>.</p>
     <h3>My data and my account</h3>
     <p>Download your data, or delete your account, in your profile. Our <a href="/privacy">privacy policy</a> says what we
       keep and why.</p>
@@ -2612,21 +2649,21 @@ async function renderPushBox(box) {
 }
 
 
-/* Companions are Claude, so what a learner writes to them goes to Anthropic: the privacy page says so, and nobody is
-   asked first. Here they can turn it off, and back on; while it's off, the server turns AI requests away (app/usage.py). */
+/* Whether what the learner writes may go to Claude, and the way to change their mind. */
 function renderConsent(box) {
   const on = !!state.me.ai_consent;
   box.innerHTML = on
-    ? `<p class="small" style="margin:0">✅ Companions are powered by Claude: what you write to them, and your profile, go to Anthropic, the company that makes Claude, so it can reply.</p>
+    ? `<p class="small" style="margin:0">✅ Companions can reply: what you write to them, and your profile, go to Anthropic, the company that makes Claude.</p>
        <div><button type="button" class="btn ghost" data-consent>Stop sending what I write to Claude</button></div>`
-    : `<p class="small" style="margin:0">You've turned Claude off, so nothing you write goes to Anthropic. Companions can't reply, and new lessons, quizzes and feedback can't be written, until you turn it back on.</p>
-       <div><button type="button" class="btn primary" data-consent>Turn Claude back on</button></div>`;
+    : `<p class="small" style="margin:0">Companions can't reply, and new lessons, quizzes and feedback can't be written, until you agree that what you write to them goes to Anthropic, the company that makes Claude.</p>
+       <div><button type="button" class="btn primary" data-consent>Agree</button></div>`;
   $("[data-consent]", box).addEventListener("click", async (e) => {
-    if (on && !confirm("Companions won't reply, and new lessons, quizzes and feedback won't be written, until you turn Claude back on.")) return;
+    if (!on) { await askAiConsent(); if (document.body.contains(box)) renderConsent(box); return; }
+    if (!confirm("Companions won't reply, and new lessons, quizzes and feedback won't be written, until you agree again.")) return;
     e.target.disabled = true;
     try {
-      state.me = await api("/api/me/ai-consent", { method: "POST", body: { agree: !on } });
-      toast(on ? "Nothing you write goes to Claude now." : "Companions can reply again.");
+      state.me = await api("/api/me/ai-consent", { method: "POST", body: { agree: false } });
+      toast("Nothing you write goes to Claude now.");
       renderConsent(box);
     } catch (err) { toast(err.message); e.target.disabled = false; }
   });
