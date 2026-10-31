@@ -128,7 +128,7 @@ def serve(db: Path) -> tuple[subprocess.Popen, str]:
 def make_learner(request, base: str, db: Path) -> dict:
     r = request.post(f"{base}/api/auth/signup", data={
         "email": "amara@example.com", "password": "correct horse", "display_name": "Amara", "level": "beginner",
-        "goals": "Use AI to grow my bakery", "interests": "baking, football, my small business"})
+        "goals": "Use AI to grow my bakery", "interests": "baking, football, my small business", "ai_consent": True})
     assert r.status == 201, r.text()
     me = r.json()
     companion = next(c["id"] for c in request.get(f"{base}/api/companions").json()

@@ -120,6 +120,8 @@ class Signup(BaseModel):
     timezone: Annotated[str, AfterValidator(_zone_or_unknown)] = ""
     # Emails with news and offers: only if they tick the box.
     marketing_emails: bool = False
+    # Whether they agreed that what they write may be sent to Anthropic's Claude (see usage.CONSENT).
+    ai_consent: bool = False
     # The code from a friend's invite link, if they came through one (the link also leaves it in a cookie).
     referral_code: str | None = Field(None, max_length=40)
     # The utm_source of the link that brought them, if any.
@@ -150,10 +152,10 @@ def signup(body: Signup, response: Response, background: BackgroundTasks, aiet_r
         with db.connect() as conn:
             cur = conn.execute(
                 "INSERT INTO users (email, display_name, password_hash, level, goals, interests, timezone, marketing_emails, "
-                "signup_source, last_signed_in, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "ai_consent_at, signup_source, last_signed_in, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (body.email.lower(), body.display_name.strip(), auth.hash_password(body.password), body.level,
                  body.goals.strip(), body.interests.strip(), body.timezone, int(body.marketing_emails),
-                 source, db.now(), db.now()),
+                 db.now() if body.ai_consent else None, source, db.now(), db.now()),
             )
             # Start every learner following the featured starter companions, one from each region, so their
             # feed isn't empty.
@@ -213,7 +215,7 @@ def me(user: dict = User):
         "timezone": user.get("timezone") or "", "reminder_hour": reminders.reminder_hour(user),
         "email_confirmed": bool(user.get("email_confirmed_at")), "ai_allowance": usage.status(user),
         "ai_problem": _ai_problem(user), "marketing_emails": bool(user.get("marketing_emails")), "plan": billing.view(user),
-        "ai_consent": not user.get("ai_off_at"),  # companions may use Claude for them: yes, unless they turned it off
+        "ai_consent": usage.agreed(user),
     }
 
 
@@ -233,13 +235,13 @@ class AiConsent(BaseModel):
 
 @app.post("/api/me/ai-consent")
 def ai_consent(body: AiConsent, user: dict = User):
-    """Turn companions' use of Claude off for the learner, or back on. While it's off nothing they write goes to Claude,
-    and AI requests are turned away (app/usage.py). Turning it back on is kept as when they agreed."""
+    """Agree that what the learner writes may be sent to Claude, or take that back: AI requests stop until they agree
+    again."""
     with db.connect() as conn:
         if body.agree:
-            conn.execute("UPDATE users SET ai_off_at = NULL, ai_consent_at = ? WHERE id = ?", (db.now(), user["id"]))
+            conn.execute("UPDATE users SET ai_consent_at = ?, ai_off_at = NULL WHERE id = ?", (db.now(), user["id"]))
         else:
-            conn.execute("UPDATE users SET ai_off_at = COALESCE(ai_off_at, ?) WHERE id = ?", (db.now(), user["id"]))
+            conn.execute("UPDATE users SET ai_consent_at = NULL, ai_off_at = ? WHERE id = ?", (db.now(), user["id"]))
     return me(_load_user(user["id"]))
 
 

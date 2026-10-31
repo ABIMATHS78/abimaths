@@ -1,6 +1,5 @@
-"""Companions are Claude, so what a learner writes to them goes to Anthropic. The privacy page says so, and nobody is
-asked first: companions reply from the start. A learner can turn Claude off in their profile, and then nothing they write
-goes to it until they turn it back on."""
+"""Nothing a learner writes goes to Claude until they've agreed to it: at sign-up, or later from the page, and they can
+take it back. Apple's App Review guideline 5.1.2(i) asks for this before personal data reaches a third-party AI."""
 
 import time
 
@@ -8,45 +7,25 @@ from tests.test_app import persona
 from tests.test_usage import chat, records, starter
 
 
-def join(client):
-    r = client.post("/api/auth/signup", json={"email": "ada@example.com", "password": "correct horse",
-                                              "display_name": "Ada"})
+def join(client, agree=False):
+    body = {"email": "ada@example.com", "password": "correct horse", "display_name": "Ada"}
+    if agree:
+        body["ai_consent"] = True  # the box at sign-up
+    r = client.post("/api/auth/signup", json=body)
     assert r.status_code == 201, r.text
     return r.json()
 
 
-def turn(client, on):
-    r = client.post("/api/me/ai-consent", json={"agree": on})
-    assert r.status_code == 200, r.text
-    return r.json()
-
-
-def test_companions_reply_without_asking_first(client):
-    assert join(client)["ai_consent"] is True and client.get("/api/me").json()["ai_consent"] is True
-    assert chat(client, starter(client)).status_code == 200
-    assert [r["kind"] for r in records()] == ["chat"]
-
-
-def test_learners_who_never_agreed_get_replies_too(client):
-    from app import db
-
-    me = join(client)
-    with db.connect() as conn:  # as for everyone who joined while the site asked first, and didn't agree
-        row = conn.execute("SELECT ai_consent_at, ai_off_at FROM users WHERE id = ?", (me["id"],)).fetchone()
-    assert tuple(row) == (None, None)
-    assert chat(client, starter(client)).status_code == 200
-
-
-def test_turned_off_in_the_profile_nothing_goes_to_claude(client):
-    join(client)
+def test_without_agreeing_nothing_goes_to_claude(client):
+    assert join(client)["ai_consent"] is False
     companion = starter(client)
-    assert turn(client, on=False)["ai_consent"] is False and client.get("/api/me").json()["ai_consent"] is False
     r = chat(client, companion)
-    assert r.status_code == 403 and "profile" in r.json()["detail"] and "Anthropic" in r.json()["detail"]
+    assert r.status_code == 403 and r.headers["X-AI-Consent"] == "needed"
+    assert "Anthropic" in r.json()["detail"]
     for path, body in [("/api/assessments", {"kind": "quiz", "source_type": "lesson", "source_ref": "tokens"}),
                        ("/api/summaries", {"source_type": "lesson", "source_ref": "tokens"})]:
         r = client.post(path, json=body)
-        assert r.status_code == 403, (path, r.text)
+        assert r.status_code == 403 and r.headers["X-AI-Consent"] == "needed", (path, r.text)
     assert client.get("/api/lessons/tokens").status_code == 403
     # A companion still says hello, from a template rather than from Claude.
     opening = client.post(f"/api/companions/{companion}/opening", json={})
@@ -58,24 +37,46 @@ def test_turned_off_in_the_profile_nothing_goes_to_claude(client):
     assert records() == []
 
 
-def test_turned_back_on_replies_carry_on(client):
+def test_agreeing_later_lets_ai_requests_through_and_it_can_be_taken_back(client):
     join(client)
     companion = starter(client)
-    turn(client, on=False)
-    assert turn(client, on=True)["ai_consent"] is True
+    me = client.post("/api/me/ai-consent", json={"agree": True}).json()
+    assert me["ai_consent"] is True and client.get("/api/me").json()["ai_consent"] is True
     assert chat(client, companion).status_code == 200
     assert [r["kind"] for r in records()] == ["chat"]
 
-
-def test_turning_it_off_and_on_is_in_the_data_download(client):
-    join(client)
-    turn(client, on=False)
-    off = client.get("/api/me/export").json()["account"]
-    assert off["ai_off_at"][:4].isdigit() and off["ai_consent_at"] is None
-    turn(client, on=True)
-    on = client.get("/api/me/export").json()["account"]
-    assert on["ai_off_at"] is None and on["ai_consent_at"][:4].isdigit()
+    assert client.post("/api/me/ai-consent", json={"agree": False}).json()["ai_consent"] is False
+    r = chat(client, companion)
+    assert r.status_code == 403 and r.headers["X-AI-Consent"] == "needed"
+    assert len(records()) == 1
+    # When they took it back is in their data download.
+    account = client.get("/api/me/export").json()["account"]
+    assert account["ai_consent_at"] is None and account["ai_off_at"][:4].isdigit()
 
 
-def test_only_a_signed_in_learner_can_turn_it_off(client):
-    assert client.post("/api/me/ai-consent", json={"agree": False}).status_code == 401
+def test_learners_who_turned_claude_off_stay_off(client):
+    from app import db
+
+    me = join(client, agree=True)
+    with db.connect() as conn:  # agreed, then turned Claude off in their profile while the site didn't ask first
+        conn.execute("UPDATE users SET ai_off_at = ? WHERE id = ?", (db.now(), me["id"]))
+    assert client.get("/api/me").json()["ai_consent"] is False
+    assert chat(client, starter(client)).status_code == 403
+    assert client.post("/api/me/ai-consent", json={"agree": True}).json()["ai_consent"] is True
+
+
+def test_agreeing_at_sign_up_is_recorded_with_the_time(client):
+    from app import db
+
+    me = join(client, agree=True)
+    assert me["ai_consent"] is True
+    with db.connect() as conn:
+        when = conn.execute("SELECT ai_consent_at FROM users WHERE id = ?", (me["id"],)).fetchone()[0]
+    assert when and when[:4].isdigit()
+    assert chat(client, starter(client)).status_code == 200
+    # It's in the learner's data download too.
+    assert client.get("/api/me/export").json()["account"]["ai_consent_at"] == when
+
+
+def test_only_a_signed_in_learner_can_agree(client):
+    assert client.post("/api/me/ai-consent", json={"agree": True}).status_code == 401

@@ -569,11 +569,10 @@ MIGRATIONS = [
     # Months of Plus earned with referrals run until here, apart from any plan an admin gave (app/referrals.py).
     ("subscriptions", "reward_until", "TEXT"),
     # When the learner agreed that what they write, and their profile, may be sent to Anthropic's Claude for
-    # replies, lessons and feedback: at sign-up or when asked, while the site asked first, or since then by turning
-    # it back on in their profile.
+    # replies, lessons and feedback (app/usage.py asks for it before any AI request). NULL until they do.
     ("users", "ai_consent_at", "TEXT"),
-    # When the learner turned Claude off in their profile: AI requests are turned away until they turn it back on
-    # (app/usage.py). NULL for everyone else: nobody is asked first.
+    # When the learner took back their agreement in their profile (or turned Claude off there, while the site
+    # didn't ask first): AI requests wait until they agree again (app/usage.py).
     ("users", "ai_off_at", "TEXT"),
     # Words from the post's title for its address, /guides/<slug> or /posts/<slug> (app/paths.py). Given when the
     # post is written, and kept if its title changes, so links to it keep working.
