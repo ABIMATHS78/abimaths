@@ -19,7 +19,7 @@ from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
 from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, course_guide, courses, db,
                  digest, guides, insights, learning, legacy, llm, pages, photos, push, reactions, referrals, reminders,
-                 staff, usage)
+                 staff, tokens, usage)
 from app import plans
 from app.avatar import render_initials, render_svg
 from app.config import settings
@@ -64,6 +64,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
+app.add_middleware(tokens.Middleware)  # so the decision log can name the staff token behind a change
 app.include_router(learning.router)
 app.include_router(courses.router)
 app.include_router(courses.links)
@@ -79,6 +80,7 @@ app.include_router(referrals.links)
 app.include_router(campaigns.router)
 app.include_router(analytics.router)
 app.include_router(legacy.router)
+app.include_router(tokens.router)
 User = Depends(auth.current_user)
 # Pages anyone may open (a guide, a companion, a course) ask with this: the learner if signed in, None if not.
 Visitor = Depends(auth.optional_user)

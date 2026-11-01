@@ -5,12 +5,14 @@ import hmac
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Cookie, Depends, HTTPException, Response
+from fastapi import Cookie, Depends, Header, HTTPException, Request, Response
 
 from app import db
 from app.config import settings
 
 COOKIE = "aiet_session"
+# Staff tokens (app/tokens.py) start with this, so a tool's header is told apart from anything else.
+TOKEN_PREFIX = "aiet_"
 
 
 def hash_password(password: str) -> str:
@@ -71,8 +73,42 @@ def set_cookie(response: Response, token: str) -> None:
                         max_age=settings.session_days * 86400)
 
 
-def current_user(aiet_session: str | None = Cookie(default=None)) -> dict:
-    """FastAPI dependency: the signed-in user, or 401."""
+def bearer(header: str | None) -> str | None:
+    """The staff token in an "Authorization: Bearer ..." header, if it carries one."""
+    kind, _, value = (header or "").partition(" ")
+    value = value.strip()
+    return value if kind.lower() == "bearer" and value.startswith(TOKEN_PREFIX) else None
+
+
+def current_user(request: Request, aiet_session: str | None = Cookie(default=None),
+                 authorization: str | None = Header(default=None)) -> dict:
+    """FastAPI dependency: the signed-in user, or 401. A tool sends a staff token instead (app/tokens.py)."""
+    if not aiet_session and (token := bearer(authorization)):
+        return token_user(request.method, request.url.path, token)
+    return session_user(aiet_session)
+
+
+def token_user(method: str, path: str, token: str) -> dict:
+    """The admin a staff token is for, on the Staff pages' API only (and reading /api/me, to say whose it is):
+    never to make or cancel tokens, and only while they're an admin."""
+    staff_api = path.startswith("/api/staff/") and not path.startswith("/api/staff/tokens")
+    if not (staff_api or (path == "/api/me" and method == "GET")):
+        raise HTTPException(403, "Staff tokens only work on the Staff pages' API")
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT u.*, t.id AS staff_token_id FROM staff_tokens t JOIN users u ON u.id = t.user_id "
+            "WHERE t.token_hash = ? AND t.revoked_at IS NULL AND t.expires_at > ?", (hash_token(token), db.now())).fetchone()
+        if row is None:
+            raise HTTPException(401, "That token doesn't work: it was cancelled, it expired, or it was never one")
+        conn.execute("UPDATE staff_tokens SET last_used_at = ? WHERE id = ?", (db.now(), row["staff_token_id"]))
+    user = dict(row)
+    if role_of(user) != "admin":
+        raise HTTPException(403, "The admin this token is for isn't an admin any more")
+    return user
+
+
+def session_user(aiet_session: str | None) -> dict:
+    """The user a session cookie is for, or 401."""
     if not aiet_session:
         raise HTTPException(401, "Not signed in")
     with db.connect() as conn:
@@ -88,7 +124,7 @@ def current_user(aiet_session: str | None = Cookie(default=None)) -> dict:
 def optional_user(aiet_session: str | None = Cookie(default=None)) -> dict | None:
     """FastAPI dependency: the signed-in user, or None for anonymous visitors."""
     try:
-        return current_user(aiet_session)
+        return session_user(aiet_session)
     except HTTPException:
         return None
 

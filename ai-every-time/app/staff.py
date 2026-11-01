@@ -22,6 +22,11 @@ Admin = Depends(auth.require("admin"))
 
 
 def log(conn, staff_id: int, target_type: str, target_id: int, action: str, note: str = "") -> None:
+    """A staff decision, for the decision log. A change a tool made with a staff token says which token."""
+    from app import tokens  # imported here: tokens uses this module
+
+    if via := tokens.in_use(conn):
+        note = f"{note} · via token “{via}”" if note else f"via token “{via}”"
     conn.execute("INSERT INTO moderation_log (staff_id, target_type, target_id, action, note, created_at) "
                  "VALUES (?, ?, ?, ?, ?, ?)", (staff_id, target_type, target_id, action, note, db.now()))
 

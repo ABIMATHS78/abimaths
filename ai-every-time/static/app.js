@@ -5092,6 +5092,50 @@ async function staffCampaigns(body) {
 
 /* Payments and bringing the old site's members over, from the browser: what `python -m app.billing` and
    scripts/import_legacy.py do on the server's command line. */
+/* Tokens for tools (admins): a key a tool such as Claude Code uses to work these Staff pages for an admin, without
+   their password (app/tokens.py). It's shown once, when it's made. */
+async function staffTokens(card) {
+  const list = await api("/api/staff/tokens");
+  card.innerHTML = `
+    <div><h2 style="margin:0">Tokens for tools</h2>
+      <div class="muted small">A token lets a tool, such as Claude Code, use these Staff pages for an admin, without their password.
+        It works only here, never to sign in or to make more tokens. It stops when it expires, when it's cancelled, or when its
+        admin changes their password. Every change it makes is in the decision log, with its name.</div></div>
+    <form class="row" id="tokenForm">
+      <input type="text" name="name" maxlength="60" required placeholder="Its name, such as Claude Code" aria-label="Token name" style="flex:1">
+      <select name="days" aria-label="How long it lasts"><option value="7">7 days</option><option value="30">30 days</option>
+        <option value="90" selected>90 days</option><option value="365">A year</option></select>
+      <button class="btn primary">Make a token</button>
+    </form>
+    <div id="tokenNew"></div>
+    ${list.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Admin</th><th>Made</th><th>Last used</th><th>Expires</th><th></th></tr></thead><tbody>
+      ${list.map((t) => `<tr><td>${esc(t.name)}</td><td>${esc(t.admin)}</td><td class="small">${esc(timeAgo(t.created_at))}</td>
+        <td class="small">${t.last_used_at ? esc(timeAgo(t.last_used_at)) : "Not yet"}</td><td class="small">${esc(longDate(t.expires_at))}</td>
+        <td><button type="button" class="textbtn small" data-cancel-token="${t.id}" data-name="${esc(t.name)}">Cancel</button></td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="muted small">No tokens yet.</div>`}`;
+  $("#tokenForm", card).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    f.querySelector("button").disabled = true;
+    try {
+      const t = await api("/api/staff/tokens", { method: "POST", body: { name: f.name.value, days: Number(f.days.value) } });
+      await staffTokens(card);
+      $("#tokenNew", card).innerHTML = `<div class="alert stack">
+          <div><b>Copy “${esc(t.name)}” now: it won't be shown again.</b> Keep it secret, like a password, and put it only where the tool keeps its secrets.</div>
+          <div class="row link-row"><input type="text" readonly value="${esc(t.token)}" aria-label="The new token"><button type="button" class="btn" id="copyToken">Copy</button></div>
+        </div>`;
+      $("#copyToken", card).addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(t.token); toast("Copied"); } catch { toast("Select the token and copy it"); }
+      });
+    } catch (err) { if (!(err instanceof StaleView)) toast(err.message); f.querySelector("button").disabled = false; }
+  });
+  $$("[data-cancel-token]", card).forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm(`Cancel “${b.dataset.name}”? Any tool using it stops working at once.`)) return;
+    try { await api(`/api/staff/tokens/${b.dataset.cancelToken}`, { method: "DELETE" }); toast("Token cancelled"); await staffTokens(card); }
+    catch (err) { if (!(err instanceof StaleView)) toast(err.message); }
+  }));
+}
+
 async function staffSetup(body) {
   const s = await api("/api/staff/stripe");
   const ok = (v) => (v ? "✅" : "⚠️");
@@ -5131,7 +5175,9 @@ async function staffSetup(body) {
       <label class="check"><input type="checkbox" name="refresh_subscriptions"> Update the plans of members already brought over (a newer export)</label>
       <div class="row"><button class="btn" data-run="check">Check</button><button class="btn primary" data-run="import" disabled>Import</button></div>
       <div id="importOut"></div>
-    </form>`;
+    </form>
+    <div class="card stack" id="tokensCard"></div>`;
+  staffTokens($("#tokensCard", body));
   $$("[data-copy]", body).forEach((b) => b.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(b.dataset.copy); toast("Copied"); } catch { toast(b.dataset.copy); }
   }));
