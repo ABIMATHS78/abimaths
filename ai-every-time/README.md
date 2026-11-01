@@ -59,6 +59,7 @@ It includes the companion core (starter companions, the companion designer, chat
 | **Emails about plans, news and offers** | Billing emails (a plan started, a trial ending, a payment that didn't go through, a plan that ended) go to whoever they concern. News and offers only go to learners who ticked the box at sign-up or on their profile and confirmed their address: the unfinished-checkout reminder, a weekly series of seven for learners on the free plan from their fourth day, and emails admins write on the Emails tab, sent a batch every quarter of an hour. Every one has a one-click unsubscribe, and links are tagged so the analytics show which bring people back. |
 | **Members of the old site** | `scripts/import_legacy.py` brings the old site's accounts and subscriptions over on the server, keeping each account's plan, its Stripe subscription, its role and its password. See [Bringing over the old site's members](#bringing-over-the-old-sites-members). |
 | **Setup** | Admins set up payments and bring the old site's members over from the browser: whether Stripe's keys are set, the webhook to add in Stripe, the price behind each plan (and making them), checking subscriptions against Stripe and bringing them up to date, and importing the old site's exports with a check first. |
+| **Tokens for tools** | An admin makes a token on the Staff page's Setup tab for a tool such as Claude Code, which then works the Staff pages' API for them, without their password (`Authorization: Bearer aiet_…`). `scripts/staff_api.py` uses one to give and take back plans, find people and read the decision log from a terminal. A token is shown once and only its hash is kept. It works only on `/api/staff/` (and `/api/me`), never to make or cancel tokens, and only while its admin is an admin, until it expires (7 days to a year), someone cancels it, or the admin changes their password or signs out their other devices. Every change made with one is in the decision log, with the token's name. |
 | **Analytics** | Admins see, for the last 7, 30 or 90 days: learners and new sign-ups per day, paying members, trials, monthly recurring revenue, revenue per day and by plan, the latest payments, members on each plan, plan changes per day and between which plans, conversations and questions per day (counted, never read), the companions asked the most, referrals, emails, where new learners came from, and how the move from the old site is going. Learners appear by name with their email address shortened; Stripe's ids aren't shown. |
 | **AI and your data** | Companions are Claude, so what learners write to them goes to Anthropic. Nothing does until they agree, with a box at sign-up or a question on the first page they open, once a visit until they do, and whenever a request needs Claude. Until they agree, companions greet them from a template, and AI requests are refused with a 403 that the page answers by asking. They can take it back in the profile, and when they agreed, or took it back, is in their data download. Apple asks this of apps too (App Review guideline 5.1.2(i)). |
 | **Blocking** | A learner can block the designer of a community companion: they stop seeing the companions that person designs, and their posts, and stop following them. They can unblock them in the profile. |
@@ -287,6 +288,7 @@ The tests run in offline mode and cover:
 - reminders
 - upgrading an older database
 - staff roles and permissions
+- staff tokens: shown once and kept as a hash; a tool giving a plan with one, named in the decision log; refused everywhere else, including making or cancelling tokens; cancelled and expired tokens, a former admin's, and those of an admin who changed their password refused; a signed-in session coming first
 - moderation: restore, dismiss, remove, logging and notices to designers
 - path review: approve with corrections, reject, resubmit, withdraw, unshare, no self-approval
 - email reminders: opt-in, daily digest at the learner's hour, sending, one-click unsubscribe
@@ -349,6 +351,7 @@ app/
   learning.py           Learning API: paths (curated + custom), lessons, assessments, decks and reviews, plans, progress
   reminders.py          What's waiting for the learner (and for staff), worked out from existing data
   staff.py              Moderation queue, appeals, path review queue, roles, decision log
+  tokens.py             Staff tokens: keys for tools such as Claude Code to work the Staff pages' API
   digest.py             Daily reminder email over SMTP, confirming addresses, and unsubscribe
   usage.py              The daily AI allowance, and a record of every AI request with its tokens
   insights.py           The admin Insights page
@@ -369,6 +372,7 @@ scripts/courses/        Writing courses: the guide to the format and its standar
 scripts/graphics/       Correcting the spelling in the guides' graphics, and the corrections (see its README)
 scripts/guides/         The graphics and printable downloads of the guides written here, in HTML, and render.py to make them
 scripts/screenshots/    Screenshots of the app as a learner sees it, and slides for social media (see its README)
+scripts/staff_api.py   Gives and takes back plans, finds people and reads the decision log with a staff token
 scripts/make_icons.py   Makes the logo image and the app icons from the logo (scripts/logo.webp); run it if the logo changes
 Dockerfile              The image for deploying it (see Deploy it)
 ```

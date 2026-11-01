@@ -66,11 +66,12 @@ def _confirm_password(user: dict, password: str) -> None:
 
 
 def _sign_out_elsewhere(conn, user_id: int, keep_session: str | None, keep_device: str | None) -> None:
-    """End every other session, stop notifications on every other device, and cancel reset links:
-    whoever is securing the account shouldn't leave a way back in."""
+    """End every other session, stop notifications on every other device, and cancel reset links and staff
+    tokens: whoever is securing the account shouldn't leave a way back in."""
     conn.execute("DELETE FROM sessions WHERE user_id = ? AND token IS NOT ?", (user_id, keep_session))
     conn.execute("DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint IS NOT ?", (user_id, keep_device))
     conn.execute("UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL", (db.now(), user_id))
+    conn.execute("UPDATE staff_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (db.now(), user_id))
 
 
 # -------------------------------------------------------------- forgotten password
