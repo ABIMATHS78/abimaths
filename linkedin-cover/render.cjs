@@ -20,6 +20,10 @@ const out = path.resolve(args.find(a => !a.startsWith('--')) ?? path.join(__dirn
   const url = pathToFileURL(path.join(__dirname, 'cover.html')).href + (debug ? '?debug' : '');
   await page.goto(url);
   await page.waitForSelector('body[data-ready="1"]');
+  // The design's fonts come from Google Fonts; warn instead of silently rendering a fallback.
+  const missing = await page.evaluate(() =>
+    ["500 88px 'Bodoni Moda'", "400 30px 'Inter'"].filter(f => !document.fonts.check(f)));
+  if (missing.length) console.warn(`warning: fonts not loaded (offline?): ${missing.join(', ')}`);
   await page.screenshot({ path: out, clip: { x: 0, y: 0, width: W, height: H } });
   await browser.close();
   console.log(`wrote ${out}`);

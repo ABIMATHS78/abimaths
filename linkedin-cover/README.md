@@ -6,15 +6,20 @@
 for a personal profile background (4:1). It fits the upload frame exactly, so
 there's nothing to crop.
 
-**Concept: noise → signal → decision → impact.** Scattered data points narrow
-into one clean trend line that ends at a single amber point, the decision. On
-the right, the same dots line up as a rising column chart, the impact. The
-amber full stop after "Data Leader" is the same mark as the decision point.
+**Style.** It's drawn like a strategy-consulting exhibit: a bright off-white
+background, a few deep-navy elements, and one electric-blue highlight. The
+headline is set in a Bodoni serif, with clean sans-serif text and plenty of
+white space. There's no consultancy name or logo on it, so it's your own design.
 
-**Safe zones.** All text sits between x = 663 and 1190 px. That keeps it clear
-of the bottom-left corner the profile photo covers and inside the central 60%
-of the width that some phone layouts show. Only the decorative scatter goes
-under the photo.
+**The chart** is a waterfall, the classic consulting exhibit: **Data + Insight +
+Decision = Impact**. The total, Impact, is the one bar in electric blue,
+matching the short rule under the subtitle. The bar heights are illustrative,
+not real figures.
+
+**Safe zones.** All text sits between x = 478 and 971 px, clear of the corner
+the profile photo covers on both desktop and phone. The chart ends at
+x = 1368 px, so everything fits the centre 80% of the width that some phone
+layouts show.
 
 ## Upload
 
@@ -24,13 +29,14 @@ under the photo.
 
 ## Edit and re-render
 
-Change `HEADLINE`, `SUBTITLE`, `PIPELINE`, or the colours in `C` at the top of
-the script in `cover.html`, then run:
+Change `HEADLINE`, `SUBTITLE`, `TAGLINE`, `STEPS` or the colours in `C` at the
+top of the script in `cover.html`, then run:
 
 ```bash
 node linkedin-cover/render.cjs
 ```
 
-This needs Node, Playwright with Chromium, and three free fonts: Inter, Inter
-Display and JetBrains Mono. To draw the profile-photo and phone-crop guides on
-top, run `node linkedin-cover/render.cjs preview.png --debug`.
+This needs Node, Playwright with Chromium, and an internet connection, because
+the fonts (Bodoni Moda, Inter) load from Google Fonts. To draw the
+profile-photo and phone-crop guides on top, run
+`node linkedin-cover/render.cjs preview.png --debug`.
