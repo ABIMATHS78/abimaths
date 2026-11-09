@@ -19,6 +19,9 @@ final class WebController: NSObject, ObservableObject {
     @Published private(set) var started = false
     /// Why the site couldn't be reached, while the offline screen shows.
     @Published private(set) var failure: String?
+    /// Whether the site answered that it's busy or restarting (a 502, 503 or 504), as it does for a minute while a new
+    /// version goes live: the app says so, and tries again by itself until the site is back.
+    @Published private(set) var updating = false
 
     private var lastURL = AppConfig.startURL
     private var downloads: [ObjectIdentifier: URL] = [:]
@@ -61,10 +64,23 @@ final class WebController: NSObject, ObservableObject {
         webView.load(URLRequest(url: url))
     }
 
-    /// Loads the page again after it failed to load.
+    /// Loads the page again after it failed to load. While the site is updating, the updating screen stays up until
+    /// the page has loaded, rather than flashing away at every try.
     func retry() {
-        failure = nil
+        if !updating { failure = nil }
         webView.load(URLRequest(url: lastURL))
+    }
+
+    /// The site is busy or restarting: show that, and try again in a few seconds, until it answers.
+    private func siteUpdating(_ url: URL, status: Int) {
+        lastURL = url
+        updating = true
+        failure = "The site answered \(status). It'll be back in a moment."
+        started = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if let self, self.updating { self.retry() }
+        }
     }
 
     /// Tries again by itself when the connection comes back while the offline screen shows.
@@ -145,8 +161,15 @@ extension WebController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        let disposition = (navigationResponse.response as? HTTPURLResponse)?
-            .value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
+        let http = navigationResponse.response as? HTTPURLResponse
+        // The host's "Bad Gateway" page while the site restarts: never show it, say the site is updating instead.
+        if navigationResponse.isForMainFrame, let http, [502, 503, 504].contains(http.statusCode),
+           let url = http.url, AppConfig.isSite(url) {
+            decisionHandler(.cancel)
+            siteUpdating(url, status: http.statusCode)
+            return
+        }
+        let disposition = http?.value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
         decisionHandler(disposition.hasPrefix("attachment") || !navigationResponse.canShowMIMEType ? .download : .allow)
     }
 
@@ -160,6 +183,7 @@ extension WebController: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         failure = nil
+        updating = false
         started = true
         if let url = webView.url, AppConfig.isSite(url) { lastURL = url }
     }

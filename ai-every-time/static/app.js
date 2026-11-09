@@ -720,6 +720,7 @@ function shell(active, inner) {
   if (state.me?.role && state.me.role !== "learner") pages.push(["staff", "🛡️", "Staff"]);
   if (primary) pages.push(["mine", "💬", "My companion", "Chat", "/my-companion"]);
   pages.push(["studio", "✨", "Design a companion", "Design", "/companions/new"]);
+  pages.push(["about", "ℹ️", "About us", "About"]);
   const link = ([key, icon, name, short, href = `/${key}`]) =>
     `<a href="${href}"${active === key ? ` class="active" aria-current="page"` : ""}>${navItem(icon, name, short)}</a>`;
   const tabs = ["feed", "guides", "courses", "learn", primary ? "mine" : "companions"].map((k) => pages.find((p) => p[0] === k));
@@ -811,7 +812,7 @@ async function viewWelcome(m, q) {
         <div class="faces" id="faces"></div>
         <p class="muted small">Available 24/7 · Remembers you · Courses, quizzes and tutoring that continue where the content ends</p>
         <p class="row"><a class="btn ghost" href="/guides">Read the guides</a><a class="btn ghost" href="/courses">See the courses</a>
-          ${forSale(`<a class="btn ghost" href="/pricing">Plans and pricing</a>`)}</p>
+          ${forSale(`<a class="btn ghost" href="/pricing">Plans and pricing</a>`)}<a class="btn ghost" href="/about">About us</a></p>
         <div class="get-app stack" id="getApp" hidden></div>
         <p class="muted small"><a href="/about">About us</a> · <a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
       </div>

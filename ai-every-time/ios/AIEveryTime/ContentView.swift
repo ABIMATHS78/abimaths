@@ -19,7 +19,7 @@ struct ContentView: View {
                 LaunchCover().transition(.opacity)
             }
             if let failure = web.failure {
-                OfflineView(detail: failure, retry: web.retry).transition(.opacity)
+                OfflineView(detail: failure, updating: web.updating, retry: web.retry).transition(.opacity)
             }
         }
         .animation(.easeOut(duration: 0.25), value: web.started)
