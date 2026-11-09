@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, course_guide, courses, db,
+from app import (about, account, analytics, auth, billing, campaigns, catalog, companions, content, course_guide, courses, db,
                  digest, guides, insights, learning, legacy, llm, pages, photos, push, reactions, referrals, reminders,
                  staff, tokens, usage)
 from app import plans, seo
@@ -932,6 +932,12 @@ class Static(StaticFiles):
 # Videos' captions: browsers use them only as text/vtt, which not every Python's list of file types knows.
 mimetypes.add_type("text/vtt", ".vtt")
 app.mount("/static", Static(directory=STATIC), name="static")
+
+
+@app.get("/api/about")
+def about_info():
+    """The About page: the mission, what the site offers, counted, and its founder."""
+    return about.page()
 
 
 @app.get("/api/site")

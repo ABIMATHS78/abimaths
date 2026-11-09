@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app import catalog, companions, content, courses, db, paths, seo
+from app import about, catalog, companions, content, courses, db, paths, seo
 from app.config import settings
 
 INDEX = Path(__file__).resolve().parent.parent / "static" / "index.html"
@@ -30,6 +30,7 @@ NAMED = {
     "flashcards": ("Flashcard review", False), "progress": ("Your progress", False), "profile": ("Your profile", False),
     "pricing": ("Plans and pricing", True), "billing": ("Plan and billing", False),
     "invite-friends": ("Invite friends", False), "privacy": ("Privacy", True), "support": ("Help and support", True),
+    "about": ("About AI Every Time", True),
     "staff": ("Staff", False),
 }
 DESCRIBED = {
@@ -40,6 +41,8 @@ DESCRIBED = {
     "courses": "AI courses taught by AI Learning Companions: lessons in their own voice, hands-on labs, projects they "
                "review, graded quizzes and a certificate when you finish.",
     "pricing": "AI Every Time is free to use, with limits. Plans open every guide, full courses and more AI requests.",
+    "about": "AI Every Time is a 24/7 AI learning hub, founded and led by Mojeed Abisiga: AI Learning Companions, "
+             "guides, and courses with hands-on labs and certificates.",
 }
 # Pages for one of something of the learner's own: its name, and what a valid one looks like.
 OWN = {"reset-password": ("Choose a new password", r"[\w-]{1,200}"), "lessons": ("Lesson", r"[\w-]{1,200}"),
@@ -75,9 +78,11 @@ def describe(path: str, user: dict | None) -> Page:
         found = Page(title, DESCRIBED.get(first), public=public)
         if public:
             made = {"": seo.home, "courses": seo.courses_page, "guides": seo.guides_page,
-                    "companions": seo.companions_page}.get(first)
+                    "companions": seo.companions_page, "about": seo.about_page}.get(first)
             found.body, found.ld = made() if made else seo.simple(title, DESCRIBED.get(first),
                                                                    (title, f"/{first}") if title else None)
+        if first == "about":  # its link preview shows the founder
+            found.image, found.size = about.FOUNDER["photo"], (800, 800)
         return found
     ref, _, more = rest.partition("/")
     more = f"/{more}" if more else ""

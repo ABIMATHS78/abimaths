@@ -537,6 +537,7 @@ const routes = [
   [/^\/certificates\/([A-Za-z0-9]+)$/, viewCertificate, null],
   [/^\/privacy$/, viewPrivacy, null],
   [/^\/support$/, viewSupport, null],
+  [/^\/about$/, viewAbout, null],
   [/^\/learn$/, viewLearn],
   [/^\/lessons\/([\w-]+)$/, viewLesson],
   [/^\/quizzes\/(\d+)$/, viewQuiz],
@@ -812,7 +813,7 @@ async function viewWelcome(m, q) {
         <p class="row"><a class="btn ghost" href="/guides">Read the guides</a><a class="btn ghost" href="/courses">See the courses</a>
           ${forSale(`<a class="btn ghost" href="/pricing">Plans and pricing</a>`)}</p>
         <div class="get-app stack" id="getApp" hidden></div>
-        <p class="muted small"><a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
+        <p class="muted small"><a href="/about">About us</a> · <a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
       </div>
       <div class="card">
         <div class="tabs">
@@ -950,7 +951,7 @@ const site = () => (siteInfo ||= fetch("/api/site").then((r) => (r.ok ? r.json()
 function openPage(html, active = "", mainClass = active ? "public-page wide" : "public-page") {
   if (state.me) return shell(active, html);
   app.innerHTML = `<div class="public-top"><a class="home plain" href="/" aria-label="AI Every Time home">${logo(34)}</a>
-      <nav class="public-nav" aria-label="Pages">${[["guides", "Guides"], ["courses", "Courses"], ["companions", "Companions"]].map(([key, name]) =>
+      <nav class="public-nav" aria-label="Pages">${[["guides", "Guides"], ["courses", "Courses"], ["companions", "Companions"], ["about", "About"]].map(([key, name]) =>
         `<a href="/${key}"${active === key ? ` class="active" aria-current="page"` : ""}>${name}</a>`).join("")}</nav>
       <div class="row">${signLinks()}</div></div>
     <main class="${mainClass}">${html}</main>`;
@@ -1070,6 +1071,62 @@ async function viewSupport() {
     ${forSale(`<h3>My plan</h3>
     <p>See or change your plan in your profile, under <i>Plan and billing</i>.</p>`)}
   </article>`);
+}
+
+/* About AI Every Time: what it is and offers, counted, and who leads it (app/about.py). */
+async function viewAbout() {
+  const a = await api("/api/about"), f = a.founder, n = a.stats;
+  document.title = "About · AI Every Time";
+  const start = state.me ? `<a class="btn primary" href="/courses">Explore the courses</a>`
+    : `<a class="btn primary" href="/signup?next=%2Fcourses">Start learning free</a>`;
+  const stat = (value, label) => `<div class="about-stat"><b>${esc(String(value))}</b><span>${esc(label)}</span></div>`;
+  const [first, ...rest] = f.bio;
+  openPage(`<div class="about">
+    <section class="about-hero">
+      <p class="eyebrow">About us</p>
+      <h1>Learn AI with someone beside you, <em>every time</em>.</h1>
+      <p class="lead">${esc(a.mission)}</p>
+      <div class="row">${start}<a class="btn ghost" href="#leadership">Meet our founder</a></div>
+    </section>
+    <section class="about-stats" aria-label="AI Every Time in numbers">
+      ${stat(n.courses, "courses and guided projects")}${stat(n.tracks, "Professional Certificates and Specializations")}
+      ${stat(fmtCount(n.guides), "guides and cheat sheets")}${stat(n.companions, "AI Learning Companions")}${stat("24/7", "always open, wherever you are")}
+    </section>
+    <section class="about-story">
+      <div><p class="eyebrow">Our story</p><h2>Learning that doesn't stop when the content ends</h2></div>
+      <div class="prose">${a.story.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
+    </section>
+    <section class="stack">
+      <div><p class="eyebrow">What we offer</p><h2>Everything you need to learn AI by doing</h2></div>
+      <div class="about-offers">${a.offers.map((o) => `<div class="about-offer"><span class="about-icon" aria-hidden="true">${o.icon}</span>
+        <h3>${esc(o.title)}</h3><p>${esc(o.text)}</p></div>`).join("")}</div>
+    </section>
+    <section class="about-leader" id="leadership" aria-labelledby="leaderTitle">
+      <div><p class="eyebrow">Leadership</p><h2 id="leaderTitle">Meet our founder</h2></div>
+      <article class="leader-card" id="${esc(f.slug)}">
+        <div class="leader-side">
+          <div class="leader-photo"><img src="${esc(f.photo)}" alt="${esc(f.name)}, ${esc(f.title)} of AI Every Time" width="800" height="800"></div>
+          <h3>${esc(f.name)}</h3>
+          <p class="leader-title">${esc(f.title)}, AI Every Time</p>
+          <p class="muted small">${esc(f.also)}</p>
+          <div class="leader-numbers">${f.numbers.map((x) => `<div><b>${esc(x.value)}</b><span>${esc(x.label)}</span></div>`).join("")}</div>
+        </div>
+        <div class="leader-bio">
+          <p class="leader-summary">${esc(f.summary)}</p>
+          <div class="prose"><p>${esc(first).replace(esc(f.name), `<b>${esc(f.name)}</b>`)}</p>${rest.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
+          <h4>Experience</h4>
+          <div class="leader-chips">${f.experience.map((x) => `<span>${esc(x)}</span>`).join("")}</div>
+          <h4>Recognition</h4>
+          <ul class="leader-honours">${f.honours.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        </div>
+      </article>
+    </section>
+    <section class="about-cta">
+      <h2>Start learning AI today</h2>
+      <p>Pick a course, read a guide, or say hello to a companion. It's free to start, and someone's always there to help.</p>
+      <div class="row">${start}<a class="btn ghost" href="/companions">Meet the companions</a></div>
+    </section>
+  </div>`, "about");
 }
 
 /* Adding the site to the Home Screen makes it an app of its own on iPhone and iPad, with notifications. Safari has no
@@ -2446,7 +2503,7 @@ async function viewProfile() {
       </div>
       <div class="card stack" id="blockedCard" hidden></div>
       <div class="card get-app stack" id="getApp" hidden></div>
-      <p class="muted small"><a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
+      <p class="muted small"><a href="/about">About us</a> · <a href="/support">Help and support</a> · <a href="/privacy">Privacy</a></p>
     </div>`);
   const f = $("#prof", main);
   f.display_name.value = me.display_name; f.level.value = me.level; f.goals.value = me.goals; f.interests.value = me.interests || "";

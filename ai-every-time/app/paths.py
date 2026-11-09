@@ -15,7 +15,7 @@ from app.config import settings
 PAGES = frozenset({
     "", "signin", "signup", "reset-password", "get-started", "feed", "guides", "posts", "companions", "my-companion",
     "courses", "tracks", "certificates", "learn", "lessons", "quizzes", "practice", "flashcards", "progress",
-    "profile", "pricing", "billing", "invite-friends", "privacy", "support", "staff",
+    "profile", "pricing", "billing", "invite-friends", "privacy", "support", "staff", "about",
 })
 
 FEED = "/feed"
