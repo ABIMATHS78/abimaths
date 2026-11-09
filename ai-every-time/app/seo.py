@@ -35,6 +35,8 @@ PLAIN = (("/", "daily"), ("/courses", "weekly"), ("/guides", "daily"), ("/compan
 CRAWLERS = ("Googlebot", "Bingbot", "Google-Extended", "GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot",
             "Claude-SearchBot", "Claude-User", "PerplexityBot", "Perplexity-User", "Applebot", "Applebot-Extended",
             "DuckDuckBot", "meta-externalagent", "Amazonbot", "CCBot", "YandexBot")
+
+
 def url(address: str) -> str:
     return address if address.startswith("https://") else f"{settings.public_url}{address}"
 
@@ -95,8 +97,9 @@ def sitemap() -> str:
     return "\n".join(lines) + "\n"
 
 
-def llms() -> str:
-    """A plain summary of the site for AI assistants (llmstxt.org): what it is, and links to everything public."""
+def llms(full: bool = False) -> str:
+    """A plain summary of the site for AI assistants (llmstxt.org): what it is, and links to its main pages, tracks,
+    courses and companions. The full version (/llms-full.txt) lists every guide too."""
     cat = catalog.data()
     cast = _public_companions()
     guides = [p for p in _public_posts({c["id"]: c for c in cast}) if p["kind"]]
@@ -106,7 +109,7 @@ def llms() -> str:
            "", "## Main pages", "",
            f"- [Courses]({url('/courses')}): {len(cat.courses)} courses and guided projects on AI, data, software, "
            "networking, security and cloud, with labs, projects, quizzes and certificates",
-           f"- [Guides]({url('/guides')}): tutorials and cheat sheets on AI by AI Learning Companions",
+           f"- [Guides]({url('/guides')}): {len(guides)} tutorials and cheat sheets on AI by AI Learning Companions",
            f"- [AI Learning Companions]({url('/companions')}): AI tutors from around the world to chat with and learn from",
            f"- [Plans and pricing]({url('/pricing')})", f"- [Help and support]({url('/support')})",
            f"- [Privacy]({url('/privacy')})", "", "## Professional Certificates and Specializations", ""]
@@ -122,10 +125,12 @@ def llms() -> str:
         p = c["persona"]
         what = p.get("tagline") or ", ".join(p.get("expertise") or [])
         out.append(f"- [{p['name']}]({url(paths.companion(c))})" + (f": {what}" if what else ""))
-    if guides:
+    if full and guides:
         out += ["", "## Guides", ""]
         out += [f"- [{g['title']}]({url(paths.post(g))})" + (f": {g['summary']}" if g.get("summary") else "")
                 for g in guides]
+    elif guides:
+        out += ["", "## Optional", "", f"- [Every guide, with a summary of each]({url('/llms-full.txt')})"]
     return "\n".join(out) + "\n"
 
 
@@ -264,7 +269,7 @@ def course_page(c) -> tuple[str, list[dict]]:
     body.append(f'<p><a href="/signup?next={paths.course(c.slug)}">Start the course free</a></p>')
     hours = f"PT{max(1, round(c.hours))}H"
     course = {"@type": "Course", "@id": url(paths.course(c.slug)) + "#course", "name": c.title,
-              "description": c.subtitle + " " + c.description.split("\n\n")[0], "url": url(paths.course(c.slug)),
+              "description": c.subtitle, "url": url(paths.course(c.slug)),
               "provider": {"@id": url("/#organization")}, "educationalLevel": c.level.capitalize(),
               "inLanguage": "en", "teaches": c.outcomes, "keywords": ", ".join([*c.skills, *c.tools]),
               "coursePrerequisites": c.prerequisites, "timeRequired": hours,

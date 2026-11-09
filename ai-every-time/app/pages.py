@@ -23,7 +23,7 @@ DEFAULT_IMAGE = "/static/icons/icon-512.png"
 # Pages that are only their name: their title, and whether anyone may open them (the rest are for learners signed in,
 # and stay out of search engines).
 NAMED = {
-    "": (None, True), "signin": ("Sign in", True), "signup": ("Create your free account", True),
+    "": (None, True), "signin": ("Sign in", False), "signup": ("Create your free account", True),
     "get-started": ("Get started", False), "feed": ("Your feed", False), "guides": ("Guides", True),
     "companions": ("AI Learning Companions", True), "my-companion": ("Your companion", False),
     "courses": ("Courses", True), "learn": ("Learning paths", False), "practice": ("Practice", False),

@@ -110,7 +110,7 @@ Notifications need two things. First, a contact address that browsers' push serv
 | `AIET_ADMIN_EMAILS` | — | Comma-separated emails that are always admins (once confirmed, while email is set up) |
 | `AIET_SMTP_HOST`, `AIET_SMTP_PORT`, `AIET_SMTP_USER`, `AIET_SMTP_PASSWORD`, `AIET_SMTP_STARTTLS` | — / 587 / — / — / on | SMTP server for reminder, confirmation and password-reset emails; email is off while `AIET_SMTP_HOST` is unset |
 | `AIET_MAIL_FROM` | — | Sender address for emails (required for email) |
-| `AIET_PUBLIC_URL` | on Render, its `onrender.com` address; else `http://127.0.0.1:8000` | The site's public address, used for links in emails and Stripe's return pages |
+| `AIET_PUBLIC_URL` | on Render, its `onrender.com` address; else `http://127.0.0.1:8000` | The site's public address (`https://www.aieverytime.org`), used for links in emails, Stripe's return pages, each page's canonical address and the sitemap. Once it's set, pages asked for at the `onrender.com` address move to it |
 | `AIET_REMINDER_HOUR` | `7` | Default hour of the daily reminder in each learner's own time zone (UTC until it's known); learners can change it. `AIET_DIGEST_HOUR_UTC` still works as the old name |
 | `AIET_PUSH_CONTACT` | from `AIET_MAIL_FROM` or an https `AIET_PUBLIC_URL` | `mailto:` address or `https://` site that push services can contact you at; notifications are off without one |
 | `AIET_AI_ALLOWANCE` | `100` | AI requests each learner can make in any 24 hours (mock exams and custom paths count two); `0` for no limit. It applies in demo mode too |
@@ -199,6 +199,16 @@ What each plan costs and unlocks is in `app/plans.py`, which both the server and
 Teams is set up by hand: make the customer's subscription in Stripe with the `aiet_teams_monthly` price (as many as there are members) or invoice them, then give each member the Teams plan on the People tab.
 
 Event discounts are shown on each member's Plan and billing page; the tickets themselves are sold outside this app, so the discount is honoured there.
+
+### Search engines and AI assistants
+
+Every page anyone can open comes from the server with its content already in it as plain HTML (headings, text and links), so search engines and AI assistants' crawlers, most of which don't run JavaScript, can read it; the app draws the page over it as it loads. A guide shows crawlers what it shows visitors who aren't signed in: its start. Each such page also carries schema.org structured data: Organization and WebSite on every page, Course, Article or ProfilePage on a course, guide or companion, and breadcrumbs (`app/seo.py`).
+
+- `/sitemap.xml` lists every public page at its one address: courses, tracks, companions and guides. Each answers 200 itself, isn't marked noindex and names itself as its canonical address, so Google has no reason to leave any of them out.
+- `/robots.txt` lets every crawler read everything, AI assistants' included (GPTBot, OAI-SearchBot, ClaudeBot, Google-Extended, PerplexityBot and more), and names the sitemap. Pages for one learner say noindex themselves; the app's data (`/api/`) says so in an `X-Robots-Tag` header.
+- `/llms.txt` sums up the site for AI assistants, with links to its tracks, courses and companions; `/llms-full.txt` lists every guide too.
+
+For all of it to name the right address, set `AIET_PUBLIC_URL` to `https://www.aieverytime.org`. Then add the site to [Google Search Console](https://search.google.com/search-console) and [Bing Webmaster Tools](https://www.bing.com/webmasters) (Bing's index also feeds Copilot and DuckDuckGo) and submit `https://www.aieverytime.org/sitemap.xml` in each.
 
 ### Bringing over the old site's members
 

@@ -982,6 +982,13 @@ def llms_txt():
     return Response(seo.llms(), media_type="text/plain; charset=utf-8", headers={"Cache-Control": "public, max-age=3600"})
 
 
+@app.get("/llms-full.txt", include_in_schema=False)
+def llms_full_txt():
+    """llms.txt with every guide listed too."""
+    return Response(seo.llms(full=True), media_type="text/plain; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():
     # Served from the root so it can show notifications for the whole app; no-cache so updates reach devices.
