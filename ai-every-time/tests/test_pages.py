@@ -97,7 +97,7 @@ def test_a_shared_guide_shows_what_it_is_in_its_link_preview(client, guides):
     assert tags["description"] == tags["og:description"] == "How large language models work, in five minutes."
     assert tags["og:image"] == "https://cdn.example/generated/11.png" and tags["twitter:card"] == "summary_large_image"
     assert tags["canonical"] == tags["og:url"] == f"{settings.public_url}/guides/{first['slug']}"
-    assert "robots" not in tags  # for search engines too
+    assert "noindex" not in tags.get("robots", "")  # for search engines too
 
 
 def test_links_from_before_move_to_the_words(client, guides):
@@ -124,7 +124,7 @@ def test_pages_for_learners_stay_out_of_search_engines(client):
     for address in ("/feed", "/profile", "/flashcards", "/flashcards/3", "/lessons/what-is-ai", "/staff/reports"):
         page = client.get(address)
         assert page.status_code == 200 and head(page)["robots"] == "noindex", address
-    assert "robots" not in head(client.get("/courses"))
+    assert "noindex" not in head(client.get("/courses")).get("robots", "")
 
 
 def test_a_visitor_reads_the_start_of_a_guide(client, guides):

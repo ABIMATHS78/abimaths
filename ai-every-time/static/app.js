@@ -3691,7 +3691,7 @@ async function viewCourses(m, query) {
 
 const allItems = (c) => [...c.syllabus.flatMap((mod) => mod.items.map((i) => ({ ...i, module: mod }))), ...(c.project ? [c.project] : [])];
 const itemLine = (i) => ({
-  lesson: `Lesson${i.walkthrough ? ` with a ${i.walkthrough} walkthrough` : ""}${i.video ? " and video" : ""}`,
+  lesson: `Lesson${i.walkthrough ? ` with ${/^[aeiou]/i.test(i.walkthrough) ? "an" : "a"} ${i.walkthrough} walkthrough` : ""}${i.video ? " and video" : ""}`,
   lab: `Hands-on lab in ${i.tool}`, quiz: `Graded quiz · ${i.questions} questions`, project: "Capstone project",
 }[i.type]) + ` · ${duration(i.minutes)}`;
 

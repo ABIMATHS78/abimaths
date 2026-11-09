@@ -21,7 +21,7 @@ from pydantic import AfterValidator, BaseModel, EmailStr, Field
 from app import (account, analytics, auth, billing, campaigns, catalog, companions, content, course_guide, courses, db,
                  digest, guides, insights, learning, legacy, llm, pages, photos, push, reactions, referrals, reminders,
                  staff, tokens, usage)
-from app import plans
+from app import plans, seo
 from app.avatar import render_initials, render_svg
 from app.config import settings
 from app.persona import EXPERTISE_AREAS, Avatar, Persona
@@ -66,6 +66,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="AI Every Time", lifespan=lifespan)
 app.add_middleware(tokens.Middleware)  # so the decision log can name the staff token behind a change
+app.add_middleware(seo.Middleware)  # one address for each page, and the app's data kept out of search results
 app.include_router(learning.router)
 app.include_router(courses.router)
 app.include_router(courses.links)
@@ -962,6 +963,30 @@ def healthz():
 def favicon():
     # Browsers ask for this on pages that don't name an icon, such as an email link opened in a new tab.
     return FileResponse(STATIC / "icons" / "favicon-32.png", media_type="image/png")
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    return Response(seo.robots(), media_type="text/plain; charset=utf-8", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml():
+    """Every page anyone can open, each at its own address, for search engines (app/seo.py)."""
+    return Response(seo.sitemap(), media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/llms.txt", include_in_schema=False)
+def llms_txt():
+    """The site in plain words, with links to every course, track, companion and guide, for AI assistants."""
+    return Response(seo.llms(), media_type="text/plain; charset=utf-8", headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/llms-full.txt", include_in_schema=False)
+def llms_full_txt():
+    """llms.txt with every guide listed too."""
+    return Response(seo.llms(full=True), media_type="text/plain; charset=utf-8",
+                    headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/sw.js", include_in_schema=False)
