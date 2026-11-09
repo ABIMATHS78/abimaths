@@ -46,7 +46,7 @@ def test_every_page_in_the_sitemap_can_be_indexed(client, guides):
     locs = [e.text for e in ElementTree.fromstring(r.text).findall("s:url/s:loc", NS)]
     paths = [loc.removeprefix(settings.public_url) for loc in locs]
     assert len(set(paths)) == len(paths)
-    for must in ("/", "/courses", "/guides", "/companions", "/pricing", "/courses/java-programming-intellij",
+    for must in ("/", "/courses", "/guides", "/companions", "/about", "/pricing", "/courses/java-programming-intellij",
                  "/tracks/network-engineer", f"/guides/{first['slug']}", f"/guides/{second['slug']}", f"/companions/{a.slug}"):
         assert must in paths, must
     assert f"/companions/{mine['slug']}" not in paths and "/feed" not in paths and "/signin" not in paths
@@ -135,3 +135,24 @@ def test_guides_markdown_is_made_safe():
     assert "<h3>Hi</h3>" in out and "<strong>bold</strong>" in out and "<ul><li>one</li><li>two</li></ul>" in out
     assert '<a href="https://example.com" rel="nofollow noopener">ok</a>' in out and "&lt;b&gt;code&lt;/b&gt;" in out
     assert "<td>1</td>" in out and "---" not in out
+
+
+def test_the_about_page_introduces_ai_every_time_and_its_founder(client):
+    info = client.get("/api/about").json()
+    assert info["founder"]["name"] == "Mojeed Abisiga" and info["founder"]["title"] == "Founder & CEO"
+    assert info["stats"]["courses"] > 50 and info["stats"]["companions"] > 50 and len(info["offers"]) == 4
+    assert client.get(info["founder"]["photo"]).headers["content-type"] == "image/jpeg"
+
+    page = client.get("/about")
+    assert page.status_code == 200 and "<title>About AI Every Time · AI Every Time</title>" in page.text
+    assert f'<meta property="og:image" content="{settings.public_url}/static/about/mojeed-abisiga.jpg">' in page.text
+    html = body(page)
+    assert "<h1>About AI Every Time</h1>" in html and "<h2>Leadership</h2>" in html
+    assert "Mojeed Abisiga is an award-winning Data and AI executive" in html and "Einstein Visa" in html
+    things = {t["@type"]: t for t in structured(page)}
+    assert things["AboutPage"]["mainEntity"] == {"@id": f"{settings.public_url}/#organization"}
+    assert things["Person"]["name"] == "Mojeed Abisiga" and things["Person"]["jobTitle"] == "Founder & CEO"
+    # Every page names AI Every Time's founder, for search engines' knowledge panels.
+    org = next(t for t in structured(client.get("/courses")) if t["@type"] == "Organization")
+    assert org["founder"] == {"@id": f"{settings.public_url}/about#mojeed-abisiga"}
+    assert f"[About AI Every Time]({settings.public_url}/about)" in client.get("/llms.txt").text

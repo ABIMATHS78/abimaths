@@ -17,7 +17,7 @@ import re
 from datetime import date
 from xml.sax.saxutils import escape as xml_escape
 
-from app import billing, catalog, companions, db, paths
+from app import about, billing, catalog, companions, db, paths
 from app.config import settings
 
 SITE = "AI Every Time"
@@ -29,7 +29,7 @@ LOGO = "/static/icons/icon-512.png"
 
 # Public pages that are only their name, for the sitemap, with how often they change.
 PLAIN = (("/", "daily"), ("/courses", "weekly"), ("/guides", "daily"), ("/companions", "weekly"),
-         ("/pricing", "monthly"), ("/support", "monthly"), ("/privacy", "yearly"))
+         ("/about", "monthly"), ("/pricing", "monthly"), ("/support", "monthly"), ("/privacy", "yearly"))
 
 # Crawlers named so it's plain they're welcome: search engines, and the AI assistants that search and cite the web.
 CRAWLERS = ("Googlebot", "Bingbot", "Google-Extended", "GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot",
@@ -111,6 +111,8 @@ def llms(full: bool = False) -> str:
            "networking, security and cloud, with labs, projects, quizzes and certificates",
            f"- [Guides]({url('/guides')}): {len(guides)} tutorials and cheat sheets on AI by AI Learning Companions",
            f"- [AI Learning Companions]({url('/companions')}): AI tutors from around the world to chat with and learn from",
+           f"- [About AI Every Time]({url('/about')}): our mission, and our founder and CEO, "
+           f"{about.FOUNDER['name']}",
            f"- [Plans and pricing]({url('/pricing')})", f"- [Help and support]({url('/support')})",
            f"- [Privacy]({url('/privacy')})", "", "## Professional Certificates and Specializations", ""]
     out += [f"- [{t.title} {t.kind}]({url(paths.track(t.slug))}): {t.subtitle}" for t in cat.tracks]
@@ -154,7 +156,18 @@ def organization() -> dict:
            "logo": url(LOGO), "description": ABOUT}
     if settings.support_email:
         org["email"] = settings.support_email
+    org["founder"] = {"@id": url("/about#" + about.FOUNDER["slug"])}
     return org
+
+
+def founder() -> dict:
+    f = about.FOUNDER
+    return {"@type": "Person", "@id": url("/about#" + f["slug"]), "name": f["name"], "jobTitle": f["title"],
+            "image": url(f["photo"]), "url": url("/about"), "description": f["summary"],
+            "worksFor": [{"@id": url("/#organization")}, {"@type": "Organization", "name": "DataGlobal Hub"}],
+            "award": list(f["honours"]),
+            "knowsAbout": ["Artificial intelligence", "Machine learning", "Data science", "Enterprise analytics",
+                           "Technology leadership"]}
 
 
 def website() -> dict:
@@ -184,7 +197,7 @@ def _nav() -> str:
 
 def _foot() -> str:
     return ('<footer class="seo-foot"><p>' + _e(ABOUT) + '</p><p><a href="/privacy">Privacy</a> · '
-            '<a href="/support">Help and support</a> · <a href="/llms.txt">About this site for AI assistants</a></p>'
+            '<a href="/support">Help and support</a> · <a href="/about">About us</a> · <a href="/llms.txt">About this site for AI assistants</a></p>'
             "</footer>")
 
 
@@ -355,6 +368,29 @@ def companion_page(c: dict) -> tuple[str, list[dict]]:
     return page("".join(body)), [organization(), website(),
                                  breadcrumbs(("AI Learning Companions", "/companions"), (p["name"], paths.companion(c))),
                                  profile]
+
+
+def about_page() -> tuple[str, list[dict]]:
+    info, f = about.page(), about.FOUNDER
+    n = info["stats"]
+    body = ["<h1>About AI Every Time</h1>", f"<p><strong>{_e(info['mission'])}</strong></p>"]
+    body += [f"<p>{_e(p)}</p>" for p in info["story"]]
+    body.append(f"<p>Today: {n['courses']} courses and guided projects, {n['tracks']} Professional Certificates and "
+                f"Specializations, {n['guides']:,} guides and {n['companions']} AI Learning Companions, open 24/7.</p>")
+    body.append("<h2>What we offer</h2><ul>" + "".join(
+        f"<li><strong>{_e(o['title'])}:</strong> {_e(o['text'])}</li>" for o in info["offers"]) + "</ul>")
+    body.append(f'<h2>Leadership</h2><section id="{f["slug"]}"><img src="{f["photo"]}" alt="{_e(f["name"])}, '
+                f'{_e(f["title"])} of AI Every Time" width="400" height="400">'
+                f"<h3>{_e(f['name'])}</h3><p><strong>{_e(f['title'])}</strong>, AI Every Time · {_e(f['also'])}</p>")
+    body += [f"<p>{_e(p)}</p>" for p in f["bio"]]
+    body.append("<p>Experience: " + _e(", ".join(f["experience"])) + "</p><ul>"
+                + "".join(f"<li>{_e(h)}</li>" for h in f["honours"]) + "</ul></section>")
+    body.append('<p><a href="/signup">Start learning free</a> · <a href="/courses">Browse the courses</a></p>')
+    page_ld = {"@type": "AboutPage", "url": url("/about"), "name": "About AI Every Time",
+               "description": info["mission"], "mainEntity": {"@id": url("/#organization")},
+               "about": {"@id": url("/#organization")}}
+    return page("".join(body)), [organization(), website(), founder(), page_ld,
+                                 breadcrumbs(("About AI Every Time", "/about"))]
 
 
 def plain_bio(p: dict) -> str:
