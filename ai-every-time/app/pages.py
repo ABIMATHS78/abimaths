@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException
 
-from app import catalog, companions, content, courses, db, paths
+from app import catalog, companions, content, courses, db, paths, seo
 from app.config import settings
 
 INDEX = Path(__file__).resolve().parent.parent / "static" / "index.html"
@@ -59,6 +59,8 @@ class Page:
     public: bool = True  # in search engines
     status: int = 200
     move_to: str | None = None  # the address it has now
+    body: str = ""  # what it says, as HTML, for crawlers and before the app has loaded (app/seo.py)
+    ld: list = field(default_factory=list)  # its structured data (schema.org)
 
 
 def describe(path: str, user: dict | None) -> Page:
@@ -70,7 +72,13 @@ def describe(path: str, user: dict | None) -> Page:
         title, public = NAMED.get(first, ("Page not found", False))
         if first not in NAMED:  # /posts, /tracks and the like: only with something after them
             return Page(title, public=False, status=404)
-        return Page(title, DESCRIBED.get(first), public=public)
+        found = Page(title, DESCRIBED.get(first), public=public)
+        if public:
+            made = {"": seo.home, "courses": seo.courses_page, "guides": seo.guides_page,
+                    "companions": seo.companions_page}.get(first)
+            found.body, found.ld = made() if made else seo.simple(title, DESCRIBED.get(first),
+                                                                   (title, f"/{first}") if title else None)
+        return found
     ref, _, more = rest.partition("/")
     more = f"/{more}" if more else ""
     if first in ("guides", "posts"):
@@ -81,7 +89,11 @@ def describe(path: str, user: dict | None) -> Page:
         return _course(ref, more)
     if first == "tracks" and not more:
         t = catalog.data().tracks_by_slug.get(ref)
-        return Page(f"{t.title} {t.kind}", t.subtitle) if t else Page("Page not found", public=False, status=404)
+        if t is None:
+            return Page("Page not found", public=False, status=404)
+        found = Page(f"{t.title} {t.kind}", t.subtitle)
+        found.body, found.ld = seo.track_page(t)
+        return found
     if first == "certificates" and not more:
         return _certificate(ref)
     if first in OWN and not more and re.fullmatch(OWN[first][1], ref):
@@ -110,8 +122,11 @@ def _post(section: str, ref: str, more: str, user: dict | None) -> Page:
     if not companions.public(by):
         return Page(public=False)  # a learner's own companion's: nothing about it in the head
     title = f"{post['title']}: skill library" if more else post["title"]
-    return Page(title, post.get("summary") or plain(post["body"]), post.get("graphic"),
-                (1024, 1024) if post.get("graphic") else None, kind="article")
+    found = Page(title, post.get("summary") or plain(post["body"]), post.get("graphic"),
+                 (1024, 1024) if post.get("graphic") else None, kind="article")
+    if not more:
+        found.body, found.ld = seo.post_page(post, by)
+    return found
 
 
 def _companion(ref: str, more: str, user: dict | None) -> Page:
@@ -134,7 +149,9 @@ def _companion(ref: str, more: str, user: dict | None) -> Page:
     # A photo, which link previews show; a drawn face is a picture they can't.
     image = f"/api/companions/{c['id']}/avatar" if photo and p["avatar"].get("use_photo") is not False else None
     who = f"{p['name']}, AI Learning Companion" + (f" from {p['country']}" if p.get("country") else "")
-    return Page(who, p.get("tagline") or plain(p.get("bio") or ""), image)
+    found = Page(who, p.get("tagline") or plain(p.get("bio") or ""), image, kind="profile")
+    found.body, found.ld = seo.companion_page(c)
+    return found
 
 
 def _course(slug: str, more: str) -> Page:
@@ -143,7 +160,9 @@ def _course(slug: str, more: str) -> Page:
         return Page("Page not found", public=False, status=404)
     if more:
         return Page(c.title, public=False)  # inside the course, for those taking it
-    return Page(c.title, c.subtitle)
+    found = Page(c.title, c.subtitle)
+    found.body, found.ld = seo.course_page(c)
+    return found
 
 
 def _certificate(code: str) -> Page:
@@ -194,6 +213,11 @@ def render(path: str, page: Page) -> str:
     head.append(f'<meta name="twitter:card" content="{"summary_large_image" if page.image else "summary"}">')
     if not page.public or page.status != 200:
         head.append('<meta name="robots" content="noindex">')
+    else:
+        head.append('<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, '
+                    'max-video-preview:-1">')
+    if page.ld and page.status == 200 and page.public:
+        head.append(f'<script type="application/ld+json">{seo.json_ld(page.ld)}</script>')
     if settings.ios_app_id:
         # Safari's banner for the iPhone app, once it's on the App Store. Apps' web views, the app's own included,
         # never show it.
@@ -202,4 +226,11 @@ def render(path: str, page: Page) -> str:
     if page.description:
         doc = re.sub(r'(<meta name="description" content=")[^"]*(">)',
                      lambda m: m[1] + html.escape(page.description) + m[2], doc, count=1)
-    return doc.replace('<meta name="theme-color"', "\n  ".join(head) + '\n  <meta name="theme-color"', 1)
+    doc = doc.replace('<meta name="theme-color"', "\n  ".join(head) + '\n  <meta name="theme-color"', 1)
+    if page.status == 404:
+        page.body = seo.page('<h1>Page not found</h1><p>There\'s nothing at this address. Try the '
+                             '<a href="/courses">courses</a>, the <a href="/guides">guides</a> or the '
+                             '<a href="/">home page</a>.</p>')
+    if page.body and (page.public or page.status != 200):
+        doc = doc.replace('<div id="app" class="app"></div>', f'<div id="app" class="app">{page.body}</div>', 1)
+    return doc
