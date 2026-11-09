@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 import sqlite3
 import time
 from contextlib import asynccontextmanager
@@ -927,6 +928,8 @@ class Static(StaticFiles):
         return response
 
 
+# Videos' captions: browsers use them only as text/vtt, which not every Python's list of file types knows.
+mimetypes.add_type("text/vtt", ".vtt")
 app.mount("/static", Static(directory=STATIC), name="static")
 
 

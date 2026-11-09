@@ -3796,6 +3796,22 @@ function planBlock(c, kind) {
   </section>`;
 }
 
+/* A course's introduction video: its lead instructor introduces it, with the others beside them. Nothing of it
+   loads until it's played; until then, a still from it shows. */
+function introVideo(c) {
+  const who = c.instructors.length > 1 ? "instructors" : "instructor";
+  return `<figure class="course-intro"><div class="intro-frame">
+    <video poster="${esc(c.intro.poster)}" preload="none" playsinline aria-label="${esc(`An introduction to ${c.title} from your ${who}`)}">
+      <source src="${esc(c.intro.video)}" type="video/mp4">
+      <track kind="captions" src="${esc(c.intro.captions)}" srclang="en" label="English">
+    </video>
+    <button type="button" class="intro-play" aria-label="Play the video: meet your ${who}">
+      <span class="disc"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+      <span class="label">Meet your ${who}</span>
+    </button>
+  </div></figure>`;
+}
+
 /* A course's page, as Coursera lays one out: what it is, what you'll learn, the syllabus, the instructors. */
 async function viewCourse(m) {
   const slug = m[1];
@@ -3812,18 +3828,23 @@ async function viewCourse(m) {
     : `<a class="btn primary go" href="/signup?next=${encodeURIComponent(here())}">Enrol for free</a>`;
   const main = frame("courses", `
     <div class="muted small crumbs"><a href="/courses">Courses</a> › <a href="/courses?category=${encodeURIComponent(c.category)}">${esc(c.category)}</a></div>
-    <section class="card course-head" style="--c1:${c1};--c2:${c2}">
-      <div class="badges"><span class="badge">${kindName(c)}</span><span class="badge">${label(c.level)}</span>${c.jetbrains.map((t) =>
-        `<span class="badge">🖥️ ${esc(t)}</span>`).join("")}${c.cisco ? `<span class="badge">🌐 Cisco-aligned</span>` : ""}</div>
-      <h1><span aria-hidden="true">${icon}</span> ${esc(c.title)}</h1>
-      <p class="lead">${esc(c.subtitle)}</p>
-      <div class="row">${faces(c.instructors, 36)}<span>${c.instructors.length > 1 ? "Instructors" : "Instructor"}: ${c.instructors.map((i) =>
-        `<a href="${to.companion(i)}">${esc(i.name)} ${esc(i.flag)}</a>`).join(", ")}</span></div>
-      <div class="row">${start}<span class="muted small">${c.learners ? `${fmtCount(c.learners)} ${c.learners === 1 ? "learner has" : "learners have"} enrolled` : "Free · be one of the first to enrol"}</span></div>
-      ${c.enrolled ? `<div>${bar(c.progress, 100)}<div class="small muted">${c.progress}% complete${next ? ` · Up next: ${esc(next.title)}` : ""}</div></div>` : ""}
-      ${c.aligned_with ? `<div class="small">📋 Follows ${esc(c.aligned_with)}</div>` : ""}
-      ${c.tracks.length ? `<div class="small">🎓 Part of ${c.tracks.map((t) => `the <a href="${to.track(t.slug)}">${esc(t.title)} ${esc(t.kind)}</a>`).join(" and ")}</div>` : ""}
-    </section>
+    <section class="card course-head" style="--c1:${c1};--c2:${c2}"><div class="head-grid${c.intro ? " has-intro" : ""}">
+      <div class="head-text">
+        <div class="badges"><span class="badge">${kindName(c)}</span><span class="badge">${label(c.level)}</span>${c.jetbrains.map((t) =>
+          `<span class="badge">🖥️ ${esc(t)}</span>`).join("")}${c.cisco ? `<span class="badge">🌐 Cisco-aligned</span>` : ""}</div>
+        <h1><span aria-hidden="true">${icon}</span> ${esc(c.title)}</h1>
+        <p class="lead">${esc(c.subtitle)}</p>
+      </div>
+      ${c.intro ? introVideo(c) : ""}
+      <div class="head-text">
+        <div class="row">${faces(c.instructors, 36)}<span>${c.instructors.length > 1 ? "Instructors" : "Instructor"}: ${c.instructors.map((i) =>
+          `<a href="${to.companion(i)}">${esc(i.name)} ${esc(i.flag)}</a>`).join(", ")}</span></div>
+        <div class="row">${start}<span class="muted small">${c.learners ? `${fmtCount(c.learners)} ${c.learners === 1 ? "learner has" : "learners have"} enrolled` : "Free · be one of the first to enrol"}</span></div>
+        ${c.enrolled ? `<div>${bar(c.progress, 100)}<div class="small muted">${c.progress}% complete${next ? ` · Up next: ${esc(next.title)}` : ""}</div></div>` : ""}
+        ${c.aligned_with ? `<div class="small">📋 Follows ${esc(c.aligned_with)}</div>` : ""}
+        ${c.tracks.length ? `<div class="small">🎓 Part of ${c.tracks.map((t) => `the <a href="${to.track(t.slug)}">${esc(t.title)} ${esc(t.kind)}</a>`).join(" and ")}</div>` : ""}
+      </div>
+    </div></section>
     <div class="card course-stats">
       <div><b>${plural2(c.syllabus.length, "module")}</b><span class="muted small">${plural2(count("lesson"), "lesson")}</span></div>
       <div><b>${c.rating ? `★ ${c.rating.average.toFixed(1)}` : "New"}</b><span class="muted small">${c.rating ? plural2(c.rating.count, "rating") : "No ratings yet"}</span></div>
@@ -3861,6 +3882,12 @@ async function viewCourse(m) {
     ${c.enrolled ? progressBlock(c) : ""}
     ${c.notices.length ? `<p class="notice">${c.notices.map(esc).join(" ")}</p>` : ""}`);
   $$(".anchors button", main).forEach((b) => b.addEventListener("click", () => $(`#${b.dataset.to}`)?.scrollIntoView({ behavior: "smooth", block: "start" })));
+  $(".intro-play", main)?.addEventListener("click", (e) => {
+    const box = e.currentTarget.parentElement, video = $("video", box);
+    box.classList.add("playing");
+    video.controls = true;
+    video.play().catch(() => {});
+  });
   $("#enrol", main)?.addEventListener("click", async (e) => {
     e.target.disabled = true;
     try {

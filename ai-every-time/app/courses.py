@@ -15,6 +15,7 @@ import json
 import re
 import secrets
 import zipfile
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import RedirectResponse
@@ -32,6 +33,9 @@ Visitor = Depends(auth.optional_user)  # the catalogue, a course's page and a tr
 PASS_MARK = learning.PASS_MARK
 MAX_SUBMISSION = 40000
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I to misread
+# Courses' introduction videos: {slug}.mp4, with a still shown before it plays ({slug}.jpg) and its words as
+# captions ({slug}.vtt). The lead instructor introduces the course, with the others beside them.
+INTROS = Path(__file__).resolve().parent.parent / "static" / "course-intros"
 
 
 def forget_changed_lessons() -> None:
@@ -222,6 +226,14 @@ def _summary(c: Course, st: State | None, people: dict[str, dict], counts: dict[
     return out
 
 
+def _intro(c: Course) -> dict | None:
+    """Where a course's introduction video is, if it has one."""
+    if not (INTROS / f"{c.slug}.mp4").is_file():
+        return None
+    url = f"/static/course-intros/{c.slug}"
+    return {"video": f"{url}.mp4", "poster": f"{url}.jpg", "captions": f"{url}.vtt"}
+
+
 def _counts() -> tuple[dict[str, int], dict[str, tuple[float, int]]]:
     with db.connect() as conn:
         counts = {r[0]: r[1] for r in conn.execute("SELECT course_slug, COUNT(*) FROM course_enrollments GROUP BY course_slug")}
@@ -286,7 +298,7 @@ def get_course(slug: str, user: dict | None = Visitor):
     return _summary(c, st, people, counts, ratings) | {
         "access": {"full": full, "free_modules": billing.FREE_MODULES,
                    "plan": None if full else billing.plans.lowest_with("courses").name},
-        "description": c.description, "outcomes": c.outcomes, "prerequisites": c.prerequisites,
+        "description": c.description, "outcomes": c.outcomes, "prerequisites": c.prerequisites, "intro": _intro(c),
         "notices": c.notices(), "syllabus": modules, "project": project, "requirements": requirements, "next": next_key,
         "study_plan": c.plan(), "mock_exam": {"questions": learning.COURSE_EXAM_QUESTIONS, "minutes": learning.COURSE_EXAM_MINUTES},
         "instructors": [people[s] | {"courses": taught[s]} for s in c.instructors if s in people],

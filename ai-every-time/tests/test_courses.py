@@ -88,6 +88,34 @@ def test_catalogue_and_course_page(client):
     assert {"slug": SLUG, "title": "Python Programming with PyCharm", "kind": "course", "level": "beginner"} in taught
 
 
+def test_a_course_page_has_its_introduction_video_and_safari_can_play_it(client):
+    from app import catalog
+    from app.courses import INTROS
+
+    page = client.get(f"/api/courses/{SLUG}").json()
+    base = f"/static/course-intros/{SLUG}"
+    assert page["intro"] == {"video": f"{base}.mp4", "poster": f"{base}.jpg", "captions": f"{base}.vtt"}
+    # Safari, and so the iPhone app, plays a video only from a server that sends it in parts.
+    part = client.get(page["intro"]["video"], headers={"Range": "bytes=0-99"})
+    assert part.status_code == 206 and len(part.content) == 100 and part.headers["content-type"] == "video/mp4"
+    assert client.get(page["intro"]["poster"]).headers["content-type"] == "image/jpeg"
+    captions = client.get(page["intro"]["captions"])  # browsers show captions only from text/vtt
+    assert captions.headers["content-type"].startswith("text/vtt") and captions.text.startswith("WEBVTT")
+    without = next(c.slug for c in catalog.data().courses if not (INTROS / f"{c.slug}.mp4").exists())
+    assert client.get(f"/api/courses/{without}").json()["intro"] is None
+
+
+def test_every_introduction_video_is_a_courses_with_its_still_and_captions():
+    from app import catalog
+    from app.courses import INTROS
+
+    slugs = {c.slug for c in catalog.data().courses}
+    for f in INTROS.iterdir():
+        assert f.stem in slugs and f.suffix in {".mp4", ".jpg", ".vtt"}, f.name
+        assert (INTROS / f"{f.stem}.mp4").is_file() and (INTROS / f"{f.stem}.jpg").is_file(), f.name
+        assert (INTROS / f"{f.stem}.vtt").read_text(encoding="utf-8").startswith("WEBVTT"), f.name
+
+
 def test_course_lessons_are_taught_by_their_module_instructor_with_the_walkthrough(client):
     onboard(client)  # whose primary companion is someone else
     from app import catalog, db
