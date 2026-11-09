@@ -373,12 +373,16 @@ def companion_page(c: dict) -> tuple[str, list[dict]]:
 def about_page() -> tuple[str, list[dict]]:
     info, f = about.page(), about.FOUNDER
     n = info["stats"]
-    body = ["<h1>About AI Every Time</h1>", f"<p><strong>{_e(info['mission'])}</strong></p>"]
+    items = lambda xs: "<ul>" + "".join(f"<li><strong>{_e(o['title'])}:</strong> {_e(o['text'])}</li>" for o in xs) + "</ul>"
+    body = ["<h1>About AI Every Time</h1>", f"<p><strong>{_e(info['headline'])}.</strong></p>",
+            f"<p>{_e(info['mission'])}</p>",
+            f"<p>Today: {n['courses']} courses and guided projects, {n['tracks']} Professional Certificates and "
+            f"Specializations, {n['guides']:,} guides and {n['companions']} AI Learning Companions, open 24/7.</p>",
+            "<h2>What inspired AI Every Time</h2>"]
     body += [f"<p>{_e(p)}</p>" for p in info["story"]]
-    body.append(f"<p>Today: {n['courses']} courses and guided projects, {n['tracks']} Professional Certificates and "
-                f"Specializations, {n['guides']:,} guides and {n['companions']} AI Learning Companions, open 24/7.</p>")
-    body.append("<h2>What we offer</h2><ul>" + "".join(
-        f"<li><strong>{_e(o['title'])}:</strong> {_e(o['text'])}</li>" for o in info["offers"]) + "</ul>")
+    body.append("<h2>How we're redefining the way people learn about AI</h2>" + items(info["different"]))
+    body.append("<h2>What we offer</h2>" + items(info["offers"]))
+    body.append("<h2>Early traction</h2>" + items(info["traction"]) + f"<p>{_e(info['traction_note'])}</p>")
     body.append(f'<h2>Leadership</h2><section id="{f["slug"]}"><img src="{f["photo"]}" alt="{_e(f["name"])}, '
                 f'{_e(f["title"])} of AI Every Time" width="400" height="400">'
                 f"<h3>{_e(f['name'])}</h3><p><strong>{_e(f['title'])}</strong>, AI Every Time · {_e(f['also'])}</p>")
@@ -387,7 +391,7 @@ def about_page() -> tuple[str, list[dict]]:
                 + "".join(f"<li>{_e(h)}</li>" for h in f["honours"]) + "</ul></section>")
     body.append('<p><a href="/signup">Start learning free</a> · <a href="/courses">Browse the courses</a></p>')
     page_ld = {"@type": "AboutPage", "url": url("/about"), "name": "About AI Every Time",
-               "description": info["mission"], "mainEntity": {"@id": url("/#organization")},
+               "description": info["mission"], "headline": info["headline"], "mainEntity": {"@id": url("/#organization")},
                "about": {"@id": url("/#organization")}}
     return page("".join(body)), [organization(), website(), founder(), page_ld,
                                  breadcrumbs(("About AI Every Time", "/about"))]

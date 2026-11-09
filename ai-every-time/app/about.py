@@ -6,28 +6,52 @@ from __future__ import annotations
 
 from app import catalog, db
 
-MISSION = ("AI Every Time is a 24/7 AI learning hub. We help anyone, anywhere, learn artificial intelligence, data, "
-           "software and cloud skills by doing: with AI Learning Companions who are always there to explain, quiz and "
-           "encourage, guides and cheat sheets written for real work, and courses with hands-on labs, reviewed projects "
-           "and certificates.")
+HEADLINE = "The world of AI, taught by local AI voices that never sleep"
+MISSION = ("AI Every Time is building the world's first 24/7 learning hub for AI, where every piece of content on AI "
+           "begins an ongoing learning relationship between learners and our AI content creators and learning "
+           "companions.")
+# What inspired AI Every Time.
 STORY = (
-    "Most learning stops when the video ends or the article runs out. We built AI Every Time so it doesn't: every "
-    "guide, lesson and lab is the start of a conversation with a companion who knows the subject, remembers where you "
-    "are and answers your questions at any hour.",
-    "Our companions come from around the world, each with their own face, voice, expertise and way of teaching. "
-    "Learners choose who they learn with, follow the companions whose guides they like, and can even design their "
-    "own.",
+    "The inspiration was the gap between content reach and human attention. A creator or educator on AI can reach "
+    "millions of people, but cannot answer millions of follow-up questions, remember every learner, or be available "
+    "at 2 a.m.",
+    "That's where AI Every Time comes in: the world of AI, taught by your local AI voices that never sleep. On AI Every "
+    "Time, you can chat and learn about AI with your local AI voices at any time. AI Every Time turns a piece of "
+    "content into the beginning of a relationship, rather than the end of a view or a read.",
+    "People follow, chat with and learn from always-available AI Learning Companions worldwide. Each represents a "
+    "different country and brings a distinctive identity, expertise, perspective and cultural voice. Learning doesn't "
+    "end when you finish reading AI content you like: it begins an ongoing relationship with our companions.",
+)
+# How AI Every Time is changing the way people learn about AI, keep up with it and engage with content on it.
+DIFFERENT = (
+    ("🌍", "Local AI voices, always on", "Our platform delivers always-on AI news and education through local AI voices "
+     "that write content, explain it, answer questions and personalize learning for every learner in real time."),
+    ("💬", "From reading to conversation", "We turn learning about AI from passive content consumption into "
+     "interactive conversations, making the creator of every piece of AI content available to their audience at all "
+     "times."),
+    ("🤝", "Human, not robotic", "Much AI content sounds robotic or obviously AI-generated. We create learning "
+     "experiences that feel human, clear and engaging."),
+    ("📈", "Content intelligence", "Our content is powered by a proven content intelligence system that identifies what "
+     "people genuinely love, engage with, share and find helpful, so every guide is timely, relevant and valuable."),
 )
 OFFERS = (
-    ("🧑‍🏫", "AI Learning Companions", "Chat with AI tutors from around the world, any time. They explain, quiz you, "
-     "review your work and remember what you've learned."),
-    ("🎓", "Courses and certificates", "Courses and Professional Certificates with lessons, hands-on labs in real "
-     "tools, projects your instructor reviews, graded quizzes and a certificate you can share."),
-    ("📚", "Guides and cheat sheets", "Tutorials, frameworks and cheat sheets on AI, each with an infographic, written "
-     "by companions and ready to put to work."),
-    ("🧭", "Learning paths and practice", "Paths designed around your goals, with quizzes, flashcards and daily "
-     "reminders that help what you learn stick."),
+    ("🧑‍🏫", "AI Learning Companions", "Personalized companions who engage you in meaningful conversations about AI: "
+     "they explain, quiz you, review your work and remember what you've learned, at any hour."),
+    ("🎓", "Courses and certificates", "Comprehensive, structured learning that takes professionals from AI beginners "
+     "to advanced practitioners, with hands-on labs in real tools, reviewed projects and certificates."),
+    ("📚", "Guides and cheat sheets", "Timely tutorials, frameworks and cheat sheets on AI, each with an infographic, "
+     "ready to put to work."),
+    ("🎮", "Interactive and gamified", "Learning paths around your goals, with quizzes, flashcards, streaks and "
+     "reminders that make learning interactive and help it stick."),
 )
+TRACTION = (
+    ("Growing fast", "Our community of learners is growing rapidly, all around the world."),
+    ("Paid subscribers", "Learners subscribe across our membership plans, including annual plans and our highest tiers."),
+    ("Enterprise", "An enterprise customer already uses the AI Every Time API."),
+)
+TRACTION_NOTE = ("This early traction, and people's willingness to pay, strengthens our belief that people see real "
+                 "value in AI Every Time: AI knowledge that's more accessible, personal, responsive and useful, at "
+                 "global scale.")
 FOUNDER = {
     "slug": "mojeed-abisiga",
     "name": "Mojeed Abisiga",
@@ -90,8 +114,10 @@ def stats() -> dict:
 
 
 def page() -> dict:
-    return {"mission": MISSION, "story": list(STORY),
+    return {"headline": HEADLINE, "mission": MISSION, "story": list(STORY),
+            "different": [{"icon": i, "title": t, "text": x} for i, t, x in DIFFERENT],
             "offers": [{"icon": i, "title": t, "text": x} for i, t, x in OFFERS],
+            "traction": [{"title": t, "text": x} for t, x in TRACTION], "traction_note": TRACTION_NOTE,
             "founder": FOUNDER | {"bio": list(FOUNDER["bio"]), "experience": list(FOUNDER["experience"]),
                                   "honours": list(FOUNDER["honours"]),
                                   "numbers": [{"value": v, "label": l} for v, l in FOUNDER["numbers"]]},

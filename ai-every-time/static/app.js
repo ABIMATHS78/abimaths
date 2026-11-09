@@ -1084,7 +1084,7 @@ async function viewAbout() {
   openPage(`<div class="about">
     <section class="about-hero">
       <p class="eyebrow">About us</p>
-      <h1>Learn AI with someone beside you, <em>every time</em>.</h1>
+      <h1>${esc(a.headline).replace("never sleep", "<em>never sleep</em>")}</h1>
       <p class="lead">${esc(a.mission)}</p>
       <div class="row">${start}<a class="btn ghost" href="#leadership">Meet our founder</a></div>
     </section>
@@ -1093,13 +1093,24 @@ async function viewAbout() {
       ${stat(fmtCount(n.guides), "guides and cheat sheets")}${stat(n.companions, "AI Learning Companions")}${stat("24/7", "always open, wherever you are")}
     </section>
     <section class="about-story">
-      <div><p class="eyebrow">Our story</p><h2>Learning that doesn't stop when the content ends</h2></div>
+      <div><p class="eyebrow">Our story</p><h2>What inspired AI Every Time</h2>
+        <blockquote class="about-quote">Every piece of AI content should be the <em>start</em> of a learning relationship, not the end of a view.</blockquote></div>
       <div class="prose">${a.story.map((p) => `<p>${esc(p)}</p>`).join("")}</div>
+    </section>
+    <section class="stack">
+      <div><p class="eyebrow">What makes us different</p><h2>How we're redefining the way people learn about AI</h2></div>
+      <div class="about-offers">${a.different.map((o) => `<div class="about-offer"><span class="about-icon" aria-hidden="true">${o.icon}</span>
+        <h3>${esc(o.title)}</h3><p>${esc(o.text)}</p></div>`).join("")}</div>
     </section>
     <section class="stack">
       <div><p class="eyebrow">What we offer</p><h2>Everything you need to learn AI by doing</h2></div>
       <div class="about-offers">${a.offers.map((o) => `<div class="about-offer"><span class="about-icon" aria-hidden="true">${o.icon}</span>
         <h3>${esc(o.title)}</h3><p>${esc(o.text)}</p></div>`).join("")}</div>
+    </section>
+    <section class="about-traction">
+      <div><p class="eyebrow">Early traction</p><h2>People see real value in AI Every Time</h2></div>
+      <div class="about-traction-grid">${a.traction.map((t) => `<div><b>${esc(t.title)}</b><p>${esc(t.text)}</p></div>`).join("")}</div>
+      <p class="muted">${esc(a.traction_note)}</p>
     </section>
     <section class="about-leader" id="leadership" aria-labelledby="leaderTitle">
       <div><p class="eyebrow">Leadership</p><h2 id="leaderTitle">Meet our founder</h2></div>

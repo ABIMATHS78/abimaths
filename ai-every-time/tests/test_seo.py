@@ -149,6 +149,8 @@ def test_the_about_page_introduces_ai_every_time_and_its_founder(client):
     html = body(page)
     assert "<h1>About AI Every Time</h1>" in html and "<h2>Leadership</h2>" in html
     assert "Mojeed Abisiga is an award-winning Data and AI executive" in html and "Einstein Visa" in html
+    assert "<h2>What inspired AI Every Time</h2>" in html and "gap between content reach and human attention" in html
+    assert "An enterprise customer already uses the AI Every Time API." in html
     things = {t["@type"]: t for t in structured(page)}
     assert things["AboutPage"]["mainEntity"] == {"@id": f"{settings.public_url}/#organization"}
     assert things["Person"]["name"] == "Mojeed Abisiga" and things["Person"]["jobTitle"] == "Founder & CEO"
