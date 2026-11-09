@@ -41,8 +41,8 @@ DESCRIBED = {
     "courses": "AI courses taught by AI Learning Companions: lessons in their own voice, hands-on labs, projects they "
                "review, graded quizzes and a certificate when you finish.",
     "pricing": "AI Every Time is free to use, with limits. Plans open every guide, full courses and more AI requests.",
-    "about": "AI Every Time is a 24/7 AI learning hub, founded and led by Mojeed Abisiga: AI Learning Companions, "
-             "guides, and courses with hands-on labs and certificates.",
+    "about": "The world of AI, taught by local AI voices that never sleep: the world's first 24/7 learning hub for AI, "
+             "founded and led by Mojeed Abisiga.",
 }
 # Pages for one of something of the learner's own: its name, and what a valid one looks like.
 OWN = {"reset-password": ("Choose a new password", r"[\w-]{1,200}"), "lessons": ("Lesson", r"[\w-]{1,200}"),
