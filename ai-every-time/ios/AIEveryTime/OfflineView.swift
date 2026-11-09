@@ -4,6 +4,8 @@ import SwiftUI
 /// connection comes back (WebController.watchNetwork).
 struct OfflineView: View {
     let detail: String
+    /// The site is restarting (a new version going live), not the phone offline: the app keeps trying by itself.
+    var updating = false
     let retry: () -> Void
 
     var body: some View {
@@ -14,10 +16,11 @@ struct OfflineView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 96, height: 96)
-                Text("Can't reach AI Every Time")
+                Text(updating ? "AI Every Time is updating" : "Can't reach AI Every Time")
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
-                Text("Your feed, guides and companions need the internet. Check your connection, then try again.")
+                Text(updating ? "We're putting a new version live. It takes a minute or two, and the app will open it by itself."
+                     : "Your feed, guides and companions need the internet. Check your connection, then try again.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Text(detail)
