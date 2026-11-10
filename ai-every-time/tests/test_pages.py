@@ -250,3 +250,15 @@ def test_links_from_the_old_site_move_to_the_new_pages(client):
     # What came after the address (a campaign's tags, say) is kept.
     r = client.get(f"/reporter/{name}/course/java-programming-intellij?utm_source=x", follow_redirects=False)
     assert r.headers["location"] == "/courses/java-programming-intellij?utm_source=x"
+
+
+def test_every_course_the_old_site_had_has_its_page_here(client):
+    from app import catalog, pages
+
+    # Each old name leads to a course that exists, and none is a name a course here already has.
+    for old, new in pages.OLD_COURSES.items():
+        assert catalog.course(new) is not None and catalog.course(old) is None, old
+    r = client.get("/reporter/abderrahman-bensoussan/course/nlp-fnd", follow_redirects=False)
+    assert r.status_code == 301 and r.headers["location"] == "/courses/nlp-foundations-python"
+    r = client.get("/reporter/zoe-papadakis/course/xfm-llm", follow_redirects=False)
+    assert r.headers["location"] == "/courses/transformers-and-llms"
