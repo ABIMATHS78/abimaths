@@ -262,3 +262,33 @@ def test_every_course_the_old_site_had_has_its_page_here(client):
     assert r.status_code == 301 and r.headers["location"] == "/courses/nlp-foundations-python"
     r = client.get("/reporter/zoe-papadakis/course/xfm-llm", follow_redirects=False)
     assert r.headers["location"] == "/courses/transformers-and-llms"
+
+
+def test_the_old_sites_articles_move_to_their_guides_and_the_rest_are_gone(client, tmp_path, monkeypatch):
+    a, b = two_starters()
+    path = tmp_path / "guides.json.gz"
+    write(path, [guide("21", a.slug, "2026-09-02T08:00:00Z", title="Meta Llama 3: Running Open-Source LLMs Locally on Your Machine"),
+                 guide("22", b.slug, "2026-09-03T08:00:00Z", title="Ray Beginner's Guide: Scaling Python Machine Learning Workloads")])
+    load(monkeypatch, path)
+
+    def where(old):
+        r = client.get(old, follow_redirects=False)
+        return r.status_code, r.headers.get("location")
+
+    # The same title, and one reworded since: each goes to its guide, without what followed the "?".
+    assert where("/article/meta-llama-3-running-open-source-llms-locally-on-your-machine-mvmq5fvt") == \
+        (301, "/guides/meta-llama-3-running-open-source-llms-locally-on-your-machine")
+    assert where("/article/scaling-python-machine-learning-workloads-with-ray-mvcodzpj?utm=x") == \
+        (301, "/guides/ray-beginners-guide-scaling-python-machine-learning-workloads")
+    # A news story that didn't come over, the old company pages, its API page and its files: gone, and said so.
+    for old in ("/article/when-openais-gpt-5-meets-the-canadian-workforce-is-productivity-a-euphemism-mpksefjm",
+                "/article/x", "/article", "/company/anduril", "/developers", "/manus-storage/agenda_21515c46.pdf"):
+        page = client.get(old, follow_redirects=False)
+        assert page.status_code == 410 and head(page)["robots"] == "noindex", old
+        assert "no longer here" in page.text and 'href="/guides"' in page.text
+    # Signing in, and the old home page's lists.
+    assert where("/login?returnTo=/article/some-old-article-mpb6zneo") == (301, "/signin")
+    assert where("/register") == (301, "/signup")
+    assert where("/?region=South%20America") == (301, "/companions")
+    assert where("/?search={search_term_string}") == (301, "/guides")
+    assert client.get("/?ref=ABC12345", follow_redirects=False).status_code == 200  # an invite link is the home page

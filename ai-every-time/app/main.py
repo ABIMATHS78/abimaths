@@ -1011,7 +1011,11 @@ def page(path: str, request: Request, user: dict | None = Visitor):
         raise HTTPException(404, "Not Found")
     if address != "/" and address.endswith("/"):  # /guides/ is /guides
         return RedirectResponse(address.rstrip("/") + (f"?{request.url.query}" if request.url.query else ""), status_code=301)
+    # The old site's home page listed companions by region and searched its articles: ?region= and ?search=.
+    if address == "/" and ("region" in request.query_params or "search" in request.query_params):
+        return RedirectResponse("/companions" if "region" in request.query_params else "/guides", status_code=301)
     found = pages.describe(address, user)
     if found.move_to:
-        return RedirectResponse(found.move_to + (f"?{request.url.query}" if request.url.query else ""), status_code=301)
+        query = f"?{request.url.query}" if request.url.query and found.keep_query else ""
+        return RedirectResponse(found.move_to + query, status_code=301)
     return HTMLResponse(pages.render(address, found), status_code=found.status, headers={"Cache-Control": "no-cache"})

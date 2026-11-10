@@ -62,6 +62,7 @@ class Page:
     public: bool = True  # in search engines
     status: int = 200
     move_to: str | None = None  # the address it has now
+    keep_query: bool = True  # whether what follows the "?" goes along when it moves
     body: str = ""  # what it says, as HTML, for crawlers and before the app has loaded (app/seo.py)
     ld: list = field(default_factory=list)  # its structured data (schema.org)
 
@@ -71,6 +72,12 @@ def describe(path: str, user: dict | None) -> Page:
     first, _, rest = path.strip("/").partition("/")
     if first == "reporter":
         return Page(move_to=_from_old_site(rest))
+    if first == "article":
+        return _old_article(rest)
+    if first in OLD_MOVED and not rest:
+        return Page(move_to=OLD_MOVED[first], keep_query=False)
+    if first in OLD_GONE:
+        return Page("This page is no longer here", public=False, status=410)
     if first not in paths.PAGES:
         return Page("Page not found", public=False, status=404)
     if not rest:
@@ -106,6 +113,48 @@ def describe(path: str, user: dict | None) -> Page:
     if first in OWN and not more and re.fullmatch(OWN[first][1], ref):
         return Page(OWN[first][0], public=False)
     return Page("Page not found", public=False, status=404)
+
+
+# The old site's pages that have another address here (what followed their "?" meant something else, and is dropped),
+# and the ones with nothing like them here: its pages about companies, its API's page and its uploaded files. Those
+# answer 410 Gone, which tells search engines to forget them sooner than a 404 does.
+OLD_MOVED = {"login": "/signin", "register": "/signup"}
+OLD_GONE = frozenset({"company", "developers", "manus-storage"})
+# Words too common to tell one title from another.
+_COMMON = frozenset("a an the and or of for to in on with your how from is at by vs its as".split())
+_guides_by_words: tuple[tuple, list[tuple[str, frozenset]]] = ((), [])
+
+
+def _words(slug: str) -> frozenset:
+    return frozenset(w for w in slug.split("-") if w and w not in _COMMON)
+
+
+def _old_article(rest: str) -> Page:
+    """An article of the old site's, /article/<words of its title>-<its id>. The tutorials and cheat sheets came over
+    as guides, some with their titles tidied, so the guide whose title shares most of its words is where it moved
+    to. Its news stories didn't come over: those are gone."""
+    gone = Page("This article is no longer here", public=False, status=410)
+    slug = rest.partition("/")[0].lower()
+    if not re.fullmatch(r"[a-z0-9-]{3,300}", slug):
+        return gone
+    wanted = _words(re.sub(r"-[a-z0-9]{6,10}$", "", slug))  # without the id at its end
+    if len(wanted) < 3:
+        return gone
+    global _guides_by_words
+    with db.connect() as conn:
+        stamp = tuple(conn.execute("SELECT COUNT(*), COALESCE(MAX(id), 0) FROM posts WHERE kind IS NOT NULL").fetchone())
+        if _guides_by_words[0] != stamp:
+            rows = conn.execute("SELECT p.slug, p.title FROM posts p JOIN companions c ON c.id = p.companion_id "
+                                "WHERE p.kind IS NOT NULL AND p.slug IS NOT NULL AND c.retired = 0 AND "
+                                "(c.is_starter = 1 OR (c.is_public = 1 AND c.hidden = 0))").fetchall()
+            _guides_by_words = (stamp, [(r["slug"], _words(paths.slugify(r["title"]))) for r in rows])
+    best, score = None, 0.0
+    for guide, words in _guides_by_words[1]:
+        shared = len(wanted & words) / len(wanted | words) if words else 0.0
+        if shared > score:
+            best, score = guide, shared
+    # Half the words in common or more: the same piece, with its title reworded at most.
+    return Page(move_to=f"/guides/{best}", keep_query=False) if best and score >= 0.5 else gone
 
 
 # The old site's names for courses that have another name here.
@@ -280,6 +329,10 @@ def render(path: str, page: Page) -> str:
         doc = re.sub(r'(<meta name="description" content=")[^"]*(">)',
                      lambda m: m[1] + html.escape(page.description) + m[2], doc, count=1)
     doc = doc.replace('<meta name="theme-color"', "\n  ".join(head) + '\n  <meta name="theme-color"', 1)
+    if page.status == 410:
+        page.body = seo.page(f'<h1>{html.escape(page.title)}</h1><p>It was on an earlier version of AI Every Time and '
+                             'has been taken down. There\'s plenty that\'s new: the <a href="/guides">guides</a>, the '
+                             '<a href="/courses">courses</a> and the <a href="/companions">AI Learning Companions</a>.</p>')
     if page.status == 404:
         page.body = seo.page('<h1>Page not found</h1><p>There\'s nothing at this address. Try the '
                              '<a href="/courses">courses</a>, the <a href="/guides">guides</a> or the '
