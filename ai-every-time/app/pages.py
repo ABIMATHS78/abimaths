@@ -69,6 +69,8 @@ class Page:
 def describe(path: str, user: dict | None) -> Page:
     """What's at this path, for the page's head and its status."""
     first, _, rest = path.strip("/").partition("/")
+    if first == "reporter":
+        return Page(move_to=_from_old_site(rest))
     if first not in paths.PAGES:
         return Page("Page not found", public=False, status=404)
     if not rest:
@@ -104,6 +106,22 @@ def describe(path: str, user: dict | None) -> Page:
     if first in OWN and not more and re.fullmatch(OWN[first][1], ref):
         return Page(OWN[first][0], public=False)
     return Page("Page not found", public=False, status=404)
+
+
+def _from_old_site(rest: str) -> str:
+    """Where a link from the old site goes now. There, companions were "reporters":
+    /reporter/<name>/course/<course> was a course, now /courses/<course>; /reporter/<name> was a companion's page, now
+    /companions/<name>. A course or companion that isn't here any more goes to the list of them, never to a 404."""
+    name, _, more = rest.partition("/")
+    kind, _, ref = more.partition("/")
+    if kind == "course":
+        slug = ref.partition("/")[0]
+        return paths.course(slug) if catalog.course(slug) else paths.COURSES
+    try:
+        c = companions.get_by_ref(name) if re.fullmatch(r"[a-z0-9-]{1,80}", name) and not name.isdigit() else None
+    except HTTPException:
+        c = None
+    return paths.companion(c) if c and companions.public(c) else "/companions"
 
 
 def _visible(companion: dict, user: dict | None) -> bool:

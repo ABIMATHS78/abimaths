@@ -225,3 +225,28 @@ def test_a_trailing_slash_only_ever_moves_within_the_site(client, address):
     moved = client.get(f"http://testserver{address}", follow_redirects=False)
     # One slash, then something a browser can't read as another site's address (as //evil.example or /\evil.example).
     assert moved.status_code == 301 and re.fullmatch(r"/[^/\\\s]\S*", moved.headers["location"]), moved.headers["location"]
+
+
+def test_links_from_the_old_site_move_to_the_new_pages(client):
+    from app.starter_companions import STARTERS
+
+    name = next(iter(STARTERS))
+    moves = {
+        f"/reporter/{name}/course/java-programming-intellij": "/courses/java-programming-intellij",
+        f"/reporter/{name}/course/java-programming-intellij/": "/courses/java-programming-intellij",
+        "/reporter/someone-who-left/course/java-programming-intellij": "/courses/java-programming-intellij",
+        f"/reporter/{name}/course/a-course-thats-gone": "/courses",
+        f"/reporter/{name}": f"/companions/{name}",
+        f"/reporter/{name}/posts": f"/companions/{name}",
+        "/reporter/someone-who-left": "/companions",
+        "/reporter": "/companions",
+    }
+    for old, new in moves.items():
+        r = client.get(old, follow_redirects=False)
+        while r.status_code == 301 and r.headers["location"].startswith("/reporter"):  # the slash at the end goes first
+            r = client.get(r.headers["location"], follow_redirects=False)
+        assert r.status_code == 301 and r.headers["location"] == new, old
+        assert client.get(new).status_code == 200
+    # What came after the address (a campaign's tags, say) is kept.
+    r = client.get(f"/reporter/{name}/course/java-programming-intellij?utm_source=x", follow_redirects=False)
+    assert r.headers["location"] == "/courses/java-programming-intellij?utm_source=x"
