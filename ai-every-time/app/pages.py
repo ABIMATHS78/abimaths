@@ -69,6 +69,8 @@ class Page:
 def describe(path: str, user: dict | None) -> Page:
     """What's at this path, for the page's head and its status."""
     first, _, rest = path.strip("/").partition("/")
+    if first == "reporter":
+        return Page(move_to=_from_old_site(rest))
     if first not in paths.PAGES:
         return Page("Page not found", public=False, status=404)
     if not rest:
@@ -104,6 +106,52 @@ def describe(path: str, user: dict | None) -> Page:
     if first in OWN and not more and re.fullmatch(OWN[first][1], ref):
         return Page(OWN[first][0], public=False)
     return Page("Page not found", public=False, status=404)
+
+
+# The old site's names for courses that have another name here.
+OLD_COURSES = {
+    "ai-101-vibe-coding": "ai-assisted-development",
+    "ai-301-rag-agents": "rag-and-agentic-systems",
+    "ai-sys-foundations": "ai-system-design-foundations",
+    "api-fastapi-advanced": "fastapi-production",
+    "api-fastapi-intro": "fastapi-web-services",
+    "bi-201-ai-bi-fundamentals": "ai-powered-business-intelligence",
+    "cloud-containers-k8s": "containers-kubernetes",
+    "devops-cicd-testing": "cicd-automated-testing",
+    "devops-python-linux": "python-linux-devops",
+    "enterprise-ml-platforms": "enterprise-data-ml-platforms",
+    "feature-engineering-evaluation": "feature-engineering-model-evaluation",
+    "fm-301-foundation-models": "foundation-models-engineering",
+    "intro-neural-networks-tf": "neural-networks-tensorflow",
+    "llm-kubernetes-ops": "llms-on-kubernetes",
+    "ml-201-applied-tf": "applied-ml-tensorflow",
+    "ml-foundations-vn": "ml-foundations-vietnamese-english",
+    "nlp-fnd": "nlp-foundations-python",
+    "practical-statistics-ds": "practical-statistics-data-science",
+    "prompt-llm": "prompting-llm-application-design",
+    "python-foundations-ds": "python-for-data-science",
+    "stat-nlp": "statistical-nlp",
+    "text-repr": "text-representation",
+    "training-deep-networks": "training-deep-neural-networks",
+    "xfm-llm": "transformers-and-llms",
+}
+
+
+def _from_old_site(rest: str) -> str:
+    """Where a link from the old site goes now. There, companions were "reporters":
+    /reporter/<name>/course/<course> was a course, now /courses/<course> (under its new name, if it has one); /reporter/<name> was a companion's page, now
+    /companions/<name>. A course or companion that isn't here any more goes to the list of them, never to a 404."""
+    name, _, more = rest.partition("/")
+    kind, _, ref = more.partition("/")
+    if kind == "course":
+        slug = ref.partition("/")[0]
+        slug = OLD_COURSES.get(slug, slug)
+        return paths.course(slug) if catalog.course(slug) else paths.COURSES
+    try:
+        c = companions.get_by_ref(name) if re.fullmatch(r"[a-z0-9-]{1,80}", name) and not name.isdigit() else None
+    except HTTPException:
+        c = None
+    return paths.companion(c) if c and companions.public(c) else "/companions"
 
 
 def _visible(companion: dict, user: dict | None) -> bool:
