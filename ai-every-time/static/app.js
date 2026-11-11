@@ -538,6 +538,7 @@ const routes = [
   [/^\/privacy$/, viewPrivacy, null],
   [/^\/support$/, viewSupport, null],
   [/^\/about$/, viewAbout, null],
+  [/^\/events(?:\/(gdai-2026))?$/, viewEvents, null],
   [/^\/learn$/, viewLearn],
   [/^\/lessons\/([\w-]+)$/, viewLesson],
   [/^\/quizzes\/(\d+)$/, viewQuiz],
@@ -711,11 +712,14 @@ document.addEventListener("keydown", (e) => {
 });
 matchMedia("(max-width: 640px)").addEventListener("change", (e) => { if (!e.matches && menuOpen()) setMenu(false); });
 
+// Events sell tickets on another site, which Apple doesn't allow an app to link to: the iPhone app goes without them.
+const EVENTS_TAB = inApp ? [] : [["events", "📅", "Events"]];
+
 function shell(active, inner) {
   const primary = state.me?.primary_companion_id;
   // Each page: its key, icon, name, the short name where space is tight, and its address if not /key.
   const pages = [["feed", "🏠", "Feed"], ["guides", "🧭", "Guides"], ["courses", "🎓", "Courses"], ["learn", "📚", "Learn"],
-    ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"], ["companions", "🌍", "Companions"],
+    ["practice", "🧠", "Practice"], ["progress", "📈", "Progress"], ["companions", "🌍", "Companions"], ...EVENTS_TAB,
     ["referral", "🎁", "Invite friends", "Invite", "/invite-friends"], ["profile", "👤", "Profile"]];
   if (state.me?.role && state.me.role !== "learner") pages.push(["staff", "🛡️", "Staff"]);
   if (primary) pages.push(["mine", "💬", "My companion", "Chat", "/my-companion"]);
@@ -952,7 +956,7 @@ const site = () => (siteInfo ||= fetch("/api/site").then((r) => (r.ok ? r.json()
 function openPage(html, active = "", mainClass = active ? "public-page wide" : "public-page") {
   if (state.me) return shell(active, html);
   app.innerHTML = `<div class="public-top"><a class="home plain" href="/" aria-label="AI Every Time home">${logo(34)}</a>
-      <nav class="public-nav" aria-label="Pages">${[["guides", "Guides"], ["courses", "Courses"], ["companions", "Companions"], ["about", "About"]].map(([key, name]) =>
+      <nav class="public-nav" aria-label="Pages">${[["guides", "Guides"], ["courses", "Courses"], ["companions", "Companions"], ...EVENTS_TAB.map(([key, , name]) => [key, name]), ["about", "About"]].map(([key, name]) =>
         `<a href="/${key}"${active === key ? ` class="active" aria-current="page"` : ""}>${name}</a>`).join("")}</nav>
       <div class="row">${signLinks()}</div></div>
     <main class="${mainClass}">${html}</main>`;
@@ -1072,6 +1076,27 @@ async function viewSupport() {
     ${forSale(`<h3>My plan</h3>
     <p>See or change your plan in your profile, under <i>Plan and billing</i>.</p>`)}
   </article>`);
+}
+
+/* Events: the list (/events) and an event's own page (/events/gdai-2026). Each is a page of its own in
+   static/events/, with its own styles, shown in a frame as tall as the page so this page does the scrolling
+   (static/events/events.js sets the height, and opens the site's links here). An event's page also has a box to
+   reach its organisers, fixed to the corner of the window. */
+const EVENT_TITLES = { "gdai-2026": "Global Data & AI Virtual Tech Conference 2026" };
+const eventsSupportHidden = new Set();
+async function viewEvents(m) {
+  if (inApp) { navigate(state.me ? "/feed" : "/", { replace: true }); return; }
+  const slug = m[1] || "", title = slug ? EVENT_TITLES[slug] : "Events";
+  document.title = `${title} · AI Every Time`;
+  const main = openPage(`<iframe class="events-frame" src="/static/events/${slug || "index"}.html" title="${esc(title)}" scrolling="no"></iframe>
+    ${slug && !eventsSupportHidden.has(slug) ? `<aside class="events-support" aria-label="Event support">
+      <div class="es-head"><span class="es-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></span>
+        <span class="es-text" title="For any questions about conference passes, speaking opportunities, partnerships, sponsorships, volunteering, sessions, and general event support reach out to Sara"><b>Event Support</b><span>Questions? Contact Sara</span></span>
+        <button type="button" class="es-close" aria-label="Hide event support"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <a class="es-call" href="tel:+15202147713"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>+1 (520) 214-7713</a>
+    </aside>` : ""}`, "events", "public-page events-page");
+  main.classList.add("events-main");
+  $(".es-close", main)?.addEventListener("click", () => { eventsSupportHidden.add(slug); $(".events-support", main).remove(); });
 }
 
 /* About AI Every Time: what it is and offers, counted, and who leads it (app/about.py). */
