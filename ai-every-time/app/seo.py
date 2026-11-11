@@ -17,7 +17,7 @@ import re
 from datetime import date
 from xml.sax.saxutils import escape as xml_escape
 
-from app import about, billing, catalog, companions, db, paths
+from app import about, billing, catalog, companions, db, events, paths
 from app.config import settings
 
 SITE = "AI Every Time"
@@ -29,7 +29,7 @@ LOGO = "/static/icons/icon-512.png"
 
 # Public pages that are only their name, for the sitemap, with how often they change.
 PLAIN = (("/", "daily"), ("/courses", "weekly"), ("/guides", "daily"), ("/companions", "weekly"),
-         ("/about", "monthly"), ("/pricing", "monthly"), ("/support", "monthly"), ("/privacy", "yearly"))
+         ("/about", "monthly"), ("/events", "weekly"), ("/events/gdai-2026", "weekly"), ("/pricing", "monthly"), ("/support", "monthly"), ("/privacy", "yearly"))
 
 # Crawlers named so it's plain they're welcome: search engines, and the AI assistants that search and cite the web.
 CRAWLERS = ("Googlebot", "Bingbot", "Google-Extended", "GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot",
@@ -113,6 +113,8 @@ def llms(full: bool = False) -> str:
            f"- [AI Learning Companions]({url('/companions')}): AI tutors from around the world to chat with and learn from",
            f"- [About AI Every Time]({url('/about')}): our mission, and our founder and CEO, "
            f"{about.FOUNDER['name']}",
+           f"- [Events]({url('/events')}): AI conferences, webinars and workshops, including the "
+           f"[{events.GDAI['name']}]({url('/events/' + events.GDAI['slug'])}), {events.GDAI['dates']}, online",
            f"- [Plans and pricing]({url('/pricing')})", f"- [Help and support]({url('/support')})",
            f"- [Privacy]({url('/privacy')})", "", "## Professional Certificates and Specializations", ""]
     out += [f"- [{t.title} {t.kind}]({url(paths.track(t.slug))}): {t.subtitle}" for t in cat.tracks]
@@ -395,6 +397,29 @@ def about_page() -> tuple[str, list[dict]]:
                "about": {"@id": url("/#organization")}}
     return page("".join(body)), [organization(), website(), founder(), page_ld,
                                  breadcrumbs(("About AI Every Time", "/about"))]
+
+
+def events_page() -> tuple[str, list[dict]]:
+    """The list of events: the words of the page the app shows (static/events/index.html), from app/event_data."""
+    return page(events.words("index")), [organization(), website(), breadcrumbs(("Events", "/events"))]
+
+
+def event_page(e: dict) -> tuple[str, list[dict]]:
+    """An event's page: all of its words, every day of its agenda, speaker and answer included, and what it is for
+    search engines: an online event, with its dates, organiser and the price tickets start from."""
+    address = url(f"/events/{e['slug']}")
+    event = {"@type": "Event", "@id": address + "#event", "name": e["name"], "description": e["summary"], "url": address,
+             "image": url(e["image"]), "startDate": e["starts"], "endDate": e["ends"],
+             "eventStatus": "https://schema.org/EventScheduled",
+             "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+             "location": {"@type": "VirtualLocation", "url": e["tickets"]},
+             "organizer": [{"@id": url("/#organization")}, {"@type": "Organization", "name": "DataGlobal Hub",
+                                                           "url": "https://www.dataglobalhub.org"}],
+             "offers": {"@type": "AggregateOffer", "url": e["tickets"], "priceCurrency": "USD",
+                        "lowPrice": e["price_from"], "highPrice": e["price_to"],
+                        "availability": "https://schema.org/InStock"}}
+    return page(events.words(e["slug"])), [organization(), website(), event,
+                                           breadcrumbs(("Events", "/events"), (e["name"], f"/events/{e['slug']}"))]
 
 
 def plain_bio(p: dict) -> str:

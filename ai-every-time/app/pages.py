@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app import about, catalog, companions, content, courses, db, paths, seo
+from app import about, catalog, events, companions, content, courses, db, paths, seo
 from app.config import settings
 
 INDEX = Path(__file__).resolve().parent.parent / "static" / "index.html"
@@ -30,7 +30,7 @@ NAMED = {
     "flashcards": ("Flashcard review", False), "progress": ("Your progress", False), "profile": ("Your profile", False),
     "pricing": ("Plans and pricing", True), "billing": ("Plan and billing", False),
     "invite-friends": ("Invite friends", False), "privacy": ("Privacy", True), "support": ("Help and support", True),
-    "about": ("About AI Every Time", True),
+    "about": ("About AI Every Time", True), "events": ("Events", True),
     "staff": ("Staff", False),
 }
 DESCRIBED = {
@@ -40,6 +40,8 @@ DESCRIBED = {
                   "with one, or design your own.",
     "courses": "AI courses taught by AI Learning Companions: lessons in their own voice, hands-on labs, projects they "
                "review, graded quizzes and a certificate when you finish.",
+    "events": "AI conferences, webinars and workshops from AI Every Time and DataGlobal Hub, starting with the Global "
+              "Data & AI Virtual Tech Conference 2026.",
     "pricing": "AI Every Time is free to use, with limits. Plans open every guide, full courses and more AI requests.",
     "about": "The world of AI, taught by local AI voices that never sleep: the world's first 24/7 learning hub for AI, "
              "founded and led by Mojeed Abisiga.",
@@ -87,11 +89,19 @@ def describe(path: str, user: dict | None) -> Page:
         found = Page(title, DESCRIBED.get(first), public=public)
         if public:
             made = {"": seo.home, "courses": seo.courses_page, "guides": seo.guides_page,
-                    "companions": seo.companions_page, "about": seo.about_page}.get(first)
+                    "companions": seo.companions_page, "about": seo.about_page, "events": seo.events_page}.get(first)
             found.body, found.ld = made() if made else seo.simple(title, DESCRIBED.get(first),
                                                                    (title, f"/{first}") if title else None)
         if first == "about":  # its link preview shows the founder
             found.image, found.size = about.FOUNDER["photo"], (800, 800)
+        if first == "events":
+            found.image, found.size = events.GDAI["image"], events.GDAI["image_size"]
+        return found
+    if first == "events":
+        if rest != events.GDAI["slug"]:
+            return Page("Page not found", public=False, status=404)
+        found = Page(events.GDAI["name"], events.GDAI["summary"], events.GDAI["image"], events.GDAI["image_size"])
+        found.body, found.ld = seo.event_page(events.GDAI)
         return found
     ref, _, more = rest.partition("/")
     more = f"/{more}" if more else ""

@@ -46,7 +46,7 @@ def test_every_page_in_the_sitemap_can_be_indexed(client, guides):
     locs = [e.text for e in ElementTree.fromstring(r.text).findall("s:url/s:loc", NS)]
     paths = [loc.removeprefix(settings.public_url) for loc in locs]
     assert len(set(paths)) == len(paths)
-    for must in ("/", "/courses", "/guides", "/companions", "/about", "/pricing", "/courses/java-programming-intellij",
+    for must in ("/", "/courses", "/guides", "/companions", "/about", "/events", "/events/gdai-2026", "/pricing", "/courses/java-programming-intellij",
                  "/tracks/network-engineer", f"/guides/{first['slug']}", f"/guides/{second['slug']}", f"/companions/{a.slug}"):
         assert must in paths, must
     assert f"/companions/{mine['slug']}" not in paths and "/feed" not in paths and "/signin" not in paths
@@ -158,3 +158,42 @@ def test_the_about_page_introduces_ai_every_time_and_its_founder(client):
     org = next(t for t in structured(client.get("/courses")) if t["@type"] == "Organization")
     assert org["founder"] == {"@id": f"{settings.public_url}/about#mojeed-abisiga"}
     assert f"[About AI Every Time]({settings.public_url}/about)" in client.get("/llms.txt").text
+
+
+def test_the_events_pages_and_everything_they_show(client):
+    import re as _re
+    from pathlib import Path
+
+    static = Path(__file__).resolve().parent.parent / "static" / "events"
+    # The list, and the conference's page: in the app's frame, and in words for search engines.
+    page = client.get("/events")
+    assert page.status_code == 200 and "<title>Events · AI Every Time</title>" in page.text
+    assert '<a href="/events/gdai-2026">Global Data &amp; AI Virtual Tech Conference 2026</a>' in body(page)
+    page = client.get("/events/gdai-2026")
+    html = body(page)
+    assert page.status_code == 200 and "<h1>The Global Data &amp; AI Virtual Tech Conference 2026</h1>" in html
+    # Every day of the agenda, the speakers behind "View More" and the answers are all there to read.
+    for words in ("Closing Remarks - End of Day 1", "Explorer Pass", "The conference takes place November 20–22, 2026.",
+                  "Aakash Abhay Yadav", "Become a Title Sponsor", "GDAI_2026_Conference_Agenda.pdf"):
+        assert words in html, words
+    event = next(t for t in structured(page) if t["@type"] == "Event")
+    assert event["startDate"].startswith("2026-11-20") and event["offers"]["lowPrice"] == "10.99"
+    assert event["eventAttendanceMode"].endswith("OnlineEventAttendanceMode")
+    assert f'<meta property="og:image" content="{settings.public_url}/static/events/img/GDAI_Event_Cover_november.webp">' in page.text
+    assert client.get("/events/nothing-here").status_code == 404
+
+    # The pages in the frame stay out of search results themselves, and everything they name is here: every picture,
+    # both agenda files, the fonts, and the script that runs the countdown, the days and the answers.
+    for name in ("index.html", "gdai-2026.html"):
+        frame = client.get(f"/static/events/{name}")
+        assert frame.status_code == 200 and '<meta name="robots" content="noindex">' in frame.text
+        for ref in set(_re.findall(r'(?:src|href)="((?:img|files)/[^"]+|events\.(?:css|js))"', frame.text)):
+            assert (static / ref).is_file(), ref
+        assert "news.dataglobalhub.org/events/GDAI" not in frame.text  # no picture or file is left on the other site
+    gdai = client.get("/static/events/gdai-2026.html").text
+    assert gdai.count("data-day-panel=") == 3 and gdai.count("data-faq") == 12 and gdai.count("data-more") > 70
+    assert 'data-countdown="2026-11-20T09:00:00-05:00"' in gdai
+    for font in _re.findall(r"url\((fonts/[^)]+)\)", (static / "events.css").read_text()):
+        assert (static / font).is_file(), font
+    assert client.get("/static/events/files/GDAI_2026_Conference_Agenda.pdf").headers["content-type"] == "application/pdf"
+    assert f"[Events]({settings.public_url}/events)" in client.get("/llms.txt").text

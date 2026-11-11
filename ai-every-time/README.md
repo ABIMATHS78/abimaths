@@ -200,6 +200,10 @@ Teams is set up by hand: make the customer's subscription in Stripe with the `ai
 
 Event discounts are shown on each member's Plan and billing page; the tickets themselves are sold outside this app, so the discount is honoured there.
 
+### Events
+
+`/events` lists AI Every Time's events, and `/events/gdai-2026` is the Global Data & AI Virtual Tech Conference 2026: its countdown, passes, speakers, three-day agenda (with the PDF and Excel downloads), partners and questions. They're a copy of DataGlobal Hub's Events pages, kept in `static/events/` with their own styles, pictures, fonts and files, and shown in a frame as tall as the page; the same words are in `app/event_data/` for search engines, with schema.org Event data. `scripts/events/README.md` says how to bring the copy up to date. Tickets are sold on Eventeny, so the iPhone app, which may not link to payments elsewhere, goes without the Events tab.
+
 ### Search engines and AI assistants
 
 Every page anyone can open comes from the server with its content already in it as plain HTML (headings, text and links), so search engines and AI assistants' crawlers, most of which don't run JavaScript, can read it; the app draws the page over it as it loads. A guide shows crawlers what it shows visitors who aren't signed in: its start. Each such page also carries schema.org structured data: Organization and WebSite on every page, Course, Article or ProfilePage on a course, guide or companion, and breadcrumbs (`app/seo.py`).
