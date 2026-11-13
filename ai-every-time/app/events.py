@@ -15,8 +15,9 @@ GDAI = {
     "summary": "The award-winning AI-native virtual conference returns, November 20-22, 2026: 140+ speakers, 1,000+ "
                "sessions and attendees from 60+ countries. Presented by AI Every Time, hosted by DataGlobal Hub.",
     "dates": "November 20-22, 2026",
-    "starts": "2026-11-20T09:00:00-05:00",
-    "ends": "2026-11-22T18:00:00-05:00",
+    "hours": "9:00 AM – 6:00 PM CST each day",
+    "starts": "2026-11-20T09:00:00-06:00",  # 9:00 AM CST
+    "ends": "2026-11-22T18:00:00-06:00",  # 6:00 PM CST, Day 3
     "image": "/static/events/img/GDAI_Event_Cover_november.webp",
     "image_size": (1350, 646),
     "tickets": "https://www.eventeny.com/events/globaldataaivirtualtechconference2026-26260/",

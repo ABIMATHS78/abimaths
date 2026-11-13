@@ -177,7 +177,8 @@ def test_the_events_pages_and_everything_they_show(client):
                   "Aakash Abhay Yadav", "Become a Title Sponsor", "GDAI_2026_Conference_Agenda.pdf"):
         assert words in html, words
     event = next(t for t in structured(page) if t["@type"] == "Event")
-    assert event["startDate"].startswith("2026-11-20") and event["offers"]["lowPrice"] == "10.99"
+    assert event["startDate"] == "2026-11-20T09:00:00-06:00" and event["endDate"] == "2026-11-22T18:00:00-06:00"
+    assert event["offers"]["lowPrice"] == "10.99"
     assert event["eventAttendanceMode"].endswith("OnlineEventAttendanceMode")
     assert f'<meta property="og:image" content="{settings.public_url}/static/events/img/GDAI_Event_Cover_november.webp">' in page.text
     assert client.get("/events/nothing-here").status_code == 404
@@ -192,7 +193,11 @@ def test_the_events_pages_and_everything_they_show(client):
         assert "news.dataglobalhub.org/events/GDAI" not in frame.text  # no picture or file is left on the other site
     gdai = client.get("/static/events/gdai-2026.html").text
     assert gdai.count("data-day-panel=") == 3 and gdai.count("data-faq") == 12 and gdai.count("data-more") > 70
-    assert 'data-countdown="2026-11-20T09:00:00-05:00"' in gdai
+    assert 'data-countdown="2026-11-20T09:00:00-06:00"' in gdai  # 9:00 AM CST
+    # Beside its dates, the list says when the conference runs each day, and in which time zone.
+    assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
+    assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
+    assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in body(client.get("/events"))
     for font in _re.findall(r"url\((fonts/[^)]+)\)", (static / "events.css").read_text()):
         assert (static / font).is_file(), font
     assert client.get("/static/events/files/GDAI_2026_Conference_Agenda.pdf").headers["content-type"] == "application/pdf"

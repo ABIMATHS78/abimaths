@@ -6,6 +6,13 @@ from bs4 import BeautifulSoup
 
 DL = Path(sys.argv[1]); OUT = Path(sys.argv[2]); SEO = Path(sys.argv[3])
 SRC = "https://news.dataglobalhub.org"
+# When the conference runs each day, in its own time zone: the countdown counts down to its opening, and the events
+# list says so beside its dates.
+OPENS = "2026-11-20T09:00:00-06:00"  # 9:00 AM CST (UTC-6) on Day 1
+HOURS = "Day 1–3 · 9:00 AM – 6:00 PM CST"
+CLOCK = ('<svg class="lucide lucide-clock h-3.5 w-3.5" fill="none" height="24" stroke="currentColor" '
+         'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" '
+         'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>')
 cap = json.loads((DL / "capture.json").read_text())
 
 
@@ -45,7 +52,7 @@ def gdai():
             d.decompose()
     # Countdown: the four numbers.
     days = next(d for d in soup.find_all("div") if d.get_text(strip=True) == "Days").parent.parent
-    days["data-countdown"] = "2026-11-20T09:00:00-05:00"
+    days["data-countdown"] = OPENS
     for cell, unit in zip(days.find_all("div", recursive=False), ("d", "h", "m", "s")):
         cell.find("div")["data-unit"] = unit
     # Speakers: all of them, those after the first twelve hidden until "View More".
@@ -87,7 +94,14 @@ def gdai():
 
 
 def listing():
-    return fix(BeautifulSoup(cap["list_main"], "lxml").find("main"))
+    main = BeautifulSoup(cap["list_main"], "lxml").find("main")
+    # The conference's hours, in the same style as its dates and right after them.
+    dates = next(li for li in main.find_all("li") if "November 20-22" in li.get_text())
+    hours = BeautifulSoup(f'<li class="{" ".join(dates["class"])}" title="Each day, Friday 20 to Sunday 22 '
+                          f'November 2026: 9:00 AM to 6:00 PM Central Standard Time (UTC-6)">{CLOCK}{HOURS}</li>',
+                          "lxml").find("li")
+    dates.insert_after(hours)
+    return fix(main)
 
 
 def page(title, main):
