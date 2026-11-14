@@ -194,6 +194,9 @@ def test_the_events_pages_and_everything_they_show(client):
     gdai = client.get("/static/events/gdai-2026.html").text
     assert gdai.count("data-day-panel=") == 3 and gdai.count("data-faq") == 12 and gdai.count("data-more") > 70
     assert 'data-countdown="2026-11-20T09:00:00-06:00"' in gdai  # 9:00 AM CST
+    # Dr Gaurav Kumar Gupta's session, as the agenda has it, on his speaker card and in the schedule alike.
+    assert gdai.count("Designing AI-Native Enterprises: The Next Evolution of Enterprise Architecture") == 2
+    assert "From Bots to Control Rooms" not in gdai and "From Bots to Control Rooms" not in html
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
