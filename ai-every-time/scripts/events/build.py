@@ -57,6 +57,18 @@ def reschedule(panels):
         day1[-1].insert_after(new)
 
 
+def keynote_card(grid):
+    """KEYNOTE's speaker card names the keynote above her session; already there, left as is."""
+    card = next(c for c in grid.find_all(recursive=False) if c.find("h3").get_text(strip=True) == KEYNOTE)
+    if "Opening Keynote Address" in card.get_text():
+        return
+    session = card.find("p", class_="kicker")
+    session["class"] = session["class"] + ["mt-3"]
+    for html in ('<p class="kicker">Keynote</p>',
+                 '<p class="mt-1 text-sm font-medium leading-snug">Opening Keynote Address</p>'):
+        session.insert_before(BeautifulSoup(html, "lxml").find("p"))
+
+
 def fix(soup):
     """Addresses: pictures and files to the copies here, the two pages to this site's, the rest to where they were."""
     for el in soup.find_all(True):
@@ -105,6 +117,7 @@ def gdai():
     for card in cards[before:]:
         card["data-more"] = ""
         card["hidden"] = ""
+    keynote_card(grid)
     old.select("div.grid")[0].replace_with(grid)
     button(old, "View More Speaking Sessions")["data-show-more"] = ""
     # Agenda: the three days, one shown at a time.
