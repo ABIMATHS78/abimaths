@@ -205,6 +205,12 @@ def test_the_events_pages_and_everything_they_show(client):
     assert morning.count("border bg-background p-4") == 5 and "Automate Your Tasks by Building Agentic AI" in morning
     assert "<p>Opening Keynote Address</p><p>Suprajyotsna Dasari</p>" in html
     assert html.count("Automate Your Tasks by Building Agentic AI") == 2  # her speaker card, and Day 1 at 9:45 AM
+    # Her speaker card names the keynote above her session.
+    card = gdai.split(">Suprajyotsna Dasari</h3>")[1].split("data-more")[0]
+    assert ('<p class="kicker">Keynote</p><p class="mt-1 text-sm font-medium leading-snug">Opening Keynote Address</p>'
+            '<p class="kicker mt-3">Session</p>') in card
+    assert ("<h3>Suprajyotsna Dasari</h3><p>Software Developer at Cognizant</p><div><div><p>Keynote</p>"
+            "<p>Opening Keynote Address</p><p>Session</p><p>Automate Your Tasks by Building Agentic AI</p>") in html
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
