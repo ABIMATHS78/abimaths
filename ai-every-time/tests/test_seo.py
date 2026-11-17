@@ -197,6 +197,14 @@ def test_the_events_pages_and_everything_they_show(client):
     # Dr Gaurav Kumar Gupta's session, as the agenda has it, on his speaker card and in the schedule alike.
     assert gdai.count("Designing AI-Native Enterprises: The Next Evolution of Enterprise Architecture") == 2
     assert "From Bots to Control Rooms" not in gdai and "From Bots to Control Rooms" not in html
+    # Suprajyotsna Dasari gives Day 1's Opening Keynote Address, and her session is on Day 1 at 9:45 AM, not on Day 3.
+    day1, day2, day3 = _re.split(r'<ol [^>]*data-day-panel=', gdai)[1:]
+    keynote = '>Opening Keynote Address</p><p class="mt-1 text-sm text-muted-foreground">Suprajyotsna Dasari</p>'
+    assert keynote in day1 and "Suprajyotsna" not in day2 + day3
+    morning = day1.split(">9:45 AM - 10:15 AM<")[1].split(">10:15 AM - 10:45 AM<")[0]
+    assert morning.count("border bg-background p-4") == 5 and "Automate Your Tasks by Building Agentic AI" in morning
+    assert "<p>Opening Keynote Address</p><p>Suprajyotsna Dasari</p>" in html
+    assert html.count("Automate Your Tasks by Building Agentic AI") == 2  # her speaker card, and Day 1 at 9:45 AM
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text

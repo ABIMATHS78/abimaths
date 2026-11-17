@@ -1,6 +1,6 @@
 """Builds AI Every Time's copy of DataGlobal Hub's Events pages from what capture.py saved: static/events/index.html
 and gdai-2026.html (shown in a frame by the app), their stylesheet, and plain HTML of each for search engines."""
-import json, re, sys
+import copy, json, re, sys
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -16,6 +16,10 @@ CORRECTIONS = {
     "From Bots to Control Rooms: Operationalizing Enterprise AI with Governance and Visibility":
         "Designing AI-Native Enterprises: The Next Evolution of Enterprise Architecture",
 }
+# Suprajyotsna Dasari gives Day 1's Opening Keynote Address, and her session moves from Day 3 at 2:45 PM to Day 1 at
+# 9:45 AM, as the agenda (PDF and Excel) has it.
+KEYNOTE = "Suprajyotsna Dasari"
+MOVED = ("Future of Work & AI in Society", "Automate Your Tasks by Building Agentic AI", "Suprajyotsna Dasari")
 CLOCK = ('<svg class="lucide lucide-clock h-3.5 w-3.5" fill="none" height="24" stroke="currentColor" '
          'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" '
          'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>')
@@ -27,6 +31,30 @@ def correct(text: str) -> str:
         assert old in text or new in text, f"not on the page any more: {old}"
         text = text.replace(old, new)
     return text
+
+
+def slot(panel, time):
+    return next(li for li in panel.find_all("li", recursive=False) if li.find("p").get_text(strip=True) == time)
+
+
+def reschedule(panels):
+    """The agenda's changes since copying it (KEYNOTE, MOVED), on the three days' panels; already there, left as is."""
+    keynote = slot(panels[0], "9:15 AM - 9:45 AM").find("div")
+    title = keynote.find("p")
+    if KEYNOTE not in keynote.get_text():
+        speaker = BeautifulSoup(f'<p class="mt-1 text-sm text-muted-foreground">{KEYNOTE}</p>', "lxml").find("p")
+        title.insert_after(speaker)
+    cards = lambda li: li.find("div").find_all("div", recursive=False)
+    texts = lambda card: tuple(p.get_text(strip=True) for p in card.find_all("p"))
+    for card in cards(slot(panels[2], "2:45 PM - 3:15 PM")):
+        if texts(card) == MOVED:
+            card.decompose()
+    day1 = cards(slot(panels[0], "9:45 AM - 10:15 AM"))
+    if MOVED not in map(texts, day1):
+        new = copy.copy(day1[-1])
+        for p, text in zip(new.find_all("p"), MOVED):
+            p.string = text
+        day1[-1].insert_after(new)
 
 
 def fix(soup):
@@ -91,6 +119,7 @@ def gdai():
         if i:
             panel["hidden"] = ""
         panels.append(panel)
+    reschedule(panels)
     ol.replace_with(*panels)
     # Questions: each answer under its question, closed to begin with.
     box = button(soup, "When is the conference?").parent.parent
