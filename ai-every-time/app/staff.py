@@ -5,11 +5,13 @@ explaining it."""
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import sqlite3
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, StrictInt
 
 from app import auth, db, paths, usage
@@ -269,6 +271,34 @@ def decide_path(path_id: str, body: PathDecision, user: dict = Reviewer):
 
 
 # ---------------------------------------------------------------------- roles
+
+
+def _cell(value) -> str:
+    """A spreadsheet cell as text: one starting with = + - @ would run as a formula in Excel, so it gets a ' first."""
+    text = "" if value is None else str(value)
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+
+@router.get("/users.csv")
+def export_users(news: bool = False, user: dict = Admin):
+    """Every account's name and email, and whether they agreed to news emails, as a CSV file (admins only).
+    `news=1` keeps only those who agreed, for a mailing. Each download is in the decision log."""
+    with db.connect() as conn:
+        # Agreed, as campaigns count it: said yes to news and offers, at a confirmed address.
+        rows = conn.execute("SELECT * FROM users" + (" WHERE marketing_emails = 1 AND email_confirmed_at IS NOT NULL" if news else "")
+                            + " ORDER BY id").fetchall()
+        log(conn, user["id"], "user", user["id"], "export:users" + (":news" if news else ""), f"{len(rows)} accounts")
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["Name", "Email", "Role", "Joined", "Agreed to news emails"])
+    for r in rows:
+        r = dict(r)
+        w.writerow([_cell(r["display_name"]), _cell(r["email"]), auth.role_of(r), (r["created_at"] or "")[:10],
+                    "yes" if r.get("marketing_emails") and r.get("email_confirmed_at") else "no"])
+    name = f"aieverytime-users{'-news' if news else ''}-{db.now()[:10]}.csv"
+    # A byte-order mark so Excel reads names with accents correctly.
+    return Response("\ufeff" + out.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
 @router.get("/users")

@@ -255,3 +255,30 @@ def test_admin_emails_need_a_confirmed_address_while_email_is_on(client, admin_e
     assert client.post("/api/email/confirm", content=f"token={mailbox.link_token('confirm')}").status_code == 200
     assert client.get("/api/me").json()["role"] == "admin"
     assert client.get("/api/staff/insights").status_code == 200
+
+
+def test_admins_download_users_as_csv(client, admin_email):
+    import csv
+    import io
+
+    from app import db
+
+    signup(client, email="ada@example.com")
+    assert client.get("/api/staff/users.csv").status_code == 403  # learners can't
+    as_user(client, "news@example.com", "=Nora News")
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET marketing_emails = 1, email_confirmed_at = ? WHERE email = ?", (db.now(), "news@example.com"))
+    as_user(client, admin_email, "Boss")
+    r = client.get("/api/staff/users.csv")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert r.headers["content-disposition"].startswith('attachment; filename="aieverytime-users-')
+    rows = list(csv.reader(io.StringIO(r.text.lstrip("﻿"))))
+    assert rows[0] == ["Name", "Email", "Role", "Joined", "Agreed to news emails"]
+    by_email = {row[1]: row for row in rows[1:]}
+    assert {"ada@example.com", "news@example.com", admin_email} <= set(by_email)
+    assert by_email["news@example.com"][0] == "'=Nora News"  # never runs as a formula
+    assert by_email["news@example.com"][4] == "yes" and by_email["ada@example.com"][4] == "no"
+    assert by_email[admin_email][2] == "admin"
+    news = list(csv.reader(io.StringIO(client.get("/api/staff/users.csv?news=1").text.lstrip("﻿"))))
+    assert [row[1] for row in news[1:]] == ["news@example.com"]
+    assert any(e["action"] == "export:users" for e in client.get("/api/staff/log").json())
