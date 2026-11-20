@@ -20,6 +20,24 @@ CORRECTIONS = {
 # 9:45 AM, as the agenda (PDF and Excel) has it.
 KEYNOTE = "Suprajyotsna Dasari"
 MOVED = ("Future of Work & AI in Society", "Automate Your Tasks by Building Agentic AI", "Suprajyotsna Dasari")
+# Sessions withdrawn on 20 November (the agenda PDF and Excel no longer have them), and the
+# speaker cards of their speakers, who have no other session.
+WITHDRAWN = {
+    "When AI Enters Matters: A Behavioral Case for Human-First Reasoning",
+    "From Assistant to Operator: Security and Governance Risks in Multi-Agent AI Workflows",
+    "From Prompts to Processes: Building Autonomous AI Workflows",
+    "Data Security in the Age of Autonomous AI: Strategies for Cybersecurity",
+    "Synthetic Lives for Smarter Agents: Generating Personal Context Data for AI Benchmark Design",
+    "Designing AI Agents Users Will Trust: Evals, Guardrails, and Feedback Loops",
+    "Multi-Agent Preventive Maintenance Diagnostics to Enhance Labor Productivity",
+    "The Rise of Vibe-Coding: Empowering the Next Wave of Makers",
+    "Build Your First Agent in Copilot Studio",
+    "S.T.E.P. Up Your Leadership Strategy with Data-Driven Insights",
+}
+WITHDRAWN_SPEAKERS = {
+    "Devika Toprani", "Cansu Berkem", "Khadija Assbai", "Maitrik Patel", "Utkarsh Tripathi", "Dr. Joe Perez", "Joe Perez",
+    "Omar Soussa", "Mihaela-Roxana Ghidersa", "Elayne Jones", "Gbenga Akingbulere",
+}
 CLOCK = ('<svg class="lucide lucide-clock h-3.5 w-3.5" fill="none" height="24" stroke="currentColor" '
          'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" '
          'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>')
@@ -55,6 +73,34 @@ def reschedule(panels):
         for p, text in zip(new.find_all("p"), MOVED):
             p.string = text
         day1[-1].insert_after(new)
+
+
+def withdraw_sessions(panels):
+    """Take the WITHDRAWN sessions off the schedule (a slot left empty goes too)."""
+    for panel in panels:
+        for li in panel.find_all("li", recursive=False):
+            box = li.find("div")
+            cards = box.find_all("div", recursive=False) if box else []
+            for card in cards:
+                if any(p.get_text(strip=True) in WITHDRAWN for p in card.find_all("p")):
+                    card.decompose()
+            if cards and not box.find_all("div", recursive=False):
+                li.decompose()
+
+
+def withdraw_speakers(grid, shown):
+    """Remove WITHDRAWN_SPEAKERS' cards; the first `shown` cards stay in view, the rest behind View More."""
+    for card in grid.find_all(recursive=False):
+        h = card.find("h3")
+        if h and h.get_text(strip=True) in WITHDRAWN_SPEAKERS:
+            card.decompose()
+    for i, card in enumerate(grid.find_all(recursive=False)):
+        if i < shown:
+            card.attrs.pop("data-more", None)
+            card.attrs.pop("hidden", None)
+        else:
+            card["data-more"] = ""
+            card["hidden"] = ""
 
 
 def keynote_card(grid):
@@ -118,6 +164,7 @@ def gdai():
         card["data-more"] = ""
         card["hidden"] = ""
     keynote_card(grid)
+    withdraw_speakers(grid, before)
     old.select("div.grid")[0].replace_with(grid)
     button(old, "View More Speaking Sessions")["data-show-more"] = ""
     # Agenda: the three days, one shown at a time.
@@ -133,6 +180,7 @@ def gdai():
             panel["hidden"] = ""
         panels.append(panel)
     reschedule(panels)
+    withdraw_sessions(panels)
     ol.replace_with(*panels)
     # Questions: each answer under its question, closed to begin with.
     box = button(soup, "When is the conference?").parent.parent

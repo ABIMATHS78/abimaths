@@ -202,7 +202,8 @@ def test_the_events_pages_and_everything_they_show(client):
     keynote = '>Opening Keynote Address</p><p class="mt-1 text-sm text-muted-foreground">Suprajyotsna Dasari</p>'
     assert keynote in day1 and "Suprajyotsna" not in day2 + day3
     morning = day1.split(">9:45 AM - 10:15 AM<")[1].split(">10:15 AM - 10:45 AM<")[0]
-    assert morning.count("border bg-background p-4") == 5 and "Automate Your Tasks by Building Agentic AI" in morning
+    # Four since Devika Toprani's session was withdrawn (20 November).
+    assert morning.count("border bg-background p-4") == 4 and "Automate Your Tasks by Building Agentic AI" in morning
     assert "<p>Opening Keynote Address</p><p>Suprajyotsna Dasari</p>" in html
     assert html.count("Automate Your Tasks by Building Agentic AI") == 2  # her speaker card, and Day 1 at 9:45 AM
     # Her speaker card names the keynote above her session.
@@ -211,6 +212,12 @@ def test_the_events_pages_and_everything_they_show(client):
             '<p class="kicker mt-3">Session</p>') in card
     assert ("<h3>Suprajyotsna Dasari</h3><p>Software Developer at Cognizant</p><div><div><p>Keynote</p>"
             "<p>Opening Keynote Address</p><p>Session</p><p>Automate Your Tasks by Building Agentic AI</p>") in html
+    # Sessions withdrawn on 20 November are off the schedule, and their speakers off the page.
+    for gone in ("When AI Enters Matters", "From Assistant to Operator", "From Prompts to Processes", "Data Security in the Age of Autonomous AI",
+                 "Synthetic Lives for Smarter Agents", "Designing AI Agents Users Will Trust", "Multi-Agent Preventive Maintenance",
+                 "The Rise of Vibe-Coding", "Build Your First Agent in Copilot Studio", "S.T.E.P. Up Your Leadership",
+                 "Devika Toprani", "Gbenga Akingbulere", "Maitrik Patel", "Joe Perez"):
+        assert gone not in gdai and gone not in html, gone
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
