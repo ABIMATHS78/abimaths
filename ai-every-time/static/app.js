@@ -3569,6 +3569,10 @@ async function staffPaths(body, m) {
 async function staffRoles(body, m) {
   body.innerHTML = `
     <form class="card row" id="userSearch"><input type="text" name="q" placeholder="Search by name or email" aria-label="Search people" style="flex:1"><button class="btn">Search</button></form>
+    ${state.me.role === "admin" ? `<div class="card row" style="gap:8px;flex-wrap:wrap;align-items:center">
+      <a class="btn" href="/api/staff/users.csv" download>Download users (CSV)</a>
+      <a class="btn ghost" href="/api/staff/users.csv?news=1" download>Only those who agreed to news emails</a>
+      <span class="muted small">Names and emails of every account. Email people for news or offers only if they agreed to it.</span></div>` : ""}
     <div class="card"><div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Plan</th><th>Daily AI requests</th></tr></thead><tbody id="userRows"></tbody></table></div>
     <p class="muted small">Moderators review reported companions. Reviewers check learner-made paths before they're shared. Admins can do both and assign roles.</p>
     <p class="muted small">Give a learner a plan, such as Teams for each member of a team, until a day or for good. A plan they pay for carries on either way: they get the better of the two.</p>
