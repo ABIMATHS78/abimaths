@@ -38,6 +38,11 @@ WITHDRAWN_SPEAKERS = {
     "Devika Toprani", "Cansu Berkem", "Khadija Assbai", "Maitrik Patel", "Utkarsh Tripathi", "Dr. Joe Perez", "Joe Perez",
     "Omar Soussa", "Mihaela-Roxana Ghidersa", "Elayne Jones", "Gbenga Akingbulere",
 }
+# A session added on 20 November (the agenda PDF and Excel have it): Day 2 (panel 1), its time,
+# track, title and speaker, and the speaker's card (initials, no photo).
+ADDED = (1, "12:45 PM - 1:15 PM", "AI & Data Innovation",
+         "Diagnosis and Detection of Chromosomal Disorders: AI vs Traditional Methods", "Karinmoluwa Akinrelere")
+ADDED_HEADLINE = "Speaker, AI & Data Innovation"
 CLOCK = ('<svg class="lucide lucide-clock h-3.5 w-3.5" fill="none" height="24" stroke="currentColor" '
          'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" '
          'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>')
@@ -103,6 +108,33 @@ def withdraw_speakers(grid, shown):
             card["hidden"] = ""
 
 
+def add_session(panels):
+    """ADDED's session card, last in its slot; already there, left as is."""
+    day, time, track, title, name = ADDED
+    box = slot(panels[day], time).find("div")
+    cards = box.find_all("div", recursive=False)
+    if any(title in c.get_text() for c in cards):
+        return
+    new = copy.copy(cards[-1])
+    for p, text in zip(new.find_all("p"), (track, title, name)):
+        p.string = text
+    cards[-1].insert_after(new)
+
+
+def add_speaker(grid):
+    """ADDED's speaker card, after the others, with her initials as the cards without a photo have; already there, left as is."""
+    *_, title, name = ADDED
+    cards = grid.find_all(recursive=False)
+    if any(c.find("h3").get_text(strip=True) == name for c in cards):
+        return
+    new = copy.copy(next(c for c in cards if not c.find("img") and "Keynote" not in c.get_text()))
+    new.find("span").string = "".join(w[0] for w in name.split()[:2]).upper()
+    new.find("h3").string = name
+    new.find("h3").find_next_sibling("p").string = ADDED_HEADLINE
+    new.find("p", class_="kicker").find_next_sibling("p").string = title
+    cards[-1].insert_after(new)
+
+
 def keynote_card(grid):
     """KEYNOTE's speaker card names the keynote above her session; already there, left as is."""
     card = next(c for c in grid.find_all(recursive=False) if c.find("h3").get_text(strip=True) == KEYNOTE)
@@ -164,6 +196,7 @@ def gdai():
         card["data-more"] = ""
         card["hidden"] = ""
     keynote_card(grid)
+    add_speaker(grid)
     withdraw_speakers(grid, before)
     old.select("div.grid")[0].replace_with(grid)
     button(old, "View More Speaking Sessions")["data-show-more"] = ""
@@ -181,6 +214,7 @@ def gdai():
         panels.append(panel)
     reschedule(panels)
     withdraw_sessions(panels)
+    add_session(panels)
     ol.replace_with(*panels)
     # Questions: each answer under its question, closed to begin with.
     box = button(soup, "When is the conference?").parent.parent

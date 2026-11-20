@@ -218,6 +218,12 @@ def test_the_events_pages_and_everything_they_show(client):
                  "The Rise of Vibe-Coding", "Build Your First Agent in Copilot Studio", "S.T.E.P. Up Your Leadership",
                  "Devika Toprani", "Gbenga Akingbulere", "Maitrik Patel", "Joe Perez"):
         assert gone not in gdai and gone not in html, gone
+    # Karinmoluwa Akinrelere's session, added on 20 November: Day 2 at 12:45 PM, and her speaker card.
+    added = "Diagnosis and Detection of Chromosomal Disorders: AI vs Traditional Methods"
+    noon = day2.split(">12:45 PM - 1:15 PM<")[1].split(">1:15 PM - 1:45 PM<")[0]
+    assert noon.count("border bg-background p-4") == 4 and added in noon and "Karinmoluwa Akinrelere" in noon
+    assert gdai.count(added) == 2 and ">Karinmoluwa Akinrelere</h3>" in gdai
+    assert "<h3>Karinmoluwa Akinrelere</h3>" in html and html.count(added) == 2
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
