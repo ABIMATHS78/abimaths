@@ -43,6 +43,35 @@ WITHDRAWN_SPEAKERS = {
 ADDED = (1, "12:45 PM - 1:15 PM", "AI & Data Innovation",
          "Diagnosis and Detection of Chromosomal Disorders: AI vs Traditional Methods", "Karinmoluwa Akinrelere")
 ADDED_HEADLINE = "Speaker, AI & Data Innovation"
+# The host speaker (20 November 2026): every DataGlobal Hub session (panel, start, title) names it, and
+# it has a speaker card first in the grid.
+HOST = "DataGlobal Hub (By Mojeed Abisiga)"
+HOST_HEADLINE = "CEO & Co-founder, DataGlobal Hub · CEO & Founder, AI Every Time"
+HOST_INITIALS = "MA"
+HOST_SESSIONS = [
+    (0, "9:00 AM", "Welcome & Opening Announcements"),
+    (0, "11:45 AM", "Virtual Networking / Coffee Break"),
+    (0, "2:15 PM", "Fireside Chat with Industry Leaders"),
+    (0, "4:45 PM", "Virtual Networking / Coffee Break"),
+    (0, "5:15 PM", "Closing Keynote"),
+    (0, "5:45 PM", "Closing Remarks - End of Day 1"),
+    (1, "9:00 AM", "Welcome & Announcements"),
+    (1, "9:15 AM", "Opening Keynote Address"),
+    (1, "11:45 AM", "Virtual Networking / Coffee Break"),
+    (1, "2:15 PM", "Fireside Chat with Industry Leaders"),
+    (1, "4:45 PM", "Virtual Networking / Coffee Break"),
+    (1, "5:15 PM", "Closing Keynote"),
+    (1, "5:45 PM", "Closing Remarks - End of Day 2"),
+    (2, "9:00 AM", "Welcome & Announcements"),
+    (2, "9:15 AM", "Opening Keynote Address"),
+    (2, "11:45 AM", "Virtual Networking / Coffee Break"),
+    (2, "2:15 PM", "Fireside Chat with Industry Leaders"),
+    (2, "4:15 PM", "Designing AI-Native Enterprises: The Next Evolution"),
+    (2, "4:15 PM", "The Human Side of AI: Leading with Curiosity and Credibility"),
+    (2, "4:45 PM", "Virtual Networking / Coffee Break"),
+    (2, "5:15 PM", "Closing Keynote"),
+    (2, "5:45 PM", "Closing Remarks - End of Conference"),
+]
 CLOCK = ('<svg class="lucide lucide-clock h-3.5 w-3.5" fill="none" height="24" stroke="currentColor" '
          'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" '
          'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>')
@@ -135,6 +164,38 @@ def add_speaker(grid):
     cards[-1].insert_after(new)
 
 
+def host_sessions(panels):
+    """HOST on each of HOST_SESSIONS: a speaker line under a plenary, or in place of a talk's "TBC"; already there, left as is."""
+    for day, time, title in HOST_SESSIONS:
+        li = next(li for li in panels[day].find_all("li", recursive=False) if li.find("p").get_text(strip=True).startswith(time + " -"))
+        box = li.find("div")
+        cards = box.find_all("div", recursive=False)
+        if not cards:  # a plenary: title, then its track
+            if HOST in box.get_text():
+                continue
+            line = BeautifulSoup(f'<p class="mt-1 text-sm text-muted-foreground">{HOST}</p>', "lxml").find("p")
+            box.find("p").insert_after(line)
+            continue
+        card = next(c for c in cards if c.find_all("p")[1].get_text(strip=True) == title)
+        who = card.find_all("p")[2]
+        if who.get_text(strip=True) in ("TBC", ""):
+            who.string = HOST
+
+
+def host_card(grid):
+    """HOST's speaker card, first in the grid, with initials; already there, left as is."""
+    cards = grid.find_all(recursive=False)
+    if any(c.find("h3").get_text(strip=True) == HOST for c in cards):
+        return
+    new = copy.copy(next(c for c in cards if not c.find("img") and "Keynote" not in c.get_text()))
+    new.find("span").string = HOST_INITIALS
+    new.find("h3").string = HOST
+    new.find("h3").find_next_sibling("p").string = HOST_HEADLINE
+    new.find("p", class_="kicker").string = "Host"
+    new.find("p", class_="kicker").find_next_sibling("p").string = "Welcome and opening sessions, fireside chats, networking and closing remarks"
+    cards[0].insert_before(new)
+
+
 def keynote_card(grid):
     """KEYNOTE's speaker card names the keynote above her session; already there, left as is."""
     card = next(c for c in grid.find_all(recursive=False) if c.find("h3").get_text(strip=True) == KEYNOTE)
@@ -197,6 +258,7 @@ def gdai():
         card["hidden"] = ""
     keynote_card(grid)
     add_speaker(grid)
+    host_card(grid)
     withdraw_speakers(grid, before)
     old.select("div.grid")[0].replace_with(grid)
     button(old, "View More Speaking Sessions")["data-show-more"] = ""
@@ -215,6 +277,7 @@ def gdai():
     reschedule(panels)
     withdraw_sessions(panels)
     add_session(panels)
+    host_sessions(panels)
     ol.replace_with(*panels)
     # Questions: each answer under its question, closed to begin with.
     box = button(soup, "When is the conference?").parent.parent

@@ -224,6 +224,13 @@ def test_the_events_pages_and_everything_they_show(client):
     assert noon.count("border bg-background p-4") == 4 and added in noon and "Karinmoluwa Akinrelere" in noon
     assert gdai.count(added) == 2 and ">Karinmoluwa Akinrelere</h3>" in gdai
     assert "<h3>Karinmoluwa Akinrelere</h3>" in html and html.count(added) == 2
+    # The host speaker: DataGlobal Hub (By Mojeed Abisiga) on every DataGlobal Hub session, and first in the speakers.
+    host = "DataGlobal Hub (By Mojeed Abisiga)"
+    assert gdai.count(f'<p class="mt-1 text-sm text-muted-foreground">{host}</p>') == 20
+    assert "TBC" not in day3.split(">4:15 PM - 4:45 PM<")[1].split(">4:45 PM - 5:15 PM<")[0]
+    assert html.count(f"<h3>{host}</h3>") == 1 and html.count(host) == 23
+    first = gdai.split('data-more=""')[0]
+    assert f">{host}</h3>" in first  # in view, before "View More"
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
