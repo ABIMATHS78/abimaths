@@ -72,6 +72,10 @@ HOST_SESSIONS = [
     (2, "5:15 PM", "Closing Keynote"),
     (2, "5:45 PM", "Closing Remarks - End of Conference"),
 ]
+# Speakers' titles as they asked for them (20–21 November), on their cards.
+SPEAKER_TITLES = {
+    "Swapna Chimanchodkar": "Senior Leader in Process & Digital Transformation, IEEE Senior Member",
+}
 CLOCK = ('<svg class="lucide lucide-clock h-3.5 w-3.5" fill="none" height="24" stroke="currentColor" '
          'stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" '
          'xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>')
@@ -196,6 +200,16 @@ def host_card(grid):
     cards[0].insert_before(new)
 
 
+def speaker_titles(grid):
+    """SPEAKER_TITLES on those speakers' cards (the line under the name)."""
+    for card in grid.find_all(recursive=False):
+        h = card.find("h3")
+        if h and h.get_text(strip=True) in SPEAKER_TITLES:
+            line = h.find_next_sibling("p")
+            if line is not None:
+                line.string = SPEAKER_TITLES[h.get_text(strip=True)]
+
+
 def keynote_card(grid):
     """KEYNOTE's speaker card names the keynote above her session; already there, left as is."""
     card = next(c for c in grid.find_all(recursive=False) if c.find("h3").get_text(strip=True) == KEYNOTE)
@@ -257,6 +271,7 @@ def gdai():
         card["data-more"] = ""
         card["hidden"] = ""
     keynote_card(grid)
+    speaker_titles(grid)
     add_speaker(grid)
     host_card(grid)
     withdraw_speakers(grid, before)
