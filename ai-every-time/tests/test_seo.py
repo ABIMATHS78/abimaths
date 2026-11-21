@@ -231,6 +231,8 @@ def test_the_events_pages_and_everything_they_show(client):
     assert html.count(f"<h3>{host}</h3>") == 1 and html.count(host) == 23
     first = gdai.split('data-more=""')[0]
     assert f">{host}</h3>" in first  # in view, before "View More"
+    # Swapna Chimanchodkar's title, as she asked for it.
+    assert "<h3>Swapna Chimanchodkar</h3><p>Senior Leader in Process &amp; Digital Transformation, IEEE Senior Member</p>" in html
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
