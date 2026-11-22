@@ -38,6 +38,11 @@ WITHDRAWN_SPEAKERS = {
     "Devika Toprani", "Cansu Berkem", "Khadija Assbai", "Maitrik Patel", "Utkarsh Tripathi", "Dr. Joe Perez", "Joe Perez",
     "Omar Soussa", "Mihaela-Roxana Ghidersa", "Elayne Jones", "Gbenga Akingbulere",
 }
+# Sessions moved since copying the agenda (22 November 2026, the owner): from (day panel, slot) to
+# (day panel, slot), by title. Already moved, left as is.
+MOVES = [
+    (1, "2:45 PM - 3:15 PM", 2, "2:45 PM - 3:15 PM", "AI Won't Replace Creators, It Will Replace Creative Limitations"),
+]
 # A session added on 20 November (the agenda PDF and Excel have it): Day 2 (panel 1), its time,
 # track, title and speaker, and the speaker's card (initials, no photo).
 ADDED = (1, "12:45 PM - 1:15 PM", "AI & Data Innovation",
@@ -111,6 +116,20 @@ def reschedule(panels):
         for p, text in zip(new.find_all("p"), MOVED):
             p.string = text
         day1[-1].insert_after(new)
+
+
+def move_sessions(panels):
+    """MOVES: the session's card goes from its old slot to the end of its new one (an emptied slot goes too)."""
+    cards = lambda li: li.find("div").find_all("div", recursive=False)
+    for day, time, to_day, to_time, title in MOVES:
+        old = slot(panels[day], time)
+        card = next((c for c in cards(old) if title in c.get_text()), None)
+        new = cards(slot(panels[to_day], to_time))
+        if card is None or any(title in c.get_text() for c in new):
+            continue
+        new[-1].insert_after(card.extract())
+        if not cards(old):
+            old.decompose()
 
 
 def withdraw_sessions(panels):
@@ -290,6 +309,7 @@ def gdai():
             panel["hidden"] = ""
         panels.append(panel)
     reschedule(panels)
+    move_sessions(panels)
     withdraw_sessions(panels)
     add_session(panels)
     host_sessions(panels)
