@@ -1,0 +1,55 @@
+# Checks the personal website in mojeedabisiga.com/site and publishes it to GitHub Pages (mojeedabisiga.com).
+# It runs only when the website, its checker or this file changes, so AI Every Time app and iOS changes never
+# trigger it, and website changes never trigger a Render deploy or an iOS build.
+# One-time setup: Settings > Pages > Source: "GitHub Actions", custom domain mojeedabisiga.com.
+name: mojeedabisiga.com website
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "mojeedabisiga.com/site/**"
+      - "mojeedabisiga.com/tools/**"
+      - ".github/workflows/pages-mojeedabisiga.yml"
+  pull_request:
+    paths:
+      - "mojeedabisiga.com/**"
+      - ".github/workflows/pages-mojeedabisiga.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-mojeedabisiga
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the website
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Structured data, internal links, titles and descriptions
+        run: python3 mojeedabisiga.com/tools/check_site.py mojeedabisiga.com/site
+
+  deploy:
+    name: Publish to GitHub Pages
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/master'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: mojeedabisiga.com/site
+      - id: deployment
+        uses: actions/deploy-pages@v4
