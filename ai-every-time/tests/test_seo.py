@@ -233,6 +233,10 @@ def test_the_events_pages_and_everything_they_show(client):
     assert f">{host}</h3>" in first  # in view, before "View More"
     # Swapna Chimanchodkar's title, as she asked for it.
     assert "<h3>Swapna Chimanchodkar</h3><p>Senior Leader in Process &amp; Digital Transformation, IEEE Senior Member</p>" in html
+    # Dann Paniccia's talk moved to Day 3 (22 November), 2:45 PM: in that day's panel, once.
+    talk = "AI Won't Replace Creators, It Will Replace Creative Limitations"
+    day3 = gdai.split('data-day-panel="2"')[1]
+    assert gdai.count(talk) == 1 and talk in day3.split("3:15 PM - 3:45 PM")[0].split("2:45 PM - 3:15 PM")[1]
     # Beside its dates, the list says when the conference runs each day, and in which time zone.
     assert "November 20-22, 2026</li><li" in client.get("/static/events/index.html").text
     assert "Day 1–3 · 9:00 AM – 6:00 PM CST" in client.get("/static/events/index.html").text
