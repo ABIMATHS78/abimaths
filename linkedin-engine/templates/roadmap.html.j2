@@ -1,0 +1,87 @@
+{% extends "_base.html.j2" %}
+{% from "_macros.html.j2" import burst, arrow_marker %}
+{% set cells = [] %}
+{% if data.start and data.start.lines %}{% set _ = cells.append({"kind": "start", "heading": data.start.heading or "Start", "lines": data.start.lines}) %}{% endif %}
+{% for stop in data.stops %}{% set _ = cells.append({"kind": "stop", "n": loop.index, "heading": stop.heading, "lines": stop.lines, "code": stop.code, "result": stop.result}) %}{% endfor %}
+{% if data.finish and data.finish.lines %}{% set _ = cells.append({"kind": "finish", "heading": data.finish.heading or "Finish", "lines": data.finish.lines}) %}{% endif %}
+{% set rows = cells | batch(3) | list %}
+{% block style %}
+.head { flex: none; position: relative; z-index: 1; text-align: center; margin-bottom: 18px; font-size: 96px; max-height: 250px; }
+.head h1 { font-size: 1em; }
+.head .sub { display: block; }
+.road { font-size: 21px; position: relative; }
+.rows { display: flex; flex-direction: column; gap: 2.6em; padding: 2.2em 2.2em 0; position: relative; z-index: 1; }
+.row { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 1.6em; }
+.row.rev > .cell:nth-child(1) { grid-column: 3; }
+.row.rev > .cell:nth-child(2) { grid-column: 2; }
+.row.rev > .cell:nth-child(3) { grid-column: 1; }
+.row > .cell { grid-row: 1; }
+.cell h3 { font-family: "Fraunces", serif; font-weight: 800; font-size: 1.55em; line-height: 1.02; letter-spacing: -.02em; display: flex; align-items: baseline; gap: .3em; margin-bottom: .35em; }
+.cell h3 .n { font-variant-numeric: lining-nums; }
+.cell p { margin: 0 0 .3em; line-height: 1.28; color: var(--ink-2); }
+.cell code.cmd { display: inline-block; font-family: "JetBrains Mono", monospace; font-size: .78em; background: var(--chip-bg); color: var(--chip-ink); padding: .12em .4em; border-radius: .25em; margin: .1em 0 .35em; }
+.cell .result { font-family: "Fraunces", serif; font-weight: 700; font-size: 1.12em; line-height: 1.15; margin-top: .25em; }
+.cell.start h3::before { content: ""; width: .9em; height: .9em; border-radius: 50%; border: .16em solid var(--ink); display: inline-block; align-self: center; }
+.cell.finish { background: var(--danger-panel); color: var(--danger-panel-ink); padding: .8em 1em .9em; transform: rotate(-1.2deg); border-radius: .15em; align-self: start; }
+.cell.finish h3 { font-family: "Inter", sans-serif; font-weight: 800; font-size: 1.7em; }
+.cell.finish p { color: inherit; font-family: "Fraunces", serif; font-weight: 700; font-size: 1.15em; margin-bottom: .25em; }
+svg.path { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 0; pointer-events: none; }
+svg.path path.route { fill: none; stroke: var(--ink); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+{% endblock %}
+
+{% block script %}
+<script>
+window.__layout = function () {
+  const road = document.querySelector(".road");
+  const box = road.getBoundingClientRect();
+  const rows = Array.from(document.querySelectorAll(".row"));
+  if (!rows.length) return;
+  const pad = 22, left = pad, right = box.width - pad;
+  const ys = rows.map((row) => row.getBoundingClientRect().top - box.top - 26);
+  let d = "";
+  rows.forEach((row, i) => {
+    const rev = i % 2 === 1, y = ys[i];
+    const cells = Array.from(row.querySelectorAll(".cell"));
+    const last = i === rows.length - 1;
+    if (i === 0) d += `M ${left + 8} ${y}`;
+    let endX = rev ? left : right;
+    if (last) {
+      const target = cells[cells.length - 1].getBoundingClientRect();
+      endX = (rev ? target.right : target.left) - box.left + (rev ? 8 : -8);
+      endX = Math.max(left, Math.min(right, endX + (rev ? -40 : 40)));
+    }
+    d += ` L ${endX} ${y}`;
+    if (!last) {
+      const ny = ys[i + 1], ry = (ny - y) / 2;
+      d += ` A 30 ${ry} 0 0 ${rev ? 0 : 1} ${endX} ${ny}`;
+    }
+  });
+  const svg = document.querySelector("svg.path");
+  const path = svg.querySelector("path.route");
+  path.setAttribute("d", d);
+};
+</script>
+{% endblock %}
+
+{% block content %}
+<header class="head" data-fit="headline" data-fit-max="1" data-fit-min="0.45">
+  <h1 class="display" data-anim="fade-up">{{ data.title | rich }}{% if data.subtitle %}<span class="sub">{{ data.subtitle | rich }}</span>{% endif %}</h1>
+</header>
+<section class="fit road" data-fit="road" data-fit-max="1.45" data-fit-min="0.5">
+  <svg class="path" aria-hidden="true"><defs>{{ arrow_marker("road-arrow", "var(--ink)") }}</defs><path class="route draw-path" pathLength="1" marker-end="url(#road-arrow)" data-anim="draw" data-at="0.5" data-span=""></path></svg>
+  <div class="rows">
+  {% for row in rows %}
+    <div class="row{{ ' rev' if loop.index0 % 2 == 1 else '' }}">
+    {% for cell in row %}
+      <div class="cell {{ cell.kind }}" data-anim="fade-up">
+        <h3>{% if cell.kind == "stop" %}<span class="n">{{ "%02d" | format(cell.n) }}</span>{% endif %}<span>{{ cell.heading | rich }}</span></h3>
+        {% for line in cell.lines %}<p>{{ line | rich }}</p>{% endfor %}
+        {% if cell.code %}<code class="cmd">{{ cell.code }}</code>{% endif %}
+        {% if cell.result %}<div class="result">{{ cell.result | rich }}</div>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

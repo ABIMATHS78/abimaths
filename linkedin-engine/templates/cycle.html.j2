@@ -1,0 +1,74 @@
+{% extends "_base.html.j2" %}
+{% from "_macros.html.j2" import arrow_marker %}
+{% block style %}
+.canvas { padding-top: 0; }
+.ring { position: absolute; inset: 0 0 76px 0; font-size: 19px; }
+.ring svg.arrows { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ring svg.arrows path { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.card { position: absolute; width: {{ (card_w / 19) | round(2) }}em; transform: translate(-50%, -50%); background: var(--panel); border: .06em solid var(--line); border-radius: .5em;
+  padding: .7em .8em .8em; box-shadow: var(--shadow); text-align: center; }
+.card .num { position: absolute; left: -.55em; top: -.6em; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+  font-weight: 800; font-size: .95em; display: grid; place-items: center; }
+.card h3 { font-family: "Fraunces", serif; font-weight: 700; font-size: 1.3em; line-height: 1.05; letter-spacing: -.015em; }
+.card .tag { display: inline-block; margin: .35em 0 .25em; background: var(--accent); color: var(--accent-ink); font-size: .72em; font-weight: 700; padding: .12em .55em; border-radius: .25em; }
+.card p { margin: .2em 0 0; line-height: 1.25; color: var(--ink-2); font-size: .95em; }
+.center { position: absolute; left: 50%; top: 650px; transform: translate(-50%, -50%); text-align: center; width: 22em; }
+.center .big { font-family: "Fraunces", serif; font-weight: 800; font-size: 15em; line-height: .8; letter-spacing: -.04em; font-variation-settings: "opsz" 144; }
+.center .title { font-family: "Fraunces", serif; font-weight: 600; font-size: 3.2em; line-height: 1; letter-spacing: -.025em; margin-top: .15em; }
+.center .title strong { font-weight: 800; }
+.center .sub { font-family: "Fraunces", serif; font-style: italic; font-weight: 400; font-size: 2.5em; margin-top: .1em; }
+{% endblock %}
+
+{% block script %}
+<script>
+window.__layout = function () {
+  const ring = document.querySelector(".ring");
+  const origin = ring.getBoundingClientRect();
+  const loop = {{ loop | tojson }};
+  const idx = {{ loop_idx | tojson }};
+  const cards = Array.from(document.querySelectorAll(".card"));
+  const rects = cards.map((c) => { const r = c.getBoundingClientRect(); return { l: r.left - origin.left - 16, r: r.right - origin.left + 16, t: r.top - origin.top - 16, b: r.bottom - origin.top + 16 }; });
+  const inside = (p, r) => p[0] > r.l && p[0] < r.r && p[1] > r.t && p[1] < r.b;
+  const svg = document.querySelector("svg.arrows");
+  const n = cards.length;
+  for (let i = 0; i < n; i++) {
+    const a = idx[i], b = idx[(i + 1) % n] + (i + 1 === n ? loop.length : 0);
+    const pts = [];
+    for (let k = a; k <= b; k++) pts.push(loop[k % loop.length]);
+    let s = 0, e = pts.length - 1;
+    while (s < e && inside(pts[s], rects[i])) s++;
+    while (e > s && inside(pts[e], rects[(i + 1) % n])) e--;
+    if (e - s < 3) continue;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M " + pts.slice(s, e + 1).map((p) => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L "));
+    path.setAttribute("marker-end", "url(#cycle-arrow)");
+    path.setAttribute("pathLength", "1");
+    path.setAttribute("class", "draw-path");
+    path.dataset.anim = "draw";
+    path.dataset.order = String(i * 10 + 5);
+    path.dataset.dur = "0.45";
+    svg.appendChild(path);
+  }
+};
+</script>
+{% endblock %}
+
+{% block content %}
+<section class="ring" data-fit="cards" data-fit-mode="boxes" data-box-gap="14" data-box-pad="22" data-fit-max="1.3" data-fit-min="0.5">
+  <svg class="arrows" aria-hidden="true"><defs>{{ arrow_marker("cycle-arrow") }}</defs></svg>
+  <div class="center" data-box data-anim="zoom" data-order="-1">
+    <div class="big">{{ data.center_big }}</div>
+    <div class="title">{{ data.center_title | rich }}</div>
+    {% if data.center_sub %}<div class="sub">{{ data.center_sub | rich }}</div>{% endif %}
+  </div>
+  {% for item in data["items"] %}
+  {% set pos = positions[loop.index0] %}
+  <article class="card" data-box style="left: {{ pos.x }}px; top: {{ pos.y }}px" data-anim="pop" data-order="{{ loop.index0 * 10 }}">
+    <span class="num">{{ loop.index }}</span>
+    <h3>{{ item.title | rich }}</h3>
+    {% if item.tag %}<span class="tag">{{ item.tag }}</span>{% endif %}
+    <p>{{ item.text | rich }}</p>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}
