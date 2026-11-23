@@ -18,8 +18,8 @@ The strategy is: claim the panel, give Google one authoritative "entity home" (h
 | DNS (Squarespace) | A @ → 185.199.108.153, .109.153, .110.153, .111.153; CNAME www → abimaths78.github.io. The "Squarespace Defaults" preset was deleted and must **not** be re-added. The MX (Google Workspace) and TXT (google-site-verification) records exist; leave them alone. |
 | First PR (#51) | Merged. Added the site, checker, workflow and Wikidata batches. |
 | Second PR (#52) | Merged 23 Nov 2026 and live. Added the **/achievements/** page built from his CV, CV details on the Home, About and Press pages, his headshot as the favicon, header logo and social image, and two editorial portraits. Merging to `master` deploys automatically in about a minute. |
-| Wikidata | Item **Q137917376** exists, with only a label, a description, P31 and P21. Every item and property ID in both batches was checked against Wikidata on 23 Nov 2026. The batches have **not been run yet**. |
-| Search Console | Not confirmed as set up yet. |
+| Wikidata | Item **Q137917376** filled in by hand on 23 Nov 2026, because QuickStatements needs an autoconfirmed account (4 days old, 50 edits). It now has 21 statements: the official website (language: English), four aliases, nine profile IDs, citizenship, birthplace, birth date, occupations, education and employers, all with references. Batch 1 is therefore done. Batch 2 (optional) waits until the account is autoconfirmed. |
+| Search Console | Done 23 Nov 2026. A Domain property for `mojeedabisiga.com` was already verified, the sitemap was submitted, and indexing was requested for `/`, `/about/`, `/achievements/` and `/press/`. |
 | Knowledge panel claim | Not done yet. |
 
 ## 3. Repository layout (`mojeedabisiga.com/` in the repo)
