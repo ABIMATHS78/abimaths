@@ -1,5 +1,5 @@
-"""Colour themes. The first six reproduce palettes seen in the training graphics; 'aiet' and 'midnight'
-use the AI Every Time brand colours so posts can match the author's own site."""
+"""Colour themes. The first six reproduce palettes seen in the training graphics; 'mojeed' and
+'mojeed-dark' use the colours of mojeedabisiga.com so posts can match the author's own site."""
 
 BASE = {
     "bg": "#F4F0E8", "bg-2": "#ECE5D8", "panel": "#FBF8F2", "panel-head": "#EADFCF", "panel-head-ink": "#1A1816",
@@ -50,24 +50,25 @@ THEMES = {
         "bg": "#D97757", "bg-2": "#C9673F", "panel": "#F8E4D9", "ink": "#2A1D17", "ink-2": "#3E2C24",
         "muted": "#6E4E40", "accent": "#D97757", "accent-2": "#B8573A", "line": "#B8573A",
     },
-    # AI Every Time brand: lavender paper, violet accent.
-    "aiet": {
-        "bg": "#F6F4FF", "bg-2": "#EEEAFE", "panel": "#FFFFFF", "panel-head": "#E7E1FF", "panel-border": "#D8D2F2",
-        "ink": "#1C1A29", "ink-2": "#34314A", "muted": "#6A6780", "line": "#DCD7F0", "line-strong": "#1C1A29",
-        "accent": "#5B4CDB", "accent-2": "#4334B8", "accent-soft": "#E2DDFF", "good": "#1F9D6B", "good-soft": "#DCF6EC",
-        "bad": "#D6455D", "bad-soft": "#FBE0E5", "warn": "#E0A849", "warn-soft": "#FAEBCF", "link": "#5B4CDB",
-        "highlight": "#FFE07A", "code-bg": "#1C1A29", "code-ink": "#ECEBF5", "chip-bg": "#ECE8FB", "chip-ink": "#2B2840",
-        "shadow": "0 10px 30px rgba(40, 30, 110, .12)",
+    # Mojeed Abisiga's own colours (mojeedabisiga.com): warm paper, deep emerald, gold.
+    "mojeed": {
+        "bg": "#F7F6F2", "bg-2": "#EFEDE6", "panel": "#FFFFFF", "panel-head": "#DCF2E8", "panel-head-ink": "#0D1117",
+        "panel-border": "#E2DFD6", "ink": "#0D1117", "ink-2": "#2A313C", "muted": "#5A6370", "line": "#E2DFD6",
+        "line-strong": "#0D1117", "accent": "#07704C", "accent-2": "#055C3E", "accent-soft": "#DCF2E8",
+        "accent-ink": "#FFFFFF", "good": "#07704C", "good-soft": "#DCF2E8", "bad": "#C2412D", "bad-soft": "#F8DDD7",
+        "warn": "#E2B659", "warn-soft": "#F6ECD6", "link": "#07704C", "highlight": "#F2D894", "code-bg": "#0D1117",
+        "code-ink": "#ECEFF3", "chip-bg": "#EFEDE6", "chip-ink": "#2A313C", "shadow": "0 10px 30px rgba(13, 17, 23, .10)",
+        "danger-panel": "#0D1117", "danger-panel-ink": "#ECEFF3",
     },
-    # AI Every Time brand, dark.
-    "midnight": {
-        "bg": "#12111A", "bg-2": "#1B1A26", "panel": "#1F1D2C", "panel-head": "#2A2740", "panel-head-ink": "#ECEBF5",
-        "panel-border": "#34314A", "ink": "#ECEBF5", "ink-2": "#CFCDE2", "muted": "#A19EB8", "line": "#34314A",
-        "line-strong": "#ECEBF5", "accent": "#8A7DFF", "accent-2": "#B3A9FF", "accent-soft": "#2A2560",
-        "accent-ink": "#12111A", "good": "#5BD6A0", "good-soft": "#123329", "good-ink": "#0D1F18", "bad": "#FF5C72",
-        "bad-soft": "#3A1620", "warn": "#E0A849", "link": "#B3A9FF", "highlight": "#8A7DFF", "code-bg": "#0B0A12",
-        "code-ink": "#ECEBF5", "chip-bg": "#2A2740", "chip-ink": "#ECEBF5", "shadow": "0 10px 30px rgba(0, 0, 0, .5)",
-        "dark": "1", "danger-panel": "#0B0A12", "danger-panel-ink": "#ECEBF5",
+    # The same, dark.
+    "mojeed-dark": {
+        "bg": "#0B0E13", "bg-2": "#12161D", "panel": "#12161D", "panel-head": "#171C24", "panel-head-ink": "#ECEFF3",
+        "panel-border": "#242B36", "ink": "#ECEFF3", "ink-2": "#C9CFD8", "muted": "#98A2B0", "line": "#242B36",
+        "line-strong": "#ECEFF3", "accent": "#45D99C", "accent-2": "#6AE4B1", "accent-soft": "#0F2A20",
+        "accent-ink": "#03140C", "good": "#45D99C", "good-soft": "#0F2A20", "good-ink": "#03140C", "bad": "#FF6B57",
+        "bad-soft": "#3A1A14", "warn": "#E2B659", "warn-soft": "#2A2213", "link": "#45D99C", "highlight": "#1F5A43",
+        "code-bg": "#000000", "code-ink": "#ECEFF3", "chip-bg": "#171C24", "chip-ink": "#ECEFF3",
+        "shadow": "0 10px 30px rgba(0, 0, 0, .5)", "dark": "1", "danger-panel": "#000000", "danger-panel-ink": "#ECEFF3",
     },
 }
 

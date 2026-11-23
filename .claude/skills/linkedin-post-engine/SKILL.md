@@ -1,6 +1,6 @@
 ---
 name: linkedin-post-engine
-description: Writes a LinkedIn post and renders its graphic as a PNG, GIF or MP4 in the house style the engine learned from the training posts, for Mojeed Abisiga and AI Every Time. Use when asked for a LinkedIn post, a post graphic or infographic, an animated GIF or short video for LinkedIn, or to retrain the style from the Google Drive folder.
+description: Writes a LinkedIn post and renders its graphic as a PNG, GIF or MP4 in the house style the engine learned from the training posts, signed as Mojeed Abisiga and linking to mojeedabisiga.com. Use when asked for a LinkedIn post, a post graphic or infographic, an animated GIF or short video for LinkedIn, or to retrain the style from the Google Drive folder.
 ---
 
 # LinkedIn post engine
@@ -34,7 +34,10 @@ quotes or links: write `[CHECK: what's needed]` instead.
 2. Run `python -m lpe examples "<topic>" --k 3 --full` and read the closest example posts for shape only.
    They belong to another creator: never reuse their wording, facts, names, links or sign-offs.
 3. Write the post: a hook formula from the guide filled with the brief's specifics, one body structure, one
-   closing that points to the author's site. Plain text, short lines, no markdown, no hashtags.
+   closing. When it needs a link, use the author's website from `brand.json` (https://mojeedabisiga.com).
+   Plain text, short lines, no markdown, no hashtags.
+4. Sign everything as Mojeed Abisiga. Never use a name or site in `brand.json`'s `never_mention` list
+   (AI Every Time, aieverytime.org) in the post or the graphic: the render check rejects them.
 
 ## 4. Design the graphic
 

@@ -4,7 +4,7 @@ PROFILE = {
     "voice": {"avoid_phrases": ["delve", "game-changer", "here's the thing"]},
     "guardrails": {"creator_markers": ["Jane Creator", "janes-letter.guide"], "training_domains": ["janes-letter.guide", "janeskills.de"]},
 }
-BRAND = {"site": "aieverytime.org"}
+BRAND = {"site": "mojeedabisiga.com", "url": "https://mojeedabisiga.com/", "never_mention": ["AI Every Time", "aieverytime.org"]}
 BODY = "\n".join(f"Line {i} of a useful post about prompts." for i in range(12))
 
 
@@ -13,7 +13,7 @@ def codes(issues):
 
 
 def test_clean_post_passes():
-    text = "Stop guessing your prompts.\n\n" + BODY + "\n\nMore at aieverytime.org/guides/prompts"
+    text = "Stop guessing your prompts.\n\n" + BODY + "\n\nMore about my work: https://mojeedabisiga.com"
     issues = lint_post(text, PROFILE, [], "", BRAND)
     assert not has_errors(issues), issues
 
@@ -36,7 +36,7 @@ def test_training_creator_identity_is_an_error():
 
 
 def test_links_must_come_from_the_brief_or_the_brand():
-    text = BODY + "\nGuide: https://lnkd.in/abc123\nAlso see example.com/page\nAnd aieverytime.org/x"
+    text = BODY + "\nGuide: https://lnkd.in/abc123\nAlso see example.com/page\nAnd https://www.mojeedabisiga.com/about/"
     issues = [i for i in lint_post(text, PROFILE, [], "", BRAND) if i.code == "unknown_link"]
     assert {i.level for i in issues} == {"error", "warning"}  # lnkd.in is an error, other unknown links a warning
     assert not [i for i in lint_post(BODY + "\nexample.com/page", PROFILE, [], "Link: example.com/page", BRAND) if i.code == "unknown_link"]
@@ -66,3 +66,11 @@ def test_fix_post():
 def test_lint_graphic():
     assert "no_source" in codes(lint_graphic({"template": "big_number", "data": {"source": ""}}))
     assert "third_party" in codes(lint_graphic({"template": "badge", "data": {"title": "By Jane Creator"}}, PROFILE))
+
+
+def test_never_mention_names_are_errors_in_posts_and_graphics():
+    issues = lint_post(BODY + "\nFree guides at AI Every Time: aieverytime.org", PROFILE, [], "", BRAND)
+    assert "brand_avoid" in codes(issues) and has_errors(issues)
+    assert "brand_avoid" in codes(lint_graphic({"template": "badge", "data": {"title": "Join AI Every Time"}}, PROFILE, [], BRAND))
+    assert "brand_avoid" in codes(lint_graphic({"template": "badge", "data": {"title": "Hi"}, "alt_text": "aieverytime.org"}, PROFILE, [], BRAND))
+    assert "brand_avoid" not in codes(lint_post(BODY + "\nMore about my work: https://mojeedabisiga.com", PROFILE, [], "", BRAND))

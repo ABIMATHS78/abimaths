@@ -1,8 +1,8 @@
 # LinkedIn Post Engine
 
 Writes LinkedIn posts and makes their graphics, as a still image (PNG), an animated GIF or a video (MP4), in a
-style it learned from a folder of example posts. Set up for Mojeed Abisiga and AI Every Time: every post points
-readers to aieverytime.org and carries his credit.
+style it learned from a folder of example posts. Set up for Mojeed Abisiga: every post and graphic carries his name
+and points readers to his website, [mojeedabisiga.com](https://mojeedabisiga.com/).
 
 | Static card grid | Self-drawing whiteboard (GIF) | Kinetic video (MP4) | One-page cheat sheet, brand colours |
 |---|---|---|---|
@@ -143,19 +143,25 @@ highlight, `[[word]]` an accent pill, `__word__` a red underline, `` `code` `` a
 
 ## Brand and colours
 
-[`brand.json`](brand.json) holds the author's name, headline, site, footer credit, call-to-action lines and voice
-notes. `theme` decides the colours. `learned` keeps each template's look from the training set (cream and
-terracotta, white, near-black, whiteboard); a theme name forces it on every post. Themes: `cream`, `paper`,
-`ink`, `notes`, `whiteboard`, `terracotta`, and `aiet` / `midnight` in AI Every Time's violet (see the cheat-sheet
-sample). Override one post with `--theme`.
+[`brand.json`](brand.json) holds the author's name and headline, the website (`site` as shown on graphics, `url`
+as linked in posts), the footer credit, call-to-action lines and voice notes. Posts and graphics are signed
+"Mojeed Abisiga" and link to https://mojeedabisiga.com. `never_mention` lists names that must never appear (now
+"AI Every Time" and aieverytime.org): Claude is told to avoid them, and the checks reject any post or graphic
+that uses them. Edit the list if that changes.
+
+`theme` decides the colours. `learned` keeps each template's look from the training set (cream and terracotta,
+white, near-black, whiteboard); a theme name forces it on every post. Themes: `cream`, `paper`, `ink`, `notes`,
+`whiteboard`, `terracotta`, and `mojeed` / `mojeed-dark` in the emerald and gold of mojeedabisiga.com (see the
+cheat-sheet sample). Override one post with `--theme`.
 
 ## Checks on every post
 
 `lpe/guardrails.py` runs after writing (and `generate` repairs errors before rendering):
 
 - **Errors**: over LinkedIn's 3,000 characters; markdown that would show as symbols; the training creator's
-  name, newsletter or sites; a `lnkd.in` link that isn't in the brief; 12 or more words copied from an example post;
-  advice to have AI pass tests or certifications, or to fool recruiters; a chart without a source.
+  name, newsletter or sites; anything in the brand's `never_mention` list; a `lnkd.in` link that isn't in the brief;
+  12 or more words copied from an example post; advice to have AI pass tests or certifications, or to fool
+  recruiters; a chart without a source.
 - **Warnings**: AI giveaways ("delve", "seamless", "It's not X, it's Y", em dashes); an opening past the "see more"
   fold; engagement bait; too many hashtags or emoji; unfilled `[CHECK: ...]` placeholders; links not in the brief.
 - **Notes**: numbers that aren't in the brief, to verify before posting.

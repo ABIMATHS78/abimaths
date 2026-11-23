@@ -7,6 +7,7 @@ import re
 from dataclasses import asdict, dataclass
 
 from .analyze import EMOJI_RE, FOLD_CHARS, HASHTAG_RE, hook_of
+from .brand import own_hosts
 from .knowledge import AVOID_PHRASES
 from .markup import plain
 
@@ -112,7 +113,11 @@ def lint_post(text: str, profile: dict | None = None, corpus: list[dict] | None 
     if domains:
         issues.append(Issue("error", "training_link", "Links to the training creator's sites: " + ", ".join(domains)))
 
-    own = {d.lower() for d in [brand.get("site", ""), "linkedin.com"] if d}
+    banned = [n for n in brand.get("never_mention", []) if n and n.lower() in lower]
+    if banned:
+        issues.append(Issue("error", "brand_avoid", "Mentions what brand.json says never to use: " + ", ".join(banned)))
+
+    own = own_hosts(brand) | {"linkedin.com"}
     for url in sorted(set(URL_RE.findall(text))):
         host = re.sub(r"^https?://", "", url.lower()).split("/")[0].removeprefix("www.")
         if host in own or any(host.endswith("." + d) for d in own) or url.lower() in brief_lower or host in brief_lower:
@@ -133,9 +138,14 @@ def lint_post(text: str, profile: dict | None = None, corpus: list[dict] | None 
     return issues
 
 
-def lint_graphic(spec: dict, profile: dict | None = None, schema_warnings: list[str] | None = None) -> list[Issue]:
+def lint_graphic(spec: dict, profile: dict | None = None, schema_warnings: list[str] | None = None,
+                 brand: dict | None = None) -> list[Issue]:
     issues = [Issue("warning", "graphic_data", w) for w in (schema_warnings or [])]
     text = plain(_flatten(spec.get("data", {}))).lower()
+    text += " " + " ".join(str(spec.get(k, "")) for k in ("footer_left", "footer_right", "alt_text")).lower()
+    for name in (brand or {}).get("never_mention", []):
+        if name and name.lower() in text:
+            issues.append(Issue("error", "brand_avoid", f"The graphic mentions '{name}', which brand.json says never to use."))
     for marker in (profile or {}).get("guardrails", {}).get("creator_markers", []):
         if marker and marker.lower() in text:
             issues.append(Issue("error", "third_party", f"The graphic mentions '{marker}' from the training set."))

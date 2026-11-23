@@ -123,15 +123,15 @@ LINK_LIST = Template(
         "style": "pinned",
         "item_prefix": "Lesson",
         "groups": [{"items": [
-            {"text": "Your first useful prompt", "link": "aieverytime.org/guides/first-prompt"},
-            {"text": "Make AI write like you", "link": "aieverytime.org/guides/your-voice"},
-            {"text": "Turn notes into actions", "link": "aieverytime.org/guides/meeting-notes"},
-            {"text": "Check the numbers it gives you", "link": "aieverytime.org/guides/check-numbers"},
-            {"text": "Build your first skill", "link": "aieverytime.org/guides/first-skill"},
-            {"text": "Plan a presentation in 10 minutes", "link": "aieverytime.org/guides/presentations"},
-            {"text": "Research without the rabbit holes", "link": "aieverytime.org/guides/research"},
+            {"text": "Your first useful prompt", "link": "example.com/first-prompt"},
+            {"text": "Make AI write like you", "link": "example.com/your-voice"},
+            {"text": "Turn notes into actions", "link": "example.com/meeting-notes"},
+            {"text": "Check the numbers it gives you", "link": "example.com/check-numbers"},
+            {"text": "Build your first skill", "link": "example.com/first-skill"},
+            {"text": "Plan a presentation in 10 minutes", "link": "example.com/presentations"},
+            {"text": "Research without the rabbit holes", "link": "example.com/research"},
         ]}],
-        "footnote": "Read one a day instead of scrolling.\nAll free at *aieverytime.org*",
+        "footnote": "Read one a day instead of scrolling.\nMore from me at *mojeedabisiga.com*",
     },
 )
 
@@ -611,7 +611,7 @@ BADGE = Template(
     }, ["title"]),
     default_theme="terracotta",
     shapes=("portrait", "square", "landscape"),
-    sample={"kicker": "New free guide", "title": "AI for Absolute Beginners", "subtitle": "aieverytime.org"},
+    sample={"kicker": "A new series", "title": "AI for Absolute Beginners", "subtitle": "by Mojeed Abisiga"},
 )
 
 
@@ -708,7 +708,7 @@ KINETIC = Template(
         {"kicker": "Fix 1", "text": "Delete the *first sentence*"},
         {"kicker": "Fix 2", "text": "Name *one real* example"},
         {"kicker": "Fix 3", "text": "Read it *out loud* once"},
-        {"text": "More free guides at *aieverytime.org*"},
+        {"kicker": "More from me", "text": "*mojeedabisiga.com*"},
     ]},
 )
 

@@ -12,13 +12,17 @@ from .themes import THEMES
 
 
 def author_block(brand: dict) -> str:
-    lines = [
-        f"Name: {brand.get('name', '')}",
-        f"Headline: {brand.get('headline', '')}",
-        f"Publication: {brand.get('publication', '')}",
-        f"Site to send readers to: {brand.get('site', '')}",
-        f"Resource line you may use in closings: {brand.get('cta', {}).get('resource_line', '')}",
-    ]
+    lines = [f"Name: {brand.get('name', '')}", f"Headline: {brand.get('headline', '')}"]
+    if brand.get("publication"):
+        lines.append(f"Publication: {brand['publication']}")
+    lines.append(f"Website (the exact link to use in posts): {brand.get('url') or brand.get('site', '')}")
+    cta = brand.get("cta", {})
+    if cta.get("resource_line"):
+        lines.append(f"Resource line you may use in closings: {cta['resource_line']}")
+    if cta.get("share_line"):
+        lines.append(f"Share line you may use in closings: {cta['share_line']}")
+    if brand.get("never_mention"):
+        lines.append("Never mention, in the post or the graphic: " + ", ".join(brand["never_mention"]))
     lines += [f"Voice note: {note}" for note in brand.get("voice_notes", [])]
     return "\n".join(lines)
 
@@ -49,7 +53,8 @@ How to work:
 2. Pick the hook formula that fits that material and fill it with the brief's real specifics.
 3. Pick the body structure that suits the material: steps for a process, a link library for resources, old/new pairs for a fix, and so on.
 4. Aim for the measured typical length unless the brief asks for something else. Never go over 2,900 characters.
-5. Close with one closing from the guide. When a link is needed, use the author's site or a link from the brief.
+5. Close with one closing from the guide. When a link is needed, use the author's website (the exact link above) or a link
+from the brief.
 6. Choose the graphic template that turns the post into a save-worthy image, and whether it should be still (png) or moving \
 (gif for a drawing build-up, mp4 for kinetic text or a long build).
 
@@ -143,7 +148,12 @@ Graphic rules:
 or the first choice listed.
 - Text markup inside fields: *word* accent colour, **word** bold, ==word== highlight, [[word]] accent pill, __word__ underline, `code` chip. \
 Use it sparingly: one accent per headline.
-- Never put the author credit, a site footer or the example creator's name inside the content."""
+- Never put the author credit, a site footer or the example creator's name inside the content.{_never(brand)}"""
+
+
+def _never(brand: dict) -> str:
+    names = brand.get("never_mention") or []
+    return f"\n- Never mention: {', '.join(names)}." if names else ""
 
 
 def design_user(post: str, graphic_brief: str, template_name: str) -> str:

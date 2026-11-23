@@ -1,7 +1,7 @@
 # Everything you need to know about Claude skills fits on one page.
 
-Template: cheatsheet · Theme: aiet · Files: graphic.png
-Characters: 1,301 of 3,000
+Template: cheatsheet · Theme: mojeed · Files: graphic.png
+Characters: 1,238 of 3,000
 
 ## Post
 
@@ -46,9 +46,9 @@ If Claude misses one, fix the description first.
 Switch on a skill you haven't read.
 Put passwords or API keys inside one.
 
-The full guide, with 10 free skills & 120 more for 20 jobs: aieverytime.org/guides/claude-skills-starter-kit
-
 Share this with the colleague who still pastes the same prompt every morning.
+
+More about my work: https://mojeedabisiga.com
 ```
 
 ## Other openings
@@ -58,8 +58,8 @@ Share this with the colleague who still pastes the same prompt every morning.
 
 ## Before you post
 
-- [ ] Check the guide link opens: aieverytime.org/guides/claude-skills-starter-kit
+- [ ] Read it once out loud.
 
 ## Alt text
 
-A one-page cheat sheet in AI Every Time's violet colours titled 'Claude skills on one page', with seven panels: what a skill is, how it differs from instructions, projects and connectors, installing in four steps, Claude Code folders, the rules for making one, testing it, and what never to do.
+A one-page cheat sheet in the emerald and gold of mojeedabisiga.com, titled 'Claude skills on one page', with seven panels: what a skill is, how it differs from instructions, projects and connectors, installing in four steps, Claude Code folders, the rules for making one, testing it, and what never to do.

@@ -67,7 +67,7 @@ CTA_FORMULAS = [
     {"id": "repost_for_team", "formula": "♻️ Repost it for the colleague who still [specific pain]."},
     {"id": "ps_guide_link", "formula": "PS: the full step-by-step, with every prompt, is free here: [link]"},
     {"id": "link_gate", "formula": "The full [prompt/checklist] has [N] parts. It was too long for this caption, so it's here: [link]"},
-    {"id": "mission", "formula": "My only goal is to make you [very good] at AI. That's why I write [publication] every week: [site]."},
+    {"id": "mission", "formula": "One line on why the author shares this (their mission, from the voice notes), then where to find more: [site]."},
     {"id": "anaphora_close", "formula": "Three short 'I could tell you [exaggeration].' lines, then 'But I won't.' and a plain promise. Write fresh wording every time."},
     {"id": "closing_instruction", "formula": "So close LinkedIn. Open [tool]. Try one [specific task] today."},
     {"id": "authority_quote", "formula": "End on a short quote from a named expert, with their name and role.", "only_if": "the quote and source are in the brief"},

@@ -1,7 +1,7 @@
 # Give me 5 minutes, and you'll never paste the same prompt into Claude again.
 
 Template: mindmap · Theme: whiteboard · Files: graphic.png, graphic.gif
-Characters: 1,211 of 3,000
+Characters: 1,190 of 3,000
 
 ## Post
 
@@ -34,15 +34,16 @@ A skill can contain code. Treat it like an app.
 Read every file before you switch it on.
 Never put passwords, API keys or personal data in a skill.
 
-BONUS - Make your own
-Install skill-maker and say: "Help me make a skill for my weekly report."
+BONUS - Find ready-made ones
+Customize → Skills → + → Browse skills.
+It has skills from partners like Notion, Figma & Atlassian.
 
 On a Team plan, skills are on by default.
 On Enterprise, an owner turns them on first.
 
-The full guide, with 10 free skills to start with: aieverytime.org/guides/claude-skills-starter-kit
-
 Save this for the next time you catch yourself retyping a prompt.
+
+More about my work: https://mojeedabisiga.com
 ```
 
 ## Other openings
@@ -52,10 +53,10 @@ Save this for the next time you catch yourself retyping a prompt.
 
 ## Before you post
 
-- [ ] Check the guide link opens: aieverytime.org/guides/claude-skills-starter-kit
+- [ ] Check that Notion, Figma and Atlassian still appear under Customize → Skills → + → Browse skills.
 
 ## Alt text
 
-A hand-drawn whiteboard mind map titled 'Learn Claude skills in 5 minutes': six notes around a central box marked SKILLS, covering what a skill is, turning skills on, uploading, using, staying safe and making your own.
+A hand-drawn whiteboard mind map titled 'Learn Claude skills in 5 minutes': six notes around a central box marked SKILLS, covering what a skill is, turning skills on, uploading, using, staying safe and finding ready-made ones.
 
 Motion: 12.1 s at 30 fps.

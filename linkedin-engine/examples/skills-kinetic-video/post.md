@@ -1,7 +1,7 @@
 # You paste the same instructions into Claude every morning.
 
 Template: kinetic · Theme: cream · Files: graphic.png, graphic.mp4, graphic.gif
-Characters: 711 of 3,000
+Characters: 710 of 3,000
 
 ## Post
 
@@ -24,11 +24,11 @@ It's one folder with a SKILL.md file inside: your instructions, your format, you
 
 It works in the Claude app, in Claude Code & in Cowork.
 
-I made 10 of them, free: learn-anything, quiz-me, research-brief, meeting-to-actions, check-the-numbers and 5 more.
+I wrote 10 for the people I teach: learn-anything, quiz-me, research-brief, meeting-to-actions, check-the-numbers and 5 more.
 
-Start with the one that matches the task you repeat most.
+Start with the task you repeat most. Make that your first skill.
 
-Get them here: aieverytime.org/guides/claude-skills-starter-kit
+More about my work: https://mojeedabisiga.com
 ```
 
 ## Other openings
@@ -38,10 +38,10 @@ Get them here: aieverytime.org/guides/claude-skills-starter-kit
 
 ## Before you post
 
-- [ ] Check the guide link opens: aieverytime.org/guides/claude-skills-starter-kit
+- [ ] Read it once out loud.
 
 ## Alt text
 
-A short animated video in five scenes: 'You paste the same prompt every day', 'Teach Claude the job once', 'A skill is one folder', 'Claude loads it only when needed', and 'Free skills at aieverytime.org'.
+A short animated video in five scenes: 'You paste the same prompt every day', 'Teach Claude the job once', 'A skill is one folder', 'Claude loads it only when needed', and 'Teach Claude one job this week'.
 
-Motion: 15.91 s at 30 fps.
+Motion: 16.47 s at 30 fps.

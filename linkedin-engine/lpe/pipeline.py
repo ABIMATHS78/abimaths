@@ -69,7 +69,7 @@ def finish(spec: dict, out_dir: Path, *, brand: dict | None = None, profile: dic
     template = get_template(spec["template"])
     _, schema_warnings = clean_data(spec.get("data") or {}, template.schema)
     post_issues = lint_post(post, profile, corpus, brief_text(brief), brand) if post else []
-    graphic_issues = lint_graphic(spec, profile, schema_warnings)
+    graphic_issues = lint_graphic(spec, profile, schema_warnings, brand)
 
     log(f"Rendering the {spec['template']} graphic ({', '.join(formats)}) ...")
     rendered = render(spec, brand, out_dir, formats=formats, scale=scale, renderer=renderer, log=log)

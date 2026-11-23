@@ -107,3 +107,24 @@ def test_similar_examples_ranks_relevance_and_respects_exclusions():
     assert all(r["key"] != "hidden" for r in best)
     boosted = similar_examples("anything", corpus, k=1, template="decision_tree")
     assert boosted[0]["key"] == "models"
+
+
+def test_brand_file_signs_as_mojeed_and_links_his_site():
+    from lpe.brand import load_brand, own_hosts, site_host
+
+    brand = load_brand()
+    assert brand["name"] == "Mojeed Abisiga"
+    assert brand["url"] == "https://mojeedabisiga.com/" and own_hosts(brand) == {"mojeedabisiga.com"}
+    text = " ".join([brand["footer"]["left"], brand["footer"]["right"], brand["headline"], *brand["cta"].values()]).lower()
+    assert "mojeedabisiga.com" in text and "ai every time" not in text and "aieverytime" not in text
+    assert "AI Every Time" in brand["never_mention"]
+    assert site_host("https://www.Example.com/page") == "example.com"
+
+
+def test_brand_defaults_fill_footer_and_url(tmp_path):
+    from lpe.brand import load_brand
+
+    path = tmp_path / "brand.json"
+    path.write_text('{"name": "Ada", "url": "https://ada.dev/"}', encoding="utf-8")
+    brand = load_brand(path)
+    assert brand["site"] == "ada.dev" and brand["footer"] == {"left": "from Ada", "right": "ada.dev"}

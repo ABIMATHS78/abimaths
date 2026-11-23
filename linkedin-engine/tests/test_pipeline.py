@@ -80,3 +80,17 @@ def test_cli_lists_templates_and_lints(tmp_path, capsys):
     post.write_text("Too short with **markdown**.", encoding="utf-8")
     assert main(["lint", str(post)]) == 2
     assert "markdown" in capsys.readouterr().out.lower()
+
+
+def test_prompts_carry_the_website_and_the_names_to_avoid():
+    from lpe.brand import load_brand
+    from lpe.profile import load_profile
+    from lpe.prompts import design_system, write_system
+
+    brand, profile = load_brand(), load_profile()
+    system = write_system(profile, brand)
+    assert "https://mojeedabisiga.com/" in system and "Mojeed Abisiga" in system
+    assert "Never mention, in the post or the graphic: AI Every Time" in system
+    assert "Publication:" not in system
+    design = design_system(profile, brand)
+    assert "from Mojeed Abisiga" in design and "Never mention: AI Every Time" in design
