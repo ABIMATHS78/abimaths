@@ -1,7 +1,7 @@
 # You paste the same instructions into Claude every morning.
 
 Template: kinetic · Theme: cream · Files: graphic.png, graphic.mp4, graphic.gif
-Characters: 710 of 3,000
+Characters: 687 of 3,000
 
 ## Post
 
@@ -12,7 +12,7 @@ You paste the same instructions into Claude every morning.
 
 Then you correct the same mistakes. Every. Single. Day.
 
-There's a fix, and it takes 3 minutes:
+There's a fix:
 
 A skill.
 
@@ -28,7 +28,7 @@ I wrote 10 for the people I teach: learn-anything, quiz-me, research-brief, meet
 
 Start with the task you repeat most. Make that your first skill.
 
-More about my work: https://mojeedabisiga.com
+More about my work: https://mojeedabisiga.com/
 ```
 
 ## Other openings
@@ -44,4 +44,4 @@ More about my work: https://mojeedabisiga.com
 
 A short animated video in five scenes: 'You paste the same prompt every day', 'Teach Claude the job once', 'A skill is one folder', 'Claude loads it only when needed', and 'Teach Claude one job this week'.
 
-Motion: 16.47 s at 30 fps.
+Motion: 18.85 s at 30 fps.

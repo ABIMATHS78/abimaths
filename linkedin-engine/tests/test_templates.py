@@ -82,3 +82,11 @@ def test_every_template_builds_html(name, motion):
     assert "@font-face" in html and "window.__boot" in html and 'id="canvas"' in html
     assert ("html lang=\"en\" class=\"motion\"" in html) == motion
     assert meta["width"] in (1080, 1200) and meta["warnings"] == []
+
+
+def test_commands_and_menu_paths_do_not_break_badly():
+    html = str(rich("Type /learn-anything, or go to Customize → Skills → +"))
+    assert '<span class="nw">/learn-anything</span>' in html
+    assert "Customize\u00a0→ Skills\u00a0→\u00a0+" in html
+    assert "nw" not in str(rich("See example.com/first-prompt, ~/.claude/skills/ and https://a.com/x-y"))
+    assert plain("Customize → Skills → +") == "Customize → Skills → +"

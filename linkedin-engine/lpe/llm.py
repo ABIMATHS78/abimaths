@@ -103,13 +103,24 @@ def repair_post(claude: Claude, messages: list, issues: list[Issue], brand: dict
 
 
 def design_graphic(claude: Claude, post: str, graphic_brief: str, template_name: str, brand: dict, profile: dict,
-                   effort: str | None = None) -> dict:
+                   effort: str | None = None) -> tuple[dict, list]:
+    """Returns the template data and the conversation so far (for a repair turn)."""
     from .templates import get_template
 
     template = get_template(template_name)
     messages = [{"role": "user", "content": prompts.design_user(post, graphic_brief, template_name)}]
-    data, _ = claude.json_call(prompts.design_system(profile, brand), messages, template.schema, effort=effort, label="graphic")
-    return data
+    data, content = claude.json_call(prompts.design_system(profile, brand), messages, template.schema, effort=effort, label="graphic")
+    return data, messages + [{"role": "assistant", "content": content}]
+
+
+def repair_graphic(claude: Claude, messages: list, issues: list[Issue], template_name: str, brand: dict, profile: dict,
+                   effort: str | None = None) -> tuple[dict, list]:
+    from .templates import get_template
+
+    messages = messages + [{"role": "user", "content": prompts.repair_graphic_user(issues)}]
+    data, content = claude.json_call(prompts.design_system(profile, brand), messages, get_template(template_name).schema,
+                                     effort=effort, label="graphic repair")
+    return data, messages + [{"role": "assistant", "content": content}]
 
 
 def _image_block(path: Path) -> dict | None:

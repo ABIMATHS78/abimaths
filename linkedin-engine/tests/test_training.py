@@ -128,3 +128,35 @@ def test_brand_defaults_fill_footer_and_url(tmp_path):
     path.write_text('{"name": "Ada", "url": "https://ada.dev/"}', encoding="utf-8")
     brand = load_brand(path)
     assert brand["site"] == "ada.dev" and brand["footer"] == {"left": "from Ada", "right": "ada.dev"}
+
+
+def test_saved_style_files_match_knowledge_py():
+    """The engine reads lpe/knowledge.py on every run; the committed files must say the same (python -m lpe guide --write)."""
+    from lpe import knowledge
+    from lpe.paths import PROFILE_PATH, VOICE_GUIDE_PATH
+    from lpe.profile import load_profile
+
+    assert VOICE_GUIDE_PATH.read_text(encoding="utf-8") == render_voice_guide(load_profile())
+    stored = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    assert stored["voice"]["cta_formulas"] == knowledge.CTA_FORMULAS
+    assert stored["voice"]["principles"] == knowledge.VOICE_PRINCIPLES
+
+
+def test_the_writer_is_never_told_to_promise_a_publication_or_a_guide():
+    from lpe.brand import load_brand
+    from lpe.profile import load_profile
+    from lpe.prompts import write_system
+
+    system = write_system(load_profile(), load_brand())
+    for stale in ("[publication]", "every week", "get the full guide", "free guide"):
+        assert stale not in system, stale
+    assert "https://mojeedabisiga.com/about/" in system  # the site's real pages are listed
+
+
+def test_the_engine_folder_is_self_contained():
+    from lpe.brand import avatar_path, load_brand
+    from lpe.paths import ENGINE_DIR
+
+    brand = load_brand()
+    assert avatar_path(brand) and ENGINE_DIR in avatar_path(brand).parents
+    assert (ENGINE_DIR / ".claude" / "skills" / "linkedin-post-engine" / "SKILL.md").exists()

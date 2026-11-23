@@ -70,11 +70,11 @@ def cmd_generate(args) -> int:
 
 
 def cmd_render(args) -> int:
-    from .pipeline import finish, resolve_formats
+    from .pipeline import finish, load_brief, resolve_formats
 
     spec_path = Path(args.spec)
     spec = _load_json(args.spec)
-    brief = _load_json(args.brief) if args.brief else spec.get("brief")
+    brief = _load_json(args.brief) if args.brief else load_brief(spec.get("brief"), spec_path.parent)
     out_dir = Path(args.out) if args.out else spec_path.parent
     formats = resolve_formats(args.format or spec.get("formats"), None, spec["template"])
     result = finish(spec, out_dir, brief=brief, formats=formats, scale=args.scale,
@@ -104,23 +104,26 @@ def _print_result(result: dict) -> None:
 
 def cmd_lint(args) -> int:
     from .brand import load_brand
-    from .guardrails import fix_post, format_issues, has_errors, lint_post
-    from .pipeline import brief_text
+    from .guardrails import fix_post, format_issues, has_errors, lint_graphic
+    from .pipeline import brief_text, load_brief, post_issues_for
     from .profile import load_profile
     from .retrieval import load_corpus
 
     path = Path(args.file)
-    text = path.read_text(encoding="utf-8").strip()
-    if path.suffix == ".json":
-        text = json.loads(text).get("post", "")
+    raw = path.read_text(encoding="utf-8").strip()
+    spec = json.loads(raw) if path.suffix == ".json" else None
+    text = spec.get("post", "") if spec is not None else raw
     if args.fix:
         fixed = fix_post(text)
-        if fixed != text and path.suffix != ".json":
+        if fixed != text and spec is None:
             path.write_text(fixed + "\n", encoding="utf-8")
             print(f"Fixed em dashes and stray markdown in {path}.")
         text = fixed
-    brief = _load_json(args.brief) if args.brief else None
-    issues = lint_post(text, load_profile(), load_corpus(), brief_text(brief), load_brand())
+    brief = _load_json(args.brief) if args.brief else load_brief((spec or {}).get("brief"), path.parent)
+    facts, profile, brand = brief_text(brief), load_profile(), load_brand()
+    issues = post_issues_for(text, spec or {}, profile, load_corpus(), facts, brand, alt_text=False)
+    if spec is not None and spec.get("template"):   # a spec: check the graphic and its alt text too
+        issues += lint_graphic(spec, profile, [], brand, facts)
     print(f"{len(text):,} characters")
     print(format_issues(issues))
     return 2 if has_errors(issues) else 0
@@ -172,9 +175,14 @@ def cmd_themes(args) -> int:
 
 
 def cmd_guide(args) -> int:
-    from .paths import VOICE_GUIDE_PATH
+    from .profile import load_profile, render_voice_guide, write_profile
 
-    print(VOICE_GUIDE_PATH.read_text(encoding="utf-8"))
+    profile = load_profile()
+    if args.write:
+        write_profile(profile)
+        print("Refreshed model/style_profile.json and model/voice_guide.md from knowledge.py (the measurements are kept).")
+        return 0
+    print(render_voice_guide(profile))
     return 0
 
 
@@ -218,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_render)
 
     p = sub.add_parser("lint", help="check a post for limits, AI giveaways, copying and invented links")
-    p.add_argument("file", help="post.txt, or a spec.json with a 'post' field")
+    p.add_argument("file", help="post.txt, or a spec.json (then the graphic and alt text are checked too)")
     p.add_argument("--brief")
     p.add_argument("--fix", action="store_true", help="fix em dashes and markdown in place")
     p.set_defaults(func=cmd_lint)
@@ -237,7 +245,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_templates)
 
     sub.add_parser("themes", help="list colour themes").set_defaults(func=cmd_themes)
-    sub.add_parser("guide", help="print the trained voice guide").set_defaults(func=cmd_guide)
+    p = sub.add_parser("guide", help="print the trained voice guide")
+    p.add_argument("--write", action="store_true", help="save it (and the profile) after editing lpe/knowledge.py, no retraining needed")
+    p.set_defaults(func=cmd_guide)
     return parser
 
 
