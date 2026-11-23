@@ -1,6 +1,7 @@
 """The Claude calls, end to end through the real SDK over a mock transport: no key, no network."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -94,3 +95,45 @@ def test_prompts_carry_the_website_and_the_names_to_avoid():
     assert "Publication:" not in system
     design = design_system(profile, brand)
     assert "from Mojeed Abisiga" in design and "Never mention: AI Every Time" in design
+
+
+def test_generate_repairs_every_field_and_the_graphic(fake_api, tmp_path):
+    def respond(body, n):
+        props = body["output_config"]["format"]["schema"]["properties"]
+        if "post" in props:
+            answer = plan(GOOD_POST)
+            if len(body["messages"]) == 1:  # the first draft slips the old name into an alternative opening
+                answer["alternative_hooks"] = ["Free guides at AI Everytime", "Two"]
+            return answer
+        data = json.loads(json.dumps(TEMPLATES["prompt_ladder"].sample))
+        if len(body["messages"]) == 1:  # the first design puts it on the graphic
+            data["rungs"][0]["label"] = "From aieverytime.org"
+        return data
+
+    fake_api.responder = respond
+    result = generate({"topic": "Better prompts", "notes": "Goal, context, questions."}, claude=Claude(client=fake_api.client()),
+                      out_dir=tmp_path, render_graphic=False, log=lambda m: None)
+    assert len(fake_api.requests) == 4  # write, repair, design, design repair
+    assert [m["role"] for m in fake_api.requests[3]["messages"]] == ["user", "assistant", "user"]
+    assert "aieverytime" in fake_api.requests[3]["messages"][2]["content"]
+    assert result["ok"] and not result["post_issues"] and not [i for i in result["graphic_issues"] if i["level"] == "error"]
+    spec = json.loads((tmp_path / "spec.json").read_text())
+    assert "Everytime" not in json.dumps(spec) and spec["brief"]["topic"] == "Better prompts"
+    assert (tmp_path / "post.txt").read_text().strip() == GOOD_POST
+
+
+def test_generate_reports_errors_it_could_not_repair(fake_api, tmp_path):
+    from lpe.profile import load_profile
+
+    marker = (load_profile()["guardrails"]["creator_markers"] or ["how-to-ai.guide"])[0]
+    stubborn = lambda body, n: plan(GOOD_POST + f"\n\nThanks to {marker}.") if "post" in body["output_config"]["format"]["schema"]["properties"] else TEMPLATES["prompt_ladder"].sample  # noqa: E731
+    fake_api.responder = stubborn
+    result = generate({"topic": "Better prompts"}, claude=Claude(client=fake_api.client()), out_dir=tmp_path,
+                      render_graphic=False, log=lambda m: None)
+    assert len(fake_api.requests) == 4  # write, two repairs, design
+    assert result["ok"] is False and any(i["code"] == "third_party" for i in result["post_issues"])
+
+
+@pytest.mark.parametrize("spec", sorted((Path(__file__).parent.parent / "examples").glob("*/spec.json")), ids=lambda p: p.parent.name)
+def test_sample_posts_pass_every_check(spec, capsys):
+    assert main(["lint", str(spec)]) == 0, capsys.readouterr().out

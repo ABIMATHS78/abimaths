@@ -131,7 +131,7 @@ LINK_LIST = Template(
             {"text": "Plan a presentation in 10 minutes", "link": "example.com/presentations"},
             {"text": "Research without the rabbit holes", "link": "example.com/research"},
         ]}],
-        "footnote": "Read one a day instead of scrolling.\nMore from me at *mojeedabisiga.com*",
+        "footnote": "Read one a day instead of scrolling.",
     },
 )
 
@@ -611,7 +611,7 @@ BADGE = Template(
     }, ["title"]),
     default_theme="terracotta",
     shapes=("portrait", "square", "landscape"),
-    sample={"kicker": "A new series", "title": "AI for Absolute Beginners", "subtitle": "by Mojeed Abisiga"},
+    sample={"kicker": "A new series", "title": "AI for Absolute Beginners", "subtitle": "No jargon, one step at a time"},
 )
 
 
@@ -667,17 +667,25 @@ BOOKSHELF = Template(
 
 
 # ---------- kinetic ----------
-SCENE_SECONDS = 2.7
+WORD_POP = 0.45      # how long one word takes to pop in
+READ_AFTER = 1.5     # seconds a scene stays fully readable after its last word (or its sub-line) lands
 
 
 def _kinetic(data: dict, context: dict) -> dict:
+    """Each scene lasts until its words have popped in and stayed readable; a sub-line comes in after the words
+    and gets its own reading time."""
     scenes = data.get("scenes", [])
     timings = []
     t = 0.25
     for scene in scenes:
         word_count = max(1, len(str(scene.get("text", "")).split()))
-        length = max(2.2, min(4.0, 1.3 + 0.28 * word_count))
-        timings.append({"start": round(t, 2), "end": round(t + length, 2), "word_step": round(min(0.16, 0.9 / word_count), 3)})
+        word_step = round(min(0.16, 0.9 / word_count), 3)
+        words_done = 0.15 + (word_count - 1) * word_step + WORD_POP
+        sub_at = words_done + 0.1
+        content_done = sub_at + 0.5 if scene.get("sub") else words_done
+        length = max(2.2, min(5.0, content_done + READ_AFTER + 0.35))
+        timings.append({"start": round(t, 2), "end": round(t + length, 2), "word_step": word_step,
+                        "sub_at": round(t + sub_at, 2)})
         t += length
     return {"timings": timings, "total": round(t + 0.4, 2)}
 
@@ -708,7 +716,7 @@ KINETIC = Template(
         {"kicker": "Fix 1", "text": "Delete the *first sentence*"},
         {"kicker": "Fix 2", "text": "Name *one real* example"},
         {"kicker": "Fix 3", "text": "Read it *out loud* once"},
-        {"kicker": "More from me", "text": "*mojeedabisiga.com*"},
+        {"kicker": "Your turn", "text": "Try one fix *today*"},
     ]},
 )
 

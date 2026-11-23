@@ -14,6 +14,7 @@ DEFAULT_BRAND = {
     "publication": "",
     "site": "",                   # shown on graphics, e.g. example.com
     "url": "",                    # the full link used in posts, e.g. https://example.com/
+    "pages": [],                  # the site's real pages; a link to any other page on it gets a warning
     "linkedin": "",
     "avatar": "",
     "footer": {"left": "", "right": ""},

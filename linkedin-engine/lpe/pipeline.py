@@ -13,8 +13,8 @@ import re
 from pathlib import Path
 
 from .brand import load_brand
-from .guardrails import fix_post, format_issues, has_errors, lint_graphic, lint_post
-from .paths import OUTPUT_DIR
+from .guardrails import fix_post, format_issues, has_errors, lint_extras, lint_graphic, lint_post, plan_extras
+from .paths import ENGINE_DIR, OUTPUT_DIR
 from .profile import load_profile
 from .retrieval import load_corpus, similar_examples
 from .schemas import clean_data
@@ -34,6 +34,27 @@ def brief_text(brief: dict | None) -> str:
     parts.append("\n".join(notes) if isinstance(notes, list) else str(notes))
     parts += list(brief.get("links", []))
     return "\n".join(parts)
+
+
+def load_brief(value, base: Path | None = None) -> dict | None:
+    """A brief given inline (a dict) or as a path to a JSON file, looked up next to the spec, then in the engine folder."""
+    if not value:
+        return None
+    if isinstance(value, dict):
+        return value
+    path = Path(value)
+    candidates = [path] if path.is_absolute() else [Path(base or ".") / path, ENGINE_DIR / path, path]
+    for candidate in candidates:
+        if candidate.is_file():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    raise FileNotFoundError(f"Brief not found: {value}")
+
+
+def post_issues_for(post: str, plan: dict, profile: dict, corpus: list[dict], brief: str, brand: dict,
+                    alt_text: bool = True) -> list:
+    """Every check for the writer's output: the post itself, then the other fields a reader or the author sees."""
+    issues = lint_post(post, profile, corpus, brief, brand) if post else []
+    return issues + lint_extras(plan_extras(plan, alt_text), profile, brand, brief)
 
 
 def default_out_dir(topic: str) -> Path:
@@ -68,8 +89,9 @@ def finish(spec: dict, out_dir: Path, *, brand: dict | None = None, profile: dic
 
     template = get_template(spec["template"])
     _, schema_warnings = clean_data(spec.get("data") or {}, template.schema)
-    post_issues = lint_post(post, profile, corpus, brief_text(brief), brand) if post else []
-    graphic_issues = lint_graphic(spec, profile, schema_warnings, brand)
+    facts = brief_text(brief)
+    post_issues = post_issues_for(post, plan, profile, corpus, facts, brand, alt_text=False)
+    graphic_issues = lint_graphic(spec, profile, schema_warnings, brand, facts)
 
     log(f"Rendering the {spec['template']} graphic ({', '.join(formats)}) ...")
     rendered = render(spec, brand, out_dir, formats=formats, scale=scale, renderer=renderer, log=log)
@@ -136,9 +158,12 @@ def _load_profile_or_empty() -> dict:
 
 def generate(brief: dict, *, template: str | None = None, theme: str | None = None, formats=None,
              out_dir: Path | None = None, claude=None, examples_k: int = 3, scale: float = 2,
-             render_graphic: bool = True, log=print) -> dict:
-    """Write a post with Claude in the trained style, design its graphic, check it, and render it."""
-    from .llm import Claude, design_graphic, repair_post, write_post
+             render_graphic: bool = True, repairs: int = 2, log=print) -> dict:
+    """Write a post with Claude in the trained style, design its graphic, check both, and render it.
+
+    Every field the author sees is checked. Errors go back to Claude to fix, up to `repairs` times for the post
+    and once for the graphic; whatever is still wrong is reported, and the result's "ok" is False."""
+    from .llm import Claude, design_graphic, repair_graphic, repair_post, write_post
 
     if not str(brief.get("topic", "")).strip():
         raise ValueError("The brief needs a topic.")
@@ -158,26 +183,47 @@ def generate(brief: dict, *, template: str | None = None, theme: str | None = No
     log(f"Writing the post with {claude.model} ...")
     plan, messages = write_post(claude, brief, brand, profile, examples, template, motion)
     plan["post"] = fix_post(plan["post"])
-    issues = lint_post(plan["post"], profile, corpus, query, brand)
-    if has_errors(issues):
-        log("  fixing: " + "; ".join(i.message for i in issues if i.level == "error"))
-        plan, messages = repair_post(claude, messages, [i for i in issues if i.level == "error"], brand, profile, template)
+    issues = post_issues_for(plan["post"], plan, profile, corpus, query, brand)
+    for _ in range(repairs):
+        errors = [i for i in issues if i.level == "error"]
+        if not errors:
+            break
+        log("  fixing: " + "; ".join(i.message for i in errors))
+        plan, messages = repair_post(claude, messages, errors, brand, profile, template)
         plan["post"] = fix_post(plan["post"])
+        issues = post_issues_for(plan["post"], plan, profile, corpus, query, brand)
+    if has_errors(issues):
+        log("  still wrong after the repairs (see the checks below): " + "; ".join(i.message for i in issues if i.level == "error"))
 
     template_name = template or plan["template"]
     log(f"Designing the {template_name} graphic ...")
-    data = design_graphic(claude, plan["post"], plan["graphic_brief"], template_name, brand, profile)
+    data, design_messages = design_graphic(claude, plan["post"], plan["graphic_brief"], template_name, brand, profile)
+    errors = [i for i in lint_graphic({"template": template_name, "data": data}, profile, [], brand, query) if i.level == "error"]
+    if errors:
+        log("  fixing the graphic: " + "; ".join(i.message for i in errors))
+        data, design_messages = repair_graphic(claude, design_messages, errors, template_name, brand, profile)
+
     spec = {"template": template_name, "data": data, "post": plan["post"], "alt_text": plan.get("alt_text", "")}
     if theme:
         spec["theme"] = theme
+    spec["alternative_hooks"] = list(plan.get("alternative_hooks") or [])
+    spec["fact_checks"] = list(plan.get("fact_checks") or [])
+    spec["brief"] = brief
     plan["_examples"] = [e["key"] for e in examples]
 
     out_dir = Path(out_dir) if out_dir else default_out_dir(brief["topic"])
     chosen = resolve_formats(formats, plan.get("motion"), template_name)
-    if not render_graphic:
+    if not render_graphic:                      # (a render writes spec.json itself)
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "spec.json").write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        return {"out_dir": str(out_dir), "spec": spec, "plan": plan, "cost": claude.cost()}
+        (out_dir / "post.txt").write_text(plan["post"] + "\n", encoding="utf-8")
+        _, schema_warnings = clean_data(data or {}, get_template(template_name).schema)
+        post_issues = post_issues_for(plan["post"], plan, profile, corpus, query, brand, alt_text=False)
+        graphic_issues = lint_graphic(spec, profile, schema_warnings, brand, query)
+        return {"out_dir": str(out_dir), "spec": spec, "plan": plan, "cost": claude.cost(),
+                "characters": len(plan["post"]), "files": {"spec": "spec.json", "post": "post.txt"},
+                "post_issues": [i.as_dict() for i in post_issues], "graphic_issues": [i.as_dict() for i in graphic_issues],
+                "ok": not has_errors(post_issues + graphic_issues)}
     report = finish(spec, out_dir, brand=brand, profile=profile, corpus=corpus, brief=brief, formats=chosen,
                     plan=plan, scale=scale, cost=claude.cost(), log=log)
     report["spec"] = spec

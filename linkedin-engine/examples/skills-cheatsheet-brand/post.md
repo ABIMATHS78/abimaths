@@ -1,7 +1,7 @@
 # Everything you need to know about Claude skills fits on one page.
 
 Template: cheatsheet · Theme: mojeed · Files: graphic.png
-Characters: 1,238 of 3,000
+Characters: 1,275 of 3,000
 
 ## Post
 
@@ -24,9 +24,9 @@ Connectors reach your other apps.
 A skill applies only when a request needs it, in any chat.
 
 ✦ Install one in 4 steps
-1. Download the zip. Don't unzip it.
+1. Get the zip (yours, or one you trust). Don't unzip it.
 2. Settings → Capabilities → "Create and edit files".
-3. Customize → Skills → + → Upload a skill.
+3. Customize → Skills → + → Create skill → Upload a skill.
 4. Check the switch is on.
 
 ✦ In Claude Code
@@ -48,7 +48,7 @@ Put passwords or API keys inside one.
 
 Share this with the colleague who still pastes the same prompt every morning.
 
-More about my work: https://mojeedabisiga.com
+More about my work: https://mojeedabisiga.com/
 ```
 
 ## Other openings
@@ -62,4 +62,4 @@ More about my work: https://mojeedabisiga.com
 
 ## Alt text
 
-A one-page cheat sheet in the emerald and gold of mojeedabisiga.com, titled 'Claude skills on one page', with seven panels: what a skill is, how it differs from instructions, projects and connectors, installing in four steps, Claude Code folders, the rules for making one, testing it, and what never to do.
+A one-page cheat sheet in the emerald green of mojeedabisiga.com, titled 'Claude skills on one page', with seven panels: what a skill is, how it differs from instructions, projects and connectors, installing in four steps, Claude Code folders, the rules for making one, testing it, and a black panel of what never to do.

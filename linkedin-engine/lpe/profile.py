@@ -54,7 +54,7 @@ def build_profile(examples, analyses, medias, annotations) -> dict:
             "shape": shape_name(media.get("aspect", 0)) if media else "",
         })
 
-    hooks = sorted(knowledge.HOOK_FORMULAS, key=lambda h: -hook_counts.get(h["id"], 0))
+    voice, visual = knowledge_fields(hook_counts)
     return {
         "version": 1,
         "trained_at": dt.date.today().isoformat(),
@@ -64,22 +64,15 @@ def build_profile(examples, analyses, medias, annotations) -> dict:
             "annotated": sum(1 for n in noted if n),
         },
         "voice": {
-            "principles": knowledge.VOICE_PRINCIPLES,
-            "hook_formulas": [{**h, "seen_in": hook_counts.get(h["id"], 0)} for h in hooks],
-            "structures": knowledge.STRUCTURES,
+            **voice,
             "structure_counts": dict(structure_counts.most_common()),
-            "cta_formulas": knowledge.CTA_FORMULAS,
             "cta_counts": dict(cta_counts.most_common()),
-            "formatting": knowledge.FORMATTING,
-            "avoid_phrases": knowledge.AVOID_PHRASES,
-            "content_rules": knowledge.CONTENT_RULES,
         },
         "stats": aggregate(analyses),
         "visual": {
             **summarize_media(medias),
             "templates": dict(template_counts.most_common()),
-            "graphic_rules": knowledge.GRAPHIC_RULES,
-            "archetype_guide": knowledge.ARCHETYPES,
+            **visual,
         },
         "examples_index": examples_index,
         "guardrails": {
@@ -90,10 +83,32 @@ def build_profile(examples, analyses, medias, annotations) -> dict:
     }
 
 
+def knowledge_fields(seen: dict) -> tuple[dict, dict]:
+    """The hand-written parts of the profile (knowledge.py), with hooks ordered by how often the examples used them."""
+    hooks = sorted(knowledge.HOOK_FORMULAS, key=lambda h: -seen.get(h["id"], 0))
+    voice = {
+        "principles": knowledge.VOICE_PRINCIPLES,
+        "hook_formulas": [{**h, "seen_in": seen.get(h["id"], 0)} for h in hooks],
+        "structures": knowledge.STRUCTURES,
+        "cta_formulas": knowledge.CTA_FORMULAS,
+        "formatting": knowledge.FORMATTING,
+        "avoid_phrases": knowledge.AVOID_PHRASES,
+        "content_rules": knowledge.CONTENT_RULES,
+    }
+    return voice, {"graphic_rules": knowledge.GRAPHIC_RULES, "archetype_guide": knowledge.ARCHETYPES}
+
+
 def load_profile() -> dict:
+    """The trained profile: the measurements saved by `lpe train`, with the hand-written knowledge read fresh from
+    knowledge.py, so edits there apply without retraining (and without the training files)."""
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(f"No trained profile at {PROFILE_PATH}. Run: python -m lpe train --drive <folder link>")
-    return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    profile = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    seen = {h["id"]: h.get("seen_in", 0) for h in profile.get("voice", {}).get("hook_formulas", [])}
+    voice, visual = knowledge_fields(seen)
+    profile.setdefault("voice", {}).update(voice)
+    profile.setdefault("visual", {}).update(visual)
+    return profile
 
 
 def _fmt_dist(d: dict, unit: str = "") -> str:

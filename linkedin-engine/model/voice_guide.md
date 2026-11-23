@@ -10,7 +10,7 @@ Learned from 26 example posts and 26 graphics (trained 2026-11-23). Use it to wr
 - Hold a clear, slightly contrarian opinion and say it plainly. No hedging and no hype words.
 - Casual rhythm: '&' for 'and' in short lines, a few parenthetical asides ('(for free)', '(trust me)'), and at most one to three words in CAPS for emphasis.
 - Make the post worth saving: steps, lists, prompts to copy, and a graphic that sums up the whole post.
-- Close with one clear next step: save it, send it to a specific kind of person, or get the full guide.
+- Close with one clear next step: save it, send it to a specific kind of person, or follow a link (one from the brief, or the author's website).
 
 ## Measured shape of the example posts
 - Length: 2,038 characters typical (most between 1,269 and 2,807). LinkedIn's limit is 3,000.
@@ -21,7 +21,7 @@ Learned from 26 example posts and 26 graphics (trained 2026-11-23). Use it to wr
 - They talk to 'you' about 2.2 times as often as about 'I'. 19% use emoji (usually 0 per post); 0% use hashtags.
 
 ## Hooks that worked (pick one, fill it with the brief's real specifics)
-- `replacement_habit`: Instead of [scrolling for 40 minutes], [read these N short guides] (total: [M] minutes). [seen 2x]
+- `replacement_habit`: Instead of [scrolling for 40 minutes], [read these N short guides] (total: [M] minutes). (only if the brief gives the guides and their links) [seen 2x]
 - `forbidden_knowledge`: Nobody shows you this part, so I will: [result], for [tiny cost]. Here's how: [seen 1x]
 - `time_box_promise`: Give me [N] minutes, and I'll make you better at [skill] than most people at your work. [seen 1x]
 - `biggest_mistake`: The mistake I see in almost every [tool] chat: [common habit]. Stop it today. [seen 1x]
@@ -29,7 +29,7 @@ Learned from 26 example posts and 26 graphics (trained 2026-11-23). Use it to wr
 - `gatekeeping_test`: The quickest way to tell if someone really knows [topic]: ask them these [N] words. [seen 1x]
 - `deadline_urgency`: You have [real time left] to [use X] before [real change]. Here's how to make the most of it: (only if the deadline is real and in the brief) [seen 1x]
 - `must_read_warning`: Read this before you open [tool] again. (Your team needs it too.) [seen 1x]
-- `anti_spend`: Stop paying $[N] for courses to learn [topic]. The best free ones fit in one list: [seen 1x]
+- `anti_spend`: Stop paying $[N] for courses to learn [topic]. The best free ones fit in one list: (only if the brief gives the free resources and their links) [seen 1x]
 - `experience_cost`: It took me [real amount of time] to learn [topic] properly. These [N] lessons would have saved me most of it: (only if the author gave the real number) [seen 1x]
 - `eating_everything_map`: [Tool] does [A], [B] & [C] now. One map shows all of it: [seen 1x]
 - `nobody_explained`: Nobody explains [topic] properly. So here's all of it, in [N] levels: [seen 1x]
@@ -43,7 +43,7 @@ Learned from 26 example posts and 26 graphics (trained 2026-11-23). Use it to wr
 - `i_dont_care_i_do_care`: I DON'T CARE if you [popular distraction]. I do care if you [real problem]. [seen 1x]
 - `short_read_promise`: This takes [N] seconds to read, but these [N] tips will save you hours: [seen 1x]
 - `learn_it_fast`: How to learn [skill] so fast people think you're naturally gifted: [seen 1x]
-- `my_exact_toolkit`: These are the exact [tools] I use every day. You can have all of them (for free): [seen 1x]
+- `my_exact_toolkit`: These are the exact [tools] I use every day. You can have all of them (for free): (only if the brief says where readers can get them) [seen 1x]
 - `trick_and_why_not`: There's a trick that [does X]. Here's how it works, and why you shouldn't use it: [seen 1x]
 - `found_one_resource`: I found the one [resource] you need to [result]. / (Save it, you'll want it later.)
 
@@ -62,13 +62,13 @@ Learned from 26 example posts and 26 graphics (trained 2026-11-23). Use it to wr
 - `stats_then_opinion`: Three numbered facts from the brief, then a short opinion and what to do about it.
 
 ## Closings
-- `save_share_more`: Three numbered asks: bookmark it (the ⋯ menu), ♻️ repost it for one person who needs it, get the full guide at [site].
+- `save_share_more`: Three numbered asks: bookmark it (the ⋯ menu), ♻️ repost it for one person who needs it, and where to find more: [a link from the brief, or the author's site].
 - `save_this`: Bookmark this. You'll want it the next time you [task].
 - `share_with_someone`: Share this with someone who [specific trait] (but still [specific gap]).
 - `repost_for_team`: ♻️ Repost it for the colleague who still [specific pain].
-- `ps_guide_link`: PS: the full step-by-step, with every prompt, is free here: [link]
-- `link_gate`: The full [prompt/checklist] has [N] parts. It was too long for this caption, so it's here: [link]
-- `mission`: My only goal is to make you [very good] at AI. That's why I write [publication] every week: [site].
+- `ps_guide_link`: PS: the full step-by-step, with every prompt, is here: [link] (only if the brief gives that link)
+- `link_gate`: The full [prompt/checklist] has [N] parts. It was too long for this caption, so it's here: [link] (only if the brief gives the link to the full version)
+- `mission`: One line on why the author shares this (their mission, from the voice notes), then where to find more: [site].
 - `anaphora_close`: Three short 'I could tell you [exaggeration].' lines, then 'But I won't.' and a plain promise. Write fresh wording every time.
 - `closing_instruction`: So close LinkedIn. Open [tool]. Try one [specific task] today.
 - `authority_quote`: End on a short quote from a named expert, with their name and role. (only if the quote and source are in the brief)

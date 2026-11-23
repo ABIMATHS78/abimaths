@@ -1,16 +1,18 @@
 # LinkedIn Post Engine
 
 Writes LinkedIn posts and makes their graphics, as a still image (PNG), an animated GIF or a video (MP4), in a
-style it learned from a folder of example posts. Set up for Mojeed Abisiga: every post and graphic carries his name
-and points readers to his website, [mojeedabisiga.com](https://mojeedabisiga.com/).
+style it learned from a folder of example posts. Set up for Mojeed Abisiga: every graphic carries his name and site
+in its footer, and when a post needs a link, it points to his website,
+[mojeedabisiga.com](https://mojeedabisiga.com/).
 
 | Static card grid | Self-drawing whiteboard (GIF) | Kinetic video (MP4) | One-page cheat sheet, brand colours |
 |---|---|---|---|
 | ![](examples/skills-card-grid/graphic.png) | ![](examples/skills-whiteboard-gif/graphic.gif) | [![](examples/skills-kinetic-video/graphic.png)](examples/skills-kinetic-video/graphic.mp4) | ![](examples/skills-cheatsheet-brand/graphic.png) |
 
 Each sample folder in [`examples/`](examples) holds the post text (`post.txt`, `post.md`), the graphic, a
-LinkedIn-style `preview.html` and the checks (`report.json`). They were written from the facts in
-[`briefs/skills-starter-kit.json`](briefs/skills-starter-kit.json).
+LinkedIn-style `preview.html` and the checks (`report.json`). Every fact in them comes from
+[`briefs/skills-starter-kit.json`](briefs/skills-starter-kit.json); each `spec.json` points to that brief, so
+`python -m lpe render examples/<name>/spec.json` redraws a sample and re-runs its checks.
 
 ## How it learned the style
 
@@ -29,7 +31,8 @@ Training reads a Google Drive folder where each post is a text file and a graphi
 
 The result is [`model/voice_guide.md`](model/voice_guide.md), a readable style guide that is Claude's brief when it
 writes, plus `model/style_profile.json`. When writing a post, the engine also shows Claude the three example posts
-closest to the topic (TF-IDF retrieval over `model/corpus.jsonl`).
+closest to the topic (TF-IDF retrieval over `model/corpus.jsonl`). To change a pattern, edit `lpe/knowledge.py`:
+the engine reads it on every run, and `python -m lpe guide --write` refreshes the two model files without retraining.
 
 This is in-context learning rather than fine-tuning. Claude models can't be fine-tuned through the API, and 26
 examples are put to better use as a style guide plus well-chosen examples at the moment of writing.
@@ -42,10 +45,10 @@ quizzes for them; they're excluded from the examples Claude sees, and the checks
 
 ## Set up
 
-Python 3.10 or later, and ffmpeg for GIF and MP4.
+Python 3.10 or later, and ffmpeg for GIF and MP4. Run every command from this folder (the one that contains `lpe/`
+and `brand.json`).
 
 ```bash
-cd linkedin-engine
 python -m pip install -r requirements.txt
 python -m playwright install chromium
 ```
@@ -70,14 +73,16 @@ python -m lpe generate --brief briefs/skills-starter-kit.json
 python -m lpe generate "Pick the right AI tool for the job" --template decision_tree --format mp4
 ```
 
-It makes two Claude calls: one writes the post, one fills the chosen template. A third repairs the post when the
-checks find errors. The default model is set in `lpe/llm.py`. Requests use structured JSON output, adaptive thinking, prompt caching for the style
+It makes two Claude calls: one writes the post, one fills the chosen template. When the checks find errors in
+anything you'd publish (the post, the other openings, the alt text, the graphic), Claude gets them back to fix: up
+to two repair calls for the writing and one for the graphic. Anything still wrong is listed, and the command exits
+with code 2. The default model is set in `lpe/llm.py`. Requests use structured JSON output, adaptive thinking, prompt caching for the style
 guide, and Anthropic's server-side fallback (`fallbacks: "default"`), so a declined request is retried on another
 model instead of failing. Each run prints its token use and estimated cost. `--model`, `--effort` or the
 `LPE_MODEL` and `LPE_EFFORT` variables change the model and thinking effort.
 
 **Without a key, in Claude Code**, ask for a LinkedIn post. The `linkedin-post-engine` skill
-(`.claude/skills/linkedin-post-engine/SKILL.md` at the repository root) has Claude write the post from the voice
+([`.claude/skills/linkedin-post-engine/SKILL.md`](.claude/skills/linkedin-post-engine/SKILL.md) in this folder) has Claude write the post from the voice
 guide and examples, fill a `spec.json`, then render and check it:
 
 ```bash
@@ -104,10 +109,10 @@ Either way you get a folder:
 | `train [--drive LINK] [--annotate]` | Download the examples, measure them, write the style files. `--annotate` asks Claude to classify posts missing from `annotations.json` |
 | `generate TOPIC [--brief F] [--notes T\|@file] [--template T] [--theme T] [--format F]` | Write and render a post with Claude |
 | `render SPEC.json [--format F] [--brief F]` | Render and check a post written by hand or by Claude Code |
-| `lint POST.txt [--fix]` | Check a post. `--fix` replaces em dashes and stray markdown |
+| `lint POST.txt\|SPEC.json [--fix] [--brief F]` | Check a post, or a whole spec (post, other openings, alt text, graphic). `--fix` replaces em dashes and stray markdown |
 | `examples "topic" [--full]` | The training posts closest to a topic |
 | `templates [NAME] [--sample]` | List templates, or show one's fields and an example |
-| `themes` / `guide` | List colour themes / print the voice guide |
+| `themes` / `guide [--write]` | List colour themes / print the voice guide (`--write` saves it after editing `lpe/knowledge.py`) |
 
 `--format` is `auto` (the writer's or the template's choice), `png`, `gif`, `mp4`, `all`, or a list such as
 `png,mp4`. A PNG is always made.
@@ -144,10 +149,12 @@ highlight, `[[word]]` an accent pill, `__word__` a red underline, `` `code` `` a
 ## Brand and colours
 
 [`brand.json`](brand.json) holds the author's name and headline, the website (`site` as shown on graphics, `url`
-as linked in posts), the footer credit, call-to-action lines and voice notes. Posts and graphics are signed
-"Mojeed Abisiga" and link to https://mojeedabisiga.com. `never_mention` lists names that must never appear (now
-"AI Every Time" and aieverytime.org): Claude is told to avoid them, and the checks reject any post or graphic
-that uses them. Edit the list if that changes.
+as linked in posts, `pages` for the site's other real pages), the footer credit, call-to-action lines, voice notes
+and the photo for the feed preview (`assets/avatar.webp`). Graphics are signed "Mojeed Abisiga" in the footer, and
+posts that need a link use https://mojeedabisiga.com/. `never_mention` lists names that must never appear (now
+"AI Every Time", aieverytime.org and aieverytime): Claude is told to avoid them, and the checks reject them in any
+spelling ("AI Everytime", "AI-Every-Time", "aieverytime.org") wherever a reader would see them. The same words used
+as ordinary prose ("ask AI every time you draft") only get a warning. Edit the list if that changes.
 
 `theme` decides the colours. `learned` keeps each template's look from the training set (cream and terracotta,
 white, near-black, whiteboard); a theme name forces it on every post. Themes: `cream`, `paper`, `ink`, `notes`,
@@ -156,14 +163,17 @@ cheat-sheet sample). Override one post with `--theme`.
 
 ## Checks on every post
 
-`lpe/guardrails.py` runs after writing (and `generate` repairs errors before rendering):
+`lpe/guardrails.py` runs after writing (and `generate` repairs errors before rendering). The post gets every check;
+the other openings, the alt text, the graphic brief and the graphic itself get the name, link and integrity checks.
 
 - **Errors**: over LinkedIn's 3,000 characters; markdown that would show as symbols; the training creator's
-  name, newsletter or sites; anything in the brand's `never_mention` list; a `lnkd.in` link that isn't in the brief;
-  12 or more words copied from an example post; advice to have AI pass tests or certifications, or to fool
-  recruiters; a chart without a source.
+  name, newsletter or sites; any spelling of a name in the brand's `never_mention` list; a `lnkd.in` link that isn't
+  in the brief; 12 or more words copied from an example post; advice to have AI pass tests or certifications, or to
+  fool recruiters; a chart without a source.
 - **Warnings**: AI giveaways ("delve", "seamless", "It's not X, it's Y", em dashes); an opening past the "see more"
-  fold; engagement bait; too many hashtags or emoji; unfilled `[CHECK: ...]` placeholders; links not in the brief.
+  fold; engagement bait; too many hashtags or emoji; unfilled `[CHECK: ...]` placeholders; links not in the brief;
+  a page on the author's site that isn't in `brand.json`'s `pages`; ordinary words that read like a `never_mention`
+  name.
 - **Notes**: numbers that aren't in the brief, to verify before posting.
 
 Facts, numbers, quotes and links come only from the brief. Where a post needs one that isn't there, Claude writes
@@ -179,6 +189,7 @@ whose content you don't want imitated; its measurements still count.
 
 ```
 linkedin-engine/
+  .claude/skills/      the Claude Code skill (linkedin-post-engine)
   lpe/                 the engine (python -m lpe)
     train.py           download, pair, measure, write the style files   drive.py, dataset.py, analyze.py, media.py
     knowledge.py       hook formulas, structures, closings, rules       profile.py renders the voice guide
@@ -187,7 +198,8 @@ linkedin-engine/
     templates.py       template schemas, samples and layout maths        render.py: Chromium + ffmpeg
     guardrails.py      the checks                                        preview.py: feed preview
   templates/           HTML/CSS for each template, base.css, runtime.js (auto-fit text, motion timeline)
-  assets/fonts/        Fraunces, Inter, JetBrains Mono, Anton, Kalam, Caveat (SIL Open Font License, see licenses/)
+  assets/              avatar.webp (feed preview), icons/, fonts/: Fraunces, Inter, JetBrains Mono, Anton, Kalam,
+                       Caveat (SIL Open Font License, see fonts/licenses/)
   model/               voice_guide.md, style_profile.json (committed); corpus.jsonl (local)
   training/            annotations.json (committed); data/ and sources.local.json (local)
   briefs/ examples/    a sample brief and four rendered sample posts

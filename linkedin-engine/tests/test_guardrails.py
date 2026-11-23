@@ -1,4 +1,7 @@
-from lpe.guardrails import fix_post, has_errors, lint_graphic, lint_post, longest_shared_run
+import pytest
+
+from lpe.guardrails import (brand_mentions, fix_post, has_errors, lint_extras, lint_graphic, lint_post,
+                            longest_shared_run, plan_extras)
 
 PROFILE = {
     "voice": {"avoid_phrases": ["delve", "game-changer", "here's the thing"]},
@@ -74,3 +77,49 @@ def test_never_mention_names_are_errors_in_posts_and_graphics():
     assert "brand_avoid" in codes(lint_graphic({"template": "badge", "data": {"title": "Join AI Every Time"}}, PROFILE, [], BRAND))
     assert "brand_avoid" in codes(lint_graphic({"template": "badge", "data": {"title": "Hi"}, "alt_text": "aieverytime.org"}, PROFILE, [], BRAND))
     assert "brand_avoid" not in codes(lint_post(BODY + "\nMore about my work: https://mojeedabisiga.com", PROFILE, [], "", BRAND))
+
+
+NAMES = ["AI Every Time", "aieverytime.org", "aieverytime"]
+
+
+@pytest.mark.parametrize("text", ["Free guides at AI Every Time.", "AI Everytime", "AI-Every-Time", "A.I. Every Time",
+                                  "AI Every\nTime", "AIEveryTime", "AI​Every​Time", "AI EVERY TIME",
+                                  "aieverytime.org/guides", "@aieverytime"])
+def test_any_spelling_of_a_never_mention_name_is_an_error(text):
+    assert [level for _, _, level in brand_mentions(text, NAMES)] == ["error"]  # one finding, even for overlapping names
+    assert "brand_avoid" in codes(lint_post(BODY + "\n" + text, PROFILE, [], "", BRAND))
+
+
+@pytest.mark.parametrize("text", ["Ask AI every time you start a draft.", "I use AI. Every time it helps.", "ai every time"])
+def test_the_same_words_as_ordinary_prose_are_a_warning(text):
+    issues = lint_post(BODY + "\n" + text, PROFILE, [], "", BRAND)
+    assert "brand_like" in codes(issues) and "brand_avoid" not in codes(issues)
+
+
+def test_every_field_a_reader_sees_is_checked():
+    plan = {"alternative_hooks": ["Join AI Every Time today", "Two"], "alt_text": "A card by Jane Creator",
+            "graphic_brief": "Link it: https://lnkd.in/xyz"}
+    issues = lint_extras(plan_extras(plan), PROFILE, BRAND, "")
+    assert {"brand_avoid", "third_party", "unknown_link"} <= codes(issues) and has_errors(issues)
+    assert {i.message.split(":")[0] for i in issues} == {"In the other openings", "In the alt text", "In the graphic brief"}
+    assert "the alt text" not in plan_extras(plan, alt_text=False)
+
+
+def test_links_to_the_authors_site_must_be_known_pages():
+    brand = {**BRAND, "pages": ["https://mojeedabisiga.com/about/"]}
+    fine = lint_post(BODY + "\nhttps://mojeedabisiga.com/ and https://www.mojeedabisiga.com/about", PROFILE, [], "", brand)
+    assert "unknown_page" not in codes(fine)
+    made_up = lint_post(BODY + "\nGet the kit: https://mojeedabisiga.com/starter-kit", PROFILE, [], "", brand)
+    assert [i.level for i in made_up if i.code == "unknown_page"] == ["warning"]
+
+
+def test_links_on_graphics_are_checked_and_file_names_are_not_links():
+    assert has_errors(lint_graphic({"template": "badge", "data": {"title": "Guide: lnkd.in/abc"}}, PROFILE, [], BRAND))
+    assert "unknown_link" in codes(lint_graphic({"template": "badge", "data": {"title": "example.org"}}, PROFILE, [], BRAND))
+    assert not codes(lint_graphic({"template": "badge", "data": {"title": "mojeedabisiga.com"}}, PROFILE, [], BRAND))
+    assert "unknown_link" not in codes(lint_post(BODY + "\nOne required file: SKILL.md, plus notes.txt", PROFILE, [], "", BRAND))
+
+
+def test_integrity_check_needs_whole_words():
+    assert "integrity" not in codes(lint_post(BODY + "\nUse it with examples and testing notes.", PROFILE))
+    assert "integrity" in codes(lint_post(BODY + "\nLet AI take the exam for you.", PROFILE))

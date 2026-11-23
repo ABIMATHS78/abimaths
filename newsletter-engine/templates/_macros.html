@@ -1,0 +1,105 @@
+{# Pieces shared by the pages. `e` is an entry prepared by the builder (see nle/build.py: Entry). #}
+
+{% macro titlecard(e, small=False) -%}
+{%- if e.cover_url -%}
+<img class="cover-img" src="{{ e.cover_url }}" alt="{{ e.cover_alt }}" loading="lazy">
+{%- else -%}
+<div class="titlecard{{ ' small' if small }}" aria-hidden="true">
+  <span class="tc-kicker">{{ e.kind_label }}</span>
+  <span class="tc-title">{{ e.title }}</span>
+  <span class="tc-foot">{{ site.author.name }} · {{ site.host }}</span>
+</div>
+{%- endif -%}
+{%- endmacro %}
+
+{% macro post_row(e) -%}
+<li class="post-row" data-item="{{ e.ref }}" data-tags="{{ e.tags | join(' ') }}">
+  <div>
+    <a class="title" href="{{ e.url }}"><h3>{{ e.title }}</h3></a>
+    {% if e.subtitle %}<p class="sub">{{ e.subtitle }}</p>{% endif %}
+    <div class="meta">{{ e.date_label }}<span class="dot"></span>{{ e.minutes }} min read{% if e.featured %}<span class="dot"></span>Popular{% endif %}</div>
+  </div>
+  <a class="thumb" href="{{ e.url }}" tabindex="-1" aria-hidden="true">{{ titlecard(e, small=True) }}</a>
+</li>
+{%- endmacro %}
+
+{% macro card(e) -%}
+<a class="card" href="{{ e.url }}" data-item="{{ e.ref }}" data-tags="{{ e.tags | join(' ') }}">
+  {{ titlecard(e) }}
+  <div class="card-body">
+    {% if e.level %}<span class="tag">{{ e.level }}</span>{% elif e.tags %}<span class="tag">{{ e.tags[0] }}</span>{% endif %}
+    <h3>{{ e.title }}</h3>
+    {% if e.subtitle %}<p>{{ e.subtitle }}</p>{% endif %}
+    <span class="meta">{% if e.kind == 'guide' %}{{ e.minutes }} min guide{% if e.updated_label %}<span class="dot"></span>Updated {{ e.updated_label }}{% endif %}{% else %}{{ e.date_label }}<span class="dot"></span>{{ e.minutes }} min read{% endif %}</span>
+  </div>
+</a>
+{%- endmacro %}
+
+{% macro subscribe_box(title="", text="", hero=False) -%}
+{%- set n = site.newsletter -%}
+<div class="subscribe" id="subscribe-box">
+  <p class="subscribe-title">{{ title or ('Get the next one in your inbox' if n.provider != 'none' else 'Follow along') }}</p>
+  <p>{{ text or n.promise or site.description }}</p>
+  {% if n.provider == 'buttondown' and n.username %}
+  <form class="subscribe-form" action="https://buttondown.com/api/emails/embed-subscribe/{{ n.username }}" method="post" target="_blank">
+    <label class="sr-only" for="email-{{ uid() }}">Email address</label>
+    <input id="email-{{ last_uid() }}" type="email" name="email" placeholder="Your email address" required autocomplete="email">
+    <input type="hidden" name="embed" value="1"><button class="btn btn-primary" type="submit">Subscribe</button>
+  </form>
+  <p class="fine">Free. One click to unsubscribe. Your address goes to Buttondown, which sends the emails.</p>
+  {% elif n.provider == 'kit' and n.form_action %}
+  <form class="subscribe-form" action="{{ n.form_action }}" method="post" target="_blank">
+    <label class="sr-only" for="email-{{ uid() }}">Email address</label>
+    <input id="email-{{ last_uid() }}" type="email" name="email_address" placeholder="Your email address" required autocomplete="email">
+    <button class="btn btn-primary" type="submit">Subscribe</button>
+  </form>
+  <p class="fine">Free. One click to unsubscribe.</p>
+  {% elif n.provider == 'form' and n.form_action %}
+  <form class="subscribe-form" action="{{ n.form_action }}" method="post" target="_blank">
+    <label class="sr-only" for="email-{{ uid() }}">Email address</label>
+    <input id="email-{{ last_uid() }}" type="email" name="email" placeholder="Your email address" required autocomplete="email">
+    <button class="btn btn-primary" type="submit">Subscribe</button>
+  </form>
+  <p class="fine">Free. One click to unsubscribe.</p>
+  {% elif n.provider == 'substack' and n.username %}
+  <iframe src="https://{{ n.username }}.substack.com/embed" title="Subscribe by email" loading="lazy"></iframe>
+  {% elif n.provider == 'beehiiv' and n.embed_url %}
+  <iframe src="{{ n.embed_url }}" title="Subscribe by email" loading="lazy"></iframe>
+  {% else %}
+  <div class="subscribe-actions">
+    {% if site.author.linkedin %}<a class="btn btn-primary" href="{{ site.author.linkedin }}" rel="me"><svg class="icon" aria-hidden="true"><use href="#i-linkedin"/></svg> Follow on LinkedIn</a>{% endif %}
+    <a class="btn btn-ghost" href="{{ link('feed.xml') }}"><svg class="icon" aria-hidden="true"><use href="#i-rss"/></svg> RSS feed</a>
+  </div>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{% macro share(e) -%}
+<div class="share" aria-label="Share">
+  <button type="button" data-share="native" data-url="{{ e.abs_url }}" aria-label="Share"><svg class="icon" aria-hidden="true"><use href="#i-share"/></svg></button>
+  <a href="https://www.linkedin.com/sharing/share-offsite/?url={{ e.abs_url | urlencode }}" rel="noopener" aria-label="Share on LinkedIn"><svg class="icon" aria-hidden="true"><use href="#i-linkedin"/></svg></a>
+  <a href="https://x.com/intent/post?url={{ e.abs_url | urlencode }}&amp;text={{ e.title | urlencode }}" rel="noopener" aria-label="Share on X"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></a>
+  <a href="mailto:?subject={{ e.title | urlencode }}&amp;body={{ e.abs_url | urlencode }}" aria-label="Share by email"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg></a>
+  <button type="button" data-share="copy" data-url="{{ e.abs_url }}" aria-label="Copy link"><svg class="icon" aria-hidden="true"><use href="#i-link"/></svg></button>
+</div>
+{%- endmacro %}
+
+{% macro byline(e) -%}
+<div class="byline">
+  <div class="who">
+    <img src="{{ link(site.author.avatar) }}" alt="" width="44" height="44">
+    <div>
+      <strong><a href="{{ link('about/') }}">{{ site.author.name }}</a></strong>
+      <span class="meta">{% if e.kind == 'guide' %}{% if e.updated_label %}Updated {{ e.updated_label }}{% else %}Guide{% endif %}{% else %}{{ e.date_label }}{% endif %}<span class="dot"></span>{{ e.minutes }} min read</span>
+    </div>
+  </div>
+  {{ share(e) }}
+</div>
+{%- endmacro %}
+
+{% macro toc_list(e) -%}
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>{% for level, anchor, title in e.toc %}<li class="lvl{{ level }}"><a href="#{{ anchor }}">{{ title }}</a></li>{% endfor %}</ol>
+</nav>
+{%- endmacro %}

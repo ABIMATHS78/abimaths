@@ -16,6 +16,9 @@ def author_block(brand: dict) -> str:
     if brand.get("publication"):
         lines.append(f"Publication: {brand['publication']}")
     lines.append(f"Website (the exact link to use in posts): {brand.get('url') or brand.get('site', '')}")
+    pages = [page for page in brand.get("pages", []) if page.rstrip("/") != str(brand.get("url", "")).rstrip("/")]
+    if pages:
+        lines.append("Other pages on the website (link to no page that isn't listed): " + ", ".join(pages))
     cta = brand.get("cta", {})
     if cta.get("resource_line"):
         lines.append(f"Resource line you may use in closings: {cta['resource_line']}")
@@ -128,10 +131,19 @@ def write_schema(template: str | None = None) -> dict:
 
 def repair_user(issues: list) -> str:
     lines = "\n".join(f"- {i.message}" for i in issues)
-    return f"""The post has problems that must be fixed before it can be published:
+    return f"""Your answer has problems that must be fixed before it can be published. A problem that names a field \
+(the other openings, the graphic brief or the alt text) is in that field; the rest are in the post:
 {lines}
 
-Return the same JSON with the post corrected. Keep everything that was fine."""
+Return the same JSON with every problem fixed, wherever it is. Keep everything that was fine."""
+
+
+def repair_graphic_user(issues: list) -> str:
+    lines = "\n".join(f"- {i.message}" for i in issues)
+    return f"""The graphic data has problems that must be fixed before it can be published:
+{lines}
+
+Return the same JSON with every problem fixed. Keep everything that was fine."""
 
 
 def design_system(profile: dict, brand: dict) -> str:

@@ -1,7 +1,7 @@
 # I wrote 10 Claude skills for the people I teach. Here's what each one does…
 
 Template: card_grid · Theme: cream · Files: graphic.png
-Characters: 1,786 of 3,000
+Characters: 1,806 of 3,000
 
 ## Post
 
@@ -33,26 +33,26 @@ The 10 I wrote:
 
 How to install any skill (4 steps):
 
-1. Download the skill's zip. Don't unzip it.
+1. Get the skill's zip (yours, or one you trust). Don't unzip it.
 2. Settings → Capabilities → turn on "Create and edit files".
 3. Customize → Skills → + → Create skill → Upload a skill.
 4. Check the switch is on. Then just ask.
 
 No zip yet? Customize → Skills → + → Browse skills has ready-made ones from partners like Notion, Figma and Atlassian.
 
-The best part: Claude only reads each skill's name and description until a request needs it. So you can install many without slowing it down.
+You can install as many as you like. Until a request needs one, Claude reads only each skill's name and description, so nothing slows down.
 
 Read every file before you switch a skill on. Treat an unknown skill like an unknown app.
 
-More about my work: https://mojeedabisiga.com
+More about my work: https://mojeedabisiga.com/
 
 ♻️ Repost it for the colleague who still pastes the same prompt every morning.
 ```
 
 ## Other openings
 
-1. Stop pasting the same prompt into Claude every morning. These 10 skills do the job for you:
-2. You don't need a better prompt. You need a skill. These are the 10 I wrote:
+1. Stop pasting the same prompt into Claude every morning. Turn it into a skill. Here are the 10 I wrote:
+2. Teach Claude a job once, and it does it your way from then on. Here are 10 skills I wrote for the people I teach:
 
 ## Before you post
 

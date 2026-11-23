@@ -14,7 +14,8 @@ VOICE_PRINCIPLES = [
     "Casual rhythm: '&' for 'and' in short lines, a few parenthetical asides ('(for free)', '(trust me)'), "
     "and at most one to three words in CAPS for emphasis.",
     "Make the post worth saving: steps, lists, prompts to copy, and a graphic that sums up the whole post.",
-    "Close with one clear next step: save it, send it to a specific kind of person, or get the full guide.",
+    "Close with one clear next step: save it, send it to a specific kind of person, or follow a link "
+    "(one from the brief, or the author's website).",
 ]
 
 HOOK_FORMULAS = [
@@ -22,11 +23,11 @@ HOOK_FORMULAS = [
     {"id": "time_box_promise", "formula": "Give me [N] minutes, and I'll make you better at [skill] than most people at your work."},
     {"id": "biggest_mistake", "formula": "The mistake I see in almost every [tool] chat: [common habit]. Stop it today."},
     {"id": "i_read_it_so_you_dont_have_to", "formula": "I read all of [long official source] for you. What to cut, what to swap, and the exact [prompt] to use:"},
-    {"id": "replacement_habit", "formula": "Instead of [scrolling for 40 minutes], [read these N short guides] (total: [M] minutes)."},
+    {"id": "replacement_habit", "formula": "Instead of [scrolling for 40 minutes], [read these N short guides] (total: [M] minutes).", "only_if": "the brief gives the guides and their links"},
     {"id": "gatekeeping_test", "formula": "The quickest way to tell if someone really knows [topic]: ask them these [N] words."},
     {"id": "deadline_urgency", "formula": "You have [real time left] to [use X] before [real change]. Here's how to make the most of it:", "only_if": "the deadline is real and in the brief"},
     {"id": "must_read_warning", "formula": "Read this before you open [tool] again. (Your team needs it too.)"},
-    {"id": "anti_spend", "formula": "Stop paying $[N] for courses to learn [topic]. The best free ones fit in one list:"},
+    {"id": "anti_spend", "formula": "Stop paying $[N] for courses to learn [topic]. The best free ones fit in one list:", "only_if": "the brief gives the free resources and their links"},
     {"id": "experience_cost", "formula": "It took me [real amount of time] to learn [topic] properly. These [N] lessons would have saved me most of it:", "only_if": "the author gave the real number"},
     {"id": "eating_everything_map", "formula": "[Tool] does [A], [B] & [C] now. One map shows all of it:"},
     {"id": "nobody_explained", "formula": "Nobody explains [topic] properly. So here's all of it, in [N] levels:"},
@@ -40,7 +41,7 @@ HOOK_FORMULAS = [
     {"id": "i_dont_care_i_do_care", "formula": "I DON'T CARE if you [popular distraction]. I do care if you [real problem]."},
     {"id": "short_read_promise", "formula": "This takes [N] seconds to read, but these [N] tips will save you hours:"},
     {"id": "learn_it_fast", "formula": "How to learn [skill] so fast people think you're naturally gifted:"},
-    {"id": "my_exact_toolkit", "formula": "These are the exact [tools] I use every day. You can have all of them (for free):"},
+    {"id": "my_exact_toolkit", "formula": "These are the exact [tools] I use every day. You can have all of them (for free):", "only_if": "the brief says where readers can get them"},
     {"id": "found_one_resource", "formula": "I found the one [resource] you need to [result].\n(Save it, you'll want it later.)"},
     {"id": "trick_and_why_not", "formula": "There's a trick that [does X]. Here's how it works, and why you shouldn't use it:"},
 ]
@@ -61,12 +62,12 @@ STRUCTURES = [
 ]
 
 CTA_FORMULAS = [
-    {"id": "save_share_more", "formula": "Three numbered asks: bookmark it (the ⋯ menu), ♻️ repost it for one person who needs it, get the full guide at [site]."},
+    {"id": "save_share_more", "formula": "Three numbered asks: bookmark it (the ⋯ menu), ♻️ repost it for one person who needs it, and where to find more: [a link from the brief, or the author's site]."},
     {"id": "save_this", "formula": "Bookmark this. You'll want it the next time you [task]."},
     {"id": "share_with_someone", "formula": "Share this with someone who [specific trait] (but still [specific gap])."},
     {"id": "repost_for_team", "formula": "♻️ Repost it for the colleague who still [specific pain]."},
-    {"id": "ps_guide_link", "formula": "PS: the full step-by-step, with every prompt, is free here: [link]"},
-    {"id": "link_gate", "formula": "The full [prompt/checklist] has [N] parts. It was too long for this caption, so it's here: [link]"},
+    {"id": "ps_guide_link", "formula": "PS: the full step-by-step, with every prompt, is here: [link]", "only_if": "the brief gives that link"},
+    {"id": "link_gate", "formula": "The full [prompt/checklist] has [N] parts. It was too long for this caption, so it's here: [link]", "only_if": "the brief gives the link to the full version"},
     {"id": "mission", "formula": "One line on why the author shares this (their mission, from the voice notes), then where to find more: [site]."},
     {"id": "anaphora_close", "formula": "Three short 'I could tell you [exaggeration].' lines, then 'But I won't.' and a plain promise. Write fresh wording every time."},
     {"id": "closing_instruction", "formula": "So close LinkedIn. Open [tool]. Try one [specific task] today."},
