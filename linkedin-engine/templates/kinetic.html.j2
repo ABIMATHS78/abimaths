@@ -1,0 +1,55 @@
+{% extends "_base.html.j2" %}
+{% from "_macros.html.j2" import burst %}
+{% set n = data.scenes | length %}
+{% block style %}
+.canvas { padding: 0 64px; }
+.stage { position: absolute; inset: 0 0 76px 0; }
+.scene { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.scene .inner { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 84px; }
+.kicker { font-family: "Inter", sans-serif; font-weight: 800; font-size: 30px; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); margin-bottom: 30px; }
+.text { font-family: "Fraunces", serif; font-weight: 800; font-size: {{ 112 if height > width else 100 }}px; line-height: 1; letter-spacing: -.03em; font-variation-settings: "opsz" 144; }
+.text .w { display: inline-block; }
+.text .w.accent { color: var(--accent); }
+.sub { font-family: "Fraunces", serif; font-style: italic; font-weight: 400; font-size: 46px; color: var(--muted); margin-top: 30px; }
+.progress { position: absolute; left: 64px; right: 64px; bottom: 100px; display: flex; gap: 10px; }
+.progress span { flex: 1; height: 7px; background: var(--line); border-radius: 4px; overflow: hidden; position: relative; }
+.progress span i { position: absolute; inset: 0; background: var(--accent); border-radius: 4px; }
+html.static .scene:not(:first-child) { display: none; }
+html.static .progress span:not(:first-child) i { display: none; }
+.a-out { animation-name: a-out; }
+@keyframes a-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-46px) scale(.985); } }
+{% endblock %}
+
+{% block content %}
+{{ burst(260, 12, "-90px", "-90px", "right") }}
+<div class="stage">
+  {% for scene in data.scenes %}
+  {% set t = timings[loop.index0] %}
+  <section class="scene"{% if not loop.last %} data-anim="out" data-at="{{ (t.end - 0.35) | round(2) }}" data-dur="0.35"{% endif %}>
+    <div class="inner" data-anim="fade" data-at="{{ t.start }}" data-dur="0.3">
+      {% if scene.kicker %}<div class="kicker">{{ scene.kicker | rich }}</div>{% endif %}
+      <div class="text">
+        {{- scene.text | words("pop", 0.45) -}}
+      </div>
+      {% if scene.sub %}<div class="sub" data-anim="fade-up" data-at="{{ (t.start + 0.5 + t.word_step * 8) | round(2) }}" data-dur="0.5">{{ scene.sub | rich }}</div>{% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+<div class="progress" aria-hidden="true">
+  {% for scene in data.scenes %}{% set t = timings[loop.index0] %}<span><i data-anim="grow-x" data-at="{{ t.start }}" data-dur="{{ (t.end - t.start) | round(2) }}" style="transform-origin: 0 50%"></i></span>{% endfor %}
+</div>
+{% endblock %}
+
+{% block script %}
+<script>
+// Give each word its own start time inside its scene.
+window.__beforeFit = function () {
+  const timings = {{ timings | tojson }};
+  document.querySelectorAll(".scene").forEach((scene, i) => {
+    const t = timings[i];
+    scene.querySelectorAll(".w").forEach((w, k) => { w.dataset.at = (t.start + 0.15 + k * t.word_step).toFixed(3); });
+  });
+};
+</script>
+{% endblock %}

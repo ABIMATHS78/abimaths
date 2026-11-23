@@ -1,0 +1,94 @@
+{% extends "_base.html.j2" %}
+{% from "_macros.html.j2" import burst %}
+{% macro leaf(node, col, order, cls) -%}
+<div class="leaf {{ cls }}" style="grid-column: {{ col }}; grid-row: 5">
+  <div class="ans" data-anim="pop" data-order="{{ order }}"><b>{{ node.title | rich }}</b>{% if node.subtitle %}<small>{{ node.subtitle | rich }}</small>{% endif %}</div>
+  {% for step in node.steps %}<div class="step" data-anim="fade-up" data-order="{{ order + 0.1 * loop.index }}">{{ step | rich }}</div>{% endfor %}
+  {% if node.example %}<div class="ex" data-anim="fade-up" data-order="{{ order + 0.6 }}"><span class="lbl">{{ node.example_label or "Prompt example" }}</span>{{ node.example }}</div>{% endif %}
+</div>
+{%- endmacro %}
+{% block style %}
+.head { flex: none; text-align: center; position: relative; z-index: 1; margin: 6px 0 22px; font-size: 92px; max-height: 210px; }
+.head h1 { font-family: "Fraunces", serif; font-weight: 600; letter-spacing: -.03em; line-height: 1.02; font-variation-settings: "opsz" 144; }
+.head h1 .pill { padding: 0 .2em .06em; border-radius: .14em; color: var(--accent-ink); font-weight: 700; }
+.tree { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: .9em; row-gap: 1.15em; position: relative; align-items: start; }
+.tree svg.links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; z-index: 0; }
+.tree svg.links path { fill: none; stroke: #8E877D; stroke-width: 2.4; stroke-linejoin: round; }
+.q { position: relative; z-index: 1; background: #F1EADF; color: #1A1816; border-radius: .35em; padding: .55em .9em .6em; text-align: center; font-family: "Fraunces", serif; font-weight: 600; font-size: 1.32em; line-height: 1.12; justify-self: center; }
+.q.root { grid-column: 1 / -1; grid-row: 1; max-width: 72%; font-size: 1.6em; padding: .6em 1.1em .65em; }
+.q.sub { grid-row: 3; max-width: 92%; }
+.yn { position: relative; z-index: 1; justify-self: center; font-weight: 800; font-size: .85em; letter-spacing: .08em; color: #fff; padding: .22em .75em; border-radius: .25em; }
+.yn.no { background: var(--bad); }
+.yn.yes { background: #3FA84A; }
+.leaf { position: relative; z-index: 1; display: flex; flex-direction: column; gap: .7em; }
+.ans { background: var(--accent); color: #fff; text-align: center; padding: .5em .4em .55em; border-radius: .3em; }
+.ans b { display: block; font-family: "Fraunces", serif; font-weight: 700; font-size: 1.45em; line-height: 1.05; }
+.ans small { display: block; font-size: .78em; margin-top: .2em; opacity: .92; }
+.step { background: #A6D9A0; color: #12301A; border-radius: .3em; padding: .38em .5em; text-align: center; font-weight: 600; font-size: .92em; line-height: 1.2; align-self: center; width: 92%; }
+.ex { position: relative; margin-top: .55em; background: #0E0D0C; border: .06em solid #5A544D; border-radius: .3em; padding: 1em .65em .65em; font-family: "JetBrains Mono", monospace; font-size: .74em; line-height: 1.38; color: #EDE6DA; white-space: pre-line; }
+.ex .lbl { position: absolute; top: -.8em; left: .55em; background: #F1EADF; color: #111; font-family: "Inter", sans-serif; font-weight: 750; font-size: .95em; padding: .12em .5em; border-radius: .2em; }
+{% endblock %}
+
+{% block script %}
+<script>
+window.__layout = function () {
+  const tree = document.querySelector(".tree");
+  const o = tree.getBoundingClientRect();
+  const R = (el) => { const r = el.getBoundingClientRect(); return { cx: (r.left + r.right) / 2 - o.left, t: r.top - o.top, b: r.bottom - o.top }; };
+  const svg = tree.querySelector("svg.links");
+  const add = (d, order) => {
+    const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p.setAttribute("d", d); p.setAttribute("pathLength", "1"); p.setAttribute("class", "draw-path");
+    p.dataset.anim = "draw"; p.dataset.order = String(order); p.dataset.dur = "0.35";
+    svg.appendChild(p);
+  };
+  const elbow = (a, b, order) => { const y = (a.b + b.t) / 2; add(`M ${a.cx} ${a.b} V ${y} H ${b.cx} V ${b.t}`, order); };
+  const q = (sel) => R(document.querySelector(sel));
+  const root = q(".q.root");
+  ["no", "yes"].forEach((side, i) => {
+    const pill = q(`.yn.l1-${side}`), sub = q(`.q.sub-${side}`);
+    elbow(root, pill, 1.5);
+    elbow(pill, sub, 2.5);
+    ["no", "yes"].forEach((leafSide) => {
+      const pill2 = q(`.yn.l2-${side}-${leafSide}`);
+      elbow(sub, pill2, 3.5);
+      const leaf = document.querySelector(`.leaf-${side}-${leafSide}`);
+      elbow(pill2, R(leaf.querySelector(".ans")), 4.5);
+      const parts = Array.from(leaf.children).map(R);
+      for (let k = 0; k + 1 < parts.length; k++) add(`M ${parts[k].cx} ${parts[k].b} V ${parts[k + 1].t}`, 5.05);
+    });
+  });
+};
+</script>
+{% endblock %}
+
+{% block content %}
+{{ burst(180, 12, "-60px", "-60px", "right") }}
+<header class="head" data-fit="headline" data-fit-max="1" data-fit-min="0.45">
+  <h1 data-anim="fade-up" data-order="0">{{ data.title | rich }}</h1>
+</header>
+<section class="fit" data-fit="tree" data-fit-max="1.6" data-fit-min="0.45" style="font-size: 19px">
+  <div class="tree">
+    <svg class="links" aria-hidden="true"></svg>
+    <div class="q root" data-anim="pop" data-order="1">{{ data.question | rich }}</div>
+    <span class="yn no l1-no" style="grid-column: 1 / span 2; grid-row: 2" data-anim="pop" data-order="2">{{ data.no_label }}</span>
+    <span class="yn yes l1-yes" style="grid-column: 3 / span 2; grid-row: 2" data-anim="pop" data-order="2">{{ data.yes_label }}</span>
+    <div class="q sub sub-no" style="grid-column: 1 / span 2" data-anim="pop" data-order="3">{{ data.no.question | rich }}</div>
+    <div class="q sub sub-yes" style="grid-column: 3 / span 2" data-anim="pop" data-order="3">{{ data.yes.question | rich }}</div>
+    {% set col = namespace(n=0) %}
+    {% for side in ["no", "yes"] %}
+      {% for leaf_side in ["no", "yes"] %}
+        {% set col.n = col.n + 1 %}
+        <span class="yn {{ leaf_side }} l2-{{ side }}-{{ leaf_side }}" style="grid-column: {{ col.n }}; grid-row: 4" data-anim="pop" data-order="4">{{ data.no_label if leaf_side == "no" else data.yes_label }}</span>
+      {% endfor %}
+    {% endfor %}
+    {% set col.n = 0 %}
+    {% for side in ["no", "yes"] %}
+      {% for leaf_side in ["no", "yes"] %}
+        {% set col.n = col.n + 1 %}
+        {{ leaf(data[side][leaf_side], col.n, 5 + col.n * 0.01, "leaf-" ~ side ~ "-" ~ leaf_side) }}
+      {% endfor %}
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

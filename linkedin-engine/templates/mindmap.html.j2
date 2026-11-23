@@ -1,0 +1,93 @@
+{% extends "_base.html.j2" %}
+{% from "_macros.html.j2" import spark %}
+{% set hand = (data.style or "whiteboard") == "whiteboard" %}
+{% block canvas_class %}{{ 'hand-style' if hand else 'clean-style' }}{% endblock %}
+{% block style %}
+.head { flex: none; text-align: center; position: relative; z-index: 2; margin-bottom: 8px; font-size: 76px; max-height: 240px; }
+.head h1 { font-size: 1em; }
+.map { position: relative; font-size: 21px; }
+.map svg.links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 1; }
+.cluster { position: absolute; transform: translate(-50%, -50%); width: 30%; z-index: 1; }
+.cluster h3 { line-height: 1.12; margin-bottom: .3em; }
+.cluster ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .12em; }
+
+/* whiteboard */
+.hand-style { font-family: "Kalam", cursive; }
+.hand-style .head h1 { font-family: "Kalam", cursive; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .01em; line-height: 1.02; }
+.head .subwrap { font-size: .34em; line-height: 1.25; }
+.hand-style .head .sub { display: inline-block; font-size: 1em; font-weight: 400; color: var(--accent); border-bottom: .06em solid var(--accent); line-height: 1.1; margin-top: .05em; }
+.hand-style .hub { font-weight: 700; font-size: 1.6em; padding: .25em .7em .15em; border: .1em solid var(--ink); border-radius: .12em; background: var(--bg); transform: translate(-50%, -50%) rotate(-1deg); }
+.hand-style .cluster h3 { font-weight: 700; font-size: 1.05em; display: inline-block; border-bottom: .09em solid var(--ink); padding-bottom: .02em; }
+.hand-style .cluster li { line-height: 1.22; }
+.hand-style .cluster li::before { content: "- "; }
+.hand-style svg.links path { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; }
+.hand-style .credit { font-family: "Kalam", cursive; font-size: 21px; }
+
+/* clean */
+.clean-style .head h1 { font-family: "Inter", sans-serif; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+.clean-style .head .sub { display: block; font-size: 1.05em; font-weight: 500; color: var(--muted); letter-spacing: -.01em; margin-top: .25em; }
+.clean-style .hub { width: 8.4em; height: 8.4em; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; align-content: center; gap: .3em;
+  font-weight: 800; font-size: 1.15em; line-height: 1.05; box-shadow: 0 0 0 .5em var(--accent-soft); }
+.clean-style .hub svg { width: 2.4em; height: 2.4em; }
+.clean-style .cluster { background: var(--panel); border: .08em solid var(--line); border-radius: .6em; overflow: hidden; box-shadow: var(--shadow); }
+.clean-style .cluster h3 { background: var(--accent); color: var(--accent-ink); font-weight: 750; font-size: 1em; padding: .45em .7em; margin: 0; }
+.clean-style .cluster ul { padding: .5em .75em .6em; }
+.clean-style .cluster li { font-size: .92em; line-height: 1.25; padding-left: .8em; position: relative; }
+.clean-style .cluster li::before { content: ""; position: absolute; left: 0; top: .5em; width: .32em; height: .32em; border-radius: 50%; background: var(--accent); }
+.clean-style svg.links path { fill: none; stroke: var(--accent); stroke-width: 3.5; stroke-linecap: round; }
+{% endblock %}
+
+{% block script %}
+<script>
+window.__layout = function () {
+  const map = document.querySelector(".map");
+  const o = map.getBoundingClientRect();
+  const rel = (r) => ({ l: r.left - o.left, r: r.right - o.left, t: r.top - o.top, b: r.bottom - o.top, cx: (r.left + r.right) / 2 - o.left, cy: (r.top + r.bottom) / 2 - o.top });
+  const hub = rel(document.querySelector(".hub").getBoundingClientRect());
+  // Where the segment from a box's centre towards (x, y) leaves the box.
+  const exit = (b, x, y, pad) => {
+    const dx = x - b.cx, dy = y - b.cy;
+    const hw = (b.r - b.l) / 2 + pad, hh = (b.b - b.t) / 2 + pad;
+    const s = Math.min(hw / Math.abs(dx || 1e-6), hh / Math.abs(dy || 1e-6));
+    return [b.cx + dx * s, b.cy + dy * s];
+  };
+  const svg = document.querySelector("svg.links");
+  document.querySelectorAll(".cluster").forEach((el, i) => {
+    const c = rel(el.getBoundingClientRect());
+    const [x1, y1] = exit(hub, c.cx, c.cy, 6);
+    const [x2, y2] = exit(c, hub.cx, hub.cy, 10);
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, len = Math.hypot(x2 - x1, y2 - y1);
+    const bend = {{ 'true' if hand else 'false' }} ? (i % 2 ? 1 : -1) * len * 0.07 : 0;
+    const nx = -(y2 - y1) / (len || 1), ny = (x2 - x1) / (len || 1);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M ${x1.toFixed(1)} ${y1.toFixed(1)} Q ${(mx + nx * bend).toFixed(1)} ${(my + ny * bend).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`);
+    path.setAttribute("pathLength", "1");
+    path.setAttribute("class", "draw-path");
+    path.dataset.anim = "draw";
+    path.dataset.order = String((i + 1) * 10);
+    path.dataset.dur = "0.6";
+    svg.appendChild(path);
+  });
+};
+</script>
+{% endblock %}
+
+{% block content %}
+<header class="head" data-fit="headline" data-fit-max="1" data-fit-min="0.45">
+  <h1 data-anim="{{ 'wipe' if hand else 'fade-up' }}" data-order="0" data-dur="0.9">{{ data.title | rich }}</h1>
+  {% if data.subtitle %}<div class="subwrap"><span class="sub" data-anim="{{ 'wipe' if hand else 'fade' }}" data-order="1">{{ data.subtitle | rich }}</span></div>{% endif %}
+</header>
+<section class="fit map" data-fit="map" data-fit-mode="boxes" data-box-gap="24" data-fit-max="1.25" data-fit-min="0.5">
+  <svg class="links" aria-hidden="true"></svg>
+  <div class="hub" data-box data-anim="pop" data-order="2">{% if not hand %}{{ spark(56, "currentColor") }}{% endif %}<span>{{ data.center | rich }}</span></div>
+  {% for branch in data.branches %}
+  {% set bi = loop.index %}
+  {% set slot = slots[loop.index0] %}
+  <div class="cluster" data-box style="left: {{ slot.x }}%; top: {{ slot.y }}%">
+    <h3 data-anim="{{ 'wipe' if hand else 'fade-up' }}" data-order="{{ bi * 10 + 1 }}">{{ branch.heading | rich }}</h3>
+    <ul>{% for item in branch["items"] %}<li data-anim="{{ 'wipe' if hand else 'fade' }}" data-order="{{ bi * 10 + 2 + loop.index0 * 0.1 }}">{{ item | rich }}</li>{% endfor %}</ul>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}
