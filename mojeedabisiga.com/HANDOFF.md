@@ -17,8 +17,8 @@ The strategy is: claim the panel, give Google one authoritative "entity home" (h
 | Hosting | GitHub Pages from repo `ABIMATHS78/abimaths`, published by the workflow `.github/workflows/pages-mojeedabisiga.yml`. Source = GitHub Actions; custom domain = `mojeedabisiga.com`. |
 | DNS (Squarespace) | A @ → 185.199.108.153, .109.153, .110.153, .111.153; CNAME www → abimaths78.github.io. The "Squarespace Defaults" preset was deleted and must **not** be re-added. The MX (Google Workspace) and TXT (google-site-verification) records exist; leave them alone. |
 | First PR (#51) | Merged. Added the site, checker, workflow and Wikidata batches. |
-| **Open PR #52** | https://github.com/ABIMATHS78/abimaths/pull/52, branch `claude/cv-achievements-photos`. It adds the new **/achievements/** page built from his CV, CV details on the Home, About and Press pages, his headshot as the favicon, header logo and social image, and two editorial portraits. **Waiting for the owner to merge.** Merging to `master` deploys automatically in about a minute. |
-| Wikidata | Item **Q137917376** exists. The prepared QuickStatements batches have **not been run yet**. |
+| Second PR (#52) | Merged 23 Nov 2026 and live. Added the **/achievements/** page built from his CV, CV details on the Home, About and Press pages, his headshot as the favicon, header logo and social image, and two editorial portraits. Merging to `master` deploys automatically in about a minute. |
+| Wikidata | Item **Q137917376** exists, with only a label, a description, P31 and P21. Every item and property ID in both batches was checked against Wikidata on 23 Nov 2026. The batches have **not been run yet**. |
 | Search Console | Not confirmed as set up yet. |
 | Knowledge panel claim | Not done yet. |
 
@@ -74,7 +74,7 @@ The research notes (`RESEARCH_DOSSIER.md`) and the playbook (`KNOWLEDGE_PANEL_PL
 
 ## 5. Next steps, in order
 
-1. **Merge PR #52** (owner). Then check https://mojeedabisiga.com/achievements/, the favicon and the share image live.
+1. ~~Merge PR #52~~ Done. /achievements/, the favicon and the share image are live and confirmed.
 2. **Google Search Console** (owner, with your guidance):
    - Add a Domain property for `mojeedabisiga.com` and verify it with a TXT record in Squarespace DNS.
    - Submit `https://mojeedabisiga.com/sitemap.xml`.
