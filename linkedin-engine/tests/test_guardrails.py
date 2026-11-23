@@ -118,3 +118,8 @@ def test_links_on_graphics_are_checked_and_file_names_are_not_links():
     assert "unknown_link" in codes(lint_graphic({"template": "badge", "data": {"title": "example.org"}}, PROFILE, [], BRAND))
     assert not codes(lint_graphic({"template": "badge", "data": {"title": "mojeedabisiga.com"}}, PROFILE, [], BRAND))
     assert "unknown_link" not in codes(lint_post(BODY + "\nOne required file: SKILL.md, plus notes.txt", PROFILE, [], "", BRAND))
+
+
+def test_integrity_check_needs_whole_words():
+    assert "integrity" not in codes(lint_post(BODY + "\nUse it with examples and testing notes.", PROFILE))
+    assert "integrity" in codes(lint_post(BODY + "\nLet AI take the exam for you.", PROFILE))

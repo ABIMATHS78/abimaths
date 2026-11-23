@@ -23,7 +23,7 @@ NEGATIVE_PARALLEL_RE = re.compile(r"\b(it'?s|this is|that'?s|this isn'?t|it isn'
 BAIT_RE = re.compile(r"\b(comment|type|reply)\s+[\"'“]?\w+[\"'”]?\s+(below|in the comments)|\blike if you\b|\btag (someone|a friend)\b|\bcomment ['\"“]?yes", re.I)
 CHEAT_RE = re.compile(
     r"\b(let|have|use|make|get)\s+(it|ai|chatgpt|codex|claude|gemini|an? agent|the agent)\b[^.\n]{0,80}"
-    r"\b(quiz|quizzes|exam|exams|test|tests|certificat\w*|assessment)", re.I)
+    r"\b(quiz|quizzes|exam|exams|test|tests|certificat\w*|assessment)\b", re.I)
 FOOL_RE = re.compile(r"\bfool(ing)?\b[^.\n]{0,40}\b(hr|recruiters?|hiring|employers?|managers?)\b", re.I)
 MARKDOWN_RE = re.compile(r"\*\*[^*\n]+\*\*|__[^_\n]+__|^#{1,6}\s|\[[^\]\n]+\]\((https?://)?[^)\n]+\)", re.M)
 PLACEHOLDER_RE = re.compile(r"\[CHECK:[^\]]*\]", re.I)
