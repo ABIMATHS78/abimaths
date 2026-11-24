@@ -1,4 +1,5 @@
 """Draws the four logos with headless Chromium (Archivo Expanded Black + Instrument Serif Italic, from Google Fonts).
+Draws the cream logos; make_red_logos.py draws the red ones.
 Run: python brand-logos/make_logos.py  (needs playwright). Round logos keep all text inside 84% of the circle."""
 from pathlib import Path
 from playwright.sync_api import sync_playwright
@@ -12,15 +13,15 @@ logos = {
  # 1. wide wordmark, cream
  "learn-ai-with-mojeed-wordmark": (3000, 560, f"""<div style="width:3000px;height:560px;background:{CREAM};display:flex;align-items:center;justify-content:center;gap:56px;color:{INK}">
    <span class="heavy" style="font-size:300px">Learn AI</span><span class="serif" style="font-size:330px;line-height:.7;transform:translateY(12px)">With</span><span class="heavy" style="font-size:300px">Mojeed</span></div>"""),
- # 2. red badge wordmark
- "ai-with-mojeed-abisiga-wordmark": (3000, 620, f"""<div style="width:3000px;height:620px;background:{RED};display:flex;align-items:center;justify-content:center;color:{OFF}"><div style="display:flex;align-items:baseline;gap:44px;transform:translateY(5%)">
-   <span class="heavy" style="font-size:150px;letter-spacing:-.02em">AI with</span><span class="heavy" style="font-size:330px">Mojeed Abisiga</span></div></div>"""),
+ # 1b. wide wordmark, cream: AI With MOJEED ABISIGA
+ "ai-with-mojeed-abisiga-cream-wordmark": (3600, 560, f"""<div style="width:3600px;height:560px;background:{CREAM};display:flex;align-items:center;justify-content:center;gap:56px;color:{INK}">
+   <span class="heavy" style="font-size:300px">AI</span><span class="serif" style="font-size:330px;line-height:.7;transform:translateY(12px)">With</span><span class="heavy" style="font-size:300px">Mojeed Abisiga</span></div>"""),
+ # 1c. round, cream
+ "ai-with-mojeed-abisiga-cream-round": (1200, 1200, f"""<div style="width:1200px;height:1200px;background:{CREAM};display:flex;flex-direction:column;align-items:center;justify-content:center;color:{INK};gap:22px">
+   <span style="display:flex;align-items:center;gap:30px"><span class="heavy" style="font-size:190px">AI</span><span class="serif" style="font-size:230px;line-height:.75">With</span></span><span class="heavy" style="font-size:210px">Mojeed</span><span class="heavy" style="font-size:210px">Abisiga</span></div>"""),
  # 3. round: cream
  "learn-ai-with-mojeed-round": (1200, 1200, f"""<div style="width:1200px;height:1200px;background:{CREAM};display:flex;flex-direction:column;align-items:center;justify-content:center;color:{INK};gap:26px">
    <span class="heavy" style="font-size:190px">Learn AI</span><span class="serif" style="font-size:230px;line-height:.75">With</span><span class="heavy" style="font-size:210px">Mojeed</span></div>"""),
- # 4. round: red
- "ai-with-mojeed-abisiga-round": (1200, 1200, f"""<div style="width:1200px;height:1200px;background:{RED};display:flex;flex-direction:column;align-items:center;justify-content:center;color:{OFF};gap:34px">
-   <span class="heavy" style="font-size:120px;letter-spacing:-.02em">AI with</span><span class="heavy" style="font-size:200px">Mojeed</span><span class="heavy" style="font-size:200px">Abisiga</span></div>"""),
 }
 with sync_playwright() as p:
     b = p.chromium.launch()
