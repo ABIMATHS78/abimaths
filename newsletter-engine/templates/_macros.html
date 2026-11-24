@@ -44,35 +44,32 @@
 </a>
 {%- endmacro %}
 
-{% macro subscribe_box(title="", text="", hero=False) -%}
+{% macro subscribe_form(fine=True) -%}
 {%- set n = site.newsletter -%}
-<div class="subscribe" id="subscribe-box">
-  <p class="subscribe-title">{{ title or ('Get the next one in your inbox' if n.provider != 'none' else 'Follow along') }}</p>
-  <p>{{ text or n.promise or site.description }}</p>
   {% if n.provider == 'buttondown' and n.username %}
   <form class="subscribe-form" action="https://buttondown.com/api/emails/embed-subscribe/{{ n.username }}" method="post" target="_blank">
     <label class="sr-only" for="email-{{ uid() }}">Email address</label>
     <input id="email-{{ last_uid() }}" type="email" name="email" placeholder="Your email address" required autocomplete="email">
     <input type="hidden" name="embed" value="1"><button class="btn btn-primary" type="submit">Subscribe</button>
   </form>
-  <p class="fine">Free. One click to unsubscribe. Your address goes to Buttondown, which sends the emails.</p>
+  {% if fine %}<p class="fine">Free. One click to unsubscribe. Your address goes to Buttondown, which sends the emails.</p>{% endif %}
   {% elif n.provider == 'kit' and n.form_action %}
   <form class="subscribe-form" action="{{ n.form_action }}" method="post" target="_blank">
     <label class="sr-only" for="email-{{ uid() }}">Email address</label>
     <input id="email-{{ last_uid() }}" type="email" name="email_address" placeholder="Your email address" required autocomplete="email">
     <button class="btn btn-primary" type="submit">Subscribe</button>
   </form>
-  <p class="fine">Free. One click to unsubscribe.</p>
+  {% if fine %}<p class="fine">Free. One click to unsubscribe.</p>{% endif %}
   {% elif n.provider == 'form' and n.form_action %}
   <form class="subscribe-form" action="{{ n.form_action }}" method="post" target="_blank">
     <label class="sr-only" for="email-{{ uid() }}">Email address</label>
     <input id="email-{{ last_uid() }}" type="email" name="email" placeholder="Your email address" required autocomplete="email">
     <button class="btn btn-primary" type="submit">Subscribe</button>
   </form>
-  <p class="fine">Free. One click to unsubscribe.</p>
+  {% if fine %}<p class="fine">Free. One click to unsubscribe.</p>{% endif %}
   {% elif n.provider == 'substack' and n.username %}
   <iframe class="substack-embed" src="https://{{ n.username }}.substack.com/embed" title="Subscribe to {{ site.name }} by email" height="150" frameborder="0" scrolling="no" loading="lazy"></iframe>
-  <p class="fine">Free. Delivered by Substack, one click to unsubscribe. Form not showing? <a href="https://{{ n.username }}.substack.com/subscribe" rel="noopener">Subscribe on Substack</a>.</p>
+  {% if fine %}<p class="fine">Free. Delivered by Substack, one click to unsubscribe. Form not showing? <a href="https://{{ n.username }}.substack.com/subscribe" rel="noopener">Subscribe on Substack</a>.</p>{% endif %}
   {% elif n.provider == 'beehiiv' and n.embed_url %}
   <iframe src="{{ n.embed_url }}" title="Subscribe by email" loading="lazy"></iframe>
   {% else %}
@@ -81,7 +78,32 @@
     <a class="btn btn-ghost" href="{{ link('feed.xml') }}"><svg class="icon" aria-hidden="true"><use href="#i-rss"/></svg> RSS feed</a>
   </div>
   {% endif %}
+{%- endmacro %}
+
+{% macro subscribe_box(title="", text="", hero=False) -%}
+{%- set n = site.newsletter -%}
+<div class="subscribe" id="subscribe-box">
+  <p class="subscribe-title">{{ title or ('Get the next one in your inbox' if n.provider != 'none' else 'Follow along') }}</p>
+  <p>{{ text or n.promise or site.description }}</p>
+  {{ subscribe_form() }}
 </div>
+{%- endmacro %}
+
+{# The ending of every issue and guide, after the Substack screenshot: the pitch for the paid subscription, the
+   subscribe form, the line on what's behind the paywall, then the paywall box (settings: site.json "paywall"). #}
+{% macro paywall(e) -%}
+{%- set pw = site.paywall -%}
+{%- set n = site.newsletter -%}
+<section class="paywall-end" aria-label="Paid subscription">
+  {% if pw.pitch %}<div class="pw-text">{% for line in pw.pitch %}<p>{{ line | inline }}</p>{% endfor %}</div>{% endif %}
+  <div class="pw-form">{{ subscribe_form(fine=False) }}</div>
+  {% if pw.teaser %}<div class="pw-text"><p>{{ pw.teaser | inline }}</p></div>{% endif %}
+  <div class="paywall">
+    <h2 class="paywall-title">{{ pw.heading | replace('{kind}', 'guide' if e.kind == 'guide' else 'post') }}</h2>
+    <a class="paywall-btn" href="{{ pw.subscribe_url or ('https://' ~ n.username ~ '.substack.com/subscribe') }}" rel="noopener">{{ pw.button or 'Subscribe' }}</a>
+    {% if pw.sign_in_url %}<p class="paywall-signin">Already a paid subscriber? <a href="{{ pw.sign_in_url }}" rel="noopener">Sign in</a></p>{% endif %}
+  </div>
+</section>
 {%- endmacro %}
 
 {% macro share(e) -%}

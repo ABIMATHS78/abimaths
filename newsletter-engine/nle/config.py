@@ -23,6 +23,11 @@ DEFAULTS = {
     # The name in the header and footer as a wordmark: small bold lead, small light join, big wide name.
     # Empty name: the author's photo and the site name instead.
     "wordmark": {"lead": "", "join": "", "name": ""},
+    # The ending of every issue and guide, after the Substack screenshot: a short pitch for the paid subscription,
+    # the subscribe form, one line on what's behind the paywall, then the paywall box. "{kind}" in the heading
+    # becomes "post" or "guide". Off when enabled is false: the old "Ready for more?" box comes back.
+    "paywall": {"enabled": False, "pitch": [], "teaser": "", "heading": "The rest of this {kind} is for paid subscribers",
+                "button": "Subscribe", "subscribe_url": "", "sign_in_url": ""},
     "newsletter": {"provider": "none", "username": "", "form_action": "", "embed_url": "", "promise": ""},
     "never_mention": [],
     "pages": {"newsletter_label": "Newsletter", "guides_label": "Guides", "path_label": "Start here",
