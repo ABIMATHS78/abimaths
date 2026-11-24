@@ -19,6 +19,7 @@ DEFAULTS = {
     "author": {"name": "Your Name", "headline": "", "bio": "", "avatar": "", "url": "", "person_id": "",
                "linkedin": "", "same_as": []},
     "main_site": {"name": "", "url": "", "links": []},
+    "hero_image": {"src": "", "width": 0, "height": 0, "alt": ""},   # the photo beside the home page headline
     "newsletter": {"provider": "none", "username": "", "form_action": "", "embed_url": "", "promise": ""},
     "never_mention": [],
     "pages": {"newsletter_label": "Newsletter", "guides_label": "Guides", "path_label": "Start here",

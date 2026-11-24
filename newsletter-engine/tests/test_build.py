@@ -73,6 +73,14 @@ def test_tagline_accent_becomes_italic_on_the_page_and_plain_in_the_title(built)
     assert "*" not in title and "<em>" in re.search(r"<h1>(.*?)</h1>", home, re.S).group(1)
 
 
+def test_home_page_shows_the_photo_set_in_site_json(built):
+    report, _ = built
+    hero = load_site()["hero_image"]
+    home = (report.out_dir / "index.html").read_text(encoding="utf-8")
+    assert f'class="hero-photo" src="{load_site().link(hero["src"])}"' in home
+    assert f'width="{hero["width"]}" height="{hero["height"]}"' in home
+
+
 def test_nothing_published_mentions_the_old_brand(built):
     report, out = built
     names = load_site()["never_mention"]
