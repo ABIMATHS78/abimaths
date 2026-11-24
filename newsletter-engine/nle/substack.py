@@ -122,17 +122,18 @@ KIT = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Substack kit</title>
 <style>
-:root{--bg:#f7f6f2;--card:#fff;--ink:#0d1117;--muted:#5a6370;--line:#e2dfd6;--accent:#07704c;--soft:#dcf2e8}
-@media (prefers-color-scheme:dark){:root{--bg:#0b0e13;--card:#12161d;--ink:#eceff3;--muted:#98a2b0;--line:#242b36;--accent:#45d99c;--soft:#0f2a20}}
+:root{--bg:#f7f6f2;--card:#fff;--ink:#0d1117;--muted:#5a6370;--line:#e2dfd6;--accent:#07704c;--on-accent:#fff;--soft:#dcf2e8;--code:#0d1117;--code-ink:#e6edf3}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0e13;--card:#12161d;--ink:#eceff3;--muted:#98a2b0;--line:#242b36;--accent:#45d99c;--on-accent:#03140c;--soft:#0f2a20;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0b0e13;--card:#12161d;--ink:#eceff3;--muted:#98a2b0;--line:#242b36;--accent:#45d99c;--on-accent:#03140c;--soft:#0f2a20;color-scheme:dark}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
-main{max-width:760px;margin:0 auto;padding:28px 16px 60px}h1{font:700 1.9rem/1.15 Georgia,serif;margin:0 0 6px}
+main{max-width:760px;margin:0 auto;padding-block:28px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}h1{font:700 1.9rem/1.15 Georgia,serif;margin:0 0 6px}
 .lead{color:var(--muted);margin:0 0 22px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin:14px 0}
 .card h2{font:700 1.25rem/1.25 Georgia,serif;margin:0 0 4px}.meta{color:var(--muted);font-size:.9rem;margin:0 0 12px}
 .row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}button,a.btn{font:600 .92rem system-ui;border-radius:999px;padding:9px 16px;border:1px solid var(--line);
-background:transparent;color:var(--ink);cursor:pointer;text-decoration:none}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+background:transparent;color:var(--ink);cursor:pointer;text-decoration:none}button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 button.done{background:var(--soft);color:var(--accent);border-color:var(--accent)}details{margin-top:10px}summary{cursor:pointer;color:var(--muted)}
 .preview{border-top:1px solid var(--line);margin-top:10px;padding-top:6px;max-height:420px;overflow:auto;font-size:.95rem}.preview img{max-width:100%;border-radius:8px}
-.preview pre{white-space:pre-wrap;background:#0d1117;color:#e6edf3;padding:10px;border-radius:8px}
+.preview pre{white-space:pre-wrap;background:var(--code);color:var(--code-ink);padding:10px;border-radius:8px}.ph{border:1px dashed var(--line);border-radius:8px;padding:10px;color:var(--muted);font-size:.85rem}
 ol.steps{padding-left:20px}ol.steps li{margin:6px 0}pre.text{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit}
 </style></head><body><main>
 <h1>Substack kit</h1>
@@ -142,20 +143,21 @@ ol.steps{padding-left:20px}ol.steps li{margin:6px 0}pre.text{white-space:pre-wra
 <li>Below, press <strong>Copy title</strong> and paste it into the title; same for <strong>Copy subtitle</strong>.</li>
 <li>Press <strong>Copy post</strong>, click into the body and paste. Images, headings, lists and prompts come with it.</li>
 <li>Optional: replace a "Subscribe for free →" line with Substack's own button (Button → Subscribe).</li>
-<li>In <strong>Settings</strong> (before publishing) choose a cover image: <strong>Download cover</strong>, then upload it.</li>
+<li>In <strong>Settings</strong> (before publishing) choose a cover image: <strong>Open cover</strong>, save the image, then upload it.</li>
 <li>Click <strong>Continue → Send to everyone now</strong> (or schedule it).</li></ol></div>
 <div class="card"><h2>Set up the publication (once)</h2><p class="meta">Settings → Basics, About page, and Emails → Welcome email.</p><div id="setup"></div></div>
 <div id="posts"></div>
 </main><script>
 const posts = __POSTS__, setup = __SETUP__;
 function flash(b, t){const o=b.textContent;b.textContent=t;b.classList.add('done');setTimeout(()=>{b.textContent=o;b.classList.remove('done')},1600)}
-async function copyText(b, text){try{await navigator.clipboard.writeText(text);flash(b,'Copied')}catch(e){prompt('Copy this:', text)}}
+function selectIn(el){const r=document.createRange();r.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(r)}
+async function copyText(b, text, el){try{await navigator.clipboard.writeText(text);flash(b,'Copied')}catch(e){if(el){selectIn(el);flash(b,'Selected: copy it')}}}
 async function copyHtml(b, html, text){try{await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([text],{type:'text/plain'})})]);flash(b,'Copied')}
  catch(e){const d=document.createElement('div');d.contentEditable=true;d.innerHTML=html;document.body.appendChild(d);const r=document.createRange();r.selectNodeContents(d);const s=getSelection();s.removeAllRanges();s.addRange(r);
- try{document.execCommand('copy');flash(b,'Copied')}catch(_){alert('Select the preview and copy it by hand.')}d.remove()}}
+ let ok=false;try{ok=document.execCommand('copy')}catch(_){}d.remove();if(ok)flash(b,'Copied');else{const pv=b.closest('.card').querySelector('.preview');b.closest('.card').querySelector('details').open=true;selectIn(pv);flash(b,'Selected: copy it')}}}
 const st = document.getElementById('setup');
 for (const [k, v] of Object.entries(setup)) {const w=document.createElement('div');w.innerHTML='<p><strong></strong></p><pre class="text"></pre>';
- w.querySelector('strong').textContent=k;w.querySelector('pre').textContent=v;const b=document.createElement('button');b.textContent='Copy';b.onclick=()=>copyText(b,v);w.appendChild(b);st.appendChild(w)}
+ w.querySelector('strong').textContent=k;w.querySelector('pre').textContent=v;const b=document.createElement('button');b.textContent='Copy';b.onclick=()=>copyText(b,v,w.querySelector('pre'));w.appendChild(b);st.appendChild(w)}
 const box = document.getElementById('posts');
 posts.forEach((p, i) => {const c=document.createElement('div');c.className='card';
  c.innerHTML='<h2></h2><p class="meta"></p><div class="row"></div><details><summary>Preview</summary><div class="preview"></div></details>';
@@ -163,7 +165,8 @@ posts.forEach((p, i) => {const c=document.createElement('div');c.className='card
  const row=c.querySelector('.row');const add=(t,f,cls)=>{const b=document.createElement('button');b.textContent=t;if(cls)b.className=cls;b.onclick=()=>f(b);row.appendChild(b)};
  add('Copy title',b=>copyText(b,p.title));add('Copy subtitle',b=>copyText(b,p.subtitle));
  const pv=c.querySelector('.preview');pv.innerHTML=p.html;add('Copy post',b=>copyHtml(b,p.html,pv.innerText),'primary');
- if(p.cover){const a=document.createElement('a');a.className='btn';a.href=p.cover;a.download='';a.target='_blank';a.textContent='Download cover';row.appendChild(a)}
+ if(window.parent!==window)pv.querySelectorAll('img').forEach(i=>{const d=document.createElement('p');d.className='ph';d.textContent='Image: '+(i.alt||'graphic')+' (loads in Substack from your site)';i.replaceWith(d)});
+ if(p.cover){const a=document.createElement('a');a.className='btn';a.href=p.cover;a.target='_blank';a.rel='noopener';a.textContent='Open cover';row.appendChild(a)}
  box.appendChild(c)});
 </script></body></html>
 """
