@@ -4,8 +4,10 @@ Writes Mojeed Abisiga's own guides and newsletter issues, and builds them into a
 newsletter publication with a guide library. It learned the **structure** of a successful AI newsletter (how issues
 open, how sections are cut, where prompts, screenshots and buttons go) from example issues, never their words.
 
-The site lives at **mojeedabisiga.com/learn/** once published, in the same design as mojeedabisiga.com
-(black header, Fraunces and Inter, emerald accent, light and dark themes):
+The site lives at **mojeedabisiga.com/learn/** once published: cream paper, red accents and charcoal ink, tall
+uppercase headings (Anton) with red italic accents (Playfair Display), Open Sans for reading and Oswald for labels, in
+light and dark themes. The colours and fonts are tokens at the top of `static/css/site.css`; `*words*` in the tagline
+in `site.json` become the red italic accent on the home page:
 
 | Page | Address | What it does |
 |---|---|---|

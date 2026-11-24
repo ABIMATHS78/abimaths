@@ -18,6 +18,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup
 
 from .config import Site, load_site
 from .content import Item, Library, load_library
@@ -27,6 +28,17 @@ from .paths import CONTENT_DIR, DIST_DIR, MEDIA_DIR, STATIC_DIR, TEMPLATES_DIR
 
 PAGES = {"subscribe": "subscribe/", "archive": "archive/", "guides": "guides/", "start": "start/",
          "library": "library/", "about": "about/", "home": ""}
+ACCENT_RE = re.compile(r"\*([^*\n]+)\*")
+
+
+def accent_markup(text: str) -> Markup:
+    """A short line such as the tagline: `*words*` become the red italic accent, everything else is escaped."""
+    return Markup(ACCENT_RE.sub(r"<em>\1</em>", html.escape(text or "", quote=False)))
+
+
+def plain_accent(text: str) -> str:
+    """The same line for page titles and meta tags: the accent markers dropped."""
+    return ACCENT_RE.sub(r"\1", text or "")
 
 
 @dataclass
@@ -105,6 +117,7 @@ class Builder:
                                trim_blocks=True, lstrip_blocks=True)
         self.env.globals.update(site=self.site, link=self.site.link, year=dt.date.today().year,
                                 version=self._asset_version(), uid=self._next_uid, last_uid=lambda: self._uid)
+        self.env.filters["accent"] = accent_markup
         self.entries: dict[str, Entry] = {}
 
     # --- helpers ---------------------------------------------------------------------------------------------
@@ -181,7 +194,7 @@ class Builder:
         if self.og is not False:
             report.og_images = self._og_images(issues + guides, report, required=bool(self.og))
         self._render("home.html", "index.html", report, issues=issues, guides=guides, start_items=start_items,
-                     page=self._page("home", "", f"{site['name']}: {site['tagline']}".rstrip(": "), site["description"],
+                     page=self._page("home", "", f"{site['name']}: {plain_accent(site['tagline'])}".rstrip(": "), site["description"],
                                      section="home", jsonld=self._blog_jsonld()))
         tags = [t for t, _ in sorted(_count(t for e in issues for t in e.tags).items(), key=lambda kv: (-kv[1], kv[0]))]
         self._render("archive.html", "archive/index.html", report, issues=issues, tags=tags[:12],

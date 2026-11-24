@@ -63,6 +63,16 @@ def test_feeds_sitemap_search_and_structured_data(built):
         assert tag in page
 
 
+def test_tagline_accent_becomes_italic_on_the_page_and_plain_in_the_title(built):
+    from nle.build import accent_markup, plain_accent
+    assert str(accent_markup("Data & AI, *made easy* <for> all")) == "Data &amp; AI, <em>made easy</em> &lt;for&gt; all"
+    assert plain_accent("Data & AI, *made easy* for everyone.") == "Data & AI, made easy for everyone."
+    report, _ = built
+    home = (report.out_dir / "index.html").read_text(encoding="utf-8")
+    title = re.search(r"<title>(.*?)</title>", home, re.S).group(1)
+    assert "*" not in title and "<em>" in re.search(r"<h1>(.*?)</h1>", home, re.S).group(1)
+
+
 def test_nothing_published_mentions_the_old_brand(built):
     report, out = built
     names = load_site()["never_mention"]
