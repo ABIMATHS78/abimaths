@@ -122,9 +122,9 @@ KIT = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Substack kit</title>
 <style>
-:root{--bg:#f7f6f2;--card:#fff;--ink:#0d1117;--muted:#5a6370;--line:#e2dfd6;--accent:#07704c;--on-accent:#fff;--soft:#dcf2e8;--code:#0d1117;--code-ink:#e6edf3}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0e13;--card:#12161d;--ink:#eceff3;--muted:#98a2b0;--line:#242b36;--accent:#45d99c;--on-accent:#03140c;--soft:#0f2a20;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#0b0e13;--card:#12161d;--ink:#eceff3;--muted:#98a2b0;--line:#242b36;--accent:#45d99c;--on-accent:#03140c;--soft:#0f2a20;color-scheme:dark}
+:root{--bg:#fffae7;--card:#fff;--ink:#2f2d2d;--muted:#6b6762;--line:#e6e1d1;--accent:#d02e2e;--on-accent:#fffae7;--soft:#fbe8dc;--code:#2f2d2d;--code-ink:#fffae7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1a1210;--card:#241a17;--ink:#fffae7;--muted:#b5aa97;--line:#3b2f2a;--accent:#ff6b5e;--on-accent:#1a1210;--soft:#3a1d19;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1a1210;--card:#241a17;--ink:#fffae7;--muted:#b5aa97;--line:#3b2f2a;--accent:#ff6b5e;--on-accent:#1a1210;--soft:#3a1d19;color-scheme:dark}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}
 main{max-width:760px;margin:0 auto;padding-block:28px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}h1{font:700 1.9rem/1.15 Georgia,serif;margin:0 0 6px}
 .lead{color:var(--muted);margin:0 0 22px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px;margin:14px 0}

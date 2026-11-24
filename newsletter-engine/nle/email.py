@@ -7,25 +7,29 @@ from __future__ import annotations
 import html
 import re
 
-INK, MUTED, LINE, ACCENT, SOFT, CODE = "#0d1117", "#5a6370", "#e2dfd6", "#07704c", "#dcf2e8", "#0d1117"
-SERIF = "Georgia, 'Times New Roman', serif"
-SANS = "-apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+# The colours of mojeedabisiga.com/learn: cream paper, red, charcoal. Email programs rarely load web fonts, so the
+# tall uppercase headings fall back to Impact or Arial Black, and the italic accents to Georgia.
+INK, INK2, MUTED, LINE, ACCENT, SOFT, CODE = "#2f2d2d", "#4f4c49", "#6b6762", "#e6e1d1", "#d02e2e", "#fbe8dc", "#2f2d2d"
+PAPER, BEIGE, CREAM = "#fffae7", "#f6eed2", "#fffae7"
+DISPLAY = "Anton, Impact, 'Arial Narrow Bold', 'Arial Black', sans-serif"
+SERIF = "'Playfair Display', Georgia, 'Times New Roman', serif"
+SANS = "'Open Sans', -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 MONO = "SFMono-Regular, Menlo, Consolas, monospace"
-TONES = {"tip": (SOFT, ACCENT), "note": ("#efede6", MUTED), "warning": ("#fbe7e2", "#b4321f"), "key": ("#f6ecd6", "#8a6216")}
+TONES = {"tip": (SOFT, "#b82828"), "note": (BEIGE, INK2), "warning": ("#fadfd8", "#b82828"), "key": ("#fbead9", "#9c4c17")}
 
 STYLES = {
     "p": f"margin:0 0 16px;font:17px/1.65 {SANS};color:{INK}",
-    "h2": f"margin:32px 0 12px;font:600 26px/1.2 {SERIF};color:{INK}",
-    "h3": f"margin:26px 0 10px;font:600 21px/1.25 {SERIF};color:{INK}",
+    "h2": f"margin:34px 0 12px;font:800 28px/1.05 {DISPLAY};letter-spacing:.01em;text-transform:uppercase;color:{INK}",
+    "h3": f"margin:26px 0 10px;font:800 21px/1.1 {DISPLAY};letter-spacing:.01em;text-transform:uppercase;color:{INK}",
     "ul": f"margin:0 0 16px;padding-left:24px;font:17px/1.6 {SANS};color:{INK}",
     "ol": f"margin:0 0 16px;padding-left:24px;font:17px/1.6 {SANS};color:{INK}",
     "li": "margin:6px 0",
     "a": f"color:{ACCENT};text-decoration:underline",
-    "blockquote": f"margin:20px 0;padding:4px 0 4px 16px;border-left:3px solid {ACCENT};color:#2a313c;font:19px/1.5 {SERIF}",
+    "blockquote": f"margin:20px 0;padding:4px 0 4px 16px;border-left:4px solid {ACCENT};color:{INK};font:italic 20px/1.45 {SERIF}",
     "table": f"width:100%;border-collapse:collapse;margin:20px 0;font:15px/1.5 {SANS}",
-    "th": f"text-align:left;padding:8px 10px;border-bottom:1px solid {LINE};background:#efede6",
+    "th": f"text-align:left;padding:8px 10px;border-bottom:1px solid {LINE};background:{BEIGE}",
     "td": f"text-align:left;padding:8px 10px;border-bottom:1px solid {LINE};vertical-align:top",
-    "code": f"font:15px/1.5 {MONO};background:#efede6;padding:1px 5px;border-radius:4px",
+    "code": f"font:15px/1.5 {MONO};background:{BEIGE};padding:1px 5px;border-radius:4px",
 }
 
 
@@ -41,8 +45,8 @@ def _strip_class(attrs: str) -> str:
 
 def _code_box(label: str, code: str) -> str:
     return (f'<div style="margin:20px 0;border-radius:10px;overflow:hidden;background:{CODE}">'
-            f'<div style="padding:8px 14px;background:#161b22;font:700 12px/1.2 {SANS};letter-spacing:.1em;text-transform:uppercase;color:#45d99c">{label}</div>'
-            f'<pre style="margin:0;padding:14px 16px;white-space:pre-wrap;font:15px/1.6 {MONO};color:#e6edf3">{code}</pre></div>')
+            f'<div style="padding:8px 14px;background:{ACCENT};font:700 12px/1.2 {SANS};letter-spacing:.14em;text-transform:uppercase;color:{CREAM}">{label}</div>'
+            f'<pre style="margin:0;padding:14px 16px;white-space:pre-wrap;font:15px/1.6 {MONO};color:{CREAM}">{code}</pre></div>')
 
 
 def _prompts(body: str) -> str:
@@ -57,15 +61,15 @@ def _callouts(body: str) -> str:
         tone, inner = match.group(1), match.group(2)
         bg, fg = TONES.get(tone, TONES["note"])
         inner = inner.replace('<p class="callout-title">', f'<p style="margin:0 0 6px;font:700 12px/1.2 {SANS};letter-spacing:.12em;text-transform:uppercase;color:{fg}">', 1)
-        return f'<div style="margin:20px 0;padding:14px 16px;border-radius:10px;background:{bg}">{inner}</div>'
+        return f'<div style="margin:20px 0;padding:14px 16px;border-radius:10px;border-left:4px solid {fg};background:{bg}">{inner}</div>'
     return re.sub(r'<aside class="callout callout-([a-z]+)">(.*?)</aside>', box, body, flags=re.S)
 
 
 def _buttons(body: str) -> str:
     def button(match):
         href, text = match.group(1), re.sub(r"<[^>]+>", "", match.group(2)).strip()
-        return (f'<p style="margin:24px 0;text-align:center"><a href="{href}" style="display:inline-block;padding:12px 24px;border-radius:999px;'
-                f'background:{ACCENT};color:#ffffff;font:600 16px/1.2 {SANS};text-decoration:none">{text}</a></p>')
+        return (f'<p style="margin:24px 0;text-align:center"><a href="{href}" style="display:inline-block;padding:13px 26px;border-radius:999px;'
+                f'background:{ACCENT};color:{CREAM};font:800 17px/1.2 {DISPLAY};letter-spacing:.06em;text-transform:uppercase;text-decoration:none">{text}</a></p>')
     return re.sub(r'<p class="cta"><a class="btn[^"]*" href="([^"]*)"[^>]*>(.*?)</a></p>', button, body, flags=re.S)
 
 
@@ -75,7 +79,7 @@ def _cards(body: str) -> str:
         title = re.search(r'<span class="ec-title">(.*?)</span>', inner, re.S)
         sub = re.search(r'<span class="ec-sub">(.*?)</span>', inner, re.S)
         return (f'<p style="margin:20px 0;padding:14px 16px;border:1px solid {LINE};border-radius:10px">'
-                f'<a href="{href}" style="color:{INK};text-decoration:none;font:600 18px/1.3 {SERIF}">{title.group(1) if title else "Read more"}</a>'
+                f'<a href="{href}" style="color:{INK};text-decoration:none;font:800 19px/1.15 {DISPLAY};letter-spacing:.01em;text-transform:uppercase">{title.group(1) if title else "Read more"}</a>'
                 + (f'<br><span style="font:15px/1.5 {SANS};color:{MUTED}">{sub.group(1)}</span>' if sub else "") + "</p>")
     return re.sub(r'<a class="embed-card" href="([^"]*)">(.*?)</a>(?=\s*(?:<|$))', card, body, flags=re.S)
 
@@ -109,14 +113,14 @@ def email_html(entry, site, body_html: str | None = None) -> str:
     return f"""<!doctype html>
 <html lang="{site['language']}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title></head>
-<body style="margin:0;padding:0;background:#f7f6f2">
+<body style="margin:0;padding:0;background:{PAPER}">
 <!-- Email-ready copy of {html.escape(entry.abs_url)}. Paste it into your newsletter tool; it adds the unsubscribe link. -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f6f2"><tr><td align="center" style="padding:24px 12px">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid {LINE};border-radius:14px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:{PAPER}"><tr><td align="center" style="padding:24px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid {LINE};border-top:5px solid {ACCENT};border-radius:14px">
 <tr><td style="padding:28px 32px 8px">
-<p style="margin:0 0 18px;font:600 13px/1.2 {SANS};letter-spacing:.12em;text-transform:uppercase;color:{ACCENT}">{html.escape(site['name'])}</p>
-<h1 style="margin:0 0 8px;font:600 32px/1.15 {SERIF};color:{INK}">{title}</h1>
-{f'<p style="margin:0 0 14px;font:19px/1.45 {SANS};color:#2a313c">{subtitle}</p>' if subtitle else ''}
+<p style="margin:0 0 18px;font:700 13px/1.2 {SANS};letter-spacing:.2em;text-transform:uppercase;color:{ACCENT}">{html.escape(site['name'])}</p>
+<h1 style="margin:0 0 10px;font:800 36px/1.02 {DISPLAY};letter-spacing:.01em;text-transform:uppercase;color:{INK}">{title}</h1>
+{f'<p style="margin:0 0 14px;font:italic 20px/1.4 {SERIF};color:{ACCENT}">{subtitle}</p>' if subtitle else ''}
 <p style="margin:0 0 20px;font:14px/1.4 {SANS};color:{MUTED}">{html.escape(site['author']['name'])} · {entry.date_label} · <a href="{entry.abs_url}" style="color:{MUTED}">Read it on the web</a></p>
 </td></tr>
 <tr><td style="padding:0 32px 24px">{body}</td></tr>

@@ -245,10 +245,20 @@ def ink_on(color: str) -> str:
     return "#FFFFFF" if 0.299 * r + 0.587 * g + 0.114 * b < 0.6 else "#1A1816"
 
 
+FUNNEL_RAMPS = {
+    None: (["#7A1714", "#C42B23", "#E2582F", "#EF9F3C", "#F3CD6A", "#F5E6AE"],
+           ["#E3F0D6", "#B5D99A", "#7CBC5F", "#3F8A31", "#25591D"]),
+    # The /learn look has no green: what to avoid runs from deep red to peach, what to do from beige to charcoal.
+    "learn": (["#6E1512", "#B82828", "#D02E2E", "#D06E2E", "#E9A36B", "#F6D9B8"],
+              ["#F6EED2", "#E2D5B2", "#A8A090", "#5C5752", "#2F2D2D"]),
+}
+
+
 def _funnel(data: dict, context: dict) -> dict:
     top, bottom = data.get("top_items", []), data.get("bottom_items", [])
-    top_colors = ramp(["#7A1714", "#C42B23", "#E2582F", "#EF9F3C", "#F3CD6A", "#F5E6AE"], len(top))
-    bottom_colors = ramp(["#E3F0D6", "#B5D99A", "#7CBC5F", "#3F8A31", "#25591D"], len(bottom))
+    top_stops, bottom_stops = FUNNEL_RAMPS.get(context.get("theme"), FUNNEL_RAMPS[None])
+    top_colors = ramp(top_stops, len(top))
+    bottom_colors = ramp(bottom_stops, len(bottom))
     spread = lambda n, a, b: [a + (b - a) * i / max(1, n - 1) for i in range(n)]  # noqa: E731
     return {
         "top_bars": [{"text": t, "bg": c, "fg": ink_on(c), "w": w} for t, c, w in zip(top, top_colors, spread(len(top), 30, 100))],

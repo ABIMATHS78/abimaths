@@ -75,6 +75,15 @@ def test_themes_define_every_token():
         theme_vars("nope")
 
 
+def test_learn_theme_keeps_green_out_of_the_funnel_and_tree():
+    funnel, _ = build_html({"template": "funnel", "data": TEMPLATES["funnel"].sample, "theme": "learn"}, load_brand())
+    assert "#25591d" not in funnel and "#2f2d2d" in funnel       # "do this" bars run from beige to charcoal
+    tree, _ = build_html({"template": "decision_tree", "data": TEMPLATES["decision_tree"].sample, "theme": "learn"}, load_brand())
+    assert "--yes:#2F2D2D" in tree and "--step-bg:#F6EED2" in tree
+    default, _ = build_html({"template": "funnel", "data": TEMPLATES["funnel"].sample, "theme": "cream"}, load_brand())
+    assert "#25591d" in default                                   # other themes keep their greens
+
+
 @pytest.mark.parametrize("name", list(TEMPLATES))
 @pytest.mark.parametrize("motion", [False, True])
 def test_every_template_builds_html(name, motion):

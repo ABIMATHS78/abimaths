@@ -1,5 +1,6 @@
-"""Colour themes. The first six reproduce palettes seen in the training graphics; 'mojeed' and
-'mojeed-dark' use the colours of mojeedabisiga.com so posts can match the author's own site."""
+"""Colour themes. The first six reproduce palettes seen in the training graphics; 'mojeed' and 'mojeed-dark' use the
+colours of mojeedabisiga.com, and 'learn' those of its guides at mojeedabisiga.com/learn, so posts can match the
+author's own site."""
 
 BASE = {
     "bg": "#F4F0E8", "bg-2": "#ECE5D8", "panel": "#FBF8F2", "panel-head": "#EADFCF", "panel-head-ink": "#1A1816",
@@ -59,6 +60,17 @@ THEMES = {
         "warn": "#E2B659", "warn-soft": "#F6ECD6", "link": "#07704C", "highlight": "#F2D894", "code-bg": "#0D1117",
         "code-ink": "#ECEFF3", "chip-bg": "#EFEDE6", "chip-ink": "#2A313C", "shadow": "0 10px 30px rgba(13, 17, 23, .10)",
         "danger-panel": "#0D1117", "danger-panel-ink": "#ECEFF3",
+    },
+    # The look of mojeedabisiga.com/learn: cream paper, red, charcoal. Red marks what to avoid, charcoal what to do.
+    "learn": {
+        "bg": "#FFFAE7", "bg-2": "#F6EED2", "panel": "#FFFFFF", "panel-head": "#D02E2E", "panel-head-ink": "#FFFAE7",
+        "panel-border": "#E6E1D1", "ink": "#2F2D2D", "ink-2": "#4F4C49", "muted": "#6B6762", "line": "#E6E1D1",
+        "line-strong": "#2F2D2D", "accent": "#D02E2E", "accent-2": "#B82828", "accent-soft": "#FBE8DC",
+        "accent-ink": "#FFFAE7", "good": "#2F2D2D", "good-soft": "#EFE6CB", "good-ink": "#FFFAE7", "bad": "#D02E2E",
+        "bad-soft": "#FADFD8", "bad-ink": "#FFFAE7", "warn": "#D06E2E", "warn-soft": "#FBE6CF", "warn-ink": "#FFFAE7",
+        "link": "#D02E2E", "highlight": "#FBD3BD", "code-bg": "#2F2D2D", "code-ink": "#FFFAE7", "chip-bg": "#F6EED2",
+        "chip-ink": "#2F2D2D", "shadow": "0 10px 30px rgba(47, 45, 45, .10)", "danger-panel": "#21110E",
+        "danger-panel-ink": "#FFFAE7", "yes": "#2F2D2D", "step-bg": "#F6EED2", "step-ink": "#2F2D2D",
     },
     # The same, dark.
     "mojeed-dark": {
