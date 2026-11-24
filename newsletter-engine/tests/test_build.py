@@ -79,6 +79,9 @@ def test_home_page_shows_the_photo_set_in_site_json(built):
     home = (report.out_dir / "index.html").read_text(encoding="utf-8")
     assert f'class="hero-photo" src="{load_site().link(hero["src"])}"' in home
     assert f'width="{hero["width"]}" height="{hero["height"]}"' in home
+    assert '<section class="hero hero-home' in home                                  # the phone layout shows it first
+    about = (report.out_dir / "about/index.html").read_text(encoding="utf-8")
+    assert f'class="portrait" src="{load_site().link(hero["src"])}"' in about           # and the About page uses it
 
 
 def test_header_and_footer_show_the_wordmark(built):

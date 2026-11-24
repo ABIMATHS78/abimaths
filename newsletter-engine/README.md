@@ -8,7 +8,7 @@ The site lives at **mojeedabisiga.com/learn/** once published: cream paper, red 
 uppercase headings (Anton) with red italic accents (Playfair Display), Open Sans for reading and Oswald for labels, in
 light and dark themes. The colours and fonts are tokens at the top of `static/css/site.css`. In `site.json`, `*words*`
 in the tagline become the red italic accent on the home page, `wordmark` sets the AI WITH MOJEED ABISIGA name in the
-header and footer (Archivo, like the logo files in `brand-logos/`), and `hero_image` the photo beside the headline:
+header and footer (Archivo, like the logo files in `brand-logos/`), and `hero_image` the portrait beside the home page headline (first, full width, on phones) and on the About page:
 
 | Page | Address | What it does |
 |---|---|---|
