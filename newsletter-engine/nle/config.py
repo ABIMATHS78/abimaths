@@ -20,6 +20,9 @@ DEFAULTS = {
                "linkedin": "", "same_as": []},
     "main_site": {"name": "", "url": "", "links": []},
     "hero_image": {"src": "", "width": 0, "height": 0, "alt": ""},   # the photo beside the home page headline
+    # The name in the header and footer as a wordmark: small bold lead, small light join, big wide name.
+    # Empty name: the author's photo and the site name instead.
+    "wordmark": {"lead": "", "join": "", "name": ""},
     "newsletter": {"provider": "none", "username": "", "form_action": "", "embed_url": "", "promise": ""},
     "never_mention": [],
     "pages": {"newsletter_label": "Newsletter", "guides_label": "Guides", "path_label": "Start here",

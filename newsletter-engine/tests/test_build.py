@@ -81,6 +81,15 @@ def test_home_page_shows_the_photo_set_in_site_json(built):
     assert f'width="{hero["width"]}" height="{hero["height"]}"' in home
 
 
+def test_header_and_footer_show_the_wordmark(built):
+    report, _ = built
+    w = load_site()["wordmark"]
+    home = (report.out_dir / "index.html").read_text(encoding="utf-8")
+    label = " ".join(part for part in (w["lead"], w["join"], w["name"]) if part)
+    assert home.count(f'aria-label="{label}, home"') == 2 and home.count(f'<span class="wm-name">{w["name"]}</span>') == 2
+    assert (report.out_dir / "static/fonts/archivo-caps.woff2").exists()
+
+
 def test_nothing_published_mentions_the_old_brand(built):
     report, out = built
     names = load_site()["never_mention"]
