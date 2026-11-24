@@ -290,6 +290,16 @@ def cmd_publish(args) -> int:
     return 0
 
 
+def cmd_substack(args) -> int:
+    from .substack import export
+
+    path = export(Path(args.out) if args.out else None)
+    print(f"Substack kit: {path}")
+    print("Open it in a browser on a computer, then for each post: Copy title, Copy subtitle, Copy post, paste into Substack.")
+    print("Images load from the live site, so publish the site (python -m nle publish) before pasting.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m nle", description="Newsletter engine: your guides and issues, as a website.",
                                      epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -333,6 +343,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("guide", help="print the style guide")
     p.add_argument("--write", action="store_true", help="save it after editing nle/knowledge.py")
     p.set_defaults(func=cmd_guide)
+
+    p = sub.add_parser("substack", help="export every issue and guide ready to paste into Substack, with a copy-button kit page")
+    p.add_argument("--out", help="output folder (default: dist/substack/)")
+    p.set_defaults(func=cmd_substack)
 
     p = sub.add_parser("publish", help="build, check and copy the site into the main website's folder")
     p.add_argument("--into", required=True, help="the main website's folder, e.g. ../mojeedabisiga.com/site")
