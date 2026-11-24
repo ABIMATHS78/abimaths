@@ -35,9 +35,15 @@ so the checks know which facts and links were given.
 1. Run `python -m lpe guide` (the trained style) and read `brand.json` (who is writing and where readers go).
 2. Run `python -m lpe examples "<topic>" --k 3 --full` and read the closest example posts for shape only.
    They belong to another creator: never reuse their wording, facts, names, links or sign-offs.
-3. Write the post: a hook formula from the guide filled with the brief's specifics, one body structure, one
+3. Open `learn_catalog.json`: every guide and issue on https://mojeedabisiga.com/learn, with section links. The
+   example posts kept sending readers to a specific guide ("Full guide: [link]", "Copy the template here: [link]"),
+   so do the same: point two to six lessons at the exact /learn page or section that goes deeper. If the post needs a
+   guide that isn't there yet, write it first in `../newsletter-engine` (`python -m nle new guide "..."`, then
+   `python -m nle check`, `python -m nle publish --into ../mojeedabisiga.com/site` and `python -m nle catalog`),
+   and only link it once it's published.
+   Then write the post: a hook formula from the guide filled with the brief's specifics, one body structure, one
    closing. When it needs a link, use a link from the brief or the author's website from `brand.json`
-   (https://mojeedabisiga.com/, or one of the pages listed under `pages`). Don't promise guides, courses or
+   (a /learn page from `learn_catalog.json`, or https://mojeedabisiga.com/learn). Don't promise guides, courses or
    downloads there. Plain text, short lines, no markdown, no hashtags.
 4. Sign everything as Mojeed Abisiga. Never use a name or site from `brand.json`'s `never_mention` list
    (AI Every Time, aieverytime.org), in any spelling, anywhere: the post, the other openings, the alt text or the

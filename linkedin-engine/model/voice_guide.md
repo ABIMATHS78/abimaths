@@ -48,6 +48,7 @@ Learned from 26 example posts and 26 graphics (trained 2026-11-23). Use it to wr
 - `found_one_resource`: I found the one [resource] you need to [result]. / (Save it, you'll want it later.)
 
 ## Body structures
+- `lessons_with_guide_links`: Six to nine labelled lessons ('LESSON 1:' or '> ' lines), each with one exact step, menu path or prompt to copy; where one of the author's guides goes deeper, end the lesson with a pointer to that exact page ('Full guide: [link]', 'Copy the template here: [link]'); close with the author's guides and newsletter.
 - `numbered_steps`: 'Step 1.' to 'Step N.', one to three short lines each; near the end a twist that turns the trick into the real lesson, then that lesson in one line.
 - `labelled_sections`: Headed blocks such as 'LESSON 1:', 'Level 1.' or '→ LEVEL 1 - The basics.', two to five lines each.
 - `tip_list`: Numbered tips ('1.' or '1)'), each a bold-sounding first line plus one or two lines of why or how.

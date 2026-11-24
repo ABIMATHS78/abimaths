@@ -20,3 +20,5 @@ CORPUS_PATH = MODEL_DIR / "corpus.jsonl"               # full training texts for
 
 BRAND_PATH = ENGINE_DIR / "brand.json"
 OUTPUT_DIR = ENGINE_DIR / "output"                     # generated posts (git-ignored)
+
+CATALOG_PATH = ENGINE_DIR / "learn_catalog.json"   # the author's guides (python -m nle catalog writes it)
