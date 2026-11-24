@@ -282,7 +282,7 @@ class Builder:
         item = entry.item
         rel = ("p/" if item.kind == "issue" else "guides/") + item.slug + "/index.html"
         og = self.site.absolute(f"og/{item.slug}.png") if item.ref in self.og_done else ""
-        if entry.cover_url:
+        if not og and entry.cover_url:
             og = self.site.base_url + entry.cover_url if entry.cover_url.startswith("/") else entry.cover_url
         page = self._page(item.ref, rel.removesuffix("index.html"), f"{item.title} · {self.site['name']}",
                           entry.description_text, section="newsletter" if item.kind == "issue" else "guides",
@@ -437,7 +437,7 @@ class Builder:
         from .og import render_og_images
 
         try:
-            made = render_og_images([e for e in entries if not e.cover_url], self.site, self.out / "og", self.env)
+            made = render_og_images(entries, self.site, self.out / "og", self.env)
         except Exception as error:  # a missing browser shouldn't stop the build
             msg = f"social images weren't made ({type(error).__name__}: {error}); pages use the default image"
             (report.problems if required else report.notes).append(msg)

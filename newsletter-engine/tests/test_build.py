@@ -32,7 +32,6 @@ def test_build_is_clean_and_complete(built):
                 "about/index.html", "subscribe/index.html", "feed.xml", "sitemap.xml", "search.json",
                 "p/make-your-first-skill/index.html", "guides/claude-skills-from-zero/index.html", "static/css/site.css"):
         assert (report.out_dir / rel).exists(), rel
-    assert not (report.out_dir / "p/check-a-skill-before-you-trust-it").exists()   # a draft
     assert (out / "email" / "make-your-first-skill.html").exists()
 
 
@@ -51,11 +50,11 @@ def test_every_internal_link_resolves(built):
 def test_feeds_sitemap_search_and_structured_data(built):
     report, _ = built
     rss = ET.parse(report.out_dir / "feed.xml").getroot()
-    assert len(rss.findall("./channel/item")) == 3
+    assert len(rss.findall("./channel/item")) == 4
     urls = [loc.text for loc in ET.parse(report.out_dir / "sitemap.xml").getroot().iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc")]
-    assert all(u.startswith("https://mojeedabisiga.com/learn/") for u in urls) and not any("check-a-skill" in u for u in urls)
+    assert all(u.startswith("https://mojeedabisiga.com/learn/") for u in urls) and any("check-a-skill" in u for u in urls)
     index = json.loads((report.out_dir / "search.json").read_text(encoding="utf-8"))
-    assert {e["ref"] for e in index} == {"issue:make-your-first-skill", "issue:ten-skills-worth-writing", "guide:claude-skills-from-zero"}
+    assert {e["ref"] for e in index} == {"issue:make-your-first-skill", "issue:ten-skills-worth-writing", "issue:check-a-skill-before-you-trust-it", "guide:claude-skills-from-zero"}
     page = (report.out_dir / "p/make-your-first-skill/index.html").read_text(encoding="utf-8")
     data = json.loads(re.search(r'<script type="application/ld\+json">(.*?)</script>', page, re.S).group(1))
     assert data["@type"] == "BlogPosting" and data["author"]["@id"] == "https://mojeedabisiga.com/#person"
