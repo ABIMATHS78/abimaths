@@ -7,16 +7,16 @@ FONTS = '<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@
 RED, OFF = "#D02E2E", "#FFFCEF"
 CSS = f"""*{{margin:0;box-sizing:border-box}}body{{background:transparent}}
 .big{{font-family:'Archivo',sans-serif;font-weight:900;font-stretch:112%;letter-spacing:-.04em;line-height:1;text-transform:uppercase;white-space:nowrap}}
-.small{{white-space:nowrap;font-family:'Archivo',sans-serif;line-height:1;text-transform:uppercase;letter-spacing:-.01em}}
+.small{{white-space:nowrap;font-family:'Archivo',sans-serif;line-height:1;letter-spacing:-.01em}}
 .small b{{font-weight:800}} .small i{{font-style:normal;font-weight:300}}"""
 # Sample proportions: name cap height = 51% of banner height; "AI WITH" cap height = 38% of the name's; small gap.
 BIG = 400  # px font size of the name
 wordmark = f"""<div id="logo" style="display:inline-flex;align-items:center;gap:{int(BIG*.1)}px;background:{RED};color:{OFF};
   padding:{int(BIG*0.42)}px {int(BIG*0.42)}px {int(BIG*0.36)}px {int(BIG*0.36)}px">
-  <span class="small" style="font-size:{int(BIG*0.38)}px;transform:translateY(2%)"><b>AI</b> <i>WITH</i></span>
+  <span class="small" style="font-size:{int(BIG*0.38)}px;transform:translateY(2%)"><b>AI</b> <i>With</i></span>
   <span class="big" style="font-size:{BIG}px">Mojeed Abisiga</span></div>"""
 round_ = f"""<div id="logo" style="width:1200px;height:1200px;background:{RED};color:{OFF};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px">
-  <span class="small" style="font-size:112px;margin-bottom:6px"><b>AI</b> <i>WITH</i></span>
+  <span class="small" style="font-size:112px;margin-bottom:6px"><b>AI</b> <i>With</i></span>
   <span class="big" style="font-size:250px">Mojeed</span><span class="big" style="font-size:250px">Abisiga</span></div>"""
 with sync_playwright() as p:
     b = p.chromium.launch()
