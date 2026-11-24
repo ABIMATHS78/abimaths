@@ -1,4 +1,4 @@
-"""LinkedIn banners in the AI With MOJEED ABISIGA style: personal profile (1584x396) and company page (1128x191),
+"""LinkedIn banners in the LEARN AI With MOJEED ABISIGA style: personal profile (1584x396) and company page (1128x191),
 drawn at 2x for sharpness. All text sits in the right-hand safe area: the profile photo or company logo covers the
 bottom-left, and phones trim the sides. Run: python brand-logos/make_banners.py (needs playwright)."""
 from pathlib import Path
@@ -17,19 +17,19 @@ CSS = f"""*{{margin:0;box-sizing:border-box}}
 .safe{{position:absolute;display:flex;flex-direction:column;justify-content:center;align-items:flex-start}}
 .mark{{display:flex;align-items:center;gap:.22em}}
 .tag{{font-weight:500;color:{INK}}}
-.links{{font-weight:700;color:{RED};letter-spacing:.02em;text-transform:uppercase;white-space:nowrap}}
+.links{{font-weight:700;color:{RED};letter-spacing:.01em;white-space:nowrap}}
 .links span{{color:{MUTED};font-weight:500;padding:0 .5em}}"""
 
 def banner(w, h, size, tag, links, left_pct, pad_pct, stripe_px):
     return f"""<div id="b" class="b" style="width:{w}px;height:{h}px"><div class="dots"></div><div class="stripe" style="width:{stripe_px}px"></div>
   <div class="safe" style="left:{left_pct}%;right:{pad_pct}%;top:12%;bottom:12%;gap:{size*0.28}px">
-    <div class="mark" style="font-size:{size}px"><span class="heavy">AI</span><span class="serif" style="font-size:1.12em">With</span><span class="heavy">Mojeed Abisiga</span></div>
+    <div class="mark" style="font-size:{size}px"><span class="heavy">Learn AI</span><span class="serif" style="font-size:1.12em">With</span><span class="heavy">Mojeed Abisiga</span></div>
     <div class="tag" style="font-size:{size*0.34}px">Data &amp; AI, made easy for everyone.</div>
-    <div class="links" style="font-size:{size*0.2}px">{links}</div></div></div>"""
+    <div class="links" style="font-size:{size*0.3}px">{links}</div></div></div>"""
 
 BANNERS = {
-  "linkedin-banner-profile": (1584, 396, banner(1584, 396, 74, "", "mojeedabisiga.com<span>·</span>Free newsletter: mojeedabisiga.substack.com", 24, 15, 14)),
-  "linkedin-banner-company": (1128, 191, banner(1128, 191, 44, "", "mojeedabisiga.com<span>·</span>mojeedabisiga.substack.com", 22, 14, 10)),
+  "linkedin-banner-profile": (1584, 396, banner(1584, 396, 74, "", "mojeedabisiga.com/learn", 24, 15, 14)),
+  "linkedin-banner-company": (1128, 191, banner(1128, 191, 44, "", "mojeedabisiga.com/learn", 22, 14, 10)),
 }
 
 with sync_playwright() as p:
