@@ -28,8 +28,8 @@ def banner(w, h, size, tag, links, left_pct, pad_pct, stripe_px):
     <div class="links" style="font-size:{size*0.3}px">{links}</div></div></div>"""
 
 BANNERS = {
-  "linkedin-banner-profile": (1584, 396, banner(1584, 396, 74, "", "mojeedabisiga.com/learn", 24, 15, 14)),
-  "linkedin-banner-company": (1128, 191, banner(1128, 191, 44, "", "mojeedabisiga.com/learn", 22, 14, 10)),
+  "linkedin-banner-profile": (1584, 396, banner(1584, 396, 74, "", "mojeedabisiga.com/learn", 33, 13.5, 14)),
+  "linkedin-banner-company": (1128, 191, banner(1128, 191, 44, "", "mojeedabisiga.com/learn", 29, 13.5, 10)),
 }
 
 with sync_playwright() as p:
