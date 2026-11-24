@@ -90,6 +90,26 @@ def test_header_and_footer_show_the_wordmark(built):
     assert (report.out_dir / "static/fonts/archivo-caps.woff2").exists()
 
 
+def test_every_issue_and_guide_ends_with_the_paywall(built):
+    report, out = built
+    pw = load_site()["paywall"]
+    assert pw["enabled"]
+    pages = list(report.out_dir.glob("p/*/index.html")) + list(report.out_dir.glob("guides/*/index.html"))
+    assert len(pages) >= 6
+    for page in pages:
+        html = page.read_text(encoding="utf-8")
+        ending = html[html.index('class="paywall-end"'):]
+        kind = "guide" if "/guides/" in page.as_posix() else "post"
+        assert pw["heading"].replace("{kind}", kind) in ending, page
+        assert f'href="{pw["subscribe_url"]}"' in ending and "Already a paid subscriber?" in ending, page
+        assert pw["sign_in_url"].replace("&", "&amp;") in ending, page
+        assert "$15 a month" in ending and 'class="substack-embed"' in ending, page
+        assert ending.index('class="paywall"') < ending.index("</footer>"), page          # the paywall closes the article
+        assert 'class="discuss"' not in html, page
+    mail = (out / "email" / "make-your-first-skill.html").read_text(encoding="utf-8")
+    assert "paywall" not in mail                                                       # emails go to subscribers already
+
+
 def test_nothing_published_mentions_the_old_brand(built):
     report, out = built
     names = load_site()["never_mention"]

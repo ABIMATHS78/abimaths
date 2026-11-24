@@ -82,7 +82,7 @@ status = "published"           # or "draft"
 tags = ["claude", "skills"]
 featured = true                # optional: shown first and marked "Popular"
 level = "beginner"             # guides: beginner, intermediate or advanced
-linkedin_url = ""              # optional: the LinkedIn post where readers can discuss it
+linkedin_url = ""              # optional: the LinkedIn post where readers can discuss it (shown when the paywall is off)
 brief = "briefs/claude-skills.json"   # the facts it was written from (the checks use it)
 +++
 The body, in Markdown.
@@ -136,6 +136,16 @@ A static site can't send email, so the subscribe box connects to a newsletter se
 | `substack` | `username` (your-name for your-name.substack.com) | Substack's own subscribe box |
 | `beehiiv` | `embed_url` | Beehiiv's subscribe box |
 | `form` | `form_action` | An email form that posts to any service |
+
+### The paywall at the end of each issue and guide
+
+Every issue and guide ends the way a paid Substack post does: a short pitch for the paid subscription, the subscribe
+form, one line on what's behind the paywall, then the paywall box ("The rest of this guide is for paid subscribers",
+a Subscribe button and "Already a paid subscriber? Sign in"), then Previous and Next. The words, the price and both
+links are in `site.json` under `paywall` (`{kind}` in the heading becomes "post" or "guide"); `"enabled": false`
+brings back the old "Ready for more?" box and share line. A static site can't lock anything, so the paywall box sends
+readers to Substack: paid subscriptions must be switched on there, at the same price, for the Subscribe button to take
+payment. Email copies leave the paywall out.
 
 To send an issue, open its copy in `dist/email/<slug>.html` in a browser, then copy and paste it into your service,
 or paste its HTML. The service adds the unsubscribe link.

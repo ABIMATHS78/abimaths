@@ -118,6 +118,7 @@ class Builder:
         self.env.globals.update(site=self.site, link=self.site.link, year=dt.date.today().year,
                                 version=self._asset_version(), uid=self._next_uid, last_uid=lambda: self._uid)
         self.env.filters["accent"] = accent_markup
+        self.env.filters["inline"] = lambda text: Markup(inline(text, self.url_for))
         self.entries: dict[str, Entry] = {}
 
     # --- helpers ---------------------------------------------------------------------------------------------
