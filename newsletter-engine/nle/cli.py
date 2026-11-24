@@ -290,6 +290,28 @@ def cmd_publish(args) -> int:
     return 0
 
 
+def cmd_catalog(args) -> int:
+    from .config import load_site
+    from .content import load_library
+    from .md import render
+
+    site, library = load_site(), load_library().visible()
+    pages = []
+    for item in library.all():
+        rendered = render(item.body)
+        path = ("p/" if item.kind == "issue" else "guides/") + item.slug + "/"
+        pages.append({"kind": item.kind, "title": item.title, "subtitle": item.subtitle, "url": site.absolute(path),
+                      "minutes": rendered.minutes, "tags": list(item.tags),
+                      "sections": [{"title": title, "url": site.absolute(path) + "#" + anchor} for level, anchor, title in rendered.toc if level == 2]})
+    for key, label in (("start/", "Start here: the guides in reading order"), ("library/", "Library: prompts and templates to copy"),
+                       ("guides/", "All guides"), ("archive/", "Newsletter archive"), ("", "Home")):
+        pages.append({"kind": "page", "title": label, "subtitle": "", "url": site.absolute(key), "minutes": 0, "tags": [], "sections": []})
+    out = Path(args.out)
+    out.write_text(json.dumps({"site": site.absolute(""), "pages": pages}, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"Wrote {len(pages)} pages to {out}")
+    return 0
+
+
 def cmd_substack(args) -> int:
     from .substack import export
 
@@ -343,6 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("guide", help="print the style guide")
     p.add_argument("--write", action="store_true", help="save it after editing nle/knowledge.py")
     p.set_defaults(func=cmd_guide)
+
+    p = sub.add_parser("catalog", help="list every published page (for the LinkedIn engine to link to)")
+    p.add_argument("--out", default="../linkedin-engine/learn_catalog.json")
+    p.set_defaults(func=cmd_catalog)
 
     p = sub.add_parser("substack", help="export every issue and guide ready to paste into Substack, with a copy-button kit page")
     p.add_argument("--out", help="output folder (default: dist/substack/)")

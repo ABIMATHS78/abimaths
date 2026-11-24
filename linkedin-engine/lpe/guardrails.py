@@ -112,10 +112,12 @@ def check_links(text: str, brand: dict, brief_text: str, where: str = "") -> lis
     issues = []
     brief_lower = brief_text.lower()
     own = own_hosts(brand)
-    known_pages = {_url_key(u) for u in [brand.get("url", ""), *brand.get("pages", [])] if u}
+    from .brand import catalog_urls, load_catalog
+
+    known_pages = {_url_key(u.split("#")[0]) for u in [brand.get("url", ""), *brand.get("pages", []), *catalog_urls(load_catalog())] if u}
     prefix = f"In {where}: " if where else ""
     for url in sorted(set(URL_RE.findall(normalize(text)))):
-        key = _url_key(url)
+        key = _url_key(url.split("#")[0])
         host = key.split("/")[0]
         if "/" not in key and not re.match(r"(?i)(https?://|www\.)", url) and host.rsplit(".", 1)[-1] in FILE_SUFFIXES:
             continue                             # a file name such as SKILL.md or notes.txt, not a link

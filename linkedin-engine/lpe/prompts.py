@@ -30,6 +30,20 @@ def author_block(brand: dict) -> str:
     return "\n".join(lines)
 
 
+def catalog_block() -> str:
+    """The author's own guides, so a post can send readers to the exact page, the way the examples did."""
+    from .brand import load_catalog
+
+    rows = []
+    for page in load_catalog():
+        line = f"- {page['title']}: {page['url']}"
+        if page.get("subtitle"):
+            line += f" ({page['subtitle']})"
+        rows.append(line)
+        rows += [f"    - section \"{sec['title']}\": {sec['url']}" for sec in page.get("sections", [])[:12]]
+    return "\n".join(rows) or "(no guides published yet)"
+
+
 def catalogue(names: list[str] | None = None) -> str:
     return "\n".join(f"- {t.name}: {t.description}" for t in TEMPLATES.values() if not names or t.name in names)
 
@@ -47,6 +61,10 @@ write new posts in that style's shape, in the author's own voice, about the auth
 {author_block(brand)}
 </author>
 
+<author_guides>
+{catalog_block()}
+</author_guides>
+
 <graphic_templates>
 {catalogue()}
 </graphic_templates>
@@ -56,9 +74,12 @@ How to work:
 2. Pick the hook formula that fits that material and fill it with the brief's real specifics.
 3. Pick the body structure that suits the material: steps for a process, a link library for resources, old/new pairs for a fix, and so on.
 4. Aim for the measured typical length unless the brief asks for something else. Never go over 2,900 characters.
-5. Close with one closing from the guide. When a link is needed, use the author's website (the exact link above) or a link
-from the brief.
-6. Choose the graphic template that turns the post into a save-worthy image, and whether it should be still (png) or moving \
+5. Send readers to the author's guides the way the examples did: wherever a guide in <author_guides> goes deeper on a
+point, add a short pointer to that exact page (or section), for example "Full guide: [link]" or "The template: [link]".
+Use two to six such pointers in a long post. Never link a guide that isn't listed; if the post needs one that doesn't
+exist yet, say so in fact_checks so the author can write it first.
+6. Close with one closing from the guide. When a general link is needed, use the author's website or a link from the brief.
+7. Choose the graphic template that turns the post into a save-worthy image, and whether it should be still (png) or moving \
 (gif for a drawing build-up, mp4 for kinetic text or a long build).
 
 Rules that always apply:

@@ -67,3 +67,21 @@ def avatar_path(brand: dict) -> Path | None:
     if not path.is_absolute():
         path = (ENGINE_DIR / path).resolve()
     return path if path.exists() else None
+
+
+def load_catalog(path: Path | None = None) -> list[dict]:
+    """The author's published guides and issues, so posts can point readers to the exact page."""
+    from .paths import CATALOG_PATH
+
+    path = Path(path) if path else CATALOG_PATH
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8")).get("pages", [])
+
+
+def catalog_urls(catalog: list[dict]) -> list[str]:
+    urls = []
+    for page in catalog:
+        urls.append(page["url"])
+        urls += [section["url"].split("#")[0] for section in page.get("sections", [])]
+    return urls

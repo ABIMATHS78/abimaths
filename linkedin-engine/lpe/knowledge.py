@@ -47,6 +47,7 @@ HOOK_FORMULAS = [
 ]
 
 STRUCTURES = [
+    {"id": "lessons_with_guide_links", "shape": "Six to nine labelled lessons ('LESSON 1:' or '> ' lines), each with one exact step, menu path or prompt to copy; where one of the author's guides goes deeper, end the lesson with a pointer to that exact page ('Full guide: [link]', 'Copy the template here: [link]'); close with the author's guides and newsletter."},
     {"id": "numbered_steps", "shape": "'Step 1.' to 'Step N.', one to three short lines each; near the end a twist that turns the trick into the real lesson, then that lesson in one line."},
     {"id": "labelled_sections", "shape": "Headed blocks such as 'LESSON 1:', 'Level 1.' or '→ LEVEL 1 - The basics.', two to five lines each."},
     {"id": "tip_list", "shape": "Numbered tips ('1.' or '1)'), each a bold-sounding first line plus one or two lines of why or how."},
