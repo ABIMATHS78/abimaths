@@ -4,6 +4,8 @@ subtitle = "For anyone who pastes the same instructions into Claude every day: i
 description = "What a Claude skill is, where skills work, how to install one in four steps, how to use it and how to stay safe."
 updated = 2026-11-23
 status = "published"
+cover = "skills/cheat-sheet.webp"
+cover_alt = "A one-page cheat sheet of Claude skills"
 tags = ["claude", "skills"]
 archetype = "guide"
 featured = true
@@ -27,6 +29,8 @@ A **skill** ends that. You teach Claude a job once, and it does it your way from
 - a short safety check you can run on any skill
 
 **You need:** a Claude account and ten minutes.
+
+![A one-page cheat sheet of Claude skills](skills/cheat-sheet.webp "The whole guide on one page. Save it.")
 
 ::subscribe
 
@@ -60,6 +64,8 @@ You already have other ways to shape Claude. Here's where a skill fits:
 | Projects | Background documents and knowledge | Chats inside that project |
 | Connectors (MCP) | Access to other apps and data | When Claude needs that app |
 | **Skills** | **A way of doing one job** | **Only when a request needs it, in any chat** |
+
+![A decision tree: skill, project, instructions or just ask](skills/skill-or-not.webp "Not sure which one you need? Follow the questions.")
 
 They work well together.
 
@@ -140,6 +146,36 @@ Claude Code reads skills from folders on your computer.
 Run a skill by typing a slash and its name, or just ask. `/skills` lists what's installed.
 
 Skills you switch on in your Claude account also sync to Claude Code when you sign in with the same account.
+
+---
+
+## Find skills worth installing
+
+There are three good places to start.
+
+**1. Claude's own directory.** In **Customize → Skills**, click **+**, then **Browse skills**. You'll find skills from partners such as Notion, Figma and Atlassian, built to work with their connectors.
+
+**2. Anthropic's examples.** At [github.com/anthropics/skills](https://github.com/anthropics/skills). Good to learn from, and to adapt to the way you work.
+
+**3. Your own.** The best skills capture the tasks you repeat every week, the way your organisation does them. Nobody else can write those for you.
+
+::card[issue:ten-skills-worth-writing]
+
+---
+
+## Make your own
+
+Once you've explained the same thing to Claude three times, it's worth a skill.
+
+The short version:
+
+1. **Make a folder** named after the job, like `weekly-report`.
+2. **Write SKILL.md:** a name and a description between two lines of dashes, then numbered steps, the mistakes to avoid and one short example.
+3. **Zip the folder,** not the files inside it.
+4. **Upload it** in Customize → Skills, and switch it on.
+5. **Test it** with three requests that should use it and two that shouldn't.
+
+::button[The full walkthrough: make your first skill](issue:make-your-first-skill)
 
 ---
 
