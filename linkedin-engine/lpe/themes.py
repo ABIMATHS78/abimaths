@@ -70,7 +70,7 @@ THEMES = {
         "bad-soft": "#FADFD8", "bad-ink": "#FFFAE7", "warn": "#D06E2E", "warn-soft": "#FBE6CF", "warn-ink": "#FFFAE7",
         "link": "#D02E2E", "highlight": "#FBD3BD", "code-bg": "#2F2D2D", "code-ink": "#FFFAE7", "chip-bg": "#F6EED2",
         "chip-ink": "#2F2D2D", "shadow": "0 10px 30px rgba(47, 45, 45, .10)", "danger-panel": "#21110E",
-        "danger-panel-ink": "#FFFAE7", "yes": "#2F2D2D", "step-bg": "#F6EED2", "step-ink": "#2F2D2D",
+        "danger-panel-ink": "#FFFAE7", "good-label-ink": "#FFFAE7", "yes": "#2F2D2D", "step-bg": "#F6EED2", "step-ink": "#2F2D2D",
     },
     # The same, dark.
     "mojeed-dark": {
