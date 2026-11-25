@@ -35,6 +35,7 @@
 .tone-dark .b-list li::before { background: var(--bad); }
 .b-steps { counter-reset: s; }
 .b-steps li { counter-increment: s; position: relative; padding-left: 1.45em; }
+.b-steps li .sub, .b-list li .sub { display: block; font-weight: 400; margin-top: .12em; }
 .b-steps li::before { content: counter(s); position: absolute; left: 0; top: .08em; width: 1.12em; height: 1.12em; border-radius: 50%; background: var(--ink); color: var(--bg);
   font-size: .82em; font-weight: 800; display: grid; place-items: center; }
 .tone-dark .b-steps li::before { background: var(--danger-panel-ink); color: var(--danger-panel); }
@@ -54,30 +55,51 @@
 .b-compare .old .tag { background: var(--bad); }
 .b-compare .new .tag { background: var(--good); }
 .b-note { margin: 0; font-weight: 750; border-left: .22em solid var(--accent); padding-left: .55em; }
+/* headline inside the first column, as on the "explained like you're 5" sample */
+.head-cell { background: none !important; border: 0 !important; overflow: visible; padding: .1em 0 .2em; }
+.head-cell h1 { margin: 0; font-size: 4.3em; line-height: .9; }
+.head-cell h1 .ln { display: block; }
+.head-cell .sub { margin-top: .35em; font-size: 1.05em; line-height: 1.25; color: var(--ink-2); font-family: "Fraunces", serif; font-weight: 500; }
 {% endblock %}
 
 {% block script %}
 <script>
 window.__beforeFit = function () {
   const wrap = document.querySelector(".panels");
+  const panels = Array.from(wrap.querySelectorAll(".panel"));
+  const k = {{ data.columns if data.columns in (1, 2, 3) else 2 }};
+  if (panels.some((el) => el.dataset.col)) {        // the spec chose the columns
+    wrap.innerHTML = "";
+    const cols = Array.from({ length: k }, () => { const c = document.createElement("div"); c.className = "col"; wrap.appendChild(c); return c; });
+    panels.forEach((el) => cols[Math.min(k, Math.max(1, parseInt(el.dataset.col || "1", 10))) - 1].appendChild(el));
+    return;
+  }
   const gap = parseFloat(getComputedStyle(wrap).fontSize) * 0.9;
-  window.__partitionColumns(wrap, Array.from(wrap.querySelectorAll(".panel")), {{ data.columns if data.columns in (1, 2, 3) else 2 }}, gap);
+  window.__partitionColumns(wrap, panels, k, gap);
 };
 window.__layout = function () { document.querySelector(".panels").classList.add("stretch"); };
 </script>
 {% endblock %}
 
 {% block content %}
-{% if theme in ("cream", "mojeed") and data.headline_style != "condensed" %}{{ burst(200, 12, "-70px", "-70px", "right") }}{% endif %}
+{% if theme in ("cream", "mojeed") and data.headline_style != "condensed" and not data.headline_in_column %}{{ burst(200, 12, "-70px", "-70px", "right") }}{% endif %}
+{% if not data.headline_in_column %}
 <header class="head" data-fit="headline" data-fit-max="1" data-fit-min="0.45">
   <h1 class="{{ 'condensed' if data.headline_style == 'condensed' else 'display' }}" data-anim="fade-up">{{ data.title | rich }}</h1>
   {% if data.subtitle %}<div class="sub" data-anim="fade-up">{{ data.subtitle | rich }}</div>{% endif %}
 </header>
+{% endif %}
 <section class="fit body {{ 'boxed' if boxed else 'tab' }}" data-fit="panels" data-fit-max="1.6" data-fit-min="0.5">
   <div class="panels">
+  {% if data.headline_in_column %}
+    <article class="panel head-cell" data-col="1" data-anim="fade-up">
+      <h1 class="display">{% for line in data.title.split("|") %}<span class="ln">{{ line | trim | rich }}</span>{% endfor %}</h1>
+      {% if data.subtitle %}<div class="sub">{{ data.subtitle | rich }}</div>{% endif %}
+    </article>
+  {% endif %}
   {% for panel in data.panels %}
-    <article class="panel tone-{{ panel.tone or 'normal' }}" data-anim="fade-up">
-      <h3><span class="num">{{ loop.index }}.</span>{{ panel.title | rich }}</h3>
+    <article class="panel tone-{{ panel.tone or 'normal' }}"{% if panel.column %} data-col="{{ panel.column }}"{% endif %} data-anim="fade-up">
+      <h3>{% if data.number_panels != false %}<span class="num">{{ loop.index }}.</span>{% endif %}{{ panel.title | rich }}</h3>
       <div class="inner">
       {% for block in panel.blocks %}
         {% if block.kind == "text" %}<p class="b-text">{{ block.text | rich }}</p>

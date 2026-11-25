@@ -64,10 +64,14 @@ CHEATSHEET = Template(
         "title": string("2 to 7 words. Wrap the key word in *asterisks* for the accent colour."),
         "subtitle": string("Optional one line under the title."),
         "headline_style": string("serif (cream look) or condensed (heavy caps)", enum=["serif", "condensed"], default="serif"),
+        "number_panels": boolean("Number the panel titles (1., 2., ...).", default=True),
+        "headline_in_column": boolean("Put the headline at the top of the first column, beside the panels, instead of across the page. "
+                                      "Split it into lines with |.", default=False),
         "columns": integer("Number of columns: 1, 2 or 3. Usually 2.", default=2),
         "panels": array(obj({
             "title": string("2 to 6 words."),
             "tone": string("normal, dark (a black warning panel) or accent", enum=["normal", "dark", "accent"], default="normal"),
+            "column": integer("Optional: the column this panel goes in (1, 2 or 3). Set it on every panel, or on none."),
             "blocks": array(BLOCK, "1 to 3 blocks."),
         }, ["title", "blocks"]), "4 to 9 panels."),
     }, ["title", "panels"]),
