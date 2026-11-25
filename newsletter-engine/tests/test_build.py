@@ -91,6 +91,7 @@ def test_header_and_footer_show_the_wordmark(built):
     label = " ".join(part for part in (w["lead"], w["join"], w["name"]) if part)
     assert home.count(f'aria-label="{label}, home"') == 2 and home.count(f'<span class="wm-name">{w["name"]}</span>') == 2
     assert (report.out_dir / "static/fonts/archivo-caps.woff2").exists()
+    assert home.count('theme-toggle') == 2 and 'class="theme-toggle nav-theme"' in home   # on phones the switch is in the menu
 
 
 def test_every_issue_and_guide_ends_with_the_paywall(built):
