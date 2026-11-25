@@ -772,9 +772,137 @@ SCREENSHOT_CALLOUT = Template(
 )
 
 
+# ---------- puzzle ----------
+# Five features as interlocking jigsaw pieces (four corners and a centre piece), each explained with the same
+# labelled parts. The outlines are drawn here; the text in each piece wraps around the centre piece and the knobs
+# with CSS shapes, and the runtime shrinks it to fit.
+PUZZLE_W, PUZZLE_H = 992, 1010
+
+
+def _knob(x0, y0, x1, y1, at, bulge, neck=17, head=27):
+    """An axis-aligned line from (x0, y0) to (x1, y1) with one jigsaw knob at `at` (a coordinate along the line),
+    bulging towards +1 (right or down) or -1 (left or up). Returns SVG path data."""
+    horizontal = y0 == y1
+    reach = head * 2 + 6
+
+    def pt(along, across):            # along the line, and the distance off it in the bulge direction
+        return (along, y0 + bulge * across) if horizontal else (x0 + bulge * across, along)
+
+    start, end = (x0, x1) if horizontal else (y0, y1)
+    a, b = pt(at - neck, 0), pt(at + neck, 0)
+    c1, c2 = pt(at - neck, reach * .35), pt(at - head - 4, reach * .3)
+    d = pt(at - head * .9, reach - head * 1.1)
+    e = pt(at + head * .9, reach - head * 1.1)
+    c3, c4 = pt(at + head + 4, reach * .3), pt(at + neck, reach * .35)
+    s0, s1 = pt(start, 0), pt(end, 0)
+    # the arc's sweep: which way round the head goes depends on the direction of travel and the bulge
+    sweep = (1 if bulge < 0 else 0) if horizontal else (1 if bulge > 0 else 0)
+    f = lambda q: f"{q[0]:.1f} {q[1]:.1f}"
+    return (f"M {f(s0)} L {f(a)} C {f(c1)} {f(c2)} {f(d)} A {head} {head} 0 1 {sweep} {f(e)} "
+            f"C {f(c3)} {f(c4)} {f(b)} L {f(s1)}")
+
+
+def _puzzle(data: dict, context: dict) -> dict:
+    W, H, vx, hy = PUZZLE_W, PUZZLE_H, 496, 505
+    cx0, cy0, cx1, cy1 = 268, 352, 724, 660            # the centre piece
+    g, reach = 16, 60                                   # text gap from the strokes; how far a knob reaches
+    paths = [
+        _knob(vx, 0, vx, cy0, 176, +1),                 # top divider, knob into the top-right piece
+        _knob(vx, cy1, vx, H, 835, -1),                 # bottom divider, knob into the bottom-left piece
+        _knob(0, hy, cx0, hy, 134, +1),                 # left divider, knob into the bottom-left piece
+        _knob(cx1, hy, W, hy, 858, -1),                 # right divider, knob into the top-right piece
+        _knob(cx0, cy0, cx0, cy1, 430, -1),             # centre's left edge, knob into the top-left piece
+        _knob(cx1, cy0, cx1, cy1, 585, +1),             # centre's right edge, knob into the bottom-right piece
+        f"M {cx0} {cy0} L {cx1} {cy0} M {cx0} {cy1} L {cx1} {cy1}",
+    ]
+
+    def poly(points, w, h):
+        return "polygon(" + ", ".join(f"{x / w * 100:.2f}% {y / h * 100:.2f}%" for x, y in points) + ")"
+
+    boxes = []
+    # top-left: the centre piece and its left knob cut into the bottom-right corner
+    L, T, R, B = 22, 22, vx - g, hy - g; w, h = R - L, B - T
+    fw = R - (cx0 - reach - g); ox = R - fw
+    pts = [(cx0 - g - ox, cy0 - g - T), (fw, cy0 - g - T), (fw, h), (cx0 - g - ox, h), (cx0 - g - ox, 460 + g - T),
+           (0, 460 + g - T), (0, 400 - g - T), (cx0 - g - ox, 400 - g - T)]
+    boxes.append({"l": L, "t": T, "w": w, "h": h, "floats": [{"side": "right", "w": fw, "shape": poly(pts, fw, h)}]})
+    # top-right: the top knob cuts in on the left, the centre at the bottom left, the right knob at the bottom
+    L, T, R, B = vx + g, 22, W - 22, hy - g; w, h = R - L, B - T
+    fw = cx1 + g - L
+    knob_x = vx + reach + g - L
+    pts = [(0, 146 - g - T), (knob_x, 146 - g - T), (knob_x, 206 + g - T), (1, 206 + g - T), (1, cy0 - g - T),
+           (fw, cy0 - g - T), (fw, h), (0, h)]
+    rfw = W - 22 - (858 - 30 - g); rpts = [(0, hy - reach - g - T), (rfw - (W - 22 - (858 + 30 + g)), hy - reach - g - T),
+                                          (rfw - (W - 22 - (858 + 30 + g)), h), (0, h)]
+    boxes.append({"l": L, "t": T, "w": w, "h": h, "floats": [{"side": "left", "w": fw, "shape": poly(pts, fw, h)},
+                                                            {"side": "right", "w": rfw, "shape": poly(rpts, rfw, h)}]})
+    # bottom-left: the centre at the top right, the bottom knob on the right, the left knob at the top left
+    L, T, R, B = 22, hy + g, vx - g, H - 22; w, h = R - L, B - T
+    fw = R - (cx0 - g); ox = R - fw
+    kx = vx - reach - g - ox
+    pts = [(0, 0), (fw, 0), (fw, 865 + g - T), (kx, 865 + g - T), (kx, 805 - g - T), (fw - 1, 805 - g - T),
+           (fw - 1, cy1 + g - T), (0, cy1 + g - T)]
+    lfw = 134 + 30 + g - L; lfh = hy + reach + g - T
+    boxes.append({"l": L, "t": T, "w": w, "h": h, "floats": [{"side": "right", "w": fw, "shape": poly(pts, fw, h)},
+                                                            {"side": "left", "w": lfw, "h": lfh}]})
+    # bottom-right: the centre and its right knob at the top left
+    L, T, R, B = vx + g, hy + g, W - 22, H - 22; w, h = R - L, B - T
+    cw = cx1 + g - L; fw = cx1 + reach + g - L
+    pts = [(0, 0), (cw, 0), (cw, 555 - g - T), (fw, 555 - g - T), (fw, 615 + g - T), (cw, 615 + g - T),
+           (cw, cy1 + g - T), (0, cy1 + g - T)]
+    boxes.append({"l": L, "t": T, "w": w, "h": h, "floats": [{"side": "left", "w": fw, "shape": poly(pts, fw, h)}]})
+    # the centre piece
+    boxes.insert(2, {"l": cx0 + g, "t": cy0 + g, "w": cx1 - cx0 - 2 * g, "h": cy1 - cy0 - 2 * g, "floats": [], "centre": True})
+    pieces = list(data.get("pieces", []))[:5]
+    # order on the page: top-left, top-right, centre, bottom-left, bottom-right
+    return {"paths": paths, "boxes": [dict(b, piece=p) for b, p in zip(boxes, pieces)], "pw": W, "ph": H}
+
+
+PUZZLE = Template(
+    name="puzzle",
+    description="Five features explained as interlocking jigsaw pieces: each with a name tag, a plain-English line, "
+                "an everyday comparison, setup steps, what it's best for and the biggest mistake people make.",
+    schema=obj({
+        "title": string("The features named, e.g. 'Claude Instructions, Projects, Connectors'."),
+        "title_tag": string("The word in the black block at the end.", default="Explained"),
+        "pieces": array(obj({
+            "name": string("1 to 3 words."),
+            "plain": string("In plain English, at most 14 words."),
+            "like": string("Think of it like..., at most 14 words."),
+            "setup": array(string("At most 12 words."), "How to set it up: 2 to 4 steps."),
+            "best": string("Best for, at most 16 words."),
+            "mistake": string("The biggest mistake people make, at most 28 words."),
+        }, ["name", "plain", "like", "setup", "best", "mistake"]), "Exactly 5 pieces: top left, top right, centre, bottom left, bottom right."),
+    }, ["title", "pieces"]),
+    default_theme="cream",
+    prepare_fn=_puzzle,
+    sample={
+        "title": "Claude Instructions, Projects, Connectors, Skills, Chats",
+        "title_tag": "Explained",
+        "pieces": [
+            {"name": "Instructions", "plain": "How you like things, in every chat.", "like": "A note on the fridge for a new housemate.",
+             "setup": ["Open your settings", "Write your preferences in plain words"], "best": "Tone, length, words to avoid.",
+             "mistake": "Putting one job's steps here. They follow you into every chat."},
+            {"name": "Projects", "plain": "Background files for one piece of work.", "like": "The folder you hand over for one client.",
+             "setup": ["Create a project", "Add the files", "Chat inside it"], "best": "A client, a course, a big piece of work.",
+             "mistake": "Expecting it to work in chats outside the project."},
+            {"name": "Chats", "plain": "Just ask, for a one-off job.", "like": "Asking a colleague a quick question.",
+             "setup": ["Explain it in the chat", "Save the prompt you liked"], "best": "Jobs you do once.",
+             "mistake": "Making a skill for a job you'll never repeat."},
+            {"name": "Connectors", "plain": "Access to your other apps and data.", "like": "A spare set of keys.",
+             "setup": ["Connect the app", "Ask about what's in it"], "best": "Answers that live in another app.",
+             "mistake": "Expecting access to teach Claude how you work."},
+            {"name": "Skills", "plain": "One job, done your way, in any chat.", "like": "A recipe card.",
+             "setup": ["Write a SKILL.md", "Zip the folder", "Upload it"], "best": "The job you've explained three times.",
+             "mistake": "Three jobs in one skill."},
+        ],
+    },
+)
+
+
 TEMPLATES: dict[str, Template] = {t.name: t for t in [
     CHEATSHEET, LINK_LIST, PROMPT_LADDER, PROMPT_ANATOMY, SPLIT, FUNNEL, GLOSSARY, ROADMAP, CYCLE, MINDMAP,
-    DECISION_TREE, CARD_GRID, BIG_NUMBER, BADGE, BOOKSHELF, KINETIC, SCREENSHOT_CALLOUT,
+    DECISION_TREE, CARD_GRID, BIG_NUMBER, BADGE, BOOKSHELF, KINETIC, SCREENSHOT_CALLOUT, PUZZLE,
 ]}
 
 
