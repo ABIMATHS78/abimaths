@@ -9,17 +9,19 @@
   };
 
   /* Theme: the reader's choice, else the system's. */
-  var themeBtn = document.querySelector(".theme-toggle");
+  var themeBtns = document.querySelectorAll(".theme-toggle");   /* one in the header, one in the phone menu */
   function applyTheme(theme) {
     if (theme) root.setAttribute("data-theme", theme); else root.removeAttribute("data-theme");
-    if (themeBtn) themeBtn.setAttribute("aria-pressed", String(root.getAttribute("data-theme") === "dark"));
+    themeBtns.forEach(function (btn) { btn.setAttribute("aria-pressed", String(root.getAttribute("data-theme") === "dark")); });
   }
   applyTheme(store.get("theme", null));
-  if (themeBtn) themeBtn.addEventListener("click", function () {
-    var dark = root.getAttribute("data-theme") === "dark" ||
-      (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    var next = dark ? "light" : "dark";
-    store.set("theme", next); applyTheme(next);
+  themeBtns.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var dark = root.getAttribute("data-theme") === "dark" ||
+        (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+      var next = dark ? "light" : "dark";
+      store.set("theme", next); applyTheme(next);
+    });
   });
 
   /* Mobile menu. */
