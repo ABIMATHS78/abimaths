@@ -3,7 +3,7 @@ title = "Claude is a toolkit."
 subtitle = "Six tools in one app, and how to set each one up:"
 description = "Cowork, the model menu, Claude for Excel, plugins and skills, artifacts and projects: when to use each, a first prompt, one tip and a 30-minute set-up."
 date = 2026-11-27
-status = "draft"
+status = "published"
 tags = ["claude", "cowork", "productivity"]
 archetype = "use_case_playbook"
 cover = "claude-set-up-right/toolkit.webp"
@@ -25,51 +25,18 @@ I teach people to use AI at work. This is the set-up I'd want every one of them 
 
 Here's each tool, with when to reach for it, a first prompt and one tip:
 
-1. Cowork, for tasks with several steps
-2. The model menu, for the right model and effort
-3. Claude for Excel, for work that lives in a spreadsheet
+1. The model menu, for the right model and effort
+2. Projects, for work that keeps coming back
+3. Artifacts, for work you'll put in front of someone
 4. Plugins and skills, for a set-up that fits your role
-5. Artifacts, for work you'll put in front of someone
-6. Projects, for work that keeps coming back
-7. Where Claude falls short
-8. Your first 30 minutes
+5. Cowork, for tasks with several steps
+6. Claude for Excel, for work that lives in a spreadsheet
+7. Where to double-check Claude
+8. A set-up you can finish in half an hour
 
 ![Six cards, one for each part of Claude: Cowork, the right model, Claude for Excel, plugins and skills, artifacts and projects](claude-set-up-right/toolkit.webp "Six tools in one app. Each one is below.")
 
 ::subscribe
-
----
-
-## Cowork: hand over the whole task
-
-A chat answers one message at a time.
-
-Cowork takes on a whole task. You describe the result you want. Claude makes a plan, splits the work into steps and hands back finished work: formatted documents, organised files, research pulled together.
-
-**When to use it:** for the jobs you'd hand a colleague with "go and do this". Several steps, several files, and a document, spreadsheet or deck at the end.
-
-**Where to find it:** [Cowork](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork) is on paid plans. In the message box, select **Cowork**, describe the task, then read Claude's plan and let it run. Select **Chat** to go back to a normal conversation.
-
-No **Chat** or **Cowork** option in your message box? You already have the new Claude experience, where the two are one conversation. Just describe the task.
-
-![A labelled drawing of the message box with Cowork selected and a task typed in](claude-set-up-right/cowork.webp "Cowork starts in the same message box as a chat. Illustration, not a screenshot.")
-
-**A first prompt to copy:**
-
-```prompt Hand over a task
-Read the meeting notes in my Meetings folder. Make one Word document that lists every decision and every open action, grouped by project, with the owner and the date where the notes give them. Where they don't, write [missing]. Show me your plan before you start.
-```
-
-**What you get back:** a plan, then a Word document in your session that you can preview and download. If the plan looks wrong, jump in and correct it mid-task.
-
-The work runs in the cloud, so it carries on if you close your laptop. Tasks that use files on your computer need the Claude Desktop app open.
-
-Once a task works, you can save it as a **scheduled task** that runs on a schedule or whenever you ask.
-
-> [!TIP]
-> Start with tasks that read your files and write new ones. Anthropic [warns](https://support.claude.com/en/articles/13364135-use-claude-cowork-safely) that tools that change things carry more risk than tools that only read. Claude asks before it permanently deletes files, but that check doesn't cover [computer use](issue:claude-uses-your-computer).
-
-::button[New to Cowork? Start here](guide:cowork-from-zero)
 
 ---
 
@@ -115,36 +82,68 @@ Still picking Sonnet 4.6? It leaves the model menu on Free, Pro, Max and Ultra o
 
 ---
 
-## Bring Claude into Excel
+## Projects, for work that comes back
 
-If your work lives in spreadsheets, Claude can work there too.
+Some work isn't a one-off. A client. A course. The report you write every month.
 
-**Claude for Excel** is an add-in. It answers questions about your workbook and cites the cells it used. Click a citation and you jump to that cell.
+A **project** gives that work its own space: its own chats, its own files and its own instructions. Claude keeps a separate memory for each project, too.
 
-It can change an assumption and keep your formulas intact, track down an error, and build or fill in a model.
+[Projects](https://support.claude.com/en/articles/9519177-how-can-i-create-and-manage-projects) are on every plan. Free accounts can make up to five.
 
-**When to use it:** a model someone else built that you need to understand, an error you can't trace, or a "what if" you'd otherwise rebuild by hand.
+**When to use it:** any piece of work you return to, with files you'd otherwise upload again and again.
 
-**Where to find it:** it's on paid plans, in Excel on the web, Excel for Windows with Microsoft 365 (build 16.0.13127.20296 or later) and Excel for Mac (16.46 or later).
+**Where to find it:**
 
-1. Find the **Claude for Microsoft 365** listing on Microsoft AppSource and select **Get it now**. [Anthropic's Excel page](https://claude.com/docs/office-agents/excel) links to it.
-2. Open Excel. On Windows, go to **Home → Add-ins**. On a Mac, go to **Tools → Add-ins**. Choose Claude.
-3. Sign in with your Claude account.
+1. Click **Projects** on the left, or go to claude.ai/projects.
+2. Click **+ New Project** in the top right and name it. Claude doesn't see the name or description, so save instructions for step 4.
+3. In the project's knowledge, on the right, click **+** and add your files.
+4. Click **Set project instructions**, write how Claude should work here, then **Save instructions**.
+
+**A first prompt to copy,** in a new chat inside the project:
+
+```prompt Check what Claude knows
+Using only the files and instructions in this project, tell me in five lines what this piece of work is about. Then list what's missing that you'd need to do it well, and ask me for it.
+```
+
+**What you get back:** a short summary, and a list of the gaps to fill before the real work starts.
+
+Chats in a project don't share context with each other. If something matters to every chat, add it to the project's knowledge.
+
+> [!TIP]
+> Keep the files you use again and again in the project, not in each chat. Project content is cached, so it counts less against your usage limits when you reuse it.
+
+::button[Skill, project or instructions? How to choose](guide:skill-or-something-else)
+
+---
+
+## Artifacts, for work you'll share
+
+Some answers you read once. Others you send.
+
+For the second kind, Claude makes an **artifact**: a document, deck, design, dashboard or small interactive tool that opens beside the chat. You can edit it, come back to it and share it.
+
+[Artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them) are on every plan, including the Docs, Slides and Design templates.
+
+**When to use it:** whenever the result is something you'll send, present or reuse.
+
+**Where to find it:** ask for one in any chat. Or select **Output** in the message box and choose a template. Everything you make is saved in the **Artifacts** tab in the sidebar.
+
+Artifacts need **Create and edit files** switched on in **Settings → Capabilities**. It's on by default on Free, Pro, Max and Ultra.
 
 **A first prompt to copy:**
 
-```prompt Explain a workbook
-Explain how the final number on the Summary tab is worked out, from the raw inputs to the result. Point me to each cell along the way, and flag anything that looks wrong. Don't change anything yet.
+```prompt Make it a doc
+Turn the notes below into a one-page doc for my manager: the decision we need, three options with the cost and risk of each, and my recommendation. Plain English, no jargon.
+
+[paste your notes]
 ```
 
-**What you get back:** a step-by-step answer with cell citations you can click, and anything that looks wrong flagged for you.
-
-Want the same number format or layout each time? Open **Settings** in the add-in's sidebar and fill in **Instructions**. They apply in Excel only.
+**What you get back:** a doc beside the chat. Start it from the Docs template and you can type in it directly, then export it to Word, PDF, Markdown or Google Docs. Decks made with Slides export to PowerPoint or PDF.
 
 > [!TIP]
-> Work on a copy. Anthropic's advice is to start from a trusted copy of the workbook, say exactly what you want changed and review every change. Claude also warns you before it overwrites existing data.
+> Don't describe which paragraph to fix. Highlight it, click **Edit with Claude** and type the change. Claude edits right where you marked.
 
-::card[guide:ask-claude-about-your-data]
+::subscribe[Get the next issue by email]
 
 ---
 
@@ -189,72 +188,73 @@ Turn the notes below into a two-page Word document: a title, three headings and 
 
 ---
 
-## Artifacts, for work you'll share
+## Cowork: hand over the whole task
 
-Some answers you read once. Others you send.
+A chat answers one message at a time.
 
-For the second kind, Claude makes an **artifact**: a document, deck, design, dashboard or small interactive tool that opens beside the chat. You can edit it, come back to it and share it.
+Cowork takes on a whole task. You describe the result you want. Claude makes a plan, splits the work into steps and hands back finished work: formatted documents, organised files, research pulled together.
 
-[Artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them) are on every plan, including the Docs, Slides and Design templates.
+**When to use it:** for the jobs you'd hand a colleague with "go and do this". Several steps, several files, and a document, spreadsheet or deck at the end.
 
-**When to use it:** whenever the result is something you'll send, present or reuse.
+**Where to find it:** [Cowork](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork) is on paid plans. In the message box, select **Cowork**, describe the task, then read Claude's plan and let it run. Select **Chat** to go back to a normal conversation.
 
-**Where to find it:** ask for one in any chat. Or select **Output** in the message box and choose a template. Everything you make is saved in the **Artifacts** tab in the sidebar.
+No **Chat** or **Cowork** option in your message box? You already have the new Claude experience, where the two are one conversation. Just describe the task.
 
-Artifacts need **Create and edit files** switched on in **Settings → Capabilities**. It's on by default on Free, Pro, Max and Ultra.
+![A labelled drawing of the message box with Cowork selected and a task typed in](claude-set-up-right/cowork.webp "Cowork starts in the same message box as a chat. Illustration, not a screenshot.")
 
 **A first prompt to copy:**
 
-```prompt Make it a doc
-Turn the notes below into a one-page doc for my manager: the decision we need, three options with the cost and risk of each, and my recommendation. Plain English, no jargon.
-
-[paste your notes]
+```prompt Hand over a task
+Read the meeting notes in my Meetings folder. Make one Word document that lists every decision and every open action, grouped by project, with the owner and the date where the notes give them. Where they don't, write [missing]. Show me your plan before you start.
 ```
 
-**What you get back:** a doc beside the chat. Start it from the Docs template and you can type in it directly, then export it to Word, PDF, Markdown or Google Docs. Decks made with Slides export to PowerPoint or PDF.
+**What you get back:** a plan, then a Word document in your session that you can preview and download. If the plan looks wrong, jump in and correct it mid-task.
+
+The work runs in the cloud, so it carries on if you close your laptop. Tasks that use files on your computer need the Claude Desktop app open.
+
+Once a task works, you can save it as a **scheduled task** that runs on a schedule or whenever you ask.
 
 > [!TIP]
-> Don't describe which paragraph to fix. Highlight it, click **Edit with Claude** and type the change. Claude edits right where you marked.
+> Start with tasks that read your files and write new ones. Anthropic [warns](https://support.claude.com/en/articles/13364135-use-claude-cowork-safely) that tools that change things carry more risk than tools that only read. Claude asks before it permanently deletes files, but that check doesn't cover [computer use](issue:claude-uses-your-computer).
 
-::subscribe[Get the next issue by email]
+::button[New to Cowork? Start here](guide:cowork-from-zero)
 
 ---
 
-## Projects, for work that comes back
+## Excel: ask your workbook questions
 
-Some work isn't a one-off. A client. A course. The report you write every month.
+If your work lives in spreadsheets, Claude can work there too.
 
-A **project** gives that work its own space: its own chats, its own files and its own instructions. Claude keeps a separate memory for each project, too.
+**Claude for Excel** is an add-in. It answers questions about your workbook and cites the cells it used. Click a citation and you jump to that cell.
 
-[Projects](https://support.claude.com/en/articles/9519177-how-can-i-create-and-manage-projects) are on every plan. Free accounts can make up to five.
+It can change an assumption and keep your formulas intact, track down an error, and build or fill in a model.
 
-**When to use it:** any piece of work you return to, with files you'd otherwise upload again and again.
+**When to use it:** a model someone else built that you need to understand, an error you can't trace, or a "what if" you'd otherwise rebuild by hand.
 
-**Where to find it:**
+**Where to find it:** it's on Pro, Max, Team and Enterprise plans, in Excel on the web, Excel for Windows with Microsoft 365 (build 16.0.13127.20296 or later) and Excel for Mac (16.46 or later).
 
-1. Click **Projects** on the left, or go to claude.ai/projects.
-2. Click **+ New Project** in the top right and name it. Claude doesn't see the name or description, so save instructions for step 4.
-3. In the project's knowledge, on the right, click **+** and add your files.
-4. Click **Set project instructions**, write how Claude should work here, then **Save instructions**.
+1. Find the **Claude for Microsoft 365** listing on Microsoft AppSource and select **Get it now**. [Anthropic's Excel page](https://claude.com/docs/office-agents/excel) links to it.
+2. Open Excel. On Windows, go to **Home → Add-ins**. On a Mac, go to **Tools → Add-ins**. Choose Claude.
+3. Sign in with your Claude account.
 
-**A first prompt to copy,** in a new chat inside the project:
+**A first prompt to copy:**
 
-```prompt Check what Claude knows
-Using only the files and instructions in this project, tell me in five lines what this piece of work is about. Then list what's missing that you'd need to do it well, and ask me for it.
+```prompt Explain a workbook
+Explain how the final number on the Summary tab is worked out, from the raw inputs to the result. Point me to each cell along the way, and flag anything that looks wrong. Don't change anything yet.
 ```
 
-**What you get back:** a short summary, and a list of the gaps to fill before the real work starts.
+**What you get back:** a step-by-step answer with cell citations you can click, and anything that looks wrong flagged for you.
 
-Chats in a project don't share context with each other. If something matters to every chat, add it to the project's knowledge.
+Want the same number format or layout each time? Open **Settings** in the add-in's sidebar and fill in **Instructions**. They apply in Excel only.
 
 > [!TIP]
-> Keep the files you use again and again in the project, not in each chat. Project content is cached, so it counts less against your usage limits when you reuse it.
+> Work on a copy. Anthropic's advice is to start from a trusted copy of the workbook, say exactly what you want changed and review every change. Claude also warns you before it overwrites existing data.
 
-::button[Skill, project or instructions? How to choose](guide:skill-or-something-else)
+::card[guide:ask-claude-about-your-data]
 
 ---
 
-## Where Claude falls short
+## Where to double-check Claude
 
 A good set-up includes knowing where to double-check.
 
@@ -278,7 +278,7 @@ Known issue: since the September and October 2026 Microsoft 365 updates on Windo
 
 ---
 
-## Your first 30 minutes
+## A set-up you can finish in half an hour
 
 The tools work together: instructions shape every chat, projects hold your files, plugins bring skills to chat and Cowork, and Claude for Excel can refine the spreadsheets Cowork builds.
 
@@ -312,7 +312,7 @@ On a paid plan, open **Customize → Plugins → Discover** and add the plugin f
 
 ### 5 minutes: one real task
 
-On a paid plan, select **Cowork** and hand over the task from the first prompt above. If you live in spreadsheets, install Claude for Excel and ask about one workbook instead.
+On a paid plan, select **Cowork** and hand over the task from the Cowork prompt above. If you live in spreadsheets, install Claude for Excel and ask about one workbook instead.
 
 That's the set-up. Thirty minutes, once.
 
