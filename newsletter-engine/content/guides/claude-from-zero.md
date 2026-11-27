@@ -3,7 +3,7 @@ title = "Claude, from day one."
 subtitle = "Never opened it? Everything you need for your first week, in plain words:"
 description = "What Claude is, how it differs from ChatGPT, what the plans cost, chat vs Cowork vs Claude Code, how to ask well, and ten things to try first."
 updated = 2026-11-27
-status = "draft"
+status = "published"
 cover = "claude-from-zero/cheat-sheet.webp"
 cover_alt = "A one-page Claude cheat sheet: what it is, where to get it, the plans, chat, Cowork and Claude Code, how to ask and what to check"
 tags = ["claude", "beginners"]
@@ -39,7 +39,7 @@ I teach people to use AI at work, and my mission is to make data and AI easy for
 
 ---
 
-## 1. Know what Claude is
+## 1. Meet your new assistant
 
 Claude is an AI assistant made by a company called Anthropic.
 
@@ -58,38 +58,7 @@ Anthropic calls itself a public benefit corporation. Its stated mission is the r
 
 ---
 
-## 2. See how it differs from ChatGPT
-
-It's the first question most people ask.
-
-Here's a fair answer, built only from what each company publishes about its own product.
-
-| | Claude | ChatGPT |
-|---|---|---|
-| **Free plan** | Yes, with limited usage every 5 hours and every week | Yes, advertised as unlimited text chats with GPT-6, within abuse guardrails |
-| **First paid plan** | Pro: $20 a month, or $17 a month paid yearly | Plus: $20 a month |
-| **Bigger plans** | Max at $100 and Ultra at $200 a month | Pro 100, Pro 200 and Pro 500, at $100, $200 and $500 a month |
-| **Ads** | None: Anthropic has committed to keeping Claude ad-free | May appear on the Free and Go plans |
-| **Making pictures** | No photos or illustrations; it makes diagrams, charts and visuals | Image generation on every plan (limited on Free) |
-| **Text it takes in at once** | Up to 1M tokens in chat on paid plans, with the newest models | 27K to 128K tokens (GPT Instant) or 256K to 400K (GPT Reasoning), by plan |
-
-For scale, Anthropic says 200K tokens is about 500 pages of text.
-
-What that means for you:
-
-- **You want pictures made?** ChatGPT makes images. Claude doesn't.
-- **You work with long documents?** Claude's paid plans take in more text at once.
-- **You'd rather not see ads?** Anthropic has promised no ads and no sponsored links in Claude. ([Its announcement](https://www.anthropic.com/news/claude-is-a-space-to-think), and [OpenAI's page on ads](https://help.openai.com/en/articles/20001047-ads-in-chatgpt).)
-- **Price?** The first paid step costs the same: $20 a month.
-
-> [!TIP]
-> Coming from ChatGPT? Your old chats can't move over, but its memory of you can. Go to **Settings → Your Claude** and select **Start import**. Claude shows you a prompt to use in your old assistant. Paste the answer back and click **Add to memory**. Anthropic calls this experimental. [Its guide is here](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude).
-
-::card[issue:right-ai-for-the-job]
-
----
-
-## 3. Get Claude on your devices
+## 2. Get Claude on your devices
 
 Claude lives in three places, all on one account:
 
@@ -120,7 +89,7 @@ Two rules before you sign up:
 
 ---
 
-## 4. Pick a plan
+## 3. Pick a plan
 
 Start on Free. It costs nothing and covers a lot.
 
@@ -129,7 +98,7 @@ Here's the full list. These are the US prices: Anthropic shows local currency wh
 | Plan | Price | What you get |
 |---|---|---|
 | **Free** | $0 | Chat on web, desktop and phone, web search, file creation, memory, connectors and artifacts |
-| **Pro** | $20 a month, or $17 a month billed yearly ($200 up front) | At least 5x Free's usage per session, plus Cowork, Claude Code, Research, more models, and Claude in Chrome and Microsoft 365 |
+| **Pro** | $20 a month, or $17 a month billed yearly ($200 up front) | More usage than Free, plus Claude Code, Research, Cowork, more models, and Claude in Chrome and Microsoft 365 |
 | **Max** | $100 a month | 5x Pro's usage, early access to features, priority at busy times |
 | **Ultra** | $200 a month | 10x Pro's weekly usage, and no 5-hour limit for verified accounts |
 | **Team** | $20 a seat a month billed yearly, or $25 monthly (Premium seats: $100 or $125) | Teams of 2 to 150, with admin controls |
@@ -160,7 +129,116 @@ Long chats, big files, web search and Research use it up faster.
 
 ---
 
-## 5. Meet chat, Cowork and Claude Code
+## 4. Find your way around
+
+Everything starts in the **message box**. Type what you need, then click send.
+
+**The + button**, in the lower left of the message box, holds the extras:
+
+- **Add files or photos:** attach a document or an image. You can also drag files into the chat.
+- **Web search:** let Claude look things up, with sources you can click.
+- **Research** (paid plans): many searches that build on each other, for bigger questions.
+- **Connectors:** link the apps you use, so Claude can work with them.
+
+You can also type **/** in the message box to see more options and commands.
+
+![A labelled drawing of Claude's message box with the + menu open](claude-from-zero/message-box.webp "Where things are. A labelled drawing, not a screenshot.")
+
+**The model name**, next to the send button, shows which Claude you're talking to. On your phone, it's at the top of the screen.
+
+Click it to switch, or click **More models**. The change applies from Claude's next answer.
+
+Which model? On Free, you get Sonnet and Haiku.
+
+On paid plans, Anthropic's advice is simple: if you're not sure, start with **Opus 5.5** ([more on Opus 5.5](issue:opus-5-5)).
+
+Sonnet 5.5 balances speed and intelligence. Haiku 5.5 is the fastest.
+
+**The ghost icon**, top right when you start a new chat outside a project, opens an **incognito chat**. It isn't saved to your history or memory, and it isn't used for training. Anthropic still keeps it for 30 days by default.
+
+**Your initials**, bottom left, open **Settings**.
+
+> [!NOTE]
+> Have the new Claude experience? There's no Web search switch: Claude searches when it helps. **Research** is still under **+**.
+
+---
+
+## 5. Learn seven words, skip the rest
+
+You'll hear a lot of jargon. You need very little of it.
+
+**Learn these now:**
+
+| Word | What it means |
+|---|---|
+| **Prompt** | Whatever you type (or say) to Claude. |
+| **Model** | The version of Claude you're talking to, such as Opus, Sonnet or Haiku. |
+| **Usage limit** | How much you can use Claude in a five-hour window (and, on paid plans, in a week). |
+| **Project** | A workspace with its own chats, files and instructions. Free includes up to five. |
+| **Artifact** | Something Claude makes for you to use or share, like a document, a deck or a small tool. It opens beside the chat. |
+| **Memory** | What Claude remembers about you between chats. You can see and edit it. |
+| **Hallucination** | A confident answer that's wrong. |
+
+**Skip these for now:**
+
+- **Tokens and context windows:** how much text fits in one conversation. Claude tells you if a message is too long.
+- **Effort and thinking:** settings in the model menu. The default effort in the apps is Medium, and that's fine to start.
+- **The API and the Claude Console:** for developers building their own apps. Pro doesn't include it; it's billed separately.
+- **Fable and Mythos:** models for demanding reasoning and long, complex work. Fable isn't on Free, and Mythos is for verified organisations.
+- **Benchmarks:** the scores companies publish about their own models.
+- **Skills and plugins:** ways to teach Claude whole jobs and bundle tools together. Worth it once the basics feel easy.
+- **Claude Code:** unless you write software.
+
+::button[Claude in plain English](issue:plain-english-claude)
+
+---
+
+## 6. Set up four things, once
+
+Do this on day one. Click your initials (bottom left), then **Settings**.
+
+### Your Claude → Instructions
+
+Tell Claude how you like answers. Your Instructions apply to every conversation.
+
+Paste this in and make it yours:
+
+```prompt Your Instructions
+I work as [your job] in [your country]. Write in plain English, with [British or American] spelling. Keep answers short unless I ask for more. Use numbered steps for instructions. If my request is unclear, ask me one question before you start. If you're not sure about a fact, say so.
+```
+
+### Your Claude → Your memory
+
+Memory is on by default on Free, Pro, Max and Ultra.
+
+Claude saves what it learns about you as topics while you chat. You can also tell it to "remember this".
+
+To see or edit what it remembers, select **Manage** next to **Your memory**. Each project keeps its own memory.
+
+### Privacy
+
+Whether your chats are used to train Claude is a switch in **Settings → Privacy**.
+
+On Free, Pro, Max and Ultra, you can opt out. Set it the way you want.
+
+On Team and Enterprise, your content isn't used for training by default.
+
+### Usage
+
+**Settings → Usage** shows how much of your limit is left right now, under **Current session**.
+
+Check it after your first big task. You'll quickly get a feel for what uses a lot.
+
+![A labelled drawing of Settings, Your Claude, with Instructions and Start import marked](claude-from-zero/settings.webp "Settings → Your Claude. A labelled drawing, not a screenshot.")
+
+> [!NOTE]
+> Claude won't make files or artifacts? Open **Settings → Capabilities** and check that **Create and edit files** is on. In the older layout it's called **Code execution and file creation**. It's on by default for Free, Pro, Max and Ultra.
+
+::button[Set Claude up right](issue:claude-set-up-right)
+
+---
+
+## 7. Three ways to work with Claude
 
 When people say "Claude", they might mean one of three things.
 
@@ -219,85 +297,6 @@ Two more you'll hear about, both on paid plans:
 
 ---
 
-## 6. Find your way around
-
-Everything starts in the **message box**. Type what you need, then click send.
-
-**The + button**, in the lower left of the message box, holds the extras:
-
-- **Add files or photos:** attach a document or an image. You can also drag files into the chat.
-- **Web search:** let Claude look things up, with sources you can click.
-- **Research** (paid plans): many searches that build on each other, for bigger questions.
-- **Connectors:** link the apps you use, so Claude can work with them.
-
-You can also type **/** in the message box to see more options and commands.
-
-![A labelled drawing of Claude's message box with the + menu open](claude-from-zero/message-box.webp "Where things are. A labelled drawing, not a screenshot.")
-
-**The model name**, next to the send button, shows which Claude you're talking to. On your phone, it's at the top of the screen.
-
-Click it to switch, or click **More models**. The change applies from Claude's next answer.
-
-Which model? On Free, you get Sonnet and Haiku.
-
-On paid plans, Anthropic's advice is simple: if you're not sure, start with **Opus 5.5** ([more on Opus 5.5](issue:opus-5-5)).
-
-Sonnet 5.5 balances speed and intelligence. Haiku 5.5 is the fastest.
-
-**The ghost icon**, top right when you start a new chat outside a project, opens an **incognito chat**. It isn't saved to your history or memory, and it isn't used for training. Anthropic still keeps it for 30 days by default.
-
-**Your initials**, bottom left, open **Settings**.
-
-> [!NOTE]
-> Have the new Claude experience? There's no Web search switch: Claude searches when it helps. **Research** is still under **+**.
-
----
-
-## 7. Set up four things, once
-
-Do this on day one. Click your initials (bottom left), then **Settings**.
-
-### Your Claude → Instructions
-
-Tell Claude how you like answers. Your Instructions apply to every conversation.
-
-Paste this in and make it yours:
-
-```prompt Your Instructions
-I work as [your job] in [your country]. Write in plain English, with [British or American] spelling. Keep answers short unless I ask for more. Use numbered steps for instructions. If my request is unclear, ask me one question before you start. If you're not sure about a fact, say so.
-```
-
-### Your Claude → Your memory
-
-Memory is on by default on Free, Pro, Max and Ultra.
-
-Claude saves what it learns about you as topics while you chat. You can also tell it to "remember this".
-
-To see or edit what it remembers, select **Manage** next to **Your memory**. Each project keeps its own memory.
-
-### Privacy
-
-Whether your chats are used to train Claude is a switch in **Settings → Privacy**.
-
-On Free, Pro, Max and Ultra, you can opt out. Set it the way you want.
-
-On Team and Enterprise, your content isn't used for training by default.
-
-### Usage
-
-**Settings → Usage** shows how much of your limit is left right now, under **Current session**.
-
-Check it after your first big task. You'll quickly get a feel for what uses a lot.
-
-![A labelled drawing of Settings, Your Claude, with Instructions and Start import marked](claude-from-zero/settings.webp "Settings → Your Claude. A labelled drawing, not a screenshot.")
-
-> [!NOTE]
-> Claude won't make files or artifacts? Open **Settings → Capabilities** and check that **Create and edit files** is on. In the older layout it's called **Code execution and file creation**. It's on by default for Free, Pro, Max and Ultra.
-
-::button[Set Claude up right](issue:claude-set-up-right)
-
----
-
 ## 8. Talk to it like a colleague
 
 Anthropic's own advice: talk to Claude the way you'd talk to a coworker or a friend. Naturally.
@@ -351,7 +350,38 @@ Before you start, ask me the questions you need answered to do this well. One at
 
 ---
 
-## 9. Know what it's good at, and where it slips
+## 9. Coming from ChatGPT?
+
+It's the first question most people ask.
+
+Here's a fair answer, built only from what each company publishes about its own product.
+
+| | Claude | ChatGPT |
+|---|---|---|
+| **Free plan** | Yes, with limited usage every 5 hours and every week | Yes, advertised as unlimited text chats with GPT-6, within abuse guardrails |
+| **First paid plan** | Pro: $20 a month, or $17 a month paid yearly | Plus: $20 a month |
+| **Bigger plans** | Max at $100 and Ultra at $200 a month | Pro 100, Pro 200 and Pro 500, at $100, $200 and $500 a month |
+| **Ads** | None: Anthropic has committed to keeping Claude ad-free | May appear on the Free and Go plans |
+| **Making pictures** | No photos or illustrations; it makes diagrams, charts and visuals | Image generation on every plan (limited on Free) |
+| **Text it takes in at once** | Up to 1M tokens in chat on paid plans, with the newest models | 27K to 128K tokens (GPT Instant) or 256K to 400K (GPT Reasoning), by plan |
+
+For scale, Anthropic says 200K tokens is about 500 pages of text.
+
+What that means for you:
+
+- **You want pictures made?** ChatGPT makes images. Claude doesn't.
+- **You work with long documents?** Claude's paid plans take in more text at once.
+- **You'd rather not see ads?** Anthropic has promised no ads and no sponsored links in Claude. ([Its announcement](https://www.anthropic.com/news/claude-is-a-space-to-think), and [OpenAI's page on ads](https://help.openai.com/en/articles/20001047-ads-in-chatgpt).)
+- **Price?** The first paid step costs the same: $20 a month.
+
+> [!TIP]
+> Coming from ChatGPT? Your old chats can't move over, but its memory of you can. Go to **Settings → Your Claude** and select **Start import**. Claude shows you a prompt to use in your old assistant. Paste the answer back and click **Add to memory**. Anthropic calls this experimental. [Its guide is here](https://support.claude.com/en/articles/12123587-import-and-export-your-memory-from-claude).
+
+::card[issue:right-ai-for-the-job]
+
+---
+
+## 10. Where it helps, and where it slips
 
 **Where it helps most:**
 
@@ -391,36 +421,6 @@ Go back through your answer. List every fact, number and name you used, where ea
 - **Paying on day one.** Free is enough to learn the basics.
 
 ::card[guide:ask-claude-about-your-data]
-
----
-
-## 10. Learn seven words, skip the rest
-
-You'll hear a lot of jargon. You need very little of it.
-
-**Learn these now:**
-
-| Word | What it means |
-|---|---|
-| **Prompt** | Whatever you type (or say) to Claude. |
-| **Model** | The version of Claude you're talking to, such as Opus, Sonnet or Haiku. |
-| **Usage limit** | How much you can use Claude in a five-hour window (and, on paid plans, in a week). |
-| **Project** | A workspace with its own chats, files and instructions. Free includes up to five. |
-| **Artifact** | Something Claude makes for you to use or share, like a document, a deck or a small tool. It opens beside the chat. |
-| **Memory** | What Claude remembers about you between chats. You can see and edit it. |
-| **Hallucination** | A confident answer that's wrong. |
-
-**Skip these for now:**
-
-- **Tokens and context windows:** how much text fits in one conversation. Claude tells you if a message is too long.
-- **Effort and thinking:** settings in the model menu. The default effort in the apps is Medium, and that's fine to start.
-- **The API and the Claude Console:** for developers building their own apps. Pro doesn't include it; it's billed separately.
-- **Fable and Mythos:** models for demanding reasoning and long, complex work. Fable isn't on Free, and Mythos is for verified organisations.
-- **Benchmarks:** the scores companies publish about their own models.
-- **Skills and plugins:** ways to teach Claude whole jobs and bundle tools together. Worth it once the basics feel easy.
-- **Claude Code:** unless you write software.
-
-::button[Claude in plain English](issue:plain-english-claude)
 
 ---
 
@@ -476,7 +476,7 @@ Click **+** → **Web search** (in the new experience, just ask). Ask about some
 
 ### 8. Set your Instructions
 
-**Settings → Your Claude → Instructions.** Start from the Instructions prompt in step 7 above.
+**Settings → Your Claude → Instructions.** Start from the Instructions prompt in section 6 above.
 
 ### 9. Start a project
 
@@ -488,11 +488,9 @@ Use it for one ongoing piece of work: a course, a client, a job search.
 
 Open the phone app and try voice mode. Talk through a decision you're stuck on.
 
-Know someone who keeps saying they'll try Claude "one day"? Send them this guide.
-
 ---
 
-## 12. Take the ten-minute test drive
+## 12. Do one real task in ten minutes
 
 Now put it all together on one real task from your week.
 
@@ -526,7 +524,7 @@ I need [the thing you want, for example a one-page plan for next month]. It's fo
 
 ## Questions
 
-### Is Claude free?
+### Does Claude cost anything?
 
 Yes. The Free plan costs $0. It includes chat, web search, file creation, memory and artifacts, with limited usage every five hours and every week.
 
@@ -550,7 +548,7 @@ It's trained extensively in English and performs well in many other common langu
 
 Your chats, no. Its memory of you, yes: **Settings → Your Claude → Start import**.
 
-## Where to go next
+## What to do after week one
 
 You have the basics. Build on them one step at a time.
 
