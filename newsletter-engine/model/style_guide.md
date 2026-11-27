@@ -79,7 +79,7 @@ Learned from 135 example issues (10 read in full) (trained 2026-11-23). Use it f
 
 ## Content rules (always)
 - Facts, numbers, names, quotes, prices, dates and links come only from the brief. If a sentence needs one the brief doesn't give, write around it or put [CHECK: what's needed].
-- Never invent screenshots: use ::screenshot[...] slots describing exactly what the author must capture.
+- Never invent screenshots: use ::screenshot[...] slots describing exactly what the author must capture. When there is no real screenshot, an app_illustration graphic may show where to click: it is always stamped 'Illustration, not a screenshot' and uses only menu names from the brief.
 - Never promise a cadence, a download or a course that the brief doesn't give.
 - Never teach cheating on courses, quizzes, certifications or AI detectors, and never suggest fooling anyone.
 - No engagement bait, no fake urgency, no fake numbers of readers, likes or results.
