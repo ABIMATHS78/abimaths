@@ -904,9 +904,73 @@ PUZZLE = Template(
 )
 
 
+# ---------- app_illustration ----------
+# A labelled drawing of an app screen (window, sidebar, tabs, settings rows or a menu, a chat box) with the steps to
+# follow. It is always stamped "Illustration, not a screenshot" and uses only menu names from the brief: a way to show
+# where to click when the author has no real screenshot, never a fake one.
+APP_ILLUSTRATION = Template(
+    name="app_illustration",
+    description="A labelled drawing of an app screen with numbered steps: where to click, which switch to turn on, what "
+                "to type. Always stamped 'Illustration, not a screenshot'; menu names come from the brief.",
+    schema=obj({
+        "title": string("3 to 8 words, e.g. 'Where to turn on *Code execution*'. " + MARKUP_HINT),
+        "subtitle": string("Optional one line."),
+        "app": string("The app and where, e.g. 'Claude desktop app' or 'claude.ai'."),
+        "sidebar": array(string("1 to 3 words."), "Optional left menu, 3 to 8 items."),
+        "sidebar_active": integer("Index of the highlighted sidebar item (0 = first)."),
+        "sidebar_mark": integer("Optional index of a sidebar item to circle in red."),
+        "sidebar_step": integer("Step number to show on the circled sidebar item."),
+        "screen": string("The screen's heading, e.g. 'Settings'."),
+        "tabs": array(string("1 to 2 words."), "Optional tabs across the top, 2 to 6."),
+        "tab_active": integer("Index of the selected tab."),
+        "tab_mark": integer("Optional index of a tab to circle in red."),
+        "tab_step": integer("Step number to show on the circled tab."),
+        "menu": array(obj({
+            "label": string("1 to 5 words."),
+            "mark": integer("Step number to show on this item, if the reader clicks it."),
+        }, ["label"]), "Optional open menu, 2 to 7 items."),
+        "rows": array(obj({
+            "label": string("1 to 6 words: the setting or item, exactly as named in the brief."),
+            "detail": string("Optional line under it, at most 12 words."),
+            "control": string("toggle_on, toggle_off, button, chevron or none",
+                              enum=["toggle_on", "toggle_off", "button", "chevron", "none"], default="none"),
+            "button": string("For control 'button': its label."),
+            "mark": integer("Step number to show on this row, if it's where the reader acts."),
+        }, ["label"]), "Optional settings rows or list items, 1 to 7."),
+        "composer": obj({
+            "text": string("What the reader types, at most 30 words."),
+            "placeholder": string("Grey placeholder text when nothing is typed."),
+            "mark": integer("Step number for typing here."),
+        }, []),
+        "path": array(string("1 to 3 words."), "Optional menu path shown as chips, 2 to 5 parts."),
+        "steps": array(string("At most 12 words. " + MARKUP_HINT), "1 to 4 numbered steps matching the marks."),
+        "note": string("Optional small print. Default: drawn from the official help pages; your screen may differ."),
+        "shape": string("portrait, square or landscape", enum=["portrait", "square", "landscape"], default="portrait"),
+    }, ["title", "app", "steps"]),
+    default_theme="learn",
+    shapes=("portrait", "square", "landscape"),
+    sample={
+        "title": "Where to turn on *Code execution*",
+        "subtitle": "Skills need it. It takes ten seconds.",
+        "app": "Claude desktop app",
+        "sidebar": ["New chat", "Chats", "Projects", "Customize", "Settings"],
+        "sidebar_active": 4,
+        "screen": "Settings",
+        "tabs": ["General", "Account", "Capabilities", "Connectors"],
+        "tab_active": 2, "tab_mark": 2, "tab_step": 1,
+        "rows": [
+            {"label": "Code execution and file creation", "detail": "Lets Claude run code and make files", "control": "toggle_on", "mark": 2},
+            {"label": "Web search", "control": "toggle_on"},
+        ],
+        "path": ["Settings", "Capabilities"],
+        "steps": ["Open **Settings**, then **Capabilities**", "Switch on **Code execution and file creation**"],
+    },
+)
+
+
 TEMPLATES: dict[str, Template] = {t.name: t for t in [
     CHEATSHEET, LINK_LIST, PROMPT_LADDER, PROMPT_ANATOMY, SPLIT, FUNNEL, GLOSSARY, ROADMAP, CYCLE, MINDMAP,
-    DECISION_TREE, CARD_GRID, BIG_NUMBER, BADGE, BOOKSHELF, KINETIC, SCREENSHOT_CALLOUT, PUZZLE,
+    DECISION_TREE, CARD_GRID, BIG_NUMBER, BADGE, BOOKSHELF, KINETIC, SCREENSHOT_CALLOUT, PUZZLE, APP_ILLUSTRATION,
 ]}
 
 

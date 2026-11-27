@@ -141,6 +141,7 @@ connectors draw themselves.
 | `bookshelf` | A reading list as cloth book spines | Post 12 | PNG |
 | `kinetic` | A short video: one idea per scene, words popping in | (new: motion graphics) | MP4 |
 | `screenshot_callout` | Sticker captions and red boxes on your own screenshot | Posts 1, 2 | PNG |
+| `app_illustration` | A drawing of an app screen with numbered steps, always stamped "Illustration, not a screenshot". Menu names come from the brief | (new: for /learn guides with no screenshot) | PNG |
 
 Text on graphics is sized automatically to fill the space without overflowing, and the render reports anything
 that still doesn't fit. Inside fields, `*word*` uses the accent colour, `**word**` bold, `==word==` a marker
